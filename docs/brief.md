@@ -22,7 +22,6 @@ E2e tests and the evaluator check different things. The evaluator covers what e2
 2. real-estate git history: fix commits bundle many fixes. Split them into single changes, pair each with the finding it fixed, and keep 15–20 whose reverts still apply cleanly as the replay set.
 3. `manual` class-4 rows in `test-coverage.md` (fault checks that edit source): the first mutation cases.
 4. `Ruling:` lines and session transcripts in `~/.claude/projects/*outsourcing*`: where the controller overruled the evaluator, and whether the ruling held up.
-5. Customer-found bugs from the daily-routine `/qas-feedback` skill.
 
 Customer-derived evidence stays in `.evidence/` (gitignored) and never leaves this machine.
 
