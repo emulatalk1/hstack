@@ -43,7 +43,7 @@ Write no plugin code until the adapter schema and the replay set are approved.
 
 ## Done means
 
-- **(a) Replay (stack A only):** how many replayed bugs the new harness catches, against the current harness on the same set, and which layer caught each (e2e, evaluator or mutation).
+- **(a) Replay (stack A only):** how many replayed bugs the new harness catches, against the current harness on the same set, and which layer caught each (e2e, evaluator, mutation, or review). Each replay applies the bug's reverse patch **and removes the test its fix added** (check that file out from the fix's parent commit); otherwise that test catches every bug and the score means nothing.
 - **(b) Mutation:** the tool-reported mutation score on changed and covered lines, per adapter. Every evaluator claim labeled confirmed or noise, with each model's precision and recall on planted bugs.
 - **(c) Clean install (no CI):** in a fresh temp folder, install the plugin from the local git path, run `init` on both fixtures, and complete the full loop.
 - **(d) Migration:** a duplicate of `outsourcing` (never the original) runs on the plugin, with its progress files intact and its current test suites still green.
