@@ -2,9 +2,11 @@
 type: plan
 title: "hstack foundation plan"
 description: "The plugin skeleton, init, the manifest, the OKF checker and the safety checks every later hstack step calls."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.310, at: "2026-10-26T20:42:09+07:00" }
-verified: { by: claude-code-advisor/2.1.310, at: "2026-10-26T20:42:09+07:00" }
+verified:
+  - { by: claude-code-advisor/2.1.310, at: "2026-10-26T20:42:09+07:00" }
+  - { by: human:emulatalk1, at: "2026-10-26T20:48:07+07:00" }
 sources:
   - id: hstack-brief
     resource: /design/2026-10-25-hstack-brief.md
