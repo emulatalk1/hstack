@@ -65,6 +65,13 @@ test('the CLI exits 1 for a missing folder and for errors, 0 for a clean bundle'
   expect(run(path.join(REPO, 'docs')).exitCode).toBe(0);
 });
 
+test('the CLI gives a plain sentence for a path below a file', async () => {
+  const r = Bun.spawnSync([process.execPath, 'scripts/okf-check.mjs', path.join(REPO, 'package.json/x')], { cwd: REPO });
+  expect(r.exitCode).toBe(1);
+  expect(r.stdout.toString()).toMatch(/is not a folder, so there is no docs bundle to check\.$/m);
+  expect(r.stderr.toString()).toBe('');
+});
+
 async function bundleWith(concept) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hstack-'));
   try {
@@ -133,4 +140,10 @@ test('a dot-folder such as .git is not walked', async () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('a source below a file is a missing source, not a crash', async () => {
+  const r = await bundleWith('type: note\nsources:\n  - resource: index.md/x');
+  expect(r.errors.length).toBe(1);
+  expect(r.errors[0]).toMatch(/does not exist in the bundle/);
 });

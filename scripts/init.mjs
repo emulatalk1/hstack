@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildManifest } from './lib/manifest.mjs';
+import { exists, isDir } from './lib/fsutil.mjs';
 import { checkBundle } from './lib/okf.mjs';
 
 const USAGE = 'Usage: bun scripts/init.mjs [root] [--app <subfolder>] [--force]';
@@ -21,9 +21,9 @@ try {
 if (args.positionals.length > 1) fail(USAGE);
 
 const root = path.resolve(args.positionals[0] ?? '.');
-if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) fail(`${root} is not a folder. Nothing was written.`);
+if (!isDir(root)) fail(`${root} is not a folder. Nothing was written.`);
 const file = path.join(root, '.hstack', 'manifest.json');
-if ((await Bun.file(file).exists()) && !args.values.force) {
+if (exists(file) && !args.values.force) {
   fail(`A manifest already exists at ${file}; nothing changed. Run with --force to replace it.`);
 }
 const result = await buildManifest(root, args.values.app);
@@ -34,7 +34,7 @@ for (const w of result.warnings) console.log(w);
 console.log(`Wrote ${file}`);
 
 const docs = path.join(root, 'docs');
-if (fs.statSync(docs, { throwIfNoEntry: false })?.isDirectory()) {
+if (isDir(docs)) {
   const { errors, warnings } = await checkBundle(docs);
   console.log(errors.length ? `Docs bundle: ${errors.length} errors.` : 'Docs bundle: OK');
   for (const e of errors.slice(0, 3)) console.log(`  ${e}`);

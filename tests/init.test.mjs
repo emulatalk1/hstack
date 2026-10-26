@@ -18,7 +18,7 @@ function init(args) {
 
 const manifestOf = (root) => path.join(root, '.hstack/manifest.json');
 const readManifest = (root) => Bun.file(manifestOf(root)).json();
-const isDir = (p) => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() === true;
+const exists = (p) => fs.statSync(p, { throwIfNoEntry: false }) !== undefined;
 
 function stackA() {
   const root = tmp();
@@ -64,7 +64,7 @@ test('init detects the app subfolder', async () => {
     const r = init([root]);
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/--app/);
-    expect(isDir(path.join(root, '.hstack'))).toBe(false);
+    expect(exists(path.join(root, '.hstack'))).toBe(false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -106,11 +106,51 @@ test('a second init does not overwrite', async () => {
   }
 });
 
+test('a root below a file says it is not a folder', async () => {
+  const root = tmp();
+  try {
+    await Bun.write(path.join(root, 'some-file'), 'x');
+    const r = init([path.join(root, 'some-file/x')]);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/is not a folder\. Nothing was written\.$/m);
+    expect(r.out).not.toMatch(/ENOTDIR|at /);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a folder where the manifest should be counts as an existing manifest', async () => {
+  const root = await stackB();
+  try {
+    fs.mkdirSync(manifestOf(root), { recursive: true });
+    const r = init([root]);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/nothing changed/);
+    expect(r.out).not.toMatch(/EISDIR/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a docs source below a file does not crash init', async () => {
+  const root = await stackB();
+  try {
+    await Bun.write(path.join(root, 'docs/index.md'), '* [X](x.md)\n');
+    await Bun.write(path.join(root, 'docs/x.md'), '---\ntype: note\nsources:\n  - resource: index.md/x\n---\n');
+    const r = init([root]);
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/Docs bundle: 1 errors/);
+    expect(r.out).not.toMatch(/ENOTDIR/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('an empty folder writes nothing', () => {
   const root = tmp();
   try {
     expect(init([root]).code).toBe(1);
-    expect(isDir(path.join(root, '.hstack'))).toBe(false);
+    expect(exists(path.join(root, '.hstack'))).toBe(false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -123,7 +163,7 @@ test('a folder with an unknown stack says so and writes nothing', async () => {
     const r = init([root]);
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/no stack it knows/);
-    expect(isDir(path.join(root, '.hstack'))).toBe(false);
+    expect(exists(path.join(root, '.hstack'))).toBe(false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

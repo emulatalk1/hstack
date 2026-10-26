@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import fs from 'node:fs';
 import path from 'node:path';
+import { isDir } from './lib/fsutil.mjs';
 import { checkBundle } from './lib/okf.mjs';
 
 const dir = process.argv[2];
@@ -8,7 +8,7 @@ if (!dir) {
   console.log('Usage: bun scripts/okf-check.mjs <docs folder>');
   process.exit(1);
 }
-if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
+if (!isDir(dir)) {
   console.log(`${path.resolve(dir)} is not a folder, so there is no docs bundle to check.`);
   process.exit(1);
 }

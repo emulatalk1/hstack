@@ -1,5 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { isDir } from './fsutil.mjs';
 
 // Build output and installed packages can hold copies of the app's own code.
 const SKIP = new Set(['node_modules', '.next', 'out']);
@@ -9,7 +9,7 @@ export async function findFixedPorts(appDir) {
   const hits = [];
   for (const folder of ['src', 'tests']) {
     const root = path.join(appDir, folder);
-    if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) continue;
+    if (!isDir(root)) continue;
     for await (const rel of new Bun.Glob('**/*.{ts,tsx,js,mjs}').scan({ cwd: root, dot: true, followSymlinks: true })) {
       const parts = rel.split(/[\\/]/);
       if (parts.some((p) => SKIP.has(p))) continue;

@@ -2,6 +2,7 @@
 // Answers "may I do this?" for an agent. Exit 0 = allowed, 1 = refused. It never performs the action.
 import fs from 'node:fs';
 import path from 'node:path';
+import { exists } from './lib/fsutil.mjs';
 import { composeName, projectName } from './lib/identity.mjs';
 import { isOurs, portOwners } from './lib/ports.mjs';
 
@@ -54,7 +55,7 @@ async function composeOverride(file) {
 async function findOtherComposeFile(file) {
   for (const f of DEFAULT_COMPOSE_FILES) {
     const p = path.join(path.dirname(file), f);
-    if (f !== path.basename(file) && ((await Bun.file(p).exists()) || fs.statSync(p, { throwIfNoEntry: false }) !== undefined)) return f;
+    if (f !== path.basename(file) && exists(p)) return f;
   }
   return undefined;
 }

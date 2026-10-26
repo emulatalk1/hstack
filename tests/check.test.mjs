@@ -137,6 +137,11 @@ test('docker is refused when Compose would pick another name or file', async () 
       expect(r.code).toBe(1);
       expect(r.out).toMatch(new RegExp(v));
     }
+    fs.mkdirSync(path.join(a, 'real-estate/compose.yml'));
+    const folder = check(a, 'docker');
+    expect(folder.code).toBe(1);
+    expect(folder.out).toMatch(/compose\.yml/);
+    fs.rmdirSync(path.join(a, 'real-estate/compose.yml'));
     await Bun.write(path.join(a, 'real-estate/compose.yaml'), 'services: {}\n');
     const r = check(a, 'docker');
     expect(r.code).toBe(1);
@@ -300,6 +305,17 @@ test('drop is refused for a folder project, which uses wipe', async () => {
     expect(r.code).toBe(1);
     expect(r.out).toMatch(/folder/);
     expect(r.out).toMatch(/wipe/);
+  } finally {
+    rm(root);
+  }
+});
+
+test('port: a missing lsof refuses', async () => {
+  const root = await initted('A');
+  try {
+    const r = node(CHECK, [root, 'port', '1'], { ...process.env, PATH: '/nonexistent' });
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/lsof command was not found/);
   } finally {
     rm(root);
   }
