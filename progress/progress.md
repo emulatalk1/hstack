@@ -179,3 +179,29 @@ Task review cost, one line per task (review = the task reviewer plus any re-revi
     Final: parked — docs/index.md foundation-check description starts lowercase "the" vs "The" — Ruling: cosmetic — cost if wrong: none.
     Final: parked — OKF source check counts an unstat-able source (EACCES/ELOOP) as present — Ruling: real, edge case, not a safety gate — cost if wrong: an unreadable source passes the docs gate.
     Final: minor (deferred): init with `.hstack` as a file crashes with a stack trace (also crashed on Node; nothing written); check refuses a manifest folder with "No hstack manifest here" instead of "could not be read" (still refuses)
+
+## 2026-10-27 — C1 fix (the parked docker finding), branch `fix-c1`
+
+- C1: closed. Review 1 opus 79.7k/5.9 min + re-reviews opus 91.6k/6.6, 93.3k/6.4, 92.4k/10.4 min (3 fix rounds); implementer sonnet 69.8k/3.0 + 85.0k/1.5 + 95.0k/1.3 + 104.6k/1.3 min. Rule: the docker check refuses any Compose input it does not read; `name:` must be the compose file's first line.
+
+### Ledger
+
+    # SDD ledger — fix C1 (no plan file: the ruling is the foundation build's parked C1)
+    
+    Branch `fix-c1` from main 97d3ef3.
+    - Ruling: fail closed — the docker check refuses any Compose input it does not read (identity env vars in shell or .env in = or : form, the 8 auto-loaded compose/override names, multiple name:/documents, include:, <<:) instead of asking Compose (hstack never runs docker compose) — cost if wrong: a docker run refused that Compose would have run under the right name.
+    - Provenance: Docker's docs name only compose.yaml and compose.override.yaml as auto-loaded; the other six names come from the earlier re-reviewer's read of the local compose binary's strings. include:/<<: refusals are precautions; the docs do not settle their effect on the name.
+    Review 1 (opus, 79.7k tokens, 5.9 min): Needs fixes — 2 Critical, 1 Important; implementer report.md was never written.
+    - Ruling: the compose file must be plain lines: refuse any `\r` not followed by `\n`, U+0085, U+2028 or U+2029 (YAML line breaks the line-based reader does not see) — cost if wrong: a compose file with odd line endings refused.
+    - Ruling: `.env` refuses when COMPOSE_PROJECT_NAME, COMPOSE_FILE or COMPOSE_ENV_FILES appears anywhere in it (even in a comment or after another value on the same line) — compose-go's dotenv parser reads a second assignment after a quoted value — cost if wrong: a commented-out COMPOSE_PROJECT_NAME is refused.
+    - Ruling: the top-level `name:` line must hold exactly a valid Docker name (`[a-z0-9][a-z0-9_-]*`, optionally in matching quotes, then only spaces or a `#` comment), and the next non-blank line must not be indented — otherwise refuse — cost if wrong: an unusual but valid name form refused.
+    Fix-1: minor (deferred): README test count; `!!str` tags and `%YAML` directives over-refused (accepted).
+    Fix round 1/5 (implementer sonnet 85.0k/1.5 min; re-review opus 91.6k/6.6 min): F1, F2, F3 addressed; new Critical class open — a column-0 `name: <ours>` swallowed by a multi-line quoted scalar/flow collection or the `--- {…}` first line, with the real name key written quoted, tagged, as `? name`, or as an alias `*k :` (exit 0; Compose would use another name — via libyaml/sigs.k8s.io/yaml oracles, go-yaml v3 not run).
+    - Ruling: structural allowlist — every non-blank line that does not start with whitespace or `#` must be a plain key `^[A-Za-z0-9_-]+:(\s|$)`; the only exemption is a first content line that is exactly `---` (optionally `--- # comment`). Refuses every column-0 opener (`"`, `'`, `{`, `[`, `*`, `&`, `!`, `?`), so a swallowed name line can no longer pair with a hidden real key; a plain real key is caught by the existing several-`name:` rule — cost if wrong: a compose file whose top level uses quoted or flow keys is refused.
+    Fix-1: minor (deferred): .env read errors (folder, unreadable) treated as no .env (Compose likely errors); `name:<ours>` without a space passes the form check (Compose errors on it); UTF-16 .env not decoded.
+    Fix round 2/5 (implementer sonnet 95.0k/1.3 min; re-review opus 93.3k/6.4 min): reported probes closed; class still open — a column-0 `#` line closes a quoted scalar/flow collection that swallowed `name: <ours>` (no real name → folder name), and an indented root mapping with `name: evil` (Psych, kubectl; go-yaml scanner source read, not run).
+    - Ruling: `name:` must be the first content line, at column 0 — only blank lines, `#` comments, a BOM and one leading `---` may come before it. No scalar or collection can be open there and the root is a block mapping at indent 0, so every later root key is a column-0 line the plain-key allowlist and the several-`name:` rule already check — cost if wrong: a compose file with `name:` lower down is refused (hstack's own-services plan writes its compose file with `name:` first).
+    Fix-2: minor (deferred): `services :` (space before colon) refused; an indented `# note` after `name:` refused as a continuation.
+    Fix round 3/5 (implementer sonnet 104.6k/1.3 min; re-review opus 92.4k/10.4 min): ADDRESSED; no exit-0 case where Compose would use another name (Psych, Bun.YAML, kubectl; go-yaml scanner source read; Compose not run).
+    Fix-3: minor (deferred): JS .trim() treats NBSP/U+3000/VT/FF/BOM-only lines as blank before name: (oracles error or read our name); header regex accepts `---#x` (oracles error); a JS-blank continuation after name: passes (name stays ours or Compose errors); `version:` before `name:` refused (common layout; README now says so — controller one-line README edit).
+    C1: complete (commits 97d3ef3..64d3b7d + README line).

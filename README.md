@@ -105,7 +105,7 @@ This runs the tests with `bun:test`, 61 tests. The tests leave nothing behind on
 
 ## Known limits
 
-- The `docker` check refuses any Compose input it does not read, so it may refuse a harmless setup: an override file, `include:`, or a `---` line inside a block scalar. That is on purpose; a wrong "allowed" costs more than a wrong "refused".
+- The `docker` check refuses any Compose input it does not read, so it may refuse a harmless setup: an override file, `include:`, a `---` line inside a block scalar, or a compose file whose `name:` is not its first line (for example after `version:`). That is on purpose; a wrong "allowed" costs more than a wrong "refused".
 - `init` warns about every `localhost:<port>` in `src/` and `tests/`, including URLs inside unit tests. Narrowing this to the project's own ports comes with the own-services plan.
 
 ## Roadmap
