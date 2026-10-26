@@ -2,6 +2,7 @@
 
 ## 2026-10-26
 
+* **Approve**: the decision [hstack runs on Bun](/decisions/2026-10-26-bun-runtime.md) (status `stable`). The user approved it after the Bun runtime build and its final review.
 * **Creation**: Added the [hstack runs on Bun](/decisions/2026-10-26-bun-runtime.md) decision (draft): Bun only, no Node fallback, and the behavior changes the build accepted.
 * **Approve**: the [Bun runtime plan](/plans/2026-10-26-bun-runtime.md) (status `stable`), with Bun 1.4.4 or later. The user approved it after an advisor round.
 * **Creation**: Added the [Bun runtime plan](/plans/2026-10-26-bun-runtime.md) (draft): the user decided to move hstack to Bun completely.

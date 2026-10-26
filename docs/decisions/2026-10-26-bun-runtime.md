@@ -2,8 +2,9 @@
 type: decision
 title: "hstack runs on Bun"
 description: "hstack's scripts, tests and skills run on Bun 1.4.4 or later only, with no Node fallback."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.310, at: "2026-10-26T23:30:00+07:00" }
+verified: { by: human:emulatalk1, at: "2026-10-26T23:44:16+07:00" }
 sources:
   - id: bun-plan
     resource: /plans/2026-10-26-bun-runtime.md
