@@ -29,6 +29,7 @@ Recorded cost: a final review of plan 10 took 140k tokens and 3 minutes (Sonnet)
 
 ## The loop for one plan
 
+0. **Spec** (not per plan). Required before the first plan of a product; after that, only for a big new feature or a change of direction. A later plan names the spec it builds on.
 1. **Start.** Run the unit, integration and e2e suites. Fix any failure before new work.
 2. **Plan.** Write the features and their steps. Each step is observable and gets a coverage row: `full`, `partial`, `none`, `manual` or `command`. Two models review the plan before the build (the `review` slot, run on the plan file).
 3. **Build.** One task at a time, each with a task review before the next task starts.
@@ -53,13 +54,14 @@ When to run it: the 5 audit bugs with a known start were added between 2026-10-0
 
 ## Outside skills
 
-Ponytail is easy to replace: it fills one slot (the audit), plus one rule in the harness that keeps `ponytail:` tags out of code comments. Superpowers is replaceable, but its task review and final review found 9 of the 20 bugs, so a swap is a project, not one line. The plan spike that found 1 more is the harness's own method (a scratch clone and `assemble.py`), not superpowers.
+Ponytail is easy to replace: it fills one slot (the audit), plus one rule in the harness that keeps `ponytail:` tags out of code comments. Superpowers fills five of the six slots (`spec`, `plan`, `build`, `review`, `finish`) and is replaceable, but its task review and final review found 9 of the 20 bugs, so a swap is a project, not one line. The plan spike that found 1 more is the harness's own method (a scratch clone and `assemble.py`), not superpowers.
 
 The project's manifest names one skill per slot. hstack passes the inputs below and reads only the outputs below; what hstack adds itself is in its own column, so a replacement is held only to what the skill must leave.
 
 | Slot | Default skill | hstack passes | The skill must leave | hstack adds |
 |---|---|---|---|---|
-| `plan` | `superpowers:writing-plans`, with the harness's spike (a scratch build while the plan is written; hstack carries this method) | the feature list, the earlier plan | a plan file with numbered tasks and observable steps | the coverage rows |
+| `spec` | `superpowers:brainstorming` | the user's request, the current spec | a spec file (what to build and why) at the path the manifest names; the harness used `docs/design/` | nothing |
+| `plan` | `superpowers:writing-plans`, with the harness's spike (a scratch build while the plan is written; hstack carries this method) | the spec, the feature list, the earlier plan | a plan file that names its spec, with numbered tasks and observable steps | the coverage rows |
 | `build` | `superpowers:subagent-driven-development` | the plan file | one commit range per task, and per task the ledger lines below | tokens and minutes per task review, from its own agent results: one line per task in the progress log |
 | `review` | the SDD final reviewer (`superpowers:requesting-code-review`), once per model | a diff and a review package; used for the final review, and for the plan review on the plan file | findings with severity (Critical, Important, Minor) and file:line | the advisor loop, a confirmed or false verdict per finding, tokens and minutes |
 | `audit` | `ponytail:ponytail-audit` | the repo path | the report format in its SKILL.md: numbered findings in Must fix, Should fix and Nice to have, each with file:lines, What this is, Problem, Fix, If we skip it; then Verdict, Lean and Not checked | nothing; hstack folds the findings into the next plan's scope |
@@ -99,6 +101,8 @@ Stack A: Next.js + Payload + Postgres + Vitest + Playwright. Stack B: Electron +
 
 1. Whether two evaluator models stay. The record says they find different defects (5 shared of 69). The pilot was too small to compare them.
 2. Whether the whole-repo audit runs every 3 plans, or on a size trigger (for example, after a set number of changed lines).
+3. The per-project fields of the manifest (spec path, feature list, coverage file, progress log): to settle in the adapter research.
+
 Decided 2026-10-26: the audit uses the ponytail plugin; the plugin records task-review cost (tokens and time per task).
 
 How this was measured: each replayed bug was applied to the current code, with every test its fix added or changed skipped by title. Evaluators in the replay got the step text from before the fix.
