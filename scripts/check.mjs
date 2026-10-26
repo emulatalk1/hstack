@@ -102,7 +102,8 @@ function checkWipe(dir, manifest, target) {
       if (temps.some((t) => inside(fromEnv, t)) && !inside(fromEnv, root)) allowed.push(fromEnv);
     }
   }
-  const ok = allowed.filter((p) => !never.includes(p) && p !== hstackDir && !inside(p, hstackDir));
+  const holdsProject = (p) => inside(root, p) || inside(real(appDir), p);
+  const ok = allowed.filter((p) => !never.includes(p) && !holdsProject(p) && !inside(p, hstackDir) && p !== hstackDir);
   if (!ok.length) refuse('hstack could not work out a safe data folder for this project, so it will not wipe anything.');
   const wanted = real(target);
   if (ok.includes(wanted)) allow(`Wiping ${wanted} is allowed.`);
@@ -116,12 +117,14 @@ if (!dirArg || !Object.hasOwn(needsArg, check) || (needsArg[check] && !arg) || (
 const dir = path.resolve(dirArg);
 const file = path.join(dir, '.hstack', 'manifest.json');
 if (!fs.existsSync(file)) refuse('No hstack manifest here. Run init first.');
+const unreadable = () => refuse(`The hstack manifest at ${file} could not be read. Run init again with --force.`);
 let manifest;
 try {
   manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
 } catch {
-  refuse(`The hstack manifest at ${file} could not be read. Run init again with --force.`);
+  unreadable();
 }
+if (typeof manifest?.projectName !== 'string' || !Array.isArray(manifest.data?.droppable)) unreadable();
 if (projectName(dir) !== manifest.projectName) {
   refuse(`This folder was copied or moved since init (its manifest is for ${manifest.projectName}, but this folder is ${projectName(dir)}). Run init again here.`);
 }

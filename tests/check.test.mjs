@@ -193,14 +193,32 @@ test('wipe ignores TMPDIR and env values inside .hstack', () => {
   }
 });
 
+test('wipe never allows a folder that holds the project', () => {
+  const outer = fs.mkdtempSync('/tmp/hstack-');
+  const root = path.join(outer, 'proj');
+  try {
+    fs.mkdirSync(root);
+    for (const f of ['package.json', 'package-lock.json']) {
+      fs.copyFileSync(path.join(REPO, 'fixtures/electron', f), path.join(root, f));
+    }
+    assert.equal(node(INIT, [root]).code, 0);
+    const r = node(CHECK, [root, 'wipe', outer], { ...process.env, PROBE_DATA_DIR: outer });
+    assert.equal(r.code, 1, r.out);
+  } finally {
+    rm(outer);
+  }
+});
+
 test('a malformed manifest is refused in plain words', () => {
   const root = initted('A');
   try {
-    fs.writeFileSync(path.join(root, '.hstack/manifest.json'), '{nope');
-    const r = check(root, 'drop', 'shop_dev');
-    assert.equal(r.code, 1);
-    assert.match(r.out, /could not be read\. Run init again with --force\./);
-    assert.doesNotMatch(r.out, /at file:|Error/);
+    for (const bad of ['{nope', 'null', '{}', '{"projectName":"x"}']) {
+      fs.writeFileSync(path.join(root, '.hstack/manifest.json'), bad);
+      const r = check(root, 'drop', 'shop_dev');
+      assert.equal(r.code, 1, bad);
+      assert.match(r.out, /could not be read\. Run init again with --force\./);
+      assert.doesNotMatch(r.out, /at file:|Error/);
+    }
   } finally {
     rm(root);
   }
