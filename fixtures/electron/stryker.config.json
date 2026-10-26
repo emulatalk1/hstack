@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "checkers": [
+    "typescript"
+  ],
+  "tsconfigFile": "tsconfig.json",
+  "mutate": [
+    "src/shared/**/*.ts",
+    "src/main/**/*.ts"
+  ],
+  "coverageAnalysis": "perTest",
+  "reporters": [
+    "clear-text",
+    "progress",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "ignorePatterns": [
+    "release",
+    "out",
+    "data",
+    "coverage",
+    ".e2e-coverage",
+    "test-results",
+    "playwright-report"
+  ]
+}

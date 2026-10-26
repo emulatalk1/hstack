@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "command",
+  "buildCommand": "npx electron-vite build",
+  "commandRunner": {
+    "command": "npx playwright test -g \"add note\""
+  },
+  "coverageAnalysis": "off",
+  "concurrency": 1,
+  "mutate": [
+    "src/main/db.ts:17-17",
+    "src/renderer/src/App.tsx:7-7"
+  ],
+  "reporters": [
+    "clear-text",
+    "json"
+  ],
+  "jsonReporter": {
+    "fileName": "reports/mutation/e2e.json"
+  },
+  "ignorePatterns": [
+    "release",
+    "out",
+    "data",
+    "coverage",
+    ".e2e-coverage",
+    "test-results",
+    "playwright-report"
+  ],
+  "timeoutMS": 15000
+}
