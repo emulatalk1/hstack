@@ -1,26 +1,26 @@
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { composeName, projectName } from './identity.mjs';
 import { detectStack } from './detect.mjs';
 import { findFixedPorts } from './fixed-ports.mjs';
 
-const hasPackage = (dir) => fs.existsSync(path.join(dir, 'package.json'));
+const hasPackage = (dir) => Bun.file(path.join(dir, 'package.json')).exists();
 
-export function findApp(root, app) {
+export async function findApp(root, app) {
   if (app) return app;
-  if (hasPackage(root)) return '.';
-  const found = fs.readdirSync(root, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules' && hasPackage(path.join(root, e.name)))
-    .map((e) => e.name);
+  if (await hasPackage(root)) return '.';
+  const dirs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules');
+  const has = await Promise.all(dirs.map((e) => hasPackage(path.join(root, e.name))));
+  const found = dirs.filter((_, i) => has[i]).map((e) => e.name);
   if (found.length === 1) return found[0];
   return { error: 'hstack could not tell which folder holds the app. Run with --app <subfolder>.' };
 }
 
 function actor() {
   try {
-    const version = execFileSync('claude', ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    return `claude-code/${version.trim().split(/\s+/)[0]}`;
+    const r = Bun.spawnSync(['claude', '--version'], { stdout: 'pipe', stderr: 'ignore' });
+    if (r.exitCode !== 0) return 'claude-code/unknown';
+    return `claude-code/${r.stdout.toString().trim().split(/\s+/)[0]}`;
   } catch {
     return 'claude-code/unknown';
   }
@@ -30,7 +30,7 @@ async function composeInfo(root, app, stack) {
   if (!stack.compose) return { compose: null, warnings: [] };
   const file = path.posix.join(app, stack.compose);
   const fullPath = path.join(root, file);
-  const name = fs.existsSync(fullPath) ? await composeName(fullPath) : null;
+  const name = await Bun.file(fullPath).exists() ? await composeName(fullPath) : null;
   const expected = projectName(root);
   const base = path.basename(path.dirname(path.resolve(fullPath))); // Docker's default project name is the compose file's folder
   const warnings = [];
@@ -47,7 +47,7 @@ async function composeInfo(root, app, stack) {
 }
 
 export async function buildManifest(root, app) {
-  const found = findApp(root, app);
+  const found = await findApp(root, app);
   if (typeof found === 'object') return found;
   const appDir = path.join(root, found);
   const stack = await detectStack(appDir);

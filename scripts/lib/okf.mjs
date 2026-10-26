@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 
 const RESERVED = new Set(['index.md', 'log.md']);
@@ -8,11 +7,10 @@ const unquote = (s) => {
   return q ? q[2] : s.replace(/(^|\s+)#.*$/, '').trim();
 };
 
-function walk(dir) {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = path.join(dir, e.name);
-    return e.isDirectory() ? walk(p) : e.name.endsWith('.md') ? [p] : [];
-  });
+// Bun.Glob skips dot-folders (.git/) and symlinked folders by default; sorted so the report order is stable.
+async function walk(dir) {
+  const found = await Array.fromAsync(new Bun.Glob('**/*.md').scan({ cwd: dir }));
+  return found.sort().map((p) => path.join(dir, p));
 }
 
 // Returns { fields, body } or null when the file has no frontmatter block.
@@ -51,19 +49,22 @@ function checkConcept(fm, rel, errors) {
   }
 }
 
-export function checkBundle(docsDir, now = new Date()) {
+export async function checkBundle(docsDir, now = new Date()) {
   const errors = [];
   const warnings = [];
   const root = path.resolve(docsDir);
-  const files = walk(root);
+  const files = await walk(root);
   const rel = (f) => path.relative(root, f).split(path.sep).join('/');
   const concepts = new Set(files.filter((f) => !RESERVED.has(path.basename(f))).map((f) => path.normalize(f)));
-  const linkedFrom = (indexFile) =>
-    new Set(links(fs.existsSync(indexFile) ? fs.readFileSync(indexFile, 'utf8') : '').map((t) => resolveTarget(root, path.dirname(indexFile), t)));
+  const linkedFrom = async (indexFile) => {
+    const file = Bun.file(indexFile);
+    const text = (await file.exists()) ? await file.text() : '';
+    return new Set(links(text).map((t) => resolveTarget(root, path.dirname(indexFile), t)));
+  };
 
   for (const file of files) {
     const name = path.basename(file);
-    const text = fs.readFileSync(file, 'utf8');
+    const text = await Bun.file(file).text();
     const fm = readFrontmatter(text);
     if (name === 'index.md') {
       const bad = fm && (file !== path.join(root, 'index.md') || Object.keys(fm.fields).some((k) => k !== 'okf_version'));
@@ -86,14 +87,14 @@ export function checkBundle(docsDir, now = new Date()) {
         continue;
       }
       checkConcept(fm, rel(file), errors);
-      if (!linkedFrom(path.join(path.dirname(file), 'index.md')).has(path.normalize(file))) {
+      if (!(await linkedFrom(path.join(path.dirname(file), 'index.md'))).has(path.normalize(file))) {
         errors.push(`${rel(file)} is not listed in its folder's index.md. Add a link to it.`);
       }
       for (const res of allMatches(fm.fields.sources, /\bresource:\s*(.+)/g)) {
         if (res.includes('://')) continue;
         const target = resolveTarget(root, path.dirname(file), res);
         if (target !== root && !target.startsWith(root + path.sep)) errors.push(`${rel(file)} lists the source ${res}, which is outside the bundle.`);
-        else if (!fs.existsSync(target)) errors.push(`${rel(file)} lists the source ${res}, which does not exist in the bundle.`);
+        else if (!(await Bun.file(target).exists())) errors.push(`${rel(file)} lists the source ${res}, which does not exist in the bundle.`);
       }
       const stale = unquote(fm.fields.stale_after ?? '');
       if (stale && isNaN(+new Date(stale))) warnings.push(`${rel(file)} has a stale_after date hstack cannot read: ${stale}.`);

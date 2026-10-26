@@ -8,11 +8,11 @@ if (!dir) {
   console.log('Usage: node scripts/okf-check.mjs <docs folder>');
   process.exit(1);
 }
-if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
   console.log(`${path.resolve(dir)} is not a folder, so there is no docs bundle to check.`);
   process.exit(1);
 }
-const { errors, warnings } = checkBundle(dir);
+const { errors, warnings } = await checkBundle(dir);
 for (const e of errors) console.log(`Error: ${e}`);
 for (const w of warnings) console.log(`Warning: ${w}`);
 console.log(errors.length ? `Docs bundle: ${errors.length} errors.` : 'Docs bundle: OK');
