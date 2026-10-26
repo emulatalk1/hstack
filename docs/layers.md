@@ -38,19 +38,20 @@ Recorded cost: a final review of plan 10 took 140k tokens and 3 minutes (Sonnet)
    - Lines covered by unit or integration tests: the mutation tool (Stryker on stack A) mutates them and maps each mutant to its covering tests. About 30 seconds a file (141 mutants on one file).
    - Lines covered only by e2e tests (most steps: 27 of 30 sampled `full` rows): a short list of mutants, each run against only that step's e2e test. About 40 seconds each, with the database seeded per run, so the budget buys 25 to 30 of them. The adapter supplies the mutant list or a mutator.
    The coverage file maps each test to its step. A surviving mutant whose covering tests belong to a `full` row makes that row `partial`. Every surviving mutant is logged, so the layer's value can be measured over plans. Budget: 20 minutes. Evidence for this layer is the thinnest; it stays because the user asked for it.
-6. **Evaluator.** Two blind evaluators on different models, one after the other. Each one:
+6. **Evaluator.** Its job is the gap e2e cannot cover. It walks no step that a test fully covers. Its constraint checks run on the screens it visits and may repeat an e2e assertion; that is the only overlap left. Two blind evaluators on different models (the manifest sets the models; default two), one after the other. Each one:
    - walks the `partial` and `none` steps of this plan and of earlier plans (one evaluator does the earlier plans), and the `manual` steps of class 2 (git hooks and history) and class 3 (document text);
    - does not walk `full` steps (tests and mutation cover them) or class 4 fault checks (the mutation layer does them);
    - checks the constraints on every screen it opens;
    - does an exploratory pass of up to 10 actions per feature;
-   - does no mockup comparison: that is a separate, optional run.
-7. **Rule and log.** Rule on each UNCLEAR. Every confirmed finding from any layer ends as a test that fails on the old code, plus a coverage row. The progress entry records findings, time and tokens per layer.
+   - does no mockup comparison: that is a separate, optional run;
+   - writes each finding as a missing test: the behaviour to check and where the test belongs.
+7. **Rule and log.** Rule on each UNCLEAR. Every confirmed finding from any layer ends as a test that fails on the old code, plus a coverage row: an e2e test when e2e can reach the case, else a unit or integration test, else a `manual` row. So each evaluator finding closes an e2e gap for the next plan. The progress entry records findings, time and tokens per layer.
 
 ## Recurring
 
 **Whole-repo audit.** Run `/ponytail:ponytail-audit` (the user ran it on 2026-10-22). It split the repo into four areas (public forms, leads and emails; access, collections and users; import, seed, cache and pages; harness tools and hooks), one read-only reviewer agent each. They read the code and the installed library source, and ran nothing. Each finding has a concrete case, checked against the code. Decision (2026-10-26): hstack depends on the ponytail plugin for this for now. The 2026-10-22 audit had 13 findings, and all went into plan 9: fixes in the app, fixes in the harness tools, and one known limit.
 
-When to run it: the 5 audit bugs with a known start were added between 2026-10-09 and 2026-10-20 and stayed until the audit. Run it every 3 plans and before a release.
+When to run it: on demand, when the user asks. Each audit run writes one line to the progress log (date, number of findings, report link), and the log shows the plans and days since the last audit, so the user can judge. In the one run so far, the 5 audit bugs with a known start had been in the code for 2 to 13 days.
 
 ## Outside skills
 
@@ -99,10 +100,10 @@ Stack A: Next.js + Payload + Postgres + Vitest + Playwright. Stack B: Electron +
 
 ## Open questions
 
-1. Whether two evaluator models stay. The record says they find different defects (5 shared of 69). The pilot was too small to compare them.
-2. Whether the whole-repo audit runs every 3 plans, or on a size trigger (for example, after a set number of changed lines).
-3. The per-project fields of the manifest (spec path, feature list, coverage file, progress log): to settle in the adapter research.
+1. The per-project fields of the manifest (spec path, feature list, coverage file, progress log): to settle in the adapter research.
 
-Decided 2026-10-26: the audit uses the ponytail plugin; the plugin records task-review cost (tokens and time per task).
+User decisions (2026-10-26): the evaluator covers only what e2e cannot, and its findings become tests; the audit uses the ponytail plugin and runs on demand; the plugin records task-review cost (tokens and time per task).
+
+hstack default, not a user ruling: two evaluator models, set in the manifest.
 
 How this was measured: each replayed bug was applied to the current code, with every test its fix added or changed skipped by title. Evaluators in the replay got the step text from before the fix.
