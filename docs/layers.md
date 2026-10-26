@@ -30,7 +30,7 @@ Recorded cost: a final review of plan 10 took 140k tokens and 3 minutes (Sonnet)
 ## The loop for one plan
 
 1. **Start.** Run the unit, integration and e2e suites. Fix any failure before new work.
-2. **Plan.** Write the features and their steps. Each step is observable and gets a coverage row: `full`, `partial`, `none`, `manual` or `command`. Two models review the plan before the build.
+2. **Plan.** Write the features and their steps. Each step is observable and gets a coverage row: `full`, `partial`, `none`, `manual` or `command`. Two models review the plan before the build (the `review` slot, run on the plan file).
 3. **Build.** One task at a time, each with a task review before the next task starts.
 4. **Final review.** Two whole-branch reviews on different models, each checked by the advisor.
 5. **Mutation check.** Mutate the lines this plan changed that tests cover, by two paths:
@@ -50,6 +50,32 @@ Recorded cost: a final review of plan 10 took 140k tokens and 3 minutes (Sonnet)
 **Whole-repo audit.** Run `/ponytail:ponytail-audit` (the user ran it on 2026-10-22). It split the repo into four areas (public forms, leads and emails; access, collections and users; import, seed, cache and pages; harness tools and hooks), one read-only reviewer agent each. They read the code and the installed library source, and ran nothing. Each finding has a concrete case, checked against the code. Decision (2026-10-26): hstack depends on the ponytail plugin for this for now. The 2026-10-22 audit had 13 findings, and all went into plan 9: fixes in the app, fixes in the harness tools, and one known limit.
 
 When to run it: the 5 audit bugs with a known start were added between 2026-10-09 and 2026-10-20 and stayed until the audit. Run it every 3 plans and before a release.
+
+## Outside skills
+
+Ponytail is easy to replace: it fills one slot (the audit), plus one rule in the harness that keeps `ponytail:` tags out of code comments. Superpowers is replaceable, but its task review and final review found 9 of the 20 bugs, so a swap is a project, not one line. The plan spike that found 1 more is the harness's own method (a scratch clone and `assemble.py`), not superpowers.
+
+The project's manifest names one skill per slot. hstack passes the inputs below and reads only the outputs below; what hstack adds itself is in its own column, so a replacement is held only to what the skill must leave.
+
+| Slot | Default skill | hstack passes | The skill must leave | hstack adds |
+|---|---|---|---|---|
+| `plan` | `superpowers:writing-plans`, with the harness's spike (a scratch build while the plan is written; hstack carries this method) | the feature list, the earlier plan | a plan file with numbered tasks and observable steps | the coverage rows |
+| `build` | `superpowers:subagent-driven-development` | the plan file | one commit range per task, and per task the ledger lines below | tokens and minutes per task review, from its own agent results: one line per task in the progress log |
+| `review` | the SDD final reviewer (`superpowers:requesting-code-review`), once per model | a diff and a review package; used for the final review, and for the plan review on the plan file | findings with severity (Critical, Important, Minor) and file:line | the advisor loop, a confirmed or false verdict per finding, tokens and minutes |
+| `audit` | `ponytail:ponytail-audit` | the repo path | the report format in its SKILL.md: numbered findings in Must fix, Should fix and Nice to have, each with file:lines, What this is, Problem, Fix, If we skip it; then Verdict, Lean and Not checked | nothing; hstack folds the findings into the next plan's scope |
+| `finish` | `superpowers:finishing-a-development-branch` | the branch | a merged or pull-requested branch | nothing |
+
+The evaluator is hstack's own skill, with the same kind of contract: the brief and its input in, the report sections out.
+
+Today `build`, the final `review` and `finish` are three phases of one SDD run: task loop, final reviewer, delete the workspace, finish the branch. The harness already breaks that run after the final review to insert the evaluators, so splitting it into slots works.
+
+**The pinned ledger format.** The `build` ledger (`.superpowers/sdd/<plan>/progress.md` today) holds these lines, and hstack treats their format as its own:
+
+- `Task <N>: fix round <R>/5 (<X> addressed, <Y> open — <findings>; commits <a>..<b>)`
+- `Task <N>: parked — <finding> — Ruling: <why>`
+- `Task <N>: complete (commits <a>..<b>, review clean)` or `(…, <K> parked)`
+
+Superpowers deletes the plan's workspace, ledger included, after a clean final review. One of the 20 bugs lost its task-review record this way. hstack copies the ledger into the progress log after the last `Task <N>: complete` line and before the final reviewer starts. A `build` replacement that writes no such lines removes the task-review layer from the log, so the swap check fails.
 
 ## Per stack (the adapter)
 
