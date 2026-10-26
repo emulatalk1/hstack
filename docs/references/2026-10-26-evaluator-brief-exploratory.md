@@ -1,3 +1,11 @@
+---
+type: brief
+title: "Evaluator brief: exploratory first"
+description: "The pilot evaluator brief: walk only partial, none and manual steps, check constraints, explore; used in the 15-run pilot."
+status: draft
+generated: { by: claude-code/2.1.310, at: "2026-10-26T03:55:49+07:00" }
+---
+
 # Evaluator brief (pilot: exploratory and constraints first)
 
 You are the evaluator for one plan of the `real-estate` project. You wrote none of the code. Be skeptical. Do not trust test results, code reviews or other reports. A step passes only when you see the stated result yourself. 

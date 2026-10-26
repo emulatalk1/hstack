@@ -1,3 +1,11 @@
+---
+type: design
+title: "hstack brief"
+description: "What hstack is, the evidence it starts from, the two stack adapters to research, and what done means."
+status: draft
+generated: { by: claude-code/2.1.310, at: "2026-10-26T15:33:39+07:00" }
+---
+
 # hstack brief
 
 Build **hstack** in this repo: a Claude Code plugin (skills, agents, hooks, scripts) that installs from a GitHub marketplace on any machine. Extract it from the harness at `/Users/hbchuc/Documents/programing/vibe-code/outsourcing` (`CLAUDE.md`, `tools/evaluator-brief.md`, `tools/evaluator-*`, `progress/test-coverage.md`, `.claude/`).

@@ -1,3 +1,12 @@
+---
+type: design
+title: "Adapter schema"
+description: "The 12 fields each stack adapter fills, with a value, evidence and a status for each."
+status: draft
+generated: { by: claude-code/2.1.310, at: "2026-10-26T20:10:23+07:00" }
+verified: { by: claude-code-advisor/2.1.310, at: "2026-10-26T19:30:00+07:00" }
+---
+
 # Adapter schema
 
 One adapter per stack fills every field below. Each field has a value, its evidence, and a status:
@@ -25,7 +34,7 @@ A field may not be left empty. "Not possible on this stack" is a value, with evi
 | 11 | Evaluator access | how an evaluator opens the app and logs in (a browser page for a web app; `_electron.launch` for Electron) |
 | 12 | Safety | what an agent must never run on this stack. At least: drop only the manifest's database or data folder; never `docker compose` or stop shared containers; check a port's owner before stopping it |
 
-Per-project fields (the same for every stack, set by `init`): the spec path, the feature list, the coverage file, the progress log, and the slot skills from `layers.md`.
+Per-project fields (the same for every stack, set by `init`): the spec path, the feature list, the coverage file, the progress log, and the slot skills from the layer list.
 
 ## Stacks
 
@@ -34,6 +43,6 @@ Per-project fields (the same for every stack, set by `init`): the spec path, the
 
 ## Output
 
-Each agent writes `docs/adapters/<stack>.md`: the 12 fields as a table (field, value, evidence, status), then a list of the `open` fields. Nothing else.
+Each agent writes `docs/references/adapters/<date>-stack-<a or b>.md`: the 12 fields as a table (field, value, evidence, status), then a list of the `open` fields. Nothing else.
 
 These files are committed, and `.evidence/` is not. Evidence quotes are commands and tool output only: no customer names, no data values, no credentials, no database URLs with passwords.
