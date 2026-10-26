@@ -75,7 +75,7 @@ test('a folder without a manifest is refused', () => {
 test('usage errors print one line and exit 1', () => {
   const root = initted('A');
   try {
-    for (const args of [['nope'], ['drop'], ['wipe'], ['port'], ['port', 'abc'], []]) {
+    for (const args of [['nope'], ['drop'], ['wipe'], ['port'], ['port', 'abc'], ['port', '0'], ['port', '65536'], ['port', '99999'], []]) {
       const r = check(root, ...args);
       assert.equal(r.code, 1, args.join(' '));
       assert.match(r.out, /^Usage: /);
@@ -111,9 +111,47 @@ test('docker is refused when there is no compose file, allowed when the name mat
   }
 });
 
-// A child that listens on 127.0.0.1 from the given folder and prints its port.
-function listener(cwd) {
-  const child = spawn(process.execPath, ['-e', "require('net').createServer().listen(0,'127.0.0.1',function(){console.log(this.address().port)})"], { cwd });
+// Stack A with a compose file whose name: matches, so only the extra cause under test can refuse it.
+function namedCompose() {
+  const a = initted('A');
+  const file = path.join(a, 'real-estate/docker-compose.yml');
+  const name = JSON.parse(fs.readFileSync(path.join(a, '.hstack/manifest.json'), 'utf8')).projectName;
+  fs.writeFileSync(file, `name: ${name}\n` + fs.readFileSync(file, 'utf8'));
+  return a;
+}
+
+test('docker is refused when Compose would pick another name or file', () => {
+  const a = namedCompose();
+  const envFile = path.join(a, 'real-estate/.env');
+  const original = fs.readFileSync(envFile, 'utf8');
+  try {
+    assert.equal(check(a, 'docker').code, 0);
+    for (const [line, cause] of [['COMPOSE_PROJECT_NAME=real-estate', /COMPOSE_PROJECT_NAME/], ['export COMPOSE_FILE=other.yml', /COMPOSE_FILE/]]) {
+      fs.writeFileSync(envFile, original + `\n${line}\n`);
+      const r = check(a, 'docker');
+      assert.equal(r.code, 1, line);
+      assert.match(r.out, cause);
+    }
+    fs.writeFileSync(envFile, original + '\n# COMPOSE_PROJECT_NAME=real-estate\n');
+    assert.equal(check(a, 'docker').code, 0);
+    fs.writeFileSync(envFile, original);
+    for (const v of ['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE']) {
+      const r = node(CHECK, [a, 'docker'], { ...process.env, [v]: 'x' });
+      assert.equal(r.code, 1, v);
+      assert.match(r.out, new RegExp(v));
+    }
+    fs.writeFileSync(path.join(a, 'real-estate/compose.yaml'), 'services: {}\n');
+    const r = check(a, 'docker');
+    assert.equal(r.code, 1);
+    assert.match(r.out, /compose\.yaml/);
+  } finally {
+    rm(a);
+  }
+});
+
+// A child that listens on the given host and port (0 = any free one) from the given folder, and prints its port.
+function listener(cwd, host = '127.0.0.1', port = 0) {
+  const child = spawn(process.execPath, ['-e', `require('net').createServer().listen(${port},'${host}',function(){console.log(this.address().port)})`], { cwd });
   return new Promise((resolve, reject) => {
     child.stdout.once('data', (d) => resolve({ child, port: Number(d.toString().trim()) }));
     child.once('error', reject);
@@ -145,6 +183,29 @@ test('port: free is allowed, our own listener is allowed, another folder\'s list
     assert.equal(r.code, 1);
     assert.ok(r.out.includes(fs.realpathSync(other)), r.out);
     assert.match(r.out, /will not stop/);
+  } finally {
+    kids.forEach((k) => k.kill());
+    rm(root, other);
+  }
+});
+
+const hasIPv6 = await new Promise((resolve) => {
+  const s = net.createServer().once('error', () => resolve(false));
+  s.listen(0, '::1', () => s.close(() => resolve(true)));
+});
+
+test('port: every listener must be ours, or the port is refused', { skip: !hasIPv6 }, async () => {
+  const root = initted('B');
+  const other = tmp();
+  const kids = [];
+  try {
+    const ours = await listener(root);
+    kids.push(ours.child);
+    const theirs = await listener(other, '::1', ours.port);
+    kids.push(theirs.child);
+    const r = check(root, 'port', String(ours.port));
+    assert.equal(r.code, 1, r.out);
+    assert.ok(r.out.includes(fs.realpathSync(other)), r.out);
   } finally {
     kids.forEach((k) => k.kill());
     rm(root, other);
@@ -228,6 +289,18 @@ test('wipe is refused for a database project', () => {
   const root = initted('A');
   try {
     assert.equal(check(root, 'wipe', path.join(root, 'data')).code, 1);
+  } finally {
+    rm(root);
+  }
+});
+
+test('drop is refused for a folder project, which uses wipe', () => {
+  const root = initted('B');
+  try {
+    const r = check(root, 'drop', '$PROBE_DATA_DIR');
+    assert.equal(r.code, 1);
+    assert.match(r.out, /folder/);
+    assert.match(r.out, /wipe/);
   } finally {
     rm(root);
   }

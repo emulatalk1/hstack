@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { composeName, projectName } from './lib/identity.mjs';
-import { isOurs, portOwner } from './lib/ports.mjs';
+import { isOurs, portOwners } from './lib/ports.mjs';
 
 const USAGE = 'Usage: node scripts/check.mjs <project-folder> docker | port <number> | drop <database> | wipe <folder>';
 
@@ -38,11 +38,28 @@ function devScriptValue(appDir, name) {
   }
 }
 
+const DEFAULT_COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
+
+// Compose lets these variables (in the shell or in the .env beside the compose file) override the name and the file.
+function composeOverride(file) {
+  let env = '';
+  try {
+    env = fs.readFileSync(path.join(path.dirname(file), '.env'), 'utf8');
+  } catch {
+    // No .env file: only the shell can set them.
+  }
+  return ['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE'].find((v) => process.env[v] || new RegExp(`^\\s*(export\\s+)?${v}\\s*=`, 'm').test(env));
+}
+
 function checkDocker(dir, manifest) {
   const { compose } = manifest;
   if (!compose) refuse('This project has no compose file, so hstack will not allow Docker commands here.');
   const file = path.resolve(dir, compose.file);
   if (!fs.existsSync(file)) refuse(`The compose file ${compose.file} is missing, so hstack will not allow Docker commands here.`);
+  const override = composeOverride(file);
+  if (override) refuse(`${override} is set (in the shell or in the .env beside the compose file), so Docker could use another project name or file than the one hstack checked. Docker is not allowed here.`);
+  const other = DEFAULT_COMPOSE_FILES.find((f) => f !== path.basename(file) && fs.existsSync(path.join(path.dirname(file), f)));
+  if (other) refuse(`${other} sits beside ${compose.file}, and Docker might pick it instead. Docker is not allowed here.`);
   const name = composeName(file);
   if (name === null) refuse(`The compose file ${compose.file} has no project name, so Docker would share it with other folders of the same name. Docker is not allowed here.`);
   if (name !== projectName(dir)) refuse(`The compose file names its project ${name}, not ${projectName(dir)}, so Docker would share it with other folders. Docker is not allowed here.`);
@@ -50,14 +67,15 @@ function checkDocker(dir, manifest) {
 }
 
 async function checkPort(dir, manifest, port) {
-  let owner;
+  let owners;
   try {
-    owner = await portOwner(port);
+    owners = await portOwners(port);
   } catch (err) {
     refuse(`${err.message}. A port that cannot be checked is never allowed.`);
   }
-  if (owner === null) allow(`Port ${port} is free.`);
-  if (isOurs(owner, dir, manifest.projectName)) allow(`Port ${port} is held by this project.`);
+  if (!owners.length) allow(`Port ${port} is free.`);
+  const owner = owners.find((o) => !isOurs(o, dir, manifest.projectName));
+  if (!owner) allow(`Port ${port} is held by this project.`);
   const who = owner.kind === 'container'
     ? `the Docker container ${owner.name} (Docker project ${owner.project ?? 'unknown'})`
     : `a process (pid ${owner.pid}) running from ${owner.cwd ?? 'a folder hstack could not read'}`;
@@ -65,6 +83,7 @@ async function checkPort(dir, manifest, port) {
 }
 
 function checkDrop(manifest, name) {
+  if (manifest.data.kind !== 'postgres') refuse('This project keeps its data in a folder, not a database, so hstack will not drop anything here. Use wipe for the data folder.');
   if (manifest.data.droppable.includes(name)) allow(`Dropping ${name} is allowed.`);
   refuse(`${name} is not on this project's list of data hstack may drop. It may drop only: ${manifest.data.droppable.join(', ') || 'nothing'}.`);
 }
@@ -112,7 +131,7 @@ function checkWipe(dir, manifest, target) {
 
 const [dirArg, check, arg] = process.argv.slice(2);
 const needsArg = { port: true, drop: true, wipe: true, docker: false };
-if (!dirArg || !Object.hasOwn(needsArg, check) || (needsArg[check] && !arg) || (check === 'port' && !/^\d{1,5}$/.test(arg))) say(1, USAGE);
+if (!dirArg || !Object.hasOwn(needsArg, check) || (needsArg[check] && !arg) || (check === 'port' && !(/^\d{1,5}$/.test(arg) && arg >= 1 && arg <= 65535))) say(1, USAGE);
 
 const dir = path.resolve(dirArg);
 const file = path.join(dir, '.hstack', 'manifest.json');

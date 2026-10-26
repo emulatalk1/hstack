@@ -43,16 +43,23 @@ async function containerOwner(port) {
   return null;
 }
 
-async function processOwner(port) {
-  const pid = Number((await lsofListeners(port)).split('\n')[0]);
-  if (!pid) return null;
-  const cwd = (await out('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'])).split('\n').find((l) => l.startsWith('n'));
-  // A listener whose folder we cannot read (other user, just exited) is still a holder, never "free".
-  return { kind: 'process', pid, cwd: cwd ? cwd.slice(1) : null };
+async function processOwners(port) {
+  const pids = [...new Set((await lsofListeners(port)).split('\n').map(Number).filter(Boolean))];
+  return Promise.all(pids.map(async (pid) => {
+    const cwd = (await out('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'])).split('\n').find((l) => l.startsWith('n'));
+    // A listener whose folder we cannot read (other user, just exited) is still a holder, never "free".
+    return { kind: 'process', pid, cwd: cwd ? cwd.slice(1) : null };
+  }));
+}
+
+// Every holder of the port: the container if Docker publishes it, else each listening process.
+export async function portOwners(port) {
+  const box = await containerOwner(port);
+  return box ? [box] : processOwners(port);
 }
 
 export async function portOwner(port) {
-  return (await containerOwner(port)) ?? (await processOwner(port));
+  return (await portOwners(port))[0] ?? null;
 }
 
 // lsof prints real paths (/private/var on macOS), so compare real paths.
