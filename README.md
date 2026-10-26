@@ -64,7 +64,7 @@ bun scripts/check.mjs <project root> wipe <folder>
 Exit 0 means allowed. Exit 1 means refused, and the reason is printed in plain English. A check only answers; it never does the action.
 
 - Every check refuses when there is no manifest. It also refuses when the folder was copied or moved since `init`, because the project's Docker name comes from a hash of the folder's path.
-- `docker`: the compose file must name its project after this folder's path. It refuses any Compose input it does not read: `COMPOSE_PROJECT_NAME`, `COMPOSE_FILE` or `COMPOSE_ENV_FILES` set in the shell or the `.env` beside it, another compose or override file beside it, and a compose file with several documents, several `name:` lines, `include:` or `<<:`.
+- `docker`: the compose file must name its project after this folder's path. It refuses any Compose input it does not read: `COMPOSE_PROJECT_NAME`, `COMPOSE_FILE` or `COMPOSE_ENV_FILES` set in the shell or mentioned anywhere in the `.env` beside it, another compose or override file beside it, and a compose file with several documents, several `name:` lines, a `name:` that is not a plain name on one line, unusual line breaks, `include:` or `<<:`.
 - `port`: the port must be free, or every listener on it must belong to this project. A port held by another project's container or process is refused, and hstack never stops it.
 - `drop`: only the databases the manifest lists.
 - `wipe`: only the data folder the manifest names, never the project or app folder itself.

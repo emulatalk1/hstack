@@ -139,6 +139,10 @@ async function refusedWhen(cases) {
 }
 
 const appendEnv = (line) => async (d) => Bun.write(path.join(d, '.env'), (await Bun.file(path.join(d, '.env')).text()) + `\n${line}\n`);
+const editCompose = (change) => async (d) => {
+  const f = path.join(d, 'docker-compose.yml');
+  await Bun.write(f, change(await Bun.file(f).text()));
+};
 const appendCompose = (text) => async (d) => {
   const f = path.join(d, 'docker-compose.yml');
   await Bun.write(f, (await Bun.file(f).text()) + text);
@@ -150,6 +154,10 @@ test('docker is refused when a variable or .env line could change the name or th
     ['.env COMPOSE_PROJECT_NAME with a colon', appendEnv('COMPOSE_PROJECT_NAME: x'), /COMPOSE_PROJECT_NAME/],
     ['.env export COMPOSE_FILE', appendEnv('export COMPOSE_FILE=x'), /COMPOSE_FILE/],
     ['.env COMPOSE_ENV_FILES', appendEnv('COMPOSE_ENV_FILES=x'), /COMPOSE_ENV_FILES/],
+    ['.env second assignment after a double-quoted value', appendEnv('FOO="bar" COMPOSE_PROJECT_NAME=evil'), /COMPOSE_PROJECT_NAME/],
+    ['.env second assignment after a single-quoted value', appendEnv("FOO='bar'COMPOSE_PROJECT_NAME=evil"), /COMPOSE_PROJECT_NAME/],
+    ['.env COMPOSE_FILE in a comment', appendEnv('# COMPOSE_FILE=x'), /COMPOSE_FILE/],
+    ['.env commented COMPOSE_PROJECT_NAME', appendEnv('# COMPOSE_PROJECT_NAME=real-estate'), /COMPOSE_PROJECT_NAME/],
     ...['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE', 'COMPOSE_ENV_FILES'].map((v) => [`shell ${v}`, async () => {}, new RegExp(v), { ...cleanEnv, [v]: 'x' }]),
   ]);
 });
@@ -169,6 +177,13 @@ test('docker is refused when the compose file is built in a way hstack does not 
     ['a ... line', appendCompose('...\n'), /document/],
     ['include', appendCompose('include:\n  - other.yml\n'), /include:/],
     ['a merge key', appendCompose('<<: *x\n'), /<<:/],
+    ['a lone carriage return as a line break', appendCompose('\r---\rname: evil\r'), /line break/],
+    ...['\u0085', '\u2028', '\u2029'].map((c) => [`U+${c.charCodeAt(0).toString(16)} as a line break`, appendCompose(`${c}---${c}name: evil${c}`), /line break/]),
+    ['a name continued on the next line', editCompose((t) => t.replace(/^(name: \S+)\n/, '$1\n  evil\n')), /`name:` line/],
+    ['a single-quoted name with an escaped quote', editCompose((t) => t.replace(/^name: (\S+)/, "name: '$1''evil'")), /`name:` line/],
+    ['a name with text after the quote', editCompose((t) => t.replace(/^name: (\S+)/, 'name: "$1"evil')), /`name:` line/],
+    ['a name with mismatched quotes', editCompose((t) => t.replace(/^name: (\S+)/, 'name: "$1\'')), /`name:` line/],
+    ['a name with a comment glued to it', editCompose((t) => t.replace(/^name: (\S+)/, 'name: $1#evil')), /`name:` line/],
   ]);
 });
 
@@ -182,8 +197,17 @@ test('docker is allowed for a clean compose file and for harmless extras', async
     await Bun.write(f, `# header\n\n---\n${text}`);
     expect(check(a, 'docker').code).toBe(0);
     await Bun.write(f, text);
-    await appendEnv('COMPOSE_PROFILES=x\n# COMPOSE_PROJECT_NAME=real-estate')(d);
+    await appendEnv('COMPOSE_PROFILES=x')(d);
     expect(check(a, 'docker').code).toBe(0);
+    for (const change of [
+      (t) => t.replace(/^name: (\S+)/, 'name: "$1"'),
+      (t) => t.replace(/^name: (\S+)/, "name: '$1'   # the project"),
+      (t) => '\uFEFF' + t,
+      (t) => t.replace(/\n/g, '\r\n'),
+    ]) {
+      await Bun.write(f, change(text));
+      expect(check(a, 'docker').code).toBe(0);
+    }
   } finally {
     rm(a);
   }

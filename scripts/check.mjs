@@ -41,7 +41,7 @@ async function devScriptValue(appDir, name) {
 const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml', 'compose.override.yaml', 'compose.override.yml', 'docker-compose.override.yaml', 'docker-compose.override.yml'];
 
 // Compose lets these variables (in the shell or in the .env beside the compose file) change the name or the files it reads.
-// Its .env parser ends a key at `=` or `:`, so both count.
+// Its .env parser reads a second assignment after a quoted value and ends a key at `=` or `:`, so any mention in the .env counts.
 const COMPOSE_VARIABLES = ['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE', 'COMPOSE_ENV_FILES'];
 
 async function composeOverride(file) {
@@ -51,7 +51,7 @@ async function composeOverride(file) {
   } catch {
     // No .env file: only the shell can set them.
   }
-  return COMPOSE_VARIABLES.find((v) => process.env[v] || new RegExp(`^\\s*(export\\s+)?${v}\\s*[=:]`, 'm').test(env));
+  return COMPOSE_VARIABLES.find((v) => process.env[v] || env.includes(v));
 }
 
 // Refusing because something exists: a folder of that name counts too (Bun.file().exists() is false for folders).
@@ -61,12 +61,22 @@ function findOtherComposeFile(file) {
 
 // Why the compose file cannot be trusted to carry one name, or undefined. A top-level key is a line that starts in column 0.
 function composeFileProblem(text) {
+  // YAML also breaks lines at a lone \r and at U+0085, U+2028, U+2029; hstack reads lines only at \n and \r\n.
+  if (/\r(?!\n)|[\u0085\u2028\u2029]/.test(text)) return 'uses a line break that hstack does not read as one (a lone carriage return, or U+0085, U+2028 or U+2029), and YAML would start a new line there.';
   const lines = text.split(/\r?\n/);
   const first = lines.findIndex((l) => l.trim() && !l.startsWith('#'));
   if (lines.some((l, i) => /^(---|\.\.\.)(\s|$)/.test(l) && !(i === first && l.startsWith('---')))) {
     return 'has more than one YAML document, and Compose lets a later one change the project name.';
   }
-  if (lines.filter((l) => /^["']?name["']?\s*:/.test(l)).length > 1) return 'has more than one top-level `name:`, and Compose uses the last one.';
+  const names = lines.flatMap((l, i) => (/^["']?name["']?\s*:/.test(l) ? [i] : []));
+  if (names.length > 1) return 'has more than one top-level `name:`, and Compose uses the last one.';
+  // A plain Docker name, optionally in one pair of matching quotes, then only spaces or a comment; anything else may continue or escape.
+  const plain = '[a-z0-9][a-z0-9_-]*';
+  if (!new RegExp(`^name: *(?:"${plain}"|'${plain}'|${plain})(?: +#.*| *)$`).test(lines[names[0]])) {
+    return 'has a `name:` line that is not just a plain project name (lowercase letters, digits, - and _, optionally in quotes, then at most a comment).';
+  }
+  const next = lines.slice(names[0] + 1).find((l) => l.trim());
+  if (next && /^\s/.test(next)) return 'continues its `name:` line on the next line.';
   const key = ['include', '<<'].find((k) => lines.some((l) => new RegExp(`^["']?${k}["']?\\s*:`).test(l)));
   if (key) return `uses \`${key}:\`. hstack does not know how Compose names a project built this way.`;
   return undefined;
@@ -78,15 +88,15 @@ async function checkDocker(dir, manifest) {
   const file = path.resolve(dir, compose.file);
   if (!(await Bun.file(file).exists())) refuse(`The compose file ${compose.file} is missing, so hstack will not allow Docker commands here.`);
   const override = await composeOverride(file);
-  if (override) refuse(`${override} is set (in the shell or in the .env beside the compose file), so Docker could use another project name or file than the one hstack checked. Docker is not allowed here.`);
+  if (override) refuse(`${override} is set in the shell or mentioned in the .env beside the compose file, so Docker could use another project name or file than the one hstack checked. Docker is not allowed here.`);
   const other = findOtherComposeFile(file);
   if (other) refuse(`${other} sits beside ${compose.file}, and Docker might read it too or instead. Docker is not allowed here.`);
   const text = await Bun.file(file).text();
   const name = nameFromText(text);
   if (name === null) refuse(`The compose file ${compose.file} has no project name, so Docker would share it with other folders of the same name. Docker is not allowed here.`);
-  if (name !== projectName(dir)) refuse(`The compose file names its project ${name}, not ${projectName(dir)}, so Docker would share it with other folders. Docker is not allowed here.`);
   const problem = composeFileProblem(text);
   if (problem) refuse(`The compose file ${compose.file} ${problem} Docker is not allowed here.`);
+  if (name !== projectName(dir)) refuse(`The compose file names its project ${name}, not ${projectName(dir)}, so Docker would share it with other folders. Docker is not allowed here.`);
   allow(`Docker is allowed: the compose project is ${name}.`);
 }
 
