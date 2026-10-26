@@ -143,6 +143,8 @@ const editCompose = (change) => async (d) => {
   const f = path.join(d, 'docker-compose.yml');
   await Bun.write(f, change(await Bun.file(f).text()));
 };
+// Replaces the whole compose file with text built from our project name.
+const writeCompose = (build) => editCompose((t) => build(t.match(/^name: (\S+)/)[1]));
 const appendCompose = (text) => async (d) => {
   const f = path.join(d, 'docker-compose.yml');
   await Bun.write(f, (await Bun.file(f).text()) + text);
@@ -183,6 +185,17 @@ test('docker is refused when the compose file is built in a way hstack does not 
     ['a single-quoted name with an escaped quote', editCompose((t) => t.replace(/^name: (\S+)/, "name: '$1''evil'")), /`name:` line/],
     ['a name with text after the quote', editCompose((t) => t.replace(/^name: (\S+)/, 'name: "$1"evil')), /`name:` line/],
     ['a name with mismatched quotes', editCompose((t) => t.replace(/^name: (\S+)/, 'name: "$1\'')), /`name:` line/],
+    ...[
+      ['a name inside a multi-line double-quoted scalar', (n) => `x-a: "\nname: ${n}\n"\n"n\\x61me": evil\n`],
+      ['a name inside a multi-line single-quoted scalar', (n) => `x-a: '\nname: ${n}\n'\n'name': evil\n`],
+      ['a name inside a flow mapping', (n) => `x-a: {\nname: ${n}\n}\n"n\\x61me": evil\n`],
+      ['a name inside a flow sequence', (n) => `x-a: [\nname: ${n}\n]\n"n\\x61me": evil\n`],
+      ['a tagged key', (n) => `x-a: !!str "\nname: ${n}\n"\n!!str name: evil\n`],
+      ['a merge written as an explicit key', (n) => `name: ${n}\n? <<\n: *m\n`],
+      ['a root flow mapping', (n) => `{"n\\x61me": evil, x-a: "\nname: ${n}\n"}\n`],
+      ['a flow mapping after the --- marker', (n) => `--- {"n\\x61me": evil, x-a: "\nname: ${n}\n", services: {}}\n`],
+      ['an alias used as a key', (n) => `x-n: &k name\nname: ${n}\n*k : evil\n`],
+    ].map(([label, build]) => [label, writeCompose(build), /plain key|more than one top-level/]),
     ['a name with a comment glued to it', editCompose((t) => t.replace(/^name: (\S+)/, 'name: $1#evil')), /`name:` line/],
   ]);
 });
@@ -204,6 +217,8 @@ test('docker is allowed for a clean compose file and for harmless extras', async
       (t) => t.replace(/^name: (\S+)/, "name: '$1'   # the project"),
       (t) => '\uFEFF' + t,
       (t) => t.replace(/\n/g, '\r\n'),
+      (t) => `--- # the project\n${t}`,
+      (t) => `${t}x-common: &c\n  image: x\nservices:\n  web:\n    <<: *c\n    command: |\n      echo hi\n      ---\n`,
     ]) {
       await Bun.write(f, change(text));
       expect(check(a, 'docker').code).toBe(0);

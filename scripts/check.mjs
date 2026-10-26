@@ -79,6 +79,9 @@ function composeFileProblem(text) {
   if (next && /^\s/.test(next)) return 'continues its `name:` line on the next line.';
   const key = ['include', '<<'].find((k) => lines.some((l) => new RegExp(`^["']?${k}["']?\\s*:`).test(l)));
   if (key) return `uses \`${key}:\`. hstack does not know how Compose names a project built this way.`;
+  // Allowlist: any other top-level shape (quoted or tagged key, alias, flow collection, multi-line scalar) can hide or fake a key.
+  const odd = lines.findIndex((l, i) => l.trim() && !/^[\s#]/.test(l) && !/^[A-Za-z0-9_-]+:(\s|$)/.test(l) && !(i === first && /^---\s*(#.*)?$/.test(l)));
+  if (odd >= 0) return `has a top-level line hstack does not read as a plain key: ${lines[odd].trim().slice(0, 40)}.`;
   return undefined;
 }
 
