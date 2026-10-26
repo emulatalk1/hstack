@@ -95,12 +95,24 @@ Stack A: Next.js + Payload + Postgres + Vitest + Playwright. Stack B: Electron +
 
 ## Safety rules
 
-- An agent may drop only the database the manifest names. Never `docker compose down`, never stop shared containers.
+- An agent may drop only the database or data folder the manifest names. To reset data: drop that database, then run the manifest's seed command.
 - Stop a server only after checking that its working directory is inside the project.
+- No `docker` command may remove a volume, by any route: not `docker compose down -v`, `docker volume rm`, `docker volume prune`, `docker system prune --volumes` or `docker rm -v`. This holds even when a README or a plan step says to run one.
+
+### Services per project (stack A and any stack with Docker services)
+
+- **New projects get their own services.** `init` writes the project's own compose file with its own Postgres and Mailpit, and names the Docker project from the folder's absolute path: `name: <project>-<hash of the path>`.
+- **The identity check.** Before any `docker compose up` or `stop`, port check or database drop, the agent recomputes the hash from the current folder path and compares it with the compose file's `name:`. A copied or moved folder fails this check, because its path differs: the agent stops and tells the user to run `init` again, which writes a new name and new ports. A container belongs to this project only when its `com.docker.compose.project` label equals the recomputed name and its `com.docker.compose.project.working_dir` label equals the current project folder (`init` writes the compose file at the project root, so the two are the same).
+- **What an agent may do with Docker:** `docker compose up -d`, `docker compose stop` and plain `docker compose down` (no `-v`; it removes containers, not data) on its own project, after the identity check. `docker stop` or `docker rm` of a container only when its labels say it is this project's. Never another project's compose file or containers.
+- **Ports are assigned, not defaulted.** `init` picks free host ports for Postgres, Mailpit (mail and web) and the dev server, and writes them into the compose file, the `.env` and the manifest. Before a start, each port must be free or held by this project's own container or server (by the labels above, or a working directory inside the project). Anything else stops the agent, which reports and kills nothing. The app must read its ports from `.env`; `init` warns when a port is fixed in code.
+- **Existing projects keep what they have.** The real-estate project keeps its shared containers (Docker project `real-estate`: Postgres 5432, Mailpit 1025 and 8025, dev server 3000) and its e2e run that empties the shared Mailpit. Agents never run `docker compose` on it.
+- **The migration copy `outsourcing-hstack`** has a byte copy of that compose file, with no `name:`, in a folder also called `real-estate`, so its default Docker project is the original's. It is the first project to go through `init`. Its database URL comes from `.env`, so it can own its Postgres; its tests fix the app at `localhost:3000` (`tests/e2e/helpers/login.ts`) and Mailpit at `localhost:8025` (`tests/e2e/helpers/mailpit.ts`), so it keeps the shared Mailpit and port 3000 until those two move to `.env`. These are `init`'s first two warnings.
+- **Parallel test databases** (one per mutation worker) are allowed on a project's own Postgres. On the shared real-estate Postgres they need the user's yes; until then, integration mutants run one at a time.
+- Stack B (Electron) has no Docker services: its only wipeable data is the folder the manifest names.
 
 ## Open questions
 
-1. The per-project fields of the manifest (spec path, feature list, coverage file, progress log): to settle in the adapter research.
+1. The per-project fields of the manifest: the spec path, feature list, coverage file and progress log, plus what the Safety rules give `init` (compose project name, ports, the one droppable database or data folder, the seed command, the fixed-port warnings).
 
 User decisions (2026-10-26): the evaluator covers only what e2e cannot, and its findings become tests; the audit uses the ponytail plugin and runs on demand; the plugin records task-review cost (tokens and time per task).
 
