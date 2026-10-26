@@ -24,6 +24,14 @@ test('name is a valid Docker project name for "Đất Dự Án 2"', () => {
   assert.ok(name.startsWith('dat-du-an-2-'), name);
 });
 
+test('name starts with a letter or digit even when the folder starts with "_"', () => {
+  const dir = path.join(tempDir(), '_foo');
+  fs.mkdirSync(dir);
+  const name = projectName(dir);
+  assert.match(name, /^[a-z0-9][a-z0-9_-]*$/);
+  assert.ok(name.startsWith('foo-'), name);
+});
+
 test('composeName reads plain, quoted and commented names', () => {
   const dir = tempDir();
   const write = (file, text) => {

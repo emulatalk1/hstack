@@ -10,7 +10,7 @@ export function projectName(dir) {
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
     .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'project';
+    .replace(/^[-_]+|-+$/g, '') || 'project'; // Docker needs a leading letter or digit
   const hash = crypto.createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 8);
   return `${slug}-${hash}`;
 }
