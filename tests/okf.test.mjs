@@ -114,6 +114,7 @@ test('a source path must stay inside the bundle and exist, with or without a lea
     expect(await withSource('design/real.md')).toStrictEqual([]);
     expect(await withSource('/design/real.md')).toStrictEqual([]);
     expect(await withSource('https://example.com/x')).toStrictEqual([]);
+    expect(await withSource('design')).toStrictEqual([]);
     expect((await withSource('design/missing.md'))[0]).toMatch(/design\/missing\.md.*does not exist/);
     expect((await withSource('../../etc/hosts'))[0]).toMatch(/outside the bundle/);
     expect((await withSource('/../outside.md'))[0]).toMatch(/outside the bundle/);

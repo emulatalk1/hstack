@@ -1,11 +1,11 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildManifest } from './lib/manifest.mjs';
 import { checkBundle } from './lib/okf.mjs';
 
-const USAGE = 'Usage: node scripts/init.mjs [root] [--app <subfolder>] [--force]';
+const USAGE = 'Usage: bun scripts/init.mjs [root] [--app <subfolder>] [--force]';
 
 function fail(message) {
   console.log(message);
@@ -38,5 +38,5 @@ if (fs.statSync(docs, { throwIfNoEntry: false })?.isDirectory()) {
   const { errors, warnings } = await checkBundle(docs);
   console.log(errors.length ? `Docs bundle: ${errors.length} errors.` : 'Docs bundle: OK');
   for (const e of errors.slice(0, 3)) console.log(`  ${e}`);
-  if (warnings.length) console.log(`Docs bundle: ${warnings.length} stale or unlinked items. Run node scripts/okf-check.mjs docs to see them.`);
+  if (warnings.length) console.log(`Docs bundle: ${warnings.length} stale or unlinked items. Run bun scripts/okf-check.mjs docs to see them.`);
 }

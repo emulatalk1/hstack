@@ -1,11 +1,11 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import fs from 'node:fs';
 import path from 'node:path';
 import { checkBundle } from './lib/okf.mjs';
 
 const dir = process.argv[2];
 if (!dir) {
-  console.log('Usage: node scripts/okf-check.mjs <docs folder>');
+  console.log('Usage: bun scripts/okf-check.mjs <docs folder>');
   process.exit(1);
 }
 if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
