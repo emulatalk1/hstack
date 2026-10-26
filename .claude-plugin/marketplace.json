@@ -1,0 +1,7 @@
+{
+  "name": "hstack",
+  "owner": { "name": "hbchuc" },
+  "plugins": [
+    { "name": "hstack", "source": "./" }
+  ]
+}

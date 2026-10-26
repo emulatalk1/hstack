@@ -1,0 +1,5 @@
+{
+  "name": "hstack",
+  "version": "0.1.0",
+  "description": "Evidence-led build loop: review, mutation and blind evaluators, per project."
+}
