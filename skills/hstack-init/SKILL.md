@@ -18,7 +18,9 @@ description: Use when you set up hstack in a project, or after the project folde
 node <skill base>/../../scripts/init.mjs <project root>
 ```
 
-`<skill base>` is this skill's folder. `<project root>` is the folder that will hold `.hstack/`. It may be the app folder or a parent of it.
+`<skill base>` is this skill's folder. `<project root>` is the folder that will hold `.hstack/`.
+
+If the app is a client repo with its own rules, do not use the app folder as the root. Pass its parent folder as the root and the app as a subfolder with `--app`. If the app folder is the root, `.hstack/` is created inside the app.
 
 - If the app is in a subfolder and `init` cannot tell which one, it says so. Run it again with `--app <subfolder>`.
 - If a manifest already exists, `init` changes nothing and says so. Add `--force` only when the user wants it replaced. This is the usual case after a copy or a move.
@@ -26,7 +28,7 @@ node <skill base>/../../scripts/init.mjs <project root>
 ## What it will not do
 
 - It never runs `docker compose`.
-- It never writes inside the app folder. Its files go in `<project root>/.hstack/`.
+- It writes one file only: `<project root>/.hstack/manifest.json`. It never touches the app's own files. This folder is inside the app only when the app is the root (see above).
 
 ## The warnings
 
