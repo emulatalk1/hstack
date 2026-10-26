@@ -84,6 +84,7 @@ test('init on stack A warns about the fixed port and the compose name', () => {
     assert.equal(m.compose.matches, false);
     assert.match(r.out, /login\.ts line 3 has port 3000/);
     assert.match(r.out, /no project name/);
+    assert.match(r.out, /any other folder named real-estate\./);
     assert.ok(r.lines.filter((l) => l.startsWith('Warning: ')).length >= 2);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

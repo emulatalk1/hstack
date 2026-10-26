@@ -32,7 +32,7 @@ function composeInfo(root, app, stack) {
   const fullPath = path.join(root, file);
   const name = fs.existsSync(fullPath) ? composeName(fullPath) : null;
   const expected = projectName(root);
-  const base = path.basename(path.resolve(root));
+  const base = path.basename(path.dirname(path.resolve(fullPath))); // Docker's default project name is the compose file's folder
   const warnings = [];
   if (name === null) {
     warnings.push(

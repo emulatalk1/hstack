@@ -24,4 +24,7 @@ test('skills have frontmatter and name their scripts', () => {
   for (const banned of ['docker compose down -v', 'docker volume rm', 'docker volume prune', 'docker system prune --volumes', 'docker rm -v']) {
     assert.ok(safety.includes(banned), `bans ${banned}`);
   }
+  for (const allowed of ['docker compose up -d', 'docker compose stop', 'docker compose down', 'com.docker.compose.project.working_dir', 'COMPOSE_PROJECT_NAME']) {
+    assert.ok(safety.includes(allowed), `lists ${allowed}`);
+  }
 });
