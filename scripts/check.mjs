@@ -1,12 +1,11 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Answers "may I do this?" for an agent. Exit 0 = allowed, 1 = refused. It never performs the action.
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { composeName, projectName } from './lib/identity.mjs';
 import { isOurs, portOwners } from './lib/ports.mjs';
 
-const USAGE = 'Usage: node scripts/check.mjs <project-folder> docker | port <number> | drop <database> | wipe <folder>';
+const USAGE = 'Usage: bun scripts/check.mjs <project-folder> docker | port <number> | drop <database> | wipe <folder>';
 
 function say(code, message) {
   console.log(message);
@@ -28,9 +27,9 @@ function real(p) {
 
 const inside = (child, parent) => child.startsWith(parent.endsWith(path.sep) ? parent : parent + path.sep);
 
-function devScriptValue(appDir, name) {
+async function devScriptValue(appDir, name) {
   try {
-    const dev = JSON.parse(fs.readFileSync(path.join(appDir, 'package.json'), 'utf8')).scripts?.dev ?? '';
+    const dev = (await Bun.file(path.join(appDir, 'package.json')).json()).scripts?.dev ?? '';
     const m = dev.match(new RegExp(`(?:^|[\\s;&])${name}=("[^"]*"|'[^']*'|[^\\s;&]+)`));
     return m ? m[1].replace(/^(["'])(.*)\1$/, '$2') : null;
   } catch {
@@ -41,24 +40,33 @@ function devScriptValue(appDir, name) {
 const DEFAULT_COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
 
 // Compose lets these variables (in the shell or in the .env beside the compose file) override the name and the file.
-function composeOverride(file) {
+async function composeOverride(file) {
   let env = '';
   try {
-    env = fs.readFileSync(path.join(path.dirname(file), '.env'), 'utf8');
+    env = await Bun.file(path.join(path.dirname(file), '.env')).text();
   } catch {
     // No .env file: only the shell can set them.
   }
   return ['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE'].find((v) => process.env[v] || new RegExp(`^\\s*(export\\s+)?${v}\\s*=`, 'm').test(env));
 }
 
+// Refusing because something exists: a folder of that name counts too (Bun.file().exists() is false for folders).
+async function findOtherComposeFile(file) {
+  for (const f of DEFAULT_COMPOSE_FILES) {
+    const p = path.join(path.dirname(file), f);
+    if (f !== path.basename(file) && ((await Bun.file(p).exists()) || fs.statSync(p, { throwIfNoEntry: false }) !== undefined)) return f;
+  }
+  return undefined;
+}
+
 async function checkDocker(dir, manifest) {
   const { compose } = manifest;
   if (!compose) refuse('This project has no compose file, so hstack will not allow Docker commands here.');
   const file = path.resolve(dir, compose.file);
-  if (!fs.existsSync(file)) refuse(`The compose file ${compose.file} is missing, so hstack will not allow Docker commands here.`);
-  const override = composeOverride(file);
+  if (!(await Bun.file(file).exists())) refuse(`The compose file ${compose.file} is missing, so hstack will not allow Docker commands here.`);
+  const override = await composeOverride(file);
   if (override) refuse(`${override} is set (in the shell or in the .env beside the compose file), so Docker could use another project name or file than the one hstack checked. Docker is not allowed here.`);
-  const other = DEFAULT_COMPOSE_FILES.find((f) => f !== path.basename(file) && fs.existsSync(path.join(path.dirname(file), f)));
+  const other = await findOtherComposeFile(file);
   if (other) refuse(`${other} sits beside ${compose.file}, and Docker might pick it instead. Docker is not allowed here.`);
   const name = await composeName(file);
   if (name === null) refuse(`The compose file ${compose.file} has no project name, so Docker would share it with other folders of the same name. Docker is not allowed here.`);
@@ -93,15 +101,17 @@ function systemTempFolders() {
   const folders = [real('/tmp')];
   if (process.platform === 'darwin') {
     try {
-      folders.push(real(execFileSync('getconf', ['DARWIN_USER_TEMP_DIR'], { encoding: 'utf8' }).trim()));
+      const { exitCode, stdout } = Bun.spawnSync(['getconf', 'DARWIN_USER_TEMP_DIR']);
+      const temp = stdout.toString().trim();
+      if (exitCode === 0 && temp) folders.push(real(temp));
     } catch {
-      // No user temp folder to add.
+      // No user temp folder to add (getconf missing).
     }
   }
   return folders;
 }
 
-function checkWipe(dir, manifest, target) {
+async function checkWipe(dir, manifest, target) {
   if (manifest.data.kind !== 'folder') refuse('This project keeps its data in a database, so hstack will not wipe folders here. Drop the database instead.');
   const appDir = path.resolve(dir, manifest.app);
   const root = real(dir);
@@ -112,7 +122,7 @@ function checkWipe(dir, manifest, target) {
   for (const entry of manifest.data.droppable) {
     if (!entry.startsWith('$')) continue;
     const name = entry.slice(1);
-    const fromScript = devScriptValue(appDir, name);
+    const fromScript = await devScriptValue(appDir, name);
     const scriptPath = fromScript && real(path.resolve(appDir, fromScript));
     if (scriptPath && inside(scriptPath, root)) allowed.push(scriptPath);
     // An env value counts only inside a system temp folder, and never inside this project (its own data comes from the dev script).
@@ -135,11 +145,11 @@ if (!dirArg || !Object.hasOwn(needsArg, check) || (needsArg[check] && !arg) || (
 
 const dir = path.resolve(dirArg);
 const file = path.join(dir, '.hstack', 'manifest.json');
-if (!fs.existsSync(file)) refuse('No hstack manifest here. Run init first.');
+if (!(await Bun.file(file).exists())) refuse('No hstack manifest here. Run init first.');
 const unreadable = () => refuse(`The hstack manifest at ${file} could not be read. Run init again with --force.`);
 let manifest;
 try {
-  manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+  manifest = await Bun.file(file).json();
 } catch {
   unreadable();
 }
@@ -151,4 +161,4 @@ if (projectName(dir) !== manifest.projectName) {
 if (check === 'docker') await checkDocker(dir, manifest);
 else if (check === 'port') await checkPort(dir, manifest, Number(arg));
 else if (check === 'drop') checkDrop(manifest, arg);
-else checkWipe(dir, manifest, arg);
+else await checkWipe(dir, manifest, arg);

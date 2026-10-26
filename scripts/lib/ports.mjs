@@ -1,14 +1,18 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const run = promisify(execFile);
+// Runs a command with an argument array (no shell). A missing command throws ENOENT; a non-zero exit is reported, not thrown.
+async function run(cmd, args) {
+  const proc = Bun.spawn([cmd, ...args], { stdout: 'pipe', stderr: 'pipe' });
+  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  return { stdout, stderr, code };
+}
 
 // Docker being off or missing just means no container match, so failures give "no output".
 async function out(cmd, args) {
   try {
-    return (await run(cmd, args)).stdout;
+    const { stdout, code } = await run(cmd, args);
+    return code === 0 ? stdout : '';
   } catch {
     return '';
   }
@@ -16,12 +20,15 @@ async function out(cmd, args) {
 
 // lsof exits 1 with no output when nothing listens; any other failure must not look like a free port.
 async function lsofListeners(port) {
+  let result;
   try {
-    return (await run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'])).stdout;
+    result = await run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']);
   } catch (err) {
-    if (err.code === 1 && !err.stdout) return '';
     throw new Error(`Could not check who holds port ${port}: ${err.code === 'ENOENT' ? 'the lsof command was not found' : err.message}`);
   }
+  if (result.code === 0) return result.stdout;
+  if (result.code === 1 && !result.stdout) return '';
+  throw new Error(`Could not check who holds port ${port}: lsof exited with code ${result.code}${result.stderr.trim() ? `: ${result.stderr.trim()}` : ''}`);
 }
 
 // Ports look like "127.0.0.1:5432->5432/tcp, [::]:8025->8025/tcp, 0.0.0.0:8000-8002->8000-8002/tcp".
