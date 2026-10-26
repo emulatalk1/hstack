@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const RESERVED = new Set(['index.md', 'log.md']);
-const unquote = (s) => s.trim().replace(/^(["'])(.*)\1$/, '$2');
+// A quoted value keeps any "#" inside the quotes; an unquoted one loses a trailing " # comment".
+const unquote = (s) => {
+  const q = /^(["'])(.*?)\1(\s+#.*)?$/.exec(s.trim());
+  return q ? q[2] : s.replace(/\s+#.*$/, '').trim();
+};
 
 function walk(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -91,7 +95,8 @@ export function checkBundle(docsDir, now = new Date()) {
         }
       }
       const stale = unquote(fm.fields.stale_after ?? '');
-      if (stale && new Date(stale) <= now) warnings.push(`${rel(file)} is past its stale_after date (${stale}). Check it still holds.`);
+      if (stale && isNaN(+new Date(stale))) warnings.push(`${rel(file)} has a stale_after date hstack cannot read: ${stale}.`);
+      else if (stale && new Date(stale) <= now) warnings.push(`${rel(file)} is past its stale_after date (${stale}). Check it still holds.`);
     }
   }
   return { errors, warnings };
