@@ -51,7 +51,7 @@ function composeOverride(file) {
   return ['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE'].find((v) => process.env[v] || new RegExp(`^\\s*(export\\s+)?${v}\\s*=`, 'm').test(env));
 }
 
-function checkDocker(dir, manifest) {
+async function checkDocker(dir, manifest) {
   const { compose } = manifest;
   if (!compose) refuse('This project has no compose file, so hstack will not allow Docker commands here.');
   const file = path.resolve(dir, compose.file);
@@ -60,7 +60,7 @@ function checkDocker(dir, manifest) {
   if (override) refuse(`${override} is set (in the shell or in the .env beside the compose file), so Docker could use another project name or file than the one hstack checked. Docker is not allowed here.`);
   const other = DEFAULT_COMPOSE_FILES.find((f) => f !== path.basename(file) && fs.existsSync(path.join(path.dirname(file), f)));
   if (other) refuse(`${other} sits beside ${compose.file}, and Docker might pick it instead. Docker is not allowed here.`);
-  const name = composeName(file);
+  const name = await composeName(file);
   if (name === null) refuse(`The compose file ${compose.file} has no project name, so Docker would share it with other folders of the same name. Docker is not allowed here.`);
   if (name !== projectName(dir)) refuse(`The compose file names its project ${name}, not ${projectName(dir)}, so Docker would share it with other folders. Docker is not allowed here.`);
   allow(`Docker is allowed: the compose project is ${name}.`);
@@ -148,7 +148,7 @@ if (projectName(dir) !== manifest.projectName) {
   refuse(`This folder was copied or moved since init (its manifest is for ${manifest.projectName}, but this folder is ${projectName(dir)}). Run init again here.`);
 }
 
-if (check === 'docker') checkDocker(dir, manifest);
+if (check === 'docker') await checkDocker(dir, manifest);
 else if (check === 'port') await checkPort(dir, manifest, Number(arg));
 else if (check === 'drop') checkDrop(manifest, arg);
 else checkWipe(dir, manifest, arg);

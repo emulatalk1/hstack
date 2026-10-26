@@ -26,11 +26,11 @@ function actor() {
   }
 }
 
-function composeInfo(root, app, stack) {
+async function composeInfo(root, app, stack) {
   if (!stack.compose) return { compose: null, warnings: [] };
   const file = path.posix.join(app, stack.compose);
   const fullPath = path.join(root, file);
-  const name = fs.existsSync(fullPath) ? composeName(fullPath) : null;
+  const name = fs.existsSync(fullPath) ? await composeName(fullPath) : null;
   const expected = projectName(root);
   const base = path.basename(path.dirname(path.resolve(fullPath))); // Docker's default project name is the compose file's folder
   const warnings = [];
@@ -46,16 +46,16 @@ function composeInfo(root, app, stack) {
   return { compose: { file, name, matches: name === expected }, warnings };
 }
 
-export function buildManifest(root, app) {
+export async function buildManifest(root, app) {
   const found = findApp(root, app);
   if (typeof found === 'object') return found;
   const appDir = path.join(root, found);
-  const stack = detectStack(appDir);
+  const stack = await detectStack(appDir);
   if (!stack) {
     return { error: 'hstack found no stack it knows here (stack A: Next.js + Payload with pnpm; stack B: Electron + electron-vite with npm). Nothing was written.' };
   }
-  const { compose, warnings } = composeInfo(root, found, stack);
-  const portWarnings = findFixedPorts(appDir).map(
+  const { compose, warnings } = await composeInfo(root, found, stack);
+  const portWarnings = (await findFixedPorts(appDir)).map(
     (h) => `Warning: ${h.file} line ${h.line} has port ${h.port} written in code. Read ports from .env so this project can get its own.`,
   );
   return {

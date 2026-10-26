@@ -1,9 +1,8 @@
-import fs from 'node:fs';
 import path from 'node:path';
 
-const read = (dir, file) => {
+const read = async (dir, file) => {
   try {
-    return fs.readFileSync(path.join(dir, file), 'utf8');
+    return await Bun.file(path.join(dir, file)).text();
   } catch {
     return null;
   }
@@ -26,8 +25,8 @@ const parseUrl = (value) => {
   }
 };
 
-function stackA(dir) {
-  const env = parseEnv(read(dir, '.env'));
+async function stackA(dir) {
+  const env = parseEnv(await read(dir, '.env'));
   const port = Number(parseUrl(env.NEXT_PUBLIC_SERVER_URL)?.port) || 3000;
   const dbName = parseUrl(env.DATABASE_URL)?.pathname.slice(1);
   return {
@@ -50,7 +49,7 @@ function stackA(dir) {
       droppable: dbName ? [dbName, `${dbName}_test`] : [],
       seed: 'pnpm seed:demo',
     },
-    compose: fs.existsSync(path.join(dir, 'docker-compose.yml')) ? 'docker-compose.yml' : null,
+    compose: await Bun.file(path.join(dir, 'docker-compose.yml')).exists() ? 'docker-compose.yml' : null,
   };
 }
 
@@ -76,16 +75,16 @@ function stackB(pkg) {
   };
 }
 
-export function detectStack(appDir) {
+export async function detectStack(appDir) {
   let pkg;
   try {
-    pkg = JSON.parse(read(appDir, 'package.json'));
+    pkg = JSON.parse(await read(appDir, 'package.json'));
   } catch {
     return null;
   }
   const has = (name) => name in { ...pkg?.dependencies, ...pkg?.devDependencies };
-  const exists = (file) => fs.existsSync(path.join(appDir, file));
-  if (has('next') && has('payload') && exists('pnpm-lock.yaml')) return stackA(appDir);
-  if ('electron-vite' in (pkg?.devDependencies ?? {}) && exists('package-lock.json')) return stackB(pkg);
+  const exists = (file) => Bun.file(path.join(appDir, file)).exists();
+  if (has('next') && has('payload') && await exists('pnpm-lock.yaml')) return stackA(appDir);
+  if ('electron-vite' in (pkg?.devDependencies ?? {}) && await exists('package-lock.json')) return stackB(pkg);
   return null;
 }

@@ -26,7 +26,7 @@ const file = path.join(root, '.hstack', 'manifest.json');
 if (fs.existsSync(file) && !args.values.force) {
   fail(`A manifest already exists at ${file}; nothing changed. Run with --force to replace it.`);
 }
-const result = buildManifest(root, args.values.app);
+const result = await buildManifest(root, args.values.app);
 if (result.error) fail(result.error);
 
 fs.mkdirSync(path.dirname(file), { recursive: true });

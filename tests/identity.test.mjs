@@ -38,9 +38,9 @@ test('composeName reads plain, quoted and commented names', async () => {
     await Bun.write(p, text);
     return p;
   };
-  expect(composeName(await write('plain.yml', 'name: shop-1\nservices:\n  db:\n    image: x\n'))).toBe('shop-1');
-  expect(composeName(await write('quoted.yml', 'name: "shop-1"\n'))).toBe('shop-1');
-  expect(composeName(await write('comment.yml', "name: 'shop-1' # x\n"))).toBe('shop-1');
-  expect(composeName(await write('empty-comment.yml', 'name: # c\n'))).toBe(null);
-  expect(composeName(await write('nested.yml', 'services:\n  web:\n    name: shop-1\n'))).toBe(null);
+  expect(await composeName(await write('plain.yml', 'name: shop-1\nservices:\n  db:\n    image: x\n'))).toBe('shop-1');
+  expect(await composeName(await write('quoted.yml', 'name: "shop-1"\n'))).toBe('shop-1');
+  expect(await composeName(await write('comment.yml', "name: 'shop-1' # x\n"))).toBe('shop-1');
+  expect(await composeName(await write('empty-comment.yml', 'name: # c\n'))).toBe(null);
+  expect(await composeName(await write('nested.yml', 'services:\n  web:\n    name: shop-1\n'))).toBe(null);
 });
