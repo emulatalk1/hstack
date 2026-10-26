@@ -98,3 +98,30 @@ test('an unreadable stale_after warns', () => {
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /^x\.md has a stale_after date hstack cannot read: soon\./);
 });
+
+test('a comment right after the key leaves the value empty', () => {
+  const r = bundleWith('type: # todo');
+  assert.equal(r.errors.length, 1);
+  assert.match(r.errors[0], /no type/);
+});
+
+test('a source path must stay inside the bundle and exist, with or without a leading slash or dot', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hstack-'));
+  try {
+    fs.mkdirSync(path.join(root, 'design'));
+    fs.writeFileSync(path.join(root, 'design/real.md'), '---\ntype: note\n---\n');
+    fs.writeFileSync(path.join(root, 'index.md'), '* [X](x.md)\n* [Real](design/real.md)\n');
+    const withSource = (res) => {
+      fs.writeFileSync(path.join(root, 'x.md'), `---\ntype: adapter\nsources:\n  - id: s\n    resource: ${res}\n---\n`);
+      return checkBundle(root, NOW).errors.filter((e) => /^x\.md/.test(e));
+    };
+    assert.deepEqual(withSource('design/real.md'), []);
+    assert.deepEqual(withSource('/design/real.md'), []);
+    assert.deepEqual(withSource('https://example.com/x'), []);
+    assert.match(withSource('design/missing.md')[0], /design\/missing\.md.*does not exist/);
+    assert.match(withSource('../../etc/hosts')[0], /outside the bundle/);
+    assert.match(withSource('/../outside.md')[0], /outside the bundle/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

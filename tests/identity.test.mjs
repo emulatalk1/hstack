@@ -42,5 +42,6 @@ test('composeName reads plain, quoted and commented names', () => {
   assert.equal(composeName(write('plain.yml', 'name: shop-1\nservices:\n  db:\n    image: x\n')), 'shop-1');
   assert.equal(composeName(write('quoted.yml', 'name: "shop-1"\n')), 'shop-1');
   assert.equal(composeName(write('comment.yml', "name: 'shop-1' # x\n")), 'shop-1');
+  assert.equal(composeName(write('empty-comment.yml', 'name: # c\n')), null);
   assert.equal(composeName(write('nested.yml', 'services:\n  web:\n    name: shop-1\n')), null);
 });

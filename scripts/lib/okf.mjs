@@ -5,7 +5,7 @@ const RESERVED = new Set(['index.md', 'log.md']);
 // A quoted value keeps any "#" inside the quotes; an unquoted one loses a trailing " # comment".
 const unquote = (s) => {
   const q = /^(["'])(.*?)\1(\s+#.*)?$/.exec(s.trim());
-  return q ? q[2] : s.replace(/\s+#.*$/, '').trim();
+  return q ? q[2] : s.replace(/(^|\s+)#.*$/, '').trim();
 };
 
 function walk(dir) {
@@ -90,9 +90,10 @@ export function checkBundle(docsDir, now = new Date()) {
         errors.push(`${rel(file)} is not listed in its folder's index.md. Add a link to it.`);
       }
       for (const res of allMatches(fm.fields.sources, /\bresource:\s*(.+)/g)) {
-        if ((res.startsWith('/') || res.startsWith('.')) && !fs.existsSync(resolveTarget(root, path.dirname(file), res))) {
-          errors.push(`${rel(file)} lists the source ${res}, which does not exist in the bundle.`);
-        }
+        if (res.includes('://')) continue;
+        const target = resolveTarget(root, path.dirname(file), res);
+        if (target !== root && !target.startsWith(root + path.sep)) errors.push(`${rel(file)} lists the source ${res}, which is outside the bundle.`);
+        else if (!fs.existsSync(target)) errors.push(`${rel(file)} lists the source ${res}, which does not exist in the bundle.`);
       }
       const stale = unquote(fm.fields.stale_after ?? '');
       if (stale && isNaN(+new Date(stale))) warnings.push(`${rel(file)} has a stale_after date hstack cannot read: ${stale}.`);

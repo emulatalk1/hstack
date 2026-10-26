@@ -23,7 +23,7 @@ export function composeName(composeFile) {
     if (!match) continue;
     let value = match[1].trim();
     const quoted = value.match(/^(["'])(.*?)\1/);
-    value = quoted ? quoted[2] : value.replace(/\s+#.*$/, '').trim();
+    value = quoted ? quoted[2] : value.replace(/(^|\s+)#.*$/, '').trim();
     return value || null;
   }
   return null;
