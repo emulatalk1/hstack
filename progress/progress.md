@@ -163,3 +163,19 @@ Task review cost, one line per task (review = the task reviewer plus any re-revi
     Task 4: complete (commits 98c3219..1afc77c, review clean)
     Task 5: minor (deferred): README docs/ row omits decisions; skill sentence starts with literal ${CLAUDE_PLUGIN_ROOT}; reviewer wrote and removed temp files in /tmp
     Task 5: complete (commits e83d181..a55dcaa, review clean; controller re-ran: 52 pass, validator conformant, plugin validate passes)
+
+- Final review: 146.7k tokens, 4.6 min (opus) → 2 Important + small items; fix wave 67.8k tokens, 2.0 min (sonnet); scoped re-review 70.1k tokens, 2.0 min (opus) → all addressed, 3 Minor parked
+
+### SDD ledger tail after the final review
+
+    ## Final review (opus, 146.7k tokens, 4.6 min): With fixes — I1, I2, plus M3, M4, M5, README row, two tests
+    - Ruling: I1 — replace the plan's `fs.statSync(p, { throwIfNoEntry: false })?.isDirectory()` pattern with a try/catch helper (ENOTDIR from a file in the path is not covered by throwIfNoEntry) in init.mjs, okf-check.mjs, okf.mjs; the plan's pattern was the defect — cost if wrong: none.
+    - Ruling: I2 — accept that Bun.file().text() strips a leading BOM, so a BOM-prefixed compose `name:` is read; YAML readers (Compose) ignore a BOM too, and if Compose did not, it would fail to parse rather than run as another project; record it in the decision record and pin it with a test — cost if wrong: a docker allow on a file Compose reads differently (not verified by running Compose, which is banned).
+    - Ruling: M6 — no change; Claude Code's skills docs say skill content may use ${CLAUDE_PLUGIN_ROOT} in its Markdown body — cost if wrong: safety commands fail with module-not-found (fails closed).
+    - Ruling: the two tests the final reviewer marked fix-before-merge (folder named like a sibling compose file refuses; lsof missing refuses), M3 (init with a folder at manifest path), M4 (test meaning), M5 (index description) and the README docs/ row join the one fix wave; other deferred minors wait as triaged.
+    Final fix wave (sonnet, 67.8k tokens, 2.0 min): commits e1a18fc..d94aecd (c8bc7cf, 9614276, d94aecd); 58 tests.
+    Final re-review (opus, 70.1k tokens, 2.0 min): I1, I2, M3, M4, T4 tests, M5, README ADDRESSED; no new Critical/Important.
+    Final: parked — the T4(a) test's /compose\.yml/ regex cannot fail (docker-compose.yml is always named) — Ruling: real, harmless; the exit-1 assertion guards the behavior — cost if wrong: none.
+    Final: parked — docs/index.md foundation-check description starts lowercase "the" vs "The" — Ruling: cosmetic — cost if wrong: none.
+    Final: parked — OKF source check counts an unstat-able source (EACCES/ELOOP) as present — Ruling: real, edge case, not a safety gate — cost if wrong: an unreadable source passes the docs gate.
+    Final: minor (deferred): init with `.hstack` as a file crashes with a stack trace (also crashed on Node; nothing written); check refuses a manifest folder with "No hstack manifest here" instead of "could not be read" (still refuses)
