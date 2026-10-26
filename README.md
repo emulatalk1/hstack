@@ -100,7 +100,7 @@ This runs the tests with `bun:test`, 52 tests. The tests leave nothing behind on
 | `skills/` | `hstack-init`, `hstack-safety` |
 | `tests/` | tests, and their fixtures in `tests/fixtures/` |
 | `fixtures/electron/` | the stack B probe app |
-| `docs/` | design, plans and stack adapters (an OKF v0.2 bundle) |
+| `docs/` | design, plans, decisions and stack adapters (an OKF v0.2 bundle) |
 | `progress/` | the working log: review cost per task, the build ledger |
 
 ## Known limits
