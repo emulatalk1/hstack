@@ -32,6 +32,7 @@ test('isOurs compares real paths and folder boundaries', () => {
   assert.equal(isOurs({ kind: 'process', pid: 1, cwd: real }, dir, 'x'), true);
   assert.equal(isOurs({ kind: 'process', pid: 1, cwd: path.join(real, 'app') }, dir, 'x'), true);
   assert.equal(isOurs({ kind: 'process', pid: 1, cwd: fs.realpathSync(sibling) }, dir, 'x'), false);
+  assert.equal(isOurs({ kind: 'process', pid: 1, cwd: null }, dir, 'x'), false);
   const box = { kind: 'container', name: 'c', project: 'p-1', workingDir: dir };
   assert.equal(isOurs(box, dir, 'p-1'), true);
   assert.equal(isOurs(box, dir, 'p-2'), false);
@@ -56,5 +57,5 @@ const published = publishedPort();
 test('a Docker-published port is reported as a container, never as a process', { skip: !published }, async () => {
   const owner = await portOwner(published.port);
   assert.equal(owner.kind, 'container');
-  assert.ok(owner.name);
+  assert.equal(owner.name, published.name);
 });
