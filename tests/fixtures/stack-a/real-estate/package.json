@@ -1,0 +1,12 @@
+{
+  "name": "real-estate",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "seed:demo": "tsx scripts/seed-demo.ts"
+  },
+  "dependencies": {
+    "next": "15.0.0",
+    "payload": "3.0.0"
+  }
+}
