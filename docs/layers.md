@@ -62,7 +62,7 @@ The loop is the same for every stack. The project's manifest names these parts:
 - how to reset and seed the dev database, and the one database name that may be dropped;
 - the evaluator's browser helpers (log in, open a page).
 
-Stack A: Next.js + Payload + Postgres + Vitest + Playwright. Stack B: Electron + electron-vite + Bun + Vitest + Playwright. The adapter research fills in each part.
+Stack A: Next.js + Payload + Postgres + Vitest + Playwright. Stack B: Electron + electron-vite + npm + Vitest + Playwright (the qas v2 app in daily-routine, first plan written 2026-10-26). The adapter research fills in each part.
 
 ## Safety rules
 

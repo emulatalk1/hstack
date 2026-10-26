@@ -30,12 +30,12 @@ Customer-derived evidence stays in `.evidence/` (gitignored) and never leaves th
 Each adapter: run e2e, collect coverage mapped back to TS source, run mutation on given lines, output results in a common format.
 
 - **A (real-estate):** Next.js 16.3 + Payload 3.90 + Postgres (docker-compose) + pnpm + Vitest 4 + Playwright 1.58.
-- **B:** Electron (Node 24) + electron-vite + TypeScript + Bun + React + Tailwind v4 + shadcn/ui + Zustand + node:sqlite/Drizzle + typed IPC + electron-builder + Vitest + Playwright. No real project exists: B is validated by a probe fixture and planted mutants only. No replay set for B.
+- **B:** Electron (Node 24) + electron-vite + TypeScript + npm + React + Tailwind v4 + shadcn/ui + Zustand + node:sqlite/Drizzle + typed IPC + electron-builder + Vitest + Playwright. The qas v2 app (daily-routine repo) is the first real project, not built yet; until it has history, B is validated by a probe fixture and planted mutants. No replay set for B.
 
 Research must answer, with evidence (docs, issues, a probe run), not from memory:
 
 - **A:** Do mutant schemata survive `next build`, or must mutation run against `next dev` or only Vitest-tested server code? How to reset Postgres and Payload between mutant runs? E2e coverage from the server (`NODE_V8_COVERAGE`) and the browser, mapped through source maps.
-- **B:** Coverage from main, preload and renderer through electron-vite source maps under Playwright's `_electron.launch`. How the active mutant reaches main and renderer in a built app. Does Stryker run with Bun as package manager? Does `node:sqlite` behave the same under Vitest and Electron's Node? E2e against the dev build or the electron-builder package? Can mutants killed by `tsc` (typed IPC) be counted apart from mutants killed by tests?
+- **B:** Coverage from main, preload and renderer through electron-vite source maps under Playwright's `_electron.launch`. How the active mutant reaches main and renderer in a built app. Does `node:sqlite` behave the same under Vitest and Electron's Node? E2e against the dev build or the electron-builder package? Can mutants killed by `tsc` (typed IPC) be counted apart from mutants killed by tests?
 - **Both:** the time cost of one mutant.
 
 Write no plugin code until the adapter schema and the replay set are approved.
