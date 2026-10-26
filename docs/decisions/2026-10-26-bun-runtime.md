@@ -37,7 +37,7 @@ Bun's own docs send folder work to `node:fs`. Bun has no API for `realpath`, pat
 - `Bun.file().json()` accepts a UTF-8 BOM.
 - A leading BOM is ignored when reading files as text, so a BOM-prefixed compose `name:` now counts (YAML readers such as Compose ignore a BOM too; not checked by running Compose, which hstack never runs).
 - The `lsof` error text reads "lsof exited with code C".
-- A folder in place of the compose file or the manifest is now refused as missing instead of crashing.
+- A folder in place of the compose file is now refused as missing instead of crashing.
 
 ## Not covered
 
