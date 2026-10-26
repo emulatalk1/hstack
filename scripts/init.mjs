@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildManifest } from './lib/manifest.mjs';
+import { checkBundle } from './lib/okf.mjs';
 
 const USAGE = 'Usage: node scripts/init.mjs [root] [--app <subfolder>] [--force]';
 
@@ -32,3 +33,11 @@ fs.mkdirSync(path.dirname(file), { recursive: true });
 fs.writeFileSync(file, JSON.stringify(result.manifest, null, 2) + '\n');
 for (const w of result.warnings) console.log(w);
 console.log(`Wrote ${file}`);
+
+const docs = path.join(root, 'docs');
+if (fs.existsSync(docs) && fs.statSync(docs).isDirectory()) {
+  const { errors, warnings } = checkBundle(docs);
+  console.log(errors.length ? `Docs bundle: ${errors.length} errors.` : 'Docs bundle: OK');
+  for (const e of errors.slice(0, 3)) console.log(`  ${e}`);
+  if (warnings.length) console.log(`Docs bundle: ${warnings.length} stale or unlinked items. Run node scripts/okf-check.mjs docs to see them.`);
+}

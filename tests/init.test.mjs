@@ -135,3 +135,17 @@ test('an unknown flag or a missing --app value prints usage and exits 1', () => 
   assert.equal(r.code, 1);
   assert.match(r.out, /Usage/);
 });
+
+test('init prints the docs bundle result when docs/ exists', () => {
+  const root = tmp();
+  try {
+    fs.cpSync(path.join(REPO, 'tests/fixtures/stack-a'), root, { recursive: true });
+    fs.cpSync(path.join(REPO, 'tests/fixtures/okf-bad/no-type'), path.join(root, 'docs'), { recursive: true });
+    const r = init([root]);
+    assert.equal(r.code, 0);
+    assert.ok(r.lines.some((l) => l === 'Docs bundle: 1 errors.'));
+    assert.ok(r.lines.every((l) => !l.startsWith('Warning: Docs')));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
