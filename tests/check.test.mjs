@@ -167,14 +167,40 @@ test('wipe allows only the data folder', () => {
   }
 });
 
-test('wipe follows PROBE_DATA_DIR but never outside the project or temp folder', () => {
+test('wipe takes an env value only from a real temp folder', () => {
   const root = initted('B');
+  const inTmp = fs.mkdtempSync('/tmp/hstack-'); // /private/tmp on macOS
   try {
-    const inTmp = tmp();
     assert.equal(node(CHECK, [root, 'wipe', inTmp], { ...process.env, PROBE_DATA_DIR: inTmp }).code, 0);
-    rm(inTmp);
-    const home = os.homedir();
-    assert.equal(node(CHECK, [root, 'wipe', home], { ...process.env, PROBE_DATA_DIR: home }).code, 1);
+    assert.equal(node(CHECK, [root, 'wipe', os.homedir()], { ...process.env, PROBE_DATA_DIR: os.homedir() }).code, 1);
+  } finally {
+    rm(root, inTmp);
+  }
+});
+
+test('wipe ignores TMPDIR and env values inside .hstack', () => {
+  const root = initted('B');
+  const outside = fs.mkdtempSync(path.join(REPO, '.outside-'));
+  try {
+    const x = path.join(outside, 'x');
+    fs.mkdirSync(x);
+    const fake = { ...process.env, TMPDIR: outside, PROBE_DATA_DIR: x };
+    assert.equal(node(CHECK, [root, 'wipe', x], fake).code, 1);
+    const hstackDir = path.join(root, '.hstack');
+    assert.equal(node(CHECK, [root, 'wipe', hstackDir], { ...process.env, PROBE_DATA_DIR: hstackDir }).code, 1);
+  } finally {
+    rm(root, outside);
+  }
+});
+
+test('a malformed manifest is refused in plain words', () => {
+  const root = initted('A');
+  try {
+    fs.writeFileSync(path.join(root, '.hstack/manifest.json'), '{nope');
+    const r = check(root, 'drop', 'shop_dev');
+    assert.equal(r.code, 1);
+    assert.match(r.out, /could not be read\. Run init again with --force\./);
+    assert.doesNotMatch(r.out, /at file:|Error/);
   } finally {
     rm(root);
   }
