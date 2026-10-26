@@ -27,10 +27,11 @@ Every check refuses first if there is no manifest (run `hstack-init`), or if the
 
 ## What each check means
 
-- **docker**: the compose file must name its Docker project after this folder's path. Without that, Docker would share containers and data with other folders of the same name. It also refuses when `COMPOSE_PROJECT_NAME` or `COMPOSE_FILE` is set, or another default compose file sits beside the checked one. Exit 0 is not permission for every Docker command. After it, on this project only, you may run just these, from the compose file's folder:
+- **docker**: the compose file must name its Docker project after this folder's path. Without that, Docker would share containers and data with other folders of the same name. It refuses anything about the project name or files that it does not read: `COMPOSE_PROJECT_NAME`, `COMPOSE_FILE` or `COMPOSE_ENV_FILES` set in the shell or in the `.env` beside the compose file, another compose or override file beside it, and a compose file with several documents, several `name:` lines, `include:` or `<<:`. Exit 0 is not permission for every Docker command. After it, on this project only, you may run just these, from the compose file's folder:
   - `docker compose up -d`, `docker compose stop`, and plain `docker compose down` (never with `-v`).
   - `docker stop` or `docker rm` of a container only when its label `com.docker.compose.project` equals the project name and its label `com.docker.compose.project.working_dir` equals the project folder.
-  - Never `-p`, never `-f` to another file, never set `COMPOSE_PROJECT_NAME`.
+  - Run `docker compose` only from the compose file's folder. hstack checks the `.env` in that folder; Compose reads `.env` from the folder you run it in, so running from elsewhere makes it read another one.
+  - Never `-p`, `-f`, `--env-file` or `--project-directory`, and never set any `COMPOSE_*` variable.
 - **port**: a port is fine if it is free or held by this project. If something else holds it, do not stop it.
 - **drop**: for databases only. You may drop only the database the manifest names. To reset data, drop that one database, then run the manifest's seed command.
 - **wipe**: for data folders only. You may wipe only the data folder the manifest names, never the project or the app folder. Only for projects that keep data in a folder.

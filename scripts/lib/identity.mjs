@@ -14,8 +14,7 @@ export function projectName(dir) {
 }
 
 // Reads only the top-level `name:` line; a YAML library is not needed for that.
-export async function composeName(composeFile) {
-  const text = await Bun.file(composeFile).text();
+export function nameFromText(text) {
   for (const line of text.split(/\r?\n/)) {
     const match = line.match(/^name:\s*(.*)$/);
     if (!match) continue;
@@ -25,4 +24,8 @@ export async function composeName(composeFile) {
     return value || null;
   }
   return null;
+}
+
+export async function composeName(composeFile) {
+  return nameFromText(await Bun.file(composeFile).text());
 }

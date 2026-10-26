@@ -10,7 +10,10 @@ const CHECK = path.join(REPO, 'scripts/check.mjs');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'hstack-'));
 const rm = (...dirs) => dirs.forEach((d) => fs.rmSync(d, { recursive: true, force: true }));
 
-function node(script, args, env = process.env) {
+// The child never inherits a COMPOSE_* variable from the shell, so results do not depend on it.
+const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('COMPOSE_')));
+
+function node(script, args, env = cleanEnv) {
   const r = Bun.spawnSync([process.execPath, script, ...args], { cwd: REPO, env });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
@@ -117,35 +120,70 @@ async function namedCompose() {
   return a;
 }
 
-test('docker is refused when Compose would pick another name or file', async () => {
+const COMPOSE_NAMES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
+
+// Runs each case against a fresh named compose folder: it edits the folder, then expects exit 1 and a message naming the cause.
+async function refusedWhen(cases) {
+  const wrong = [];
+  for (const [label, setup, cause, env] of cases) {
+    const a = await namedCompose();
+    try {
+      await setup(path.join(a, 'real-estate'));
+      const r = node(CHECK, [a, 'docker'], env ?? cleanEnv);
+      if (r.code !== 1 || !cause.test(r.out)) wrong.push(`${label}: exit ${r.code}, said "${r.out.trim()}"`);
+    } finally {
+      rm(a);
+    }
+  }
+  expect(wrong).toEqual([]);
+}
+
+const appendEnv = (line) => async (d) => Bun.write(path.join(d, '.env'), (await Bun.file(path.join(d, '.env')).text()) + `\n${line}\n`);
+const appendCompose = (text) => async (d) => {
+  const f = path.join(d, 'docker-compose.yml');
+  await Bun.write(f, (await Bun.file(f).text()) + text);
+};
+
+test('docker is refused when a variable or .env line could change the name or the files', async () => {
+  await refusedWhen([
+    ['.env COMPOSE_PROJECT_NAME=', appendEnv('COMPOSE_PROJECT_NAME=real-estate'), /COMPOSE_PROJECT_NAME/],
+    ['.env COMPOSE_PROJECT_NAME with a colon', appendEnv('COMPOSE_PROJECT_NAME: x'), /COMPOSE_PROJECT_NAME/],
+    ['.env export COMPOSE_FILE', appendEnv('export COMPOSE_FILE=x'), /COMPOSE_FILE/],
+    ['.env COMPOSE_ENV_FILES', appendEnv('COMPOSE_ENV_FILES=x'), /COMPOSE_ENV_FILES/],
+    ...['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE', 'COMPOSE_ENV_FILES'].map((v) => [`shell ${v}`, async () => {}, new RegExp(v), { ...cleanEnv, [v]: 'x' }]),
+  ]);
+});
+
+test('docker is refused when another compose file or folder sits beside the checked one', async () => {
+  const names = [...COMPOSE_NAMES, ...COMPOSE_NAMES.map((n) => n.replace('.y', '.override.y'))].filter((n) => n !== 'docker-compose.yml');
+  await refusedWhen([
+    ...names.map((n) => [n, async (d) => Bun.write(path.join(d, n), 'services: {}\n'), new RegExp(n.replace(/\./g, '\\.'))]),
+    ['a folder named compose.yml', async (d) => fs.mkdirSync(path.join(d, 'compose.yml')), /compose\.yml/],
+  ]);
+});
+
+test('docker is refused when the compose file is built in a way hstack does not read', async () => {
+  await refusedWhen([
+    ['a second document', appendCompose('---\nname: real-estate\n'), /document/],
+    ['two top-level names', appendCompose('name: real-estate\n'), /more than one top-level/],
+    ['a ... line', appendCompose('...\n'), /document/],
+    ['include', appendCompose('include:\n  - other.yml\n'), /include:/],
+    ['a merge key', appendCompose('<<: *x\n'), /<<:/],
+  ]);
+});
+
+test('docker is allowed for a clean compose file and for harmless extras', async () => {
   const a = await namedCompose();
-  const envFile = path.join(a, 'real-estate/.env');
-  const original = await Bun.file(envFile).text();
+  const d = path.join(a, 'real-estate');
   try {
     expect(check(a, 'docker').code).toBe(0);
-    for (const [line, cause] of [['COMPOSE_PROJECT_NAME=real-estate', /COMPOSE_PROJECT_NAME/], ['export COMPOSE_FILE=other.yml', /COMPOSE_FILE/]]) {
-      await Bun.write(envFile, original + `\n${line}\n`);
-      const r = check(a, 'docker');
-      expect(r.code).toBe(1);
-      expect(r.out).toMatch(cause);
-    }
-    await Bun.write(envFile, original + '\n# COMPOSE_PROJECT_NAME=real-estate\n');
+    const f = path.join(d, 'docker-compose.yml');
+    const text = await Bun.file(f).text();
+    await Bun.write(f, `# header\n\n---\n${text}`);
     expect(check(a, 'docker').code).toBe(0);
-    await Bun.write(envFile, original);
-    for (const v of ['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE']) {
-      const r = node(CHECK, [a, 'docker'], { ...process.env, [v]: 'x' });
-      expect(r.code).toBe(1);
-      expect(r.out).toMatch(new RegExp(v));
-    }
-    fs.mkdirSync(path.join(a, 'real-estate/compose.yml'));
-    const folder = check(a, 'docker');
-    expect(folder.code).toBe(1);
-    expect(folder.out).toMatch(/compose\.yml/);
-    fs.rmdirSync(path.join(a, 'real-estate/compose.yml'));
-    await Bun.write(path.join(a, 'real-estate/compose.yaml'), 'services: {}\n');
-    const r = check(a, 'docker');
-    expect(r.code).toBe(1);
-    expect(r.out).toMatch(/compose\.yaml/);
+    await Bun.write(f, text);
+    await appendEnv('COMPOSE_PROFILES=x\n# COMPOSE_PROJECT_NAME=real-estate')(d);
+    expect(check(a, 'docker').code).toBe(0);
   } finally {
     rm(a);
   }

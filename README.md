@@ -64,7 +64,7 @@ bun scripts/check.mjs <project root> wipe <folder>
 Exit 0 means allowed. Exit 1 means refused, and the reason is printed in plain English. A check only answers; it never does the action.
 
 - Every check refuses when there is no manifest. It also refuses when the folder was copied or moved since `init`, because the project's Docker name comes from a hash of the folder's path.
-- `docker`: the compose file must name its project after this folder's path. It also refuses when `COMPOSE_PROJECT_NAME` or `COMPOSE_FILE` is set, or another compose file sits beside it.
+- `docker`: the compose file must name its project after this folder's path. It refuses any Compose input it does not read: `COMPOSE_PROJECT_NAME`, `COMPOSE_FILE` or `COMPOSE_ENV_FILES` set in the shell or the `.env` beside it, another compose or override file beside it, and a compose file with several documents, several `name:` lines, `include:` or `<<:`.
 - `port`: the port must be free, or every listener on it must belong to this project. A port held by another project's container or process is refused, and hstack never stops it.
 - `drop`: only the databases the manifest lists.
 - `wipe`: only the data folder the manifest names, never the project or app folder itself.
@@ -91,7 +91,7 @@ It exits 1 when there are errors. It also warns about docs past their `stale_aft
 bun test ./tests
 ```
 
-This runs the tests with `bun:test`, 52 tests. The tests leave nothing behind on the machine: they read `docker ps`, make temp folders they remove, and open short-lived local listeners.
+This runs the tests with `bun:test`, 61 tests. The tests leave nothing behind on the machine: they read `docker ps`, make temp folders they remove, and open short-lived local listeners.
 
 | Path | What it holds |
 |---|---|
@@ -105,13 +105,7 @@ This runs the tests with `bun:test`, 52 tests. The tests leave nothing behind on
 
 ## Known limits
 
-- **The `docker` check can still be fooled** by ways of renaming a Compose project that it does not read yet:
-  - a `.env` line written `COMPOSE_PROJECT_NAME: x`;
-  - a `docker-compose.override.yml` with its own `name:`;
-  - a second YAML document in the compose file;
-  - `COMPOSE_ENV_FILES`.
-
-  This can't happen today: the check only allows a compose file whose `name:` is hstack's own path-based name, and no project has one yet. It must be fixed before the plan that gives projects their own services.
+- The `docker` check refuses any Compose input it does not read, so it may refuse a harmless setup: an override file, `include:`, or a `---` line inside a block scalar. That is on purpose; a wrong "allowed" costs more than a wrong "refused".
 - `init` warns about every `localhost:<port>` in `src/` and `tests/`, including URLs inside unit tests. Narrowing this to the project's own ports comes with the own-services plan.
 
 ## Roadmap

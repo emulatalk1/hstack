@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { exists } from './lib/fsutil.mjs';
-import { composeName, projectName } from './lib/identity.mjs';
+import { nameFromText, projectName } from './lib/identity.mjs';
 import { isOurs, portOwners } from './lib/ports.mjs';
 
 const USAGE = 'Usage: bun scripts/check.mjs <project-folder> docker | port <number> | drop <database> | wipe <folder>';
@@ -38,9 +38,12 @@ async function devScriptValue(appDir, name) {
   }
 }
 
-const DEFAULT_COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
+const COMPOSE_FILES = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml', 'compose.override.yaml', 'compose.override.yml', 'docker-compose.override.yaml', 'docker-compose.override.yml'];
 
-// Compose lets these variables (in the shell or in the .env beside the compose file) override the name and the file.
+// Compose lets these variables (in the shell or in the .env beside the compose file) change the name or the files it reads.
+// Its .env parser ends a key at `=` or `:`, so both count.
+const COMPOSE_VARIABLES = ['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE', 'COMPOSE_ENV_FILES'];
+
 async function composeOverride(file) {
   let env = '';
   try {
@@ -48,15 +51,24 @@ async function composeOverride(file) {
   } catch {
     // No .env file: only the shell can set them.
   }
-  return ['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE'].find((v) => process.env[v] || new RegExp(`^\\s*(export\\s+)?${v}\\s*=`, 'm').test(env));
+  return COMPOSE_VARIABLES.find((v) => process.env[v] || new RegExp(`^\\s*(export\\s+)?${v}\\s*[=:]`, 'm').test(env));
 }
 
 // Refusing because something exists: a folder of that name counts too (Bun.file().exists() is false for folders).
-async function findOtherComposeFile(file) {
-  for (const f of DEFAULT_COMPOSE_FILES) {
-    const p = path.join(path.dirname(file), f);
-    if (f !== path.basename(file) && exists(p)) return f;
+function findOtherComposeFile(file) {
+  return COMPOSE_FILES.find((f) => f !== path.basename(file) && exists(path.join(path.dirname(file), f)));
+}
+
+// Why the compose file cannot be trusted to carry one name, or undefined. A top-level key is a line that starts in column 0.
+function composeFileProblem(text) {
+  const lines = text.split(/\r?\n/);
+  const first = lines.findIndex((l) => l.trim() && !l.startsWith('#'));
+  if (lines.some((l, i) => /^(---|\.\.\.)(\s|$)/.test(l) && !(i === first && l.startsWith('---')))) {
+    return 'has more than one YAML document, and Compose lets a later one change the project name.';
   }
+  if (lines.filter((l) => /^["']?name["']?\s*:/.test(l)).length > 1) return 'has more than one top-level `name:`, and Compose uses the last one.';
+  const key = ['include', '<<'].find((k) => lines.some((l) => new RegExp(`^["']?${k}["']?\\s*:`).test(l)));
+  if (key) return `uses \`${key}:\`. hstack does not know how Compose names a project built this way.`;
   return undefined;
 }
 
@@ -67,11 +79,14 @@ async function checkDocker(dir, manifest) {
   if (!(await Bun.file(file).exists())) refuse(`The compose file ${compose.file} is missing, so hstack will not allow Docker commands here.`);
   const override = await composeOverride(file);
   if (override) refuse(`${override} is set (in the shell or in the .env beside the compose file), so Docker could use another project name or file than the one hstack checked. Docker is not allowed here.`);
-  const other = await findOtherComposeFile(file);
-  if (other) refuse(`${other} sits beside ${compose.file}, and Docker might pick it instead. Docker is not allowed here.`);
-  const name = await composeName(file);
+  const other = findOtherComposeFile(file);
+  if (other) refuse(`${other} sits beside ${compose.file}, and Docker might read it too or instead. Docker is not allowed here.`);
+  const text = await Bun.file(file).text();
+  const name = nameFromText(text);
   if (name === null) refuse(`The compose file ${compose.file} has no project name, so Docker would share it with other folders of the same name. Docker is not allowed here.`);
   if (name !== projectName(dir)) refuse(`The compose file names its project ${name}, not ${projectName(dir)}, so Docker would share it with other folders. Docker is not allowed here.`);
+  const problem = composeFileProblem(text);
+  if (problem) refuse(`The compose file ${compose.file} ${problem} Docker is not allowed here.`);
   allow(`Docker is allowed: the compose project is ${name}.`);
 }
 
