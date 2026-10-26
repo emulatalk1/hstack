@@ -2,6 +2,8 @@
 
 ## 2026-10-26
 
+* **Approve**: the [Bun runtime plan](/plans/2026-10-26-bun-runtime.md) (status `stable`), with Bun 1.4.4 or later. The user approved it after an advisor round.
+* **Creation**: Added the [Bun runtime plan](/plans/2026-10-26-bun-runtime.md) (draft): the user decided to move hstack to Bun completely.
 * **Update**: Re-ran the [Foundation check on both stacks](/foundation-check.md) after the final review fixes (docker, port, drop and OKF checks; the compose warning now names the compose file's folder).
 * **Creation**: Added the [Foundation check on both stacks](/foundation-check.md), the output of init and the safety checks on both stacks.
 * **Approve**: the [hstack foundation plan](/plans/2026-10-26-hstack-foundation.md) (status `stable`). The user approved it after two advisor rounds and chose subagent-driven execution.
