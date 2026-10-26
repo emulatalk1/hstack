@@ -1,10 +1,7 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
+import { test, expect } from 'bun:test';
 import fs from 'node:fs';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
 
 const REPO = path.resolve(import.meta.dirname, '..');
 const INIT = path.join(REPO, 'scripts/init.mjs');
@@ -14,188 +11,190 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'hstack-'));
 const rm = (...dirs) => dirs.forEach((d) => fs.rmSync(d, { recursive: true, force: true }));
 
 function node(script, args, env = process.env) {
-  const r = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', env });
-  return { code: r.status, out: r.stdout + r.stderr };
+  const r = Bun.spawnSync([process.execPath, script, ...args], { cwd: REPO, env });
+  return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
 
-function initted(stack) {
+async function initted(stack) {
   const root = tmp();
   if (stack === 'A') {
     fs.cpSync(path.join(REPO, 'tests/fixtures/stack-a'), root, { recursive: true });
   } else {
     for (const f of ['package.json', 'package-lock.json']) {
-      fs.copyFileSync(path.join(REPO, 'fixtures/electron', f), path.join(root, f));
+      await Bun.write(path.join(root, f), Bun.file(path.join(REPO, 'fixtures/electron', f)));
     }
   }
-  assert.equal(node(INIT, [root]).code, 0);
+  expect(node(INIT, [root]).code).toBe(0);
   return root;
 }
 
 const check = (root, ...args) => node(CHECK, [root, ...args]);
 
-test('drop allows the manifest\'s databases only', () => {
-  const root = initted('A');
+test('drop allows the manifest\'s databases only', async () => {
+  const root = await initted('A');
   try {
-    assert.equal(check(root, 'drop', 'shop_dev').code, 0);
+    expect(check(root, 'drop', 'shop_dev').code).toBe(0);
     const r = check(root, 'drop', 'real_estate');
-    assert.equal(r.code, 1);
-    assert.match(r.out, /shop_dev/);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/shop_dev/);
   } finally {
     rm(root);
   }
 });
 
-test('a copied folder fails every check', () => {
-  const x = initted('A');
+test('a copied folder fails every check', async () => {
+  const x = await initted('A');
   const y = tmp();
   try {
     fs.cpSync(x, y, { recursive: true });
     for (const args of [['drop', 'shop_dev'], ['docker'], ['port', '1']]) {
       const r = check(y, ...args);
-      assert.equal(r.code, 1, args.join(' '));
-      assert.match(r.out, /copied or moved/);
-      assert.match(r.out, /init/);
+      expect(r.code).toBe(1);
+      expect(r.out).toMatch(/copied or moved/);
+      expect(r.out).toMatch(/init/);
     }
   } finally {
     rm(x, y);
   }
 });
 
-test('a folder without a manifest is refused', () => {
+test('a folder without a manifest is refused', async () => {
   const root = tmp();
   try {
     const r = check(root, 'drop', 'x');
-    assert.equal(r.code, 1);
-    assert.match(r.out, /No hstack manifest here\. Run init first\./);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/No hstack manifest here\. Run init first\./);
   } finally {
     rm(root);
   }
 });
 
-test('usage errors print one line and exit 1', () => {
-  const root = initted('A');
+test('usage errors print one line and exit 1', async () => {
+  const root = await initted('A');
   try {
     for (const args of [['nope'], ['drop'], ['wipe'], ['port'], ['port', 'abc'], ['port', '0'], ['port', '65536'], ['port', '99999'], []]) {
       const r = check(root, ...args);
-      assert.equal(r.code, 1, args.join(' '));
-      assert.match(r.out, /^Usage: /);
-      assert.equal(r.out.trim().split('\n').length, 1);
+      expect(r.code).toBe(1);
+      expect(r.out).toMatch(/^Usage: /);
+      expect(r.out.trim().split('\n').length).toBe(1);
     }
   } finally {
     rm(root);
   }
 });
 
-test('docker is refused when the compose file has no matching name', () => {
-  const root = initted('A');
+test('docker is refused when the compose file has no matching name', async () => {
+  const root = await initted('A');
   try {
     const r = check(root, 'docker');
-    assert.equal(r.code, 1);
-    assert.match(r.out, /no project name/);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/no project name/);
   } finally {
     rm(root);
   }
 });
 
-test('docker is refused when there is no compose file, allowed when the name matches', () => {
-  const b = initted('B');
-  const a = initted('A');
+test('docker is refused when there is no compose file, allowed when the name matches', async () => {
+  const b = await initted('B');
+  const a = await initted('A');
   try {
-    assert.equal(check(b, 'docker').code, 1);
+    expect(check(b, 'docker').code).toBe(1);
     const file = path.join(a, 'real-estate/docker-compose.yml');
-    const name = JSON.parse(fs.readFileSync(path.join(a, '.hstack/manifest.json'), 'utf8')).projectName;
-    fs.writeFileSync(file, `name: ${name}\n` + fs.readFileSync(file, 'utf8'));
-    assert.equal(check(a, 'docker').code, 0);
+    const name = (await Bun.file(path.join(a, '.hstack/manifest.json')).json()).projectName;
+    await Bun.write(file, `name: ${name}\n` + await Bun.file(file).text());
+    expect(check(a, 'docker').code).toBe(0);
   } finally {
     rm(a, b);
   }
 });
 
 // Stack A with a compose file whose name: matches, so only the extra cause under test can refuse it.
-function namedCompose() {
-  const a = initted('A');
+async function namedCompose() {
+  const a = await initted('A');
   const file = path.join(a, 'real-estate/docker-compose.yml');
-  const name = JSON.parse(fs.readFileSync(path.join(a, '.hstack/manifest.json'), 'utf8')).projectName;
-  fs.writeFileSync(file, `name: ${name}\n` + fs.readFileSync(file, 'utf8'));
+  const name = (await Bun.file(path.join(a, '.hstack/manifest.json')).json()).projectName;
+  await Bun.write(file, `name: ${name}\n` + await Bun.file(file).text());
   return a;
 }
 
-test('docker is refused when Compose would pick another name or file', () => {
-  const a = namedCompose();
+test('docker is refused when Compose would pick another name or file', async () => {
+  const a = await namedCompose();
   const envFile = path.join(a, 'real-estate/.env');
-  const original = fs.readFileSync(envFile, 'utf8');
+  const original = await Bun.file(envFile).text();
   try {
-    assert.equal(check(a, 'docker').code, 0);
+    expect(check(a, 'docker').code).toBe(0);
     for (const [line, cause] of [['COMPOSE_PROJECT_NAME=real-estate', /COMPOSE_PROJECT_NAME/], ['export COMPOSE_FILE=other.yml', /COMPOSE_FILE/]]) {
-      fs.writeFileSync(envFile, original + `\n${line}\n`);
+      await Bun.write(envFile, original + `\n${line}\n`);
       const r = check(a, 'docker');
-      assert.equal(r.code, 1, line);
-      assert.match(r.out, cause);
+      expect(r.code).toBe(1);
+      expect(r.out).toMatch(cause);
     }
-    fs.writeFileSync(envFile, original + '\n# COMPOSE_PROJECT_NAME=real-estate\n');
-    assert.equal(check(a, 'docker').code, 0);
-    fs.writeFileSync(envFile, original);
+    await Bun.write(envFile, original + '\n# COMPOSE_PROJECT_NAME=real-estate\n');
+    expect(check(a, 'docker').code).toBe(0);
+    await Bun.write(envFile, original);
     for (const v of ['COMPOSE_PROJECT_NAME', 'COMPOSE_FILE']) {
       const r = node(CHECK, [a, 'docker'], { ...process.env, [v]: 'x' });
-      assert.equal(r.code, 1, v);
-      assert.match(r.out, new RegExp(v));
+      expect(r.code).toBe(1);
+      expect(r.out).toMatch(new RegExp(v));
     }
-    fs.writeFileSync(path.join(a, 'real-estate/compose.yaml'), 'services: {}\n');
+    await Bun.write(path.join(a, 'real-estate/compose.yaml'), 'services: {}\n');
     const r = check(a, 'docker');
-    assert.equal(r.code, 1);
-    assert.match(r.out, /compose\.yaml/);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/compose\.yaml/);
   } finally {
     rm(a);
   }
 });
 
 // A child that listens on the given host and port (0 = any free one) from the given folder, and prints its port.
-function listener(cwd, host = '127.0.0.1', port = 0) {
-  const child = spawn(process.execPath, ['-e', `require('net').createServer().listen(${port},'${host}',function(){console.log(this.address().port)})`], { cwd });
-  return new Promise((resolve, reject) => {
-    child.stdout.once('data', (d) => resolve({ child, port: Number(d.toString().trim()) }));
-    child.once('error', reject);
-  });
+async function listener(cwd, host = '127.0.0.1', port = 0) {
+  const code = `const s = Bun.listen({ hostname: '${host}', port: ${port}, socket: { data() {} } }); console.log(s.port);`;
+  const child = Bun.spawn([process.execPath, '-e', code], { cwd, stdout: 'pipe' });
+  const { value } = await child.stdout.getReader().read();
+  return { child, port: Number(new TextDecoder().decode(value).trim()) };
 }
 
-async function freePort() {
-  const s = net.createServer();
-  await new Promise((r) => s.listen(0, '127.0.0.1', r));
-  const { port } = s.address();
-  await new Promise((r) => s.close(r));
+function freePort() {
+  const s = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
+  const { port } = s;
+  s.stop(true);
   return port;
 }
 
 test('port: free is allowed, our own listener is allowed, another folder\'s listener is refused', async () => {
-  const root = initted('B');
+  const root = await initted('B');
   const other = tmp();
   const kids = [];
   try {
-    assert.equal(check(root, 'port', String(await freePort())).code, 0);
+    expect(check(root, 'port', String(freePort())).code).toBe(0);
 
     const ours = await listener(root);
     kids.push(ours.child);
-    assert.equal(check(root, 'port', String(ours.port)).code, 0);
+    expect(check(root, 'port', String(ours.port)).code).toBe(0);
 
     const theirs = await listener(other);
     kids.push(theirs.child);
     const r = check(root, 'port', String(theirs.port));
-    assert.equal(r.code, 1);
-    assert.ok(r.out.includes(fs.realpathSync(other)), r.out);
-    assert.match(r.out, /will not stop/);
+    expect(r.code).toBe(1);
+    expect(r.out.includes(fs.realpathSync(other))).toBeTruthy();
+    expect(r.out).toMatch(/will not stop/);
   } finally {
     kids.forEach((k) => k.kill());
     rm(root, other);
   }
 });
 
-const hasIPv6 = await new Promise((resolve) => {
-  const s = net.createServer().once('error', () => resolve(false));
-  s.listen(0, '::1', () => s.close(() => resolve(true)));
-});
+const hasIPv6 = (() => {
+  try {
+    Bun.listen({ hostname: '::1', port: 0, socket: { data() {} } }).stop(true);
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
-test('port: every listener must be ours, or the port is refused', { skip: !hasIPv6 }, async () => {
-  const root = initted('B');
+test.skipIf(!hasIPv6)('port: every listener must be ours, or the port is refused', async () => {
+  const root = await initted('B');
   const other = tmp();
   const kids = [];
   try {
@@ -204,103 +203,103 @@ test('port: every listener must be ours, or the port is refused', { skip: !hasIP
     const theirs = await listener(other, '::1', ours.port);
     kids.push(theirs.child);
     const r = check(root, 'port', String(ours.port));
-    assert.equal(r.code, 1, r.out);
-    assert.ok(r.out.includes(fs.realpathSync(other)), r.out);
+    expect(r.code).toBe(1);
+    expect(r.out.includes(fs.realpathSync(other))).toBeTruthy();
   } finally {
     kids.forEach((k) => k.kill());
     rm(root, other);
   }
 });
 
-test('wipe allows only the data folder', () => {
-  const root = initted('B');
+test('wipe allows only the data folder', async () => {
+  const root = await initted('B');
   const env = { ...process.env };
   delete env.PROBE_DATA_DIR;
   try {
-    assert.equal(node(CHECK, [root, 'wipe', path.join(root, 'data')], env).code, 0);
+    expect(node(CHECK, [root, 'wipe', path.join(root, 'data')], env).code).toBe(0);
     for (const bad of [os.homedir(), root, os.tmpdir(), path.join(root, 'other'), path.join(root, 'data', '..')]) {
       const r = node(CHECK, [root, 'wipe', bad], env);
-      assert.equal(r.code, 1, bad);
-      assert.ok(r.out.includes(path.join(root, 'data')), r.out);
+      expect(r.code).toBe(1);
+      expect(r.out.includes(path.join(root, 'data'))).toBeTruthy();
     }
   } finally {
     rm(root);
   }
 });
 
-test('wipe takes an env value only from a real temp folder', () => {
-  const root = initted('B');
+test('wipe takes an env value only from a real temp folder', async () => {
+  const root = await initted('B');
   const inTmp = fs.mkdtempSync('/tmp/hstack-'); // /private/tmp on macOS
   try {
-    assert.equal(node(CHECK, [root, 'wipe', inTmp], { ...process.env, PROBE_DATA_DIR: inTmp }).code, 0);
-    assert.equal(node(CHECK, [root, 'wipe', os.homedir()], { ...process.env, PROBE_DATA_DIR: os.homedir() }).code, 1);
+    expect(node(CHECK, [root, 'wipe', inTmp], { ...process.env, PROBE_DATA_DIR: inTmp }).code).toBe(0);
+    expect(node(CHECK, [root, 'wipe', os.homedir()], { ...process.env, PROBE_DATA_DIR: os.homedir() }).code).toBe(1);
   } finally {
     rm(root, inTmp);
   }
 });
 
-test('wipe ignores TMPDIR and env values inside .hstack', () => {
-  const root = initted('B');
+test('wipe ignores TMPDIR and env values inside .hstack', async () => {
+  const root = await initted('B');
   const outside = fs.mkdtempSync(path.join(REPO, '.outside-'));
   try {
     const x = path.join(outside, 'x');
     fs.mkdirSync(x);
     const fake = { ...process.env, TMPDIR: outside, PROBE_DATA_DIR: x };
-    assert.equal(node(CHECK, [root, 'wipe', x], fake).code, 1);
+    expect(node(CHECK, [root, 'wipe', x], fake).code).toBe(1);
     const hstackDir = path.join(root, '.hstack');
-    assert.equal(node(CHECK, [root, 'wipe', hstackDir], { ...process.env, PROBE_DATA_DIR: hstackDir }).code, 1);
+    expect(node(CHECK, [root, 'wipe', hstackDir], { ...process.env, PROBE_DATA_DIR: hstackDir }).code).toBe(1);
   } finally {
     rm(root, outside);
   }
 });
 
-test('wipe never allows a folder that holds the project', () => {
+test('wipe never allows a folder that holds the project', async () => {
   const outer = fs.mkdtempSync('/tmp/hstack-');
   const root = path.join(outer, 'proj');
   try {
     fs.mkdirSync(root);
     for (const f of ['package.json', 'package-lock.json']) {
-      fs.copyFileSync(path.join(REPO, 'fixtures/electron', f), path.join(root, f));
+      await Bun.write(path.join(root, f), Bun.file(path.join(REPO, 'fixtures/electron', f)));
     }
-    assert.equal(node(INIT, [root]).code, 0);
+    expect(node(INIT, [root]).code).toBe(0);
     const r = node(CHECK, [root, 'wipe', outer], { ...process.env, PROBE_DATA_DIR: outer });
-    assert.equal(r.code, 1, r.out);
+    expect(r.code).toBe(1);
   } finally {
     rm(outer);
   }
 });
 
-test('a malformed manifest is refused in plain words', () => {
-  const root = initted('A');
+test('a malformed manifest is refused in plain words', async () => {
+  const root = await initted('A');
   try {
     for (const bad of ['{nope', 'null', '{}', '{"projectName":"x"}']) {
-      fs.writeFileSync(path.join(root, '.hstack/manifest.json'), bad);
+      await Bun.write(path.join(root, '.hstack/manifest.json'), bad);
       const r = check(root, 'drop', 'shop_dev');
-      assert.equal(r.code, 1, bad);
-      assert.match(r.out, /could not be read\. Run init again with --force\./);
-      assert.doesNotMatch(r.out, /at file:|Error/);
+      expect(r.code).toBe(1);
+      expect(r.out).toMatch(/could not be read\. Run init again with --force\./);
+      expect(r.out).not.toMatch(/at file:|Error/);
     }
   } finally {
     rm(root);
   }
 });
 
-test('wipe is refused for a database project', () => {
-  const root = initted('A');
+test('wipe is refused for a database project', async () => {
+  const root = await initted('A');
   try {
-    assert.equal(check(root, 'wipe', path.join(root, 'data')).code, 1);
+    expect(check(root, 'wipe', path.join(root, 'data')).code).toBe(1);
   } finally {
     rm(root);
   }
 });
 
-test('drop is refused for a folder project, which uses wipe', () => {
-  const root = initted('B');
+test('drop is refused for a folder project, which uses wipe', async () => {
+  const root = await initted('B');
   try {
     const r = check(root, 'drop', '$PROBE_DATA_DIR');
-    assert.equal(r.code, 1);
-    assert.match(r.out, /folder/);
-    assert.match(r.out, /wipe/);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/folder/);
+    expect(r.out).toMatch(/wipe/);
   } finally {
     rm(root);
   }

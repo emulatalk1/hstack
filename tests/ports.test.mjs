@@ -1,26 +1,23 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
-import net from 'node:net';
+import { test, expect } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { portOwner, isOurs } from '../scripts/lib/ports.mjs';
 
-const listen = () =>
-  new Promise((resolve) => {
-    const server = net.createServer().listen(0, '127.0.0.1', () => resolve(server));
-  });
+const listen = () => Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
 
 test('a port this test listens on belongs to this process', async () => {
-  const server = await listen();
-  const { port } = server.address();
-  const owner = await portOwner(port);
-  assert.equal(owner.kind, 'process');
-  assert.equal(owner.pid, process.pid);
-  assert.equal(isOurs(owner, process.cwd(), 'x'), true);
-  await new Promise((resolve) => server.close(resolve));
-  assert.equal(await portOwner(port), null);
+  const server = listen();
+  const { port } = server;
+  try {
+    const owner = await portOwner(port);
+    expect(owner.kind).toBe('process');
+    expect(owner.pid).toBe(process.pid);
+    expect(isOurs(owner, process.cwd(), 'x')).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+  expect(await portOwner(port)).toBe(null);
 });
 
 test('isOurs compares real paths and folder boundaries', () => {
@@ -29,22 +26,23 @@ test('isOurs compares real paths and folder boundaries', () => {
   fs.mkdirSync(path.join(dir, 'app'));
   fs.mkdirSync(sibling);
   const real = fs.realpathSync(dir);
-  assert.equal(isOurs({ kind: 'process', pid: 1, cwd: real }, dir, 'x'), true);
-  assert.equal(isOurs({ kind: 'process', pid: 1, cwd: path.join(real, 'app') }, dir, 'x'), true);
-  assert.equal(isOurs({ kind: 'process', pid: 1, cwd: fs.realpathSync(sibling) }, dir, 'x'), false);
-  assert.equal(isOurs({ kind: 'process', pid: 1, cwd: null }, dir, 'x'), false);
+  expect(isOurs({ kind: 'process', pid: 1, cwd: real }, dir, 'x')).toBe(true);
+  expect(isOurs({ kind: 'process', pid: 1, cwd: path.join(real, 'app') }, dir, 'x')).toBe(true);
+  expect(isOurs({ kind: 'process', pid: 1, cwd: fs.realpathSync(sibling) }, dir, 'x')).toBe(false);
+  expect(isOurs({ kind: 'process', pid: 1, cwd: null }, dir, 'x')).toBe(false);
   const box = { kind: 'container', name: 'c', project: 'p-1', workingDir: dir };
-  assert.equal(isOurs(box, dir, 'p-1'), true);
-  assert.equal(isOurs(box, dir, 'p-2'), false);
-  assert.equal(isOurs({ ...box, workingDir: null }, dir, 'p-1'), false);
+  expect(isOurs(box, dir, 'p-1')).toBe(true);
+  expect(isOurs(box, dir, 'p-2')).toBe(false);
+  expect(isOurs({ ...box, workingDir: null }, dir, 'p-1')).toBe(false);
   fs.rmSync(dir, { recursive: true });
   fs.rmSync(sibling, { recursive: true });
 });
 
 function publishedPort() {
   try {
-    const out = execFileSync('docker', ['ps', '--format', '{{.Names}}\t{{.Ports}}'], { encoding: 'utf8' });
-    for (const line of out.split('\n')) {
+    const r = Bun.spawnSync(['docker', 'ps', '--format', '{{.Names}}\t{{.Ports}}']);
+    if (r.exitCode !== 0) return null;
+    for (const line of r.stdout.toString().split('\n')) {
       const [name, ports = ''] = line.split('\t');
       const m = ports.match(/:(\d+)->/);
       if (m) return { name, port: Number(m[1]) };
@@ -54,8 +52,8 @@ function publishedPort() {
 }
 
 const published = publishedPort();
-test('a Docker-published port is reported as a container, never as a process', { skip: !published }, async () => {
+test.skipIf(!published)('a Docker-published port is reported as a container, never as a process', async () => {
   const owner = await portOwner(published.port);
-  assert.equal(owner.kind, 'container');
-  assert.equal(owner.name, published.name);
+  expect(owner.kind).toBe('container');
+  expect(owner.name).toBe(published.name);
 });

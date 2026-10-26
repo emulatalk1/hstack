@@ -1,9 +1,7 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
+import { test, expect } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 
 const REPO = path.resolve(import.meta.dirname, '..');
 const INIT = path.join(REPO, 'scripts/init.mjs');
@@ -13,12 +11,14 @@ function tmp() {
 }
 
 function init(args) {
-  const r = spawnSync(process.execPath, [INIT, ...args], { encoding: 'utf8' });
-  return { code: r.status, out: r.stdout + r.stderr, lines: r.stdout.split('\n') };
+  const r = Bun.spawnSync([process.execPath, INIT, ...args], { cwd: REPO });
+  const stdout = r.stdout.toString();
+  return { code: r.exitCode, out: stdout + r.stderr.toString(), lines: stdout.split('\n') };
 }
 
 const manifestOf = (root) => path.join(root, '.hstack/manifest.json');
-const readManifest = (root) => JSON.parse(fs.readFileSync(manifestOf(root), 'utf8'));
+const readManifest = (root) => Bun.file(manifestOf(root)).json();
+const isDir = (p) => fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() === true;
 
 function stackA() {
   const root = tmp();
@@ -26,82 +26,81 @@ function stackA() {
   return root;
 }
 
-function stackB() {
+async function stackB() {
   const root = tmp();
   for (const f of ['package.json', 'package-lock.json']) {
-    fs.copyFileSync(path.join(REPO, 'fixtures/electron', f), path.join(root, f));
+    await Bun.write(path.join(root, f), Bun.file(path.join(REPO, 'fixtures/electron', f)));
   }
   return root;
 }
 
-const listing = (dir) => fs.readdirSync(dir, { recursive: true }).sort();
+const listing = (dir) => [...new Bun.Glob('**/*').scanSync({ cwd: dir, dot: true, onlyFiles: false })].sort();
 
-test('init writes a stack B manifest with no warnings', () => {
-  const root = stackB();
+test('init writes a stack B manifest with no warnings', async () => {
+  const root = await stackB();
   try {
     const r = init([root]);
-    assert.equal(r.code, 0, r.out);
-    const m = readManifest(root);
-    assert.equal(m.stack, 'B');
-    assert.equal(m.app, '.');
-    assert.equal(m.compose, null);
-    assert.deepEqual(m.evaluators.models, ['opus', 'sonnet']);
-    assert.equal(m.slots.audit, 'ponytail:ponytail-audit');
-    assert.match(m.actor, /^claude-code\//);
-    assert.equal(r.lines.filter((l) => l.startsWith('Warning: ')).length, 0);
+    expect(r.code).toBe(0);
+    const m = await readManifest(root);
+    expect(m.stack).toBe('B');
+    expect(m.app).toBe('.');
+    expect(m.compose).toBe(null);
+    expect(m.evaluators.models).toStrictEqual(['opus', 'sonnet']);
+    expect(m.slots.audit).toBe('ponytail:ponytail-audit');
+    expect(m.actor).toMatch(/^claude-code\//);
+    expect(r.lines.filter((l) => l.startsWith('Warning: ')).length).toBe(0);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('init detects the app subfolder', () => {
+test('init detects the app subfolder', async () => {
   const root = stackA();
   try {
-    assert.equal(init([root]).code, 0);
-    assert.equal(readManifest(root).app, 'real-estate');
+    expect(init([root]).code).toBe(0);
+    expect((await readManifest(root)).app).toBe('real-estate');
     fs.rmSync(path.join(root, '.hstack'), { recursive: true });
-    fs.mkdirSync(path.join(root, 'other'));
-    fs.writeFileSync(path.join(root, 'other/package.json'), '{}');
+    await Bun.write(path.join(root, 'other/package.json'), '{}');
     const r = init([root]);
-    assert.equal(r.code, 1);
-    assert.match(r.out, /--app/);
-    assert.equal(fs.existsSync(path.join(root, '.hstack')), false);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/--app/);
+    expect(isDir(path.join(root, '.hstack'))).toBe(false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('init on stack A warns about the fixed port and the compose name', () => {
+test('init on stack A warns about the fixed port and the compose name', async () => {
   const root = stackA();
   try {
     const before = listing(path.join(root, 'real-estate'));
     const r = init([root]);
-    assert.equal(r.code, 0, r.out);
-    assert.deepEqual(listing(path.join(root, 'real-estate')), before);
-    const m = readManifest(root);
-    assert.equal(m.compose.file, 'real-estate/docker-compose.yml');
-    assert.equal(m.compose.name, null);
-    assert.equal(m.compose.matches, false);
-    assert.match(r.out, /login\.ts line 3 has port 3000/);
-    assert.match(r.out, /no project name/);
-    assert.match(r.out, /any other folder named real-estate\./);
-    assert.ok(r.lines.filter((l) => l.startsWith('Warning: ')).length >= 2);
+    expect(r.code).toBe(0);
+    expect(listing(path.join(root, 'real-estate'))).toStrictEqual(before);
+    const m = await readManifest(root);
+    expect(m.compose.file).toBe('real-estate/docker-compose.yml');
+    expect(m.compose.name).toBe(null);
+    expect(m.compose.matches).toBe(false);
+    expect(r.out).toMatch(/login\.ts line 3 has port 3000/);
+    expect(r.out).toMatch(/no project name/);
+    expect(r.out).toMatch(/any other folder named real-estate\./);
+    expect(r.lines.filter((l) => l.startsWith('Warning: ')).length >= 2).toBeTruthy();
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('a second init does not overwrite', () => {
-  const root = stackB();
+test('a second init does not overwrite', async () => {
+  const root = await stackB();
   try {
-    assert.equal(init([root]).code, 0);
-    fs.writeFileSync(manifestOf(root), '{"edited":true}');
+    expect(init([root]).code).toBe(0);
+    await Bun.write(manifestOf(root), '{"edited":true}');
     const r = init([root]);
-    assert.equal(r.code, 1);
-    assert.match(r.out, /nothing changed/);
-    assert.equal(fs.readFileSync(manifestOf(root), 'utf8'), '{"edited":true}');
-    assert.equal(init([root, '--force']).code, 0);
-    assert.equal(readManifest(root).stack, 'B');
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/nothing changed/);
+    expect(await Bun.file(manifestOf(root)).text()).toBe('{"edited":true}');
+    expect(init([root, '--force']).code).toBe(0);
+    expect((await readManifest(root)).stack).toBe('B');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -110,31 +109,31 @@ test('a second init does not overwrite', () => {
 test('an empty folder writes nothing', () => {
   const root = tmp();
   try {
-    assert.equal(init([root]).code, 1);
-    assert.equal(fs.existsSync(path.join(root, '.hstack')), false);
+    expect(init([root]).code).toBe(1);
+    expect(isDir(path.join(root, '.hstack'))).toBe(false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('a folder with an unknown stack says so and writes nothing', () => {
+test('a folder with an unknown stack says so and writes nothing', async () => {
   const root = tmp();
   try {
-    fs.writeFileSync(path.join(root, 'package.json'), '{}');
+    await Bun.write(path.join(root, 'package.json'), '{}');
     const r = init([root]);
-    assert.equal(r.code, 1);
-    assert.match(r.out, /no stack it knows/);
-    assert.equal(fs.existsSync(path.join(root, '.hstack')), false);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(/no stack it knows/);
+    expect(isDir(path.join(root, '.hstack'))).toBe(false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
 test('an unknown flag or a missing --app value prints usage and exits 1', () => {
-  assert.equal(init(['--nope']).code, 1);
+  expect(init(['--nope']).code).toBe(1);
   const r = init(['--app']);
-  assert.equal(r.code, 1);
-  assert.match(r.out, /Usage/);
+  expect(r.code).toBe(1);
+  expect(r.out).toMatch(/Usage/);
 });
 
 test('init prints the docs bundle result when docs/ exists', () => {
@@ -143,9 +142,9 @@ test('init prints the docs bundle result when docs/ exists', () => {
     fs.cpSync(path.join(REPO, 'tests/fixtures/stack-a'), root, { recursive: true });
     fs.cpSync(path.join(REPO, 'tests/fixtures/okf-bad/no-type'), path.join(root, 'docs'), { recursive: true });
     const r = init([root]);
-    assert.equal(r.code, 0);
-    assert.ok(r.lines.some((l) => l === 'Docs bundle: 1 errors.'));
-    assert.ok(r.lines.every((l) => !l.startsWith('Warning: Docs')));
+    expect(r.code).toBe(0);
+    expect(r.lines.some((l) => l === 'Docs bundle: 1 errors.')).toBeTruthy();
+    expect(r.lines.every((l) => !l.startsWith('Warning: Docs'))).toBeTruthy();
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
