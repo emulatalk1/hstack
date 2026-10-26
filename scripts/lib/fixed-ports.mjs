@@ -10,7 +10,7 @@ export async function findFixedPorts(appDir) {
   for (const folder of ['src', 'tests']) {
     const root = path.join(appDir, folder);
     if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) continue;
-    for await (const rel of new Bun.Glob('**/*.{ts,tsx,js,mjs}').scan({ cwd: root })) {
+    for await (const rel of new Bun.Glob('**/*.{ts,tsx,js,mjs}').scan({ cwd: root, dot: true, followSymlinks: true })) {
       const parts = rel.split(/[\\/]/);
       if (parts.some((p) => SKIP.has(p))) continue;
       const lines = (await Bun.file(path.join(root, rel)).text()).split('\n');
