@@ -64,10 +64,14 @@ function composeFileProblem(text) {
   // YAML also breaks lines at a lone \r and at U+0085, U+2028, U+2029; hstack reads lines only at \n and \r\n.
   if (/\r(?!\n)|[\u0085\u2028\u2029]/.test(text)) return 'uses a line break that hstack does not read as one (a lone carriage return, or U+0085, U+2028 or U+2029), and YAML would start a new line there.';
   const lines = text.split(/\r?\n/);
-  const first = lines.findIndex((l) => l.trim() && !l.startsWith('#'));
+  const isContent = (l) => l.trim() && !l.startsWith('#');
+  const first = lines.findIndex(isContent);
   if (lines.some((l, i) => /^(---|\.\.\.)(\s|$)/.test(l) && !(i === first && l.startsWith('---')))) {
     return 'has more than one YAML document, and Compose lets a later one change the project name.';
   }
+  // With `name:` first, no scalar or collection is open at that point and the root is a block mapping at column 0.
+  const start = /^---\s*(#.*)?$/.test(lines[first]) ? lines.findIndex((l, i) => i > first && isContent(l)) : first;
+  if (start < 0 || !/^name:(\s|$)/.test(lines[start])) return 'must start with its `name:` line (after comments or `---`), so hstack can read it safely.';
   const names = lines.flatMap((l, i) => (/^["']?name["']?\s*:/.test(l) ? [i] : []));
   if (names.length > 1) return 'has more than one top-level `name:`, and Compose uses the last one.';
   // A plain Docker name, optionally in one pair of matching quotes, then only spaces or a comment; anything else may continue or escape.

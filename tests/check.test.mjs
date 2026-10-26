@@ -195,7 +195,18 @@ test('docker is refused when the compose file is built in a way hstack does not 
       ['a root flow mapping', (n) => `{"n\\x61me": evil, x-a: "\nname: ${n}\n"}\n`],
       ['a flow mapping after the --- marker', (n) => `--- {"n\\x61me": evil, x-a: "\nname: ${n}\n", services: {}}\n`],
       ['an alias used as a key', (n) => `x-n: &k name\nname: ${n}\n*k : evil\n`],
-    ].map(([label, build]) => [label, writeCompose(build), /plain key|more than one top-level/]),
+    ].map(([label, build]) => [label, writeCompose(build), /plain key|more than one top-level|must start with its `name:` line/]),
+    ...[
+      ['a scalar hiding the name, closed by a # line', (n) => `x-a: "\nname: ${n}\n#"\nservices: {}\n`],
+      ['a single-quoted scalar closed by a # line', (n) => `x-a: '\nname: ${n}\n#'\nservices: {}\n`],
+      ['a flow mapping closed by a # line', (n) => `x-a: {\nname: ${n}\n#\n }\nservices: {}\n`],
+      ['a flow sequence closed by a # line', (n) => `x-a: [\nname: ${n}\n#\n ]\nservices: {}\n`],
+      ['a scalar opened inside a service', (n) => `services:\n  db:\n    command: "postgres\nname: ${n}\n#"\n`],
+      ['an indented root mapping', (n) => ` x-a: "\nname: ${n}\n#"\n name: evil\n services: {}\n`],
+      ['an indented root flow mapping', (n) => ` {x-a: "\nname: ${n}\n#", name: evil, services: {}}\n`],
+      ['a tab-indented root flow mapping', (n) => `\t{x-a: "\nname: ${n}\n#", name: evil, services: {}}\n`],
+      ['the name after services', (n) => `services: {}\nname: ${n}\n`],
+    ].map(([label, build]) => [label, writeCompose(build), /must start with its `name:` line/]),
     ['a name with a comment glued to it', editCompose((t) => t.replace(/^name: (\S+)/, 'name: $1#evil')), /`name:` line/],
   ]);
 });
@@ -218,6 +229,8 @@ test('docker is allowed for a clean compose file and for harmless extras', async
       (t) => '\uFEFF' + t,
       (t) => t.replace(/\n/g, '\r\n'),
       (t) => `--- # the project\n${t}`,
+      (t) => `# the project\n\n---\n# next\n${t}`,
+      (t) => `# the project\n${t}`,
       (t) => `${t}x-common: &c\n  image: x\nservices:\n  web:\n    <<: *c\n    command: |\n      echo hi\n      ---\n`,
     ]) {
       await Bun.write(f, change(text));
