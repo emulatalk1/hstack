@@ -3,7 +3,7 @@ type: report
 title: "Foundation check on both stacks"
 description: "The output of init and the safety checks on the Electron fixture (stack B) and on the real migration copy (stack A)."
 status: draft
-generated: { by: claude-code/2.1.310, at: "2026-10-26T21:33:34+07:00" }
+generated: { by: claude-code/2.1.310, at: "2026-10-26T21:47:45+07:00" }
 sources:
   - id: foundation-plan
     resource: /plans/2026-10-26-hstack-foundation.md
@@ -11,9 +11,23 @@ sources:
 
 # Foundation check on both stacks
 
-Task 10 of the foundation plan: init and the safety checks run on `fixtures/electron` and on `../outsourcing-hstack`, with the output as printed.
+Task 10 of the foundation plan, run again after the final review fixes: init and the safety checks on `fixtures/electron` and on `../outsourcing-hstack`, with the output as printed. The `exit N` lines are added after each block.
 
 ## This repo's docs bundle and the Electron fixture
+
+Command: `node scripts/init.mjs fixtures/electron --force` (stack B, no warnings)
+
+```text
+Wrote /Users/hbchuc/Documents/programing/vibe-code/hstack/fixtures/electron/.hstack/manifest.json
+exit 0
+```
+
+Stack B shows in the fixture manifest as these two lines:
+
+```text
+  "app": ".",
+  "stack": "B",
+```
 
 Command: `node scripts/okf-check.mjs docs`
 
@@ -22,19 +36,12 @@ Docs bundle: OK
 exit 0
 ```
 
-Command: `node scripts/init.mjs fixtures/electron` (stack B, no warnings)
-
-```text
-Wrote /Users/hbchuc/Documents/programing/vibe-code/hstack/fixtures/electron/.hstack/manifest.json
-exit 0
-```
-
 ## The migration copy (stack A)
 
-Command: `node scripts/init.mjs ../outsourcing-hstack`
+Command: `node scripts/init.mjs ../outsourcing-hstack --force` (run on the project root, never inside `real-estate/`)
 
 ```text
-Warning: The compose file has no project name, so Docker treats this folder as the same project as any other folder named outsourcing-hstack. hstack will not run `docker compose` here until a later hstack step gives it its own services.
+Warning: The compose file has no project name, so Docker treats this folder as the same project as any other folder named real-estate. hstack will not run `docker compose` here until a later hstack step gives it its own services.
 Warning: src/app/(frontend)/layout.tsx line 29 has port 3000 written in code. Read ports from .env so this project can get its own.
 Warning: tests/e2e/articles.e2e.spec.ts line 48 has port 3000 written in code. Read ports from .env so this project can get its own.
 Warning: tests/e2e/articles.e2e.spec.ts line 49 has port 3000 written in code. Read ports from .env so this project can get its own.
@@ -159,11 +166,10 @@ The fixed-port warnings include unit-test URLs. Filtering them to the project's 
 The client repo stayed clean. Command: `git -C ../outsourcing-hstack/real-estate status --short`
 
 ```text
+exit 0
 ```
 
-Output: empty, exit 0.
-
-The root repo shows `?? .hstack/` (expected).
+Output: empty.
 
 ## The safety checks on the copy root
 
@@ -184,4 +190,3 @@ $ node scripts/check.mjs ../outsourcing-hstack port 5432
 Port 5432 is held by the Docker container real-estate-postgres-1 (Docker project real-estate), not by this project. hstack will not stop it.
 exit 1
 ```
-

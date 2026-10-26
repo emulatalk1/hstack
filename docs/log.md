@@ -2,6 +2,7 @@
 
 ## 2026-10-26
 
+* **Update**: Re-ran the [Foundation check on both stacks](/foundation-check.md) after the final review fixes (docker, port, drop and OKF checks; the compose warning now names the compose file's folder).
 * **Creation**: Added the [Foundation check on both stacks](/foundation-check.md), the output of init and the safety checks on both stacks.
 * **Approve**: the [hstack foundation plan](/plans/2026-10-26-hstack-foundation.md) (status `stable`). The user approved it after two advisor rounds and chose subagent-driven execution.
 * **Update**: Made `docs/` an OKF v0.2 bundle. Moved `brief.md` to [hstack brief](/design/2026-10-25-hstack-brief.md), `layers.md` to [hstack layers](/design/2026-10-26-layers.md), `adapter-schema.md` to [Adapter schema](/design/2026-10-26-adapter-schema.md), `adapters/A.md` and `adapters/B.md` to [Stack A adapter](/references/adapters/2026-10-26-stack-a.md) and [Stack B adapter](/references/adapters/2026-10-26-stack-b.md), `evaluator-brief-exploratory.md` to [Evaluator brief: exploratory first](/references/2026-10-26-evaluator-brief-exploratory.md), and `superpowers/plans/2026-10-26-hstack-foundation.md` to [hstack foundation plan](/plans/2026-10-26-hstack-foundation.md). Added frontmatter, index files and this log.
