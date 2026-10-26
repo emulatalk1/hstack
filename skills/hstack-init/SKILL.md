@@ -1,6 +1,7 @@
 ---
 name: hstack-init
 description: Use when you set up hstack in a project, or after the project folder was copied or moved. It writes the project's hstack manifest and reports problems such as ports written in code.
+compatibility: Requires Bun 1.4.4 or later
 ---
 
 # hstack init
@@ -15,10 +16,10 @@ description: Use when you set up hstack in a project, or after the project folde
 ## The command
 
 ```
-node <skill base>/../../scripts/init.mjs <project root>
+bun "${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs" <project root>
 ```
 
-`<skill base>` is this skill's folder. `<project root>` is the folder that will hold `.hstack/`.
+`${CLAUDE_PLUGIN_ROOT}` is the plugin's installed folder, set by Claude Code. `<project root>` is the folder that will hold `.hstack/`.
 
 If the app is a client repo with its own rules, do not use the app folder as the root. Pass its parent folder as the root and the app as a subfolder with `--app`. If the app folder is the root, `.hstack/` is created inside the app.
 
@@ -37,4 +38,4 @@ Show every `Warning:` line to the user. Do not hide them.
 - **"has port N written in code."** The app fixes that port in its own code, so this project cannot get its own port. The user can move the port into `.env` and read it from there. Until then, treat that port as shared.
 - **"The compose file has no project name"**, or **"names its project X, not Y".** Docker would treat this folder as the same project as any other folder with that name. hstack will not allow Docker commands here until the compose file is fixed.
 
-If the project has a `docs` folder, `init` ends with a `Docs bundle:` line. `OK` means the docs pass the checks. Anything else, run `node <skill base>/../../scripts/okf-check.mjs <project root>/docs` and show the user the result.
+If the project has a `docs` folder, `init` ends with a `Docs bundle:` line. `OK` means the docs pass the checks. Anything else, run `bun "${CLAUDE_PLUGIN_ROOT}/scripts/okf-check.mjs" <project root>/docs` and show the user the result.

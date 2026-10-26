@@ -7,17 +7,19 @@ function checkFrontmatter(name, text) {
   const front = text.split('\n---')[0];
   expect(front).toMatch(new RegExp(`^name: ${name}$`, 'm'));
   expect(front).toMatch(/^description: \S/m);
+  expect(front).toMatch(/^compatibility: Requires Bun 1\.4\.4 or later$/m);
+  expect(text).not.toMatch(/node /);
 }
 
 test('skills have frontmatter and name their scripts', async () => {
   const init = await skill('hstack-init');
   checkFrontmatter('hstack-init', init);
-  expect(init).toMatch(/scripts\/init\.mjs/);
+  expect(init).toMatch(/bun "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/init\.mjs"/);
 
   const safety = await skill('hstack-safety');
   checkFrontmatter('hstack-safety', safety);
   for (const check of ['docker', 'port', 'drop', 'wipe']) {
-    expect(safety).toMatch(new RegExp(`check\\.mjs <project root> ${check}\\b`));
+    expect(safety).toMatch(new RegExp(`bun "\\$\\{CLAUDE_PLUGIN_ROOT\\}\\/scripts\\/check\\.mjs" <project root> ${check}\\b`));
   }
   for (const banned of ['docker compose down -v', 'docker volume rm', 'docker volume prune', 'docker system prune --volumes', 'docker rm -v']) {
     expect(safety.includes(banned)).toBeTruthy();

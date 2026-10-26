@@ -1,6 +1,7 @@
 ---
 name: hstack-safety
 description: Use before any Docker command, before stopping a process on a port, before dropping a database and before wiping a folder in a project that has an hstack manifest. It tells you which check to run and what to do when it says no.
+compatibility: Requires Bun 1.4.4 or later
 ---
 
 # hstack safety
@@ -15,12 +16,12 @@ Exit 0 means allowed. Exit 1 means refused.
 
 | Before you... | Run |
 |---|---|
-| run a `docker` or `docker compose` command | `node <skill base>/../../scripts/check.mjs <project root> docker` |
-| stop whatever holds a port | `node <skill base>/../../scripts/check.mjs <project root> port <number>` |
-| drop a database | `node <skill base>/../../scripts/check.mjs <project root> drop <name>` |
-| wipe a data folder | `node <skill base>/../../scripts/check.mjs <project root> wipe <path>` |
+| run a `docker` or `docker compose` command | `bun "${CLAUDE_PLUGIN_ROOT}/scripts/check.mjs" <project root> docker` |
+| stop whatever holds a port | `bun "${CLAUDE_PLUGIN_ROOT}/scripts/check.mjs" <project root> port <number>` |
+| drop a database | `bun "${CLAUDE_PLUGIN_ROOT}/scripts/check.mjs" <project root> drop <name>` |
+| wipe a data folder | `bun "${CLAUDE_PLUGIN_ROOT}/scripts/check.mjs" <project root> wipe <path>` |
 
-`<skill base>` is this skill's folder. `<project root>` is the folder that holds `.hstack/`.
+`${CLAUDE_PLUGIN_ROOT}` is the plugin's installed folder, set by Claude Code. `<project root>` is the folder that holds `.hstack/`.
 
 Every check refuses first if there is no manifest (run `hstack-init`), or if the folder was copied or moved since `init` (run `hstack-init` again there).
 

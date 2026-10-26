@@ -7,7 +7,7 @@ A Claude Code plugin for an evidence-led build loop: review, mutation testing an
 ## Requirements
 
 - Claude Code
-- Node 24. The scripts use the standard library only; there is nothing to install.
+- Bun 1.4.4 or later. The scripts use Bun's own APIs; there is nothing to install.
 - macOS or Linux. The port check uses `lsof`, and the `docker` and `port` checks read `docker ps`.
 
 ## Install
@@ -33,7 +33,7 @@ The skills run the scripts below for the agent. You can also run them yourself f
 ### `init`: write the project manifest
 
 ```
-node scripts/init.mjs [project root] [--app <subfolder>] [--force]
+bun scripts/init.mjs [project root] [--app <subfolder>] [--force]
 ```
 
 It writes `<project root>/.hstack/manifest.json`, the one place later steps read project facts from: the stack, the commands, the dev server, the database or data folder an agent may wipe, and the compose file. It writes nothing else and never runs `docker compose`.
@@ -55,10 +55,10 @@ For any other project, `init` says so and writes nothing.
 ### `check`: the safety checks
 
 ```
-node scripts/check.mjs <project root> docker
-node scripts/check.mjs <project root> port <number>
-node scripts/check.mjs <project root> drop <database>
-node scripts/check.mjs <project root> wipe <folder>
+bun scripts/check.mjs <project root> docker
+bun scripts/check.mjs <project root> port <number>
+bun scripts/check.mjs <project root> drop <database>
+bun scripts/check.mjs <project root> wipe <folder>
 ```
 
 Exit 0 means allowed. Exit 1 means refused, and the reason is printed in plain English. A check only answers; it never does the action.
@@ -74,7 +74,7 @@ No hstack script runs `docker compose`, removes a Docker volume or kills a proce
 ### `okf-check`: check a docs folder
 
 ```
-node scripts/okf-check.mjs <docs folder>
+bun scripts/okf-check.mjs <docs folder>
 ```
 
 It checks a `docs/` folder written in the OKF v0.2 format (Open Knowledge Format: Markdown files with a small header block, plus `index.md` and `log.md`), together with hstack's own rules:
@@ -88,10 +88,10 @@ It exits 1 when there are errors. It also warns about docs past their `stale_aft
 ## Development
 
 ```
-npm test
+bun test ./tests
 ```
 
-This runs `node --test tests/*.test.mjs`, 50 tests. The tests leave nothing behind on the machine: they read `docker ps`, make temp folders they remove, and open short-lived local listeners.
+This runs the tests with `bun:test`, 52 tests. The tests leave nothing behind on the machine: they read `docker ps`, make temp folders they remove, and open short-lived local listeners.
 
 | Path | What it holds |
 |---|---|
