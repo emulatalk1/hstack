@@ -3,8 +3,8 @@ type: plan
 title: "hstack foundation plan"
 description: "The plugin skeleton, init, the manifest, the OKF checker and the safety checks every later hstack step calls."
 status: draft
-generated: { by: claude-code/2.1.310, at: "2026-10-26T20:10:23+07:00" }
-verified: { by: claude-code-advisor/2.1.310, at: "2026-10-26T19:30:00+07:00" }
+generated: { by: claude-code/2.1.310, at: "2026-10-26T20:42:09+07:00" }
+verified: { by: claude-code-advisor/2.1.310, at: "2026-10-26T20:42:09+07:00" }
 sources:
   - id: hstack-brief
     resource: /design/2026-10-25-hstack-brief.md
@@ -216,8 +216,8 @@ The Electron fixture `fixtures/electron/` (already committed) is the stack B fix
 **Interfaces:**
 - Consumes: the manifest's `paths` (Task 6).
 - Produces: `checkBundle(docsDir: string, now?: Date): { errors: string[], warnings: string[] }` and CLI `node scripts/okf-check.mjs <docsDir>` (exit 0 when `errors` is empty, else 1; each message in plain English with the file).
-  - Errors (OKF v0.2 §11): a non-reserved `.md` file without a frontmatter block; a frontmatter block without a non-empty `type`; an `index.md` with frontmatter other than `okf_version` at the bundle root; a `log.md` date heading not in `YYYY-MM-DD` form.
-  - Errors (hstack gate, from the layer list's Knowledge layer): a concept not listed in its folder's `index.md`; a `sources` entry whose `resource` is a bundle path (starts with `/` or `.`) that does not resolve; `status: stable` without a `verified` entry whose `by` starts with `human:`.
+  - Errors (OKF v0.2 §11): a non-reserved `.md` file without a frontmatter block; a frontmatter block without a non-empty `type`; an `index.md` with any frontmatter, except the root `index.md`, which may carry only `okf_version`; a `log.md` date heading not in `YYYY-MM-DD` form.
+  - Errors (hstack gate, from the layer list's Knowledge layer): a concept not listed in its folder's `index.md` (a link counts when its target resolves to the concept, relative to the index's folder, or to the bundle root when it starts with `/`; the `sources` check uses the same rule); a `sources` entry whose `resource` is a bundle path (starts with `/` or `.`) that does not resolve; `status: stable` without a `verified` entry whose `by` starts with `human:`.
   - Warnings: a concept with `stale_after` at or before `now`; a `docs/log.md` entry that names no linked concept.
   - Frontmatter is read with a small parser for the fields above (`type`, `status`, `stale_after`, `verified`, `verified` as written by hstack: a flow mapping `{ by: …, at: … }` or a list of them; `sources` as a block list of `id` and `resource` entries), no YAML library.
 
@@ -225,7 +225,7 @@ The Electron fixture `fixtures/electron/` (already committed) is the stack B fix
   - `this repo's docs bundle passes` — `checkBundle('docs').errors` is `[]`.
   - `a concept without type fails` — fixture `okf-bad/no-type/` gives one error naming the file.
   - `stable without a human verified fails` — fixture `okf-bad/stable-unverified/` (stable, verified only by `claude-code-advisor/…`) gives one error.
-  - `a dead source path fails and a stale adapter warns` — fixture `okf-bad/dead-source/` with `sources: [{ resource: /design/missing.md }]` and `stale_after: "2026-01-01T00:00:00+07:00"`: one error, and with `now` = 2026-10-26 one warning.
+  - `a dead source path fails and a stale adapter warns` — fixture `okf-bad/dead-source/` with `sources:` as a block list holding one entry, `resource: /design/missing.md`, and `stale_after: "2026-01-01T00:00:00+07:00"`: one error, and with `now` = 2026-10-26 one warning.
 - [ ] **Step 2: Run** `node --test tests/okf.test.mjs`. Expected: FAIL.
 - [ ] **Step 3: Implement** `checkBundle` and the CLI; make `init` print "Docs bundle: OK" or the error count with the first three messages, for `<root>/docs` when it exists.
 - [ ] **Step 4: Run** `npm test`, then the OKF skill's validator on this repo (`bash <okf skill>/scripts/validate.sh docs`). Expected: all PASS; the validator says conformant.

@@ -4,7 +4,7 @@ title: "Adapter schema"
 description: "The 12 fields each stack adapter fills, with a value, evidence and a status for each."
 status: draft
 generated: { by: claude-code/2.1.310, at: "2026-10-26T20:10:23+07:00" }
-verified: { by: claude-code-advisor/2.1.310, at: "2026-10-26T19:30:00+07:00" }
+verified: { by: claude-code-advisor/2.1.310, at: "2026-10-26T20:42:09+07:00" }
 ---
 
 # Adapter schema
