@@ -47,7 +47,7 @@ Recorded cost: a final review of plan 10 took 140k tokens and 3 minutes (Sonnet)
 
 ## Recurring
 
-**Whole-repo audit.** The 2026-10-22 report has the shape of the `ponytail-audit` skill (Must fix, Should fix, Nice to have, Lean, Not checked), and the log says four read-only reviewers ran it. They read the whole repo and the installed library source, and ran nothing. Each finding has a concrete case, checked against the code. hstack runs this skill, so it either depends on the ponytail plugin or carries its own copy of the brief. The 2026-10-22 audit had 13 findings, and all went into plan 9: fixes in the app, fixes in the harness tools, and one known limit.
+**Whole-repo audit.** Run `/ponytail:ponytail-audit` (the user ran it on 2026-10-22). It split the repo into four areas (public forms, leads and emails; access, collections and users; import, seed, cache and pages; harness tools and hooks), one read-only reviewer agent each. They read the code and the installed library source, and ran nothing. Each finding has a concrete case, checked against the code. Decision (2026-10-26): hstack depends on the ponytail plugin for this for now. The 2026-10-22 audit had 13 findings, and all went into plan 9: fixes in the app, fixes in the harness tools, and one known limit.
 
 When to run it: the 5 audit bugs with a known start were added between 2026-10-09 and 2026-10-20 and stayed until the audit. Run it every 3 plans and before a release.
 
@@ -73,7 +73,6 @@ Stack A: Next.js + Payload + Postgres + Vitest + Playwright. Stack B: Electron +
 
 1. Whether two evaluator models stay. The record says they find different defects (5 shared of 69). The pilot was too small to compare them.
 2. Whether the whole-repo audit runs every 3 plans, or on a size trigger (for example, after a set number of changed lines).
-3. Whether hstack depends on the ponytail plugin for the audit, or carries its own copy.
-4. Task review cost: the plugin records it, so the layer can be compared with the others.
+Decided 2026-10-26: the audit uses the ponytail plugin; the plugin records task-review cost (tokens and time per task).
 
 How this was measured: each replayed bug was applied to the current code, with every test its fix added or changed skipped by title. Evaluators in the replay got the step text from before the fix.
