@@ -3,7 +3,7 @@
 // copy (that would show the task's future commits). A probe turn checks what loaded; then the input, up to 5 resumes
 // until the agent replies DONE, and the product fetched into the task repo as bench/<task>-<arm>-<n>.
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { agentEnv, runClaude } from './agent-replay.mjs'
@@ -39,6 +39,19 @@ async function loadArms(path) {
     for (const d of plugins[arm]) if (!statSync(d, { throwIfNoEntry: false })?.isDirectory()) bad(`plugin dir ${d} does not exist`)
   }
   return { model: c.model, smallModel: c.smallModel, plugins, turnTimeoutSec }
+}
+
+// shortcut: the arm agent has full permissions and can read the oracle (data folder) and the copy (task repo) by absolute
+// path; this only flags the transcripts that name either, in the written or the resolved form. A sandbox must replace it
+// before prereg step 8.
+async function leakTurns(runDir, paths) {
+  const needles = [...new Set(paths.flatMap((p) => [p, existsSync(p) ? realpathSync(p) : p]))]
+  const hits = []
+  for (const f of readdirSync(runDir).filter((f) => f.endsWith('.jsonl')).sort()) {
+    const text = await Bun.file(join(runDir, f)).text()
+    if (needles.some((n) => text.includes(n))) hits.push(f)
+  }
+  return hits
 }
 
 // the name a plugin dir shows at init: its manifest name, else the folder name
@@ -126,13 +139,14 @@ export async function runArm(args, { root = ROOT } = {}) {
     const abandoned = reason !== null
     const us = outs.map(usage), sum = (k) => us.reduce((s, u) => s + u[k], 0)
     const { models: probeModels, ...probeUsage } = usage(probe.out)
+    const leaks = await leakTurns(runDir, [data, task.repo])
     const rec = {
-      task: id, arm, run: n, base, model: model ?? null, plugins, sessionId, start, end: new Date().toISOString(),
+      task: id, arm, run: n, base, model: model ?? null, version: info.version, plugins, sessionId, start, end: new Date().toISOString(),
       status: abandoned ? 'abandoned' : 'done', reason, resumes,
       interventions: countInterventions({ hookLines: 0, resumes, abandoned }), // hookLines 0: no hook under -p, see the settings above
       turns,
       usage: { input: sum('input'), output: sum('output'), cacheRead: sum('cacheRead'), cacheWrite: sum('cacheWrite') },
-      models: [...new Set(us.flatMap((u) => u.models))], probeUsage, probeModels, probe: info, transcripts: runDir, branch: null,
+      models: [...new Set(us.flatMap((u) => u.models))], probeUsage, probeModels, probe: info, transcripts: runDir, leak: leaks.length > 0, leakTurns: leaks, branch: null,
     }
     let err
     try {

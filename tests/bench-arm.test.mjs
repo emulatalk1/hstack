@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { armArgs, countInterventions, initInfo, probeOk } from '../bench/lib/arm.mjs'
@@ -52,7 +52,8 @@ const init = (o) => [JSON.stringify({ type: 'system', subtype: 'init', tools: ['
   JSON.stringify({ type: 'result', subtype: 'success', result: 'OK' })].join('\n')
 test('probeOk refuses a B run whose init lists a plugin, a namespaced command or a user skill, and an H run whose plugins differ from its list', () => {
   const skills = ['cua-driver', 'synced']
-  expect(initInfo(init({}))).toMatchObject({ plugins: [], commands: ['debug'], tools: ['Bash', 'Write'] })
+  expect(initInfo(init({}))).toMatchObject({ plugins: [], commands: ['debug'], tools: ['Bash', 'Write'], version: null })
+  expect(initInfo(init({ claude_code_version: '2.1.310' })).version).toBe('2.1.310')
   expect(probeOk('B', initInfo(init({})), [], skills)).toBeNull()
   expect(probeOk('B-', initInfo(init({ plugins: [...builtin, { name: 'hstack', path: '/p' }] })), [], skills)).toContain('hstack')
   expect(probeOk('B', initInfo(init({ slash_commands: ['debug', 'hstack:hstack-init'] })), [], skills)).toContain('hstack:hstack-init')
@@ -83,7 +84,8 @@ const task = join(tmp, 'task.json')
 writeFileSync(task, JSON.stringify({ name: 't1', repo, db: null, port: 4999, start: 'true', ready: 'http://127.0.0.1:4999/', oracle: 'true', junit: 'r.xml' }))
 
 // STUB_DONE: the turn (0 = the first prompt, 1 = the first resume) that answers DONE, or never; STUB_PLUGINS: the probe's plugin list;
-// STUB_PLANT: a marker file the main turn's planted post-commit hook and fsmonitor would write (it also plants a tag)
+// STUB_PLANT: a marker file the main turn's planted post-commit hook and fsmonitor would write (it also plants a tag);
+// STUB_SAY: text the main turn writes in its transcript
 const stub = join(tmp, 'claude-stub')
 writeFileSync(stub, `#!/usr/bin/env bun
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -91,8 +93,8 @@ const a = process.argv.slice(2), probe = a[1] === 'Reply OK.'
 const prev = existsSync(process.env.STUB_LOG) ? readFileSync(process.env.STUB_LOG, 'utf8').trim().split('\\n').length - 1 : 0 // main turns so far
 appendFileSync(process.env.STUB_LOG, JSON.stringify({ probe, args: a, cwd: process.cwd(), files: readdirSync(process.cwd()).sort(), env: Object.keys(process.env).filter((k) => /BENCH/.test(k)) }) + '\\n')
 const say = (o) => console.log(JSON.stringify(o))
-say({ type: 'system', subtype: 'init', tools: ['Bash'], slash_commands: [], plugins: JSON.parse(process.env.STUB_PLUGINS ?? '[]') })
-say({ type: 'assistant', message: { id: 'm', model: probe ? 'probe-m' : 'main-m', usage: {}, content: [] } })
+say({ type: 'system', subtype: 'init', claude_code_version: '9.9.9', tools: ['Bash'], slash_commands: [], plugins: JSON.parse(process.env.STUB_PLUGINS ?? '[]') })
+say({ type: 'assistant', message: { id: 'm', model: probe ? 'probe-m' : 'main-m', usage: {}, content: [{ type: 'text', text: !probe && prev === 0 ? process.env.STUB_SAY ?? '' : '' }] } })
 if (!probe) writeFileSync('made.txt', 'turn ' + prev + '\\n')
 const mark = process.env.STUB_PLANT
 if (!probe && prev === 0 && mark) {
@@ -152,7 +154,7 @@ test('run-arm: a question then DONE on the first resume is one intervention, and
   expect(existsSync(marker)).toBe(false) // neither its post-commit hook nor its fsmonitor ran
   expect(show('bench/p1-B-1~1').split('\n')).toContain('    base ' + git('rev-parse', '--short=7', 'HEAD~1').stdout.toString().trim())
   const res = result('p1-B-1')
-  expect(res).toMatchObject({ task: 'p1', arm: 'B', run: 1, status: 'done', resumes: ['other'], interventions: 1, branch: 'bench/p1-B-1', plugins: [],
+  expect(res).toMatchObject({ task: 'p1', arm: 'B', run: 1, status: 'done', resumes: ['other'], interventions: 1, branch: 'bench/p1-B-1', plugins: [], version: '9.9.9', leak: false, leakTurns: [],
     usage: { input: 20, output: 4 }, transcripts: dir, probeUsage: { input: 1, output: 2 }, models: ['main-m'], probeModels: ['probe-m'] })
   expect(res.turns).toEqual([{ turn: 'probe', code: 0, timedOut: false }, { turn: 'main', code: 0, timedOut: false }, { turn: 'resume-1', code: 0, timedOut: false }])
   expect(Date.parse(res.end) >= Date.parse(res.start)).toBe(true)
@@ -168,6 +170,15 @@ test('run-arm: DONE on the main turn is zero interventions and no resume', async
   expect(r).toMatchObject({ code: 0, stdout: 'p1-B-5 done\n' })
   expect(calls().length).toBe(2)
   expect(result('p1-B-5')).toMatchObject({ status: 'done', resumes: [], interventions: 0 })
+})
+
+test('run-arm flags the turns whose transcript names the data folder or the task repo, also by their resolved path', async () => {
+  const link = join(tmp, 'data-link'); symlinkSync(data, link)
+  const viaLink = { HSTACK_BENCH_MACHINE: join(link, 'machine.json') }
+  expect(await cli(run('B', 6), { ...viaLink, STUB_DONE: '1', STUB_SAY: `I read ${data}/p1/oracle/a.spec.ts` })).toMatchObject({ code: 0 })
+  expect(result('p1-B-6')).toMatchObject({ leak: true, leakTurns: ['1-main.jsonl'] })
+  expect(await cli(run('B', 7), { STUB_DONE: '0', STUB_SAY: `git -C ${repo} log` })).toMatchObject({ code: 0 })
+  expect(result('p1-B-7')).toMatchObject({ leak: true, leakTurns: ['1-main.jsonl'] })
 })
 
 test('run-arm records each plugin dir with its name, commit and whether it is dirty', async () => {

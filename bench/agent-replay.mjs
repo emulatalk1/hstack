@@ -2,7 +2,7 @@
 // Replay a bug against an agent layer (review, audit, evaluator), then let a separate judge that sees only the bug's
 // sealed description and the layer's findings say whether it was caught. The agent never gets a .git: a worktree
 // shares the repo's refs and objects, so `git log --all` would show the fix.
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { ROOT, withEnv, withExport } from './env.mjs'
 import { resolveCommit } from './grade.mjs'
@@ -13,7 +13,7 @@ import { readBug, reverseApply } from './replay.mjs'
 
 const USAGE = 'usage: bun bench/agent-replay.mjs <task.json> <bug.json> <review|audit|evaluator> [--sealed]'
 const JUDGE = 'Did any finding describe this defect (same behaviour, same place)? Reply with one JSON object only.'
-const NEEDS = { review: ['task', 'base', 'end'], audit: ['task', 'base', 'end'], evaluator: ['task', 'at', 'patch'] }
+const NEEDS = { review: ['task', 'base', 'end', 'fix'], audit: ['task', 'base', 'end', 'fix'], evaluator: ['task', 'at', 'patch'] }
 const strings = (v) => v === undefined || (Array.isArray(v) && v.every((s) => typeof s === 'string'))
 
 // the agent must not find the data folder (results, other bugs) or the bench's own variables
@@ -45,6 +45,8 @@ export async function agentReplay(args, { root = ROOT } = {}) {
   const bug = await readBug(bugPath, ['description', ...NEEDS[layer]])
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(bug.task)) throw new Error('bug task must match ^[A-Za-z0-9][A-Za-z0-9_.-]*$')
   const data = dirname(resolve(process.env.HSTACK_BENCH_MACHINE))
+  const recFile = join(data, 'results', `${bug.id}-${layer}.json`)
+  if (existsSync(recFile)) throw new Error(`results ${recFile} exist`)
   const inputPath = join(data, bug.task, 'input.md') // the filtered input, never the raw plan: its Review Focus can name the bug
   const input = layer === 'audit' ? '' : await Bun.file(inputPath).text().catch(() => null)
   if (input === null) throw new Error(`filtered input ${inputPath} is missing`)
@@ -61,8 +63,11 @@ export async function agentReplay(args, { root = ROOT } = {}) {
       { root, quiet: sealed, before: reverseApply(bug, sealed) })
       .catch((e) => { if (!run) throw e; envErr = e }) // a stop or teardown failure after the agent ran must not lose its record
   } else {
-    // the bug is present at the task's end by construction (its fix came later), so nothing is applied
-    const [base, end] = await Promise.all([resolveCommit(task.repo, bug.base), resolveCommit(task.repo, bug.end)])
+    // the bug is present at the task's end only if its fix came later, so nothing is applied; a fix already in end is refused
+    const [base, end, fix] = await Promise.all([resolveCommit(task.repo, bug.base), resolveCommit(task.repo, bug.end), resolveCommit(task.repo, bug.fix)])
+    const inEnd = (await Bun.$`git -C ${task.repo} merge-base --is-ancestor ${fix} ${end}`.nothrow().quiet()).exitCode
+    if (inEnd === 0) throw new Error(`fix ${fix} is already in end ${end}: the end product holds the fix`)
+    if (inEnd !== 1) throw new Error(`git merge-base --is-ancestor ${fix} ${end} failed (exit ${inEnd})`)
     if (layer === 'audit') run = await agent(brief, end)
     else run = await agent(`${brief}\n\n## Input\n\n${input}\n\n## Diff of the task\n\n${await Bun.$`git -C ${task.repo} diff --no-ext-diff --no-color ${base} ${end}`.quiet().text()}`)
   }
@@ -87,7 +92,7 @@ export async function agentReplay(args, { root = ROOT } = {}) {
   }
   rec.end = new Date().toISOString()
   mkdirSync(join(data, 'results'), { recursive: true })
-  await Bun.write(join(data, 'results', `${bug.id}-${layer}.json`), JSON.stringify(rec, null, 2) + '\n')
+  await Bun.write(recFile, JSON.stringify(rec, null, 2) + '\n')
   console.log(`${bug.id} ${rec.verdict}`)
   return rec.verdict === 'error' ? 1 : 0
 }

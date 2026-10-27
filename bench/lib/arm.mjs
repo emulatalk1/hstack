@@ -16,7 +16,8 @@ export function initInfo(streamJson) {
   const init = events(streamJson).find((e) => e?.type === 'system' && e.subtype === 'init')
   if (!init) throw new Error('transcript has no init event')
   // builtin plugins load for every arm alike
-  return { plugins: (init.plugins ?? []).filter((p) => p.path !== 'builtin').map((p) => p.name), commands: init.slash_commands ?? [], tools: init.tools ?? [] }
+  return { plugins: (init.plugins ?? []).filter((p) => p.path !== 'builtin').map((p) => p.name), commands: init.slash_commands ?? [], tools: init.tools ?? [],
+    version: init.claude_code_version ?? null }
 }
 
 export function probeOk(arm, info, expectedPlugins, userSkills) {

@@ -225,4 +225,8 @@ test('refuses a bad layer, a missing brief, missing bug fields and a missing inp
   await err([t, bug('c1', { task: '..' }), 'review'], 'task')
   await err([t, bug('c1', { task: 'p2' }), 'review'], 'input')
   await err([t, bug('bad id'), 'review'], 'id')
+  await err([t, bug('c1', { fix: undefined }), 'review'], 'fix')
+  await err([t, bug('c1', { end: fix }), 'review'], 'already in end')
+  await err([t, bug('c1', { fix: base }), 'audit'], 'already in end')
+  await err([t, bug('b1'), 'review'], 'b1-review.json exist') // a layer run already recorded
 })
