@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { ROOT, withEnv, withExport } from './env.mjs'
 import { resolveCommit } from './grade.mjs'
 import { claudeArgs, finalText, judgeVerdict, usage } from './lib/agent.mjs'
+import { runGroup } from './lib/proc.mjs'
 import { loadTask } from './lib/task.mjs'
 import { readBug, reverseApply } from './replay.mjs'
 
@@ -21,15 +22,10 @@ export const agentEnv = () => Object.fromEntries(Object.entries(process.env).fil
 // One headless claude call (binary from BENCH_CLAUDE); its process group is killed after timeoutSec and after it exits.
 export async function runClaude(opts, cwd, { timeoutSec, quiet = false }) {
   // shortcut: the prompt rides in argv, so a task diff over ~1 MB (macOS ARG_MAX) fails to start and `ps` shows the
-  // sealed description while the judge runs; move the prompt to stdin when a diff that large or a shared machine comes up
-  const p = Bun.spawn([process.env.BENCH_CLAUDE || 'claude', ...claudeArgs(opts)],
-    { cwd, env: agentEnv(), detached: true, stdin: 'ignore', stdout: 'pipe', stderr: quiet ? 'ignore' : 2 })
-  let timedOut = false
-  const timer = setTimeout(() => { timedOut = true; try { process.kill(-p.pid, 'SIGKILL') } catch {} }, timeoutSec * 1000)
-  const [out, code] = [await new Response(p.stdout).text(), await p.exited]
-  clearTimeout(timer)
-  try { process.kill(-p.pid, 'SIGKILL') } catch {} // whatever the agent left running in its group
-  return { out, code: timedOut ? 'timeout' : code }
+  // sealed description while the judge runs; move the prompt to stdin when a diff that large or a shared machine comes up.
+  // The same holds for a layer command: one that passes the BENCH_EXCLUDE titles as a filter (an e2e --grep-invert) shows
+  // the bug's test names in `ps`.
+  return runGroup([process.env.BENCH_CLAUDE || 'claude', ...claudeArgs(opts)], { cwd, env: agentEnv(), stdout: 'pipe', stderr: quiet ? 'ignore' : 2, timeoutSec })
 }
 
 export async function agentReplay(args, { root = ROOT } = {}) {

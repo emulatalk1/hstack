@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseTask, loadTask } from '../bench/lib/task.mjs'
@@ -18,6 +18,9 @@ test('refuses a repo under a forbidden path', () => {
   expect(() => parseTask({ ...ok, repo: '/work/outsourcing/real-estate' }, machine)).toThrow('repo')
   expect(() => parseTask({ ...ok, repo: '/work/outsourcing' }, machine)).toThrow('repo')
   expect(() => parseTask({ ...ok, repo: '/work/x/../outsourcing/a' }, machine)).toThrow('repo')
+})
+test('refuses a machine whose forbid.paths is not an array of strings', () => {
+  for (const m of [{}, { forbid: {} }, { forbid: { paths: '/work' } }, { forbid: { paths: [1] } }, null]) expect(() => parseTask(ok, m)).toThrow('forbid.paths')
 })
 test('refuses a relative repo, a port outside 1024-65535 and a missing oracle', () => {
   expect(() => parseTask({ ...ok, repo: 'real-estate' }, machine)).toThrow('repo')
@@ -51,9 +54,11 @@ test('refuses bad list, timeout and string fields', () => {
 })
 test('refuses a symlink that points into a forbidden path', () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'bench-task-')))
-  const forbidden = join(dir, 'forbidden'); mkdirSync(forbidden)
-  const link = join(dir, 'link'); symlinkSync(forbidden, link)
-  expect(() => parseTask({ ...ok, repo: link }, { forbid: { paths: [forbidden] } })).toThrow('repo')
+  try {
+    const forbidden = join(dir, 'forbidden'); mkdirSync(forbidden)
+    const link = join(dir, 'link'); symlinkSync(forbidden, link)
+    expect(() => parseTask({ ...ok, repo: link }, { forbid: { paths: [forbidden] } })).toThrow('repo')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 test('loadTask reads the task and machine files, and needs HSTACK_BENCH_MACHINE', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'bench-task-'))
@@ -68,5 +73,6 @@ test('loadTask reads the task and machine files, and needs HSTACK_BENCH_MACHINE'
   } finally {
     if (prev === undefined) delete process.env.HSTACK_BENCH_MACHINE
     else process.env.HSTACK_BENCH_MACHINE = prev
+    rmSync(dir, { recursive: true, force: true })
   }
 })

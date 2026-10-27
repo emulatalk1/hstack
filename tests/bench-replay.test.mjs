@@ -108,6 +108,12 @@ test('an it.each or template title excludes the runner\'s formatted names, and o
   expect(caught([f('suite > costs 55 xx')], ['costs 5 (x)'])).toBe(true)
 })
 
+test('a title of holes only excludes nothing, since it would match every case', () => {
+  const f = (name) => ({ name, status: 'fail', message: '' })
+  for (const t of ['%s', '${name}', '$name %d', ' %s ']) expect(caught([f('suite > anything')], [t])).toBe(true)
+  expect(caught([f('suite > a b')], ['%s', 'a %s'])).toBe(false)
+})
+
 // CLI smoke test. Layers write JUnit by hand: the "bug" is the word buggy in src/a.txt, which the fix changed.
 const { replay } = await import('../bench/replay.mjs')
 const ROOT = '/tmp/hstack-bench'

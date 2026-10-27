@@ -33,6 +33,10 @@ test('system-out text does not change the status', () => {
   const xml = '<testcase name="a-T3 x"><system-out><![CDATA[<skipped/>]]></system-out></testcase>'
   expect(readJunit(xml)).toEqual([{ name: 'a-T3 x', status: 'pass', message: '' }])
 })
+test('a self-closing system-out does not hide a later failure', () => {
+  const xml = '<testcase name="a-T5 x"><system-out/><failure message="boom"/><system-err>e</system-err></testcase>'
+  expect(readJunit(xml)).toEqual([{ name: 'a-T5 x', status: 'fail', message: 'boom' }])
+})
 test('an out-of-range numeric entity is left unchanged', () => {
   expect(readJunit('<testcase name="a-T4 &#99999999; x"/>')[0].name).toBe('a-T4 &#99999999; x')
 })

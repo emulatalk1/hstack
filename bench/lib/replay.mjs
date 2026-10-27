@@ -60,7 +60,8 @@ function tableRowTitle(post, i, re) {
   return template.slice(0, hole.index) + cell[2] + template.slice(hole.index + 2)
 }
 
-export const isExcluded = (name, excluded) => excluded.some((t) => titlePattern(t).test(name.trim()))
+// a title of holes only (`%s`, `${x}`) would match every case name, so it excludes nothing; replay reports it in dev mode
+export const isExcluded = (name, excluded) => excluded.some((t) => !holeOnly(t) && titlePattern(t).test(name.trim()))
 
 // A title becomes a pattern: printf tokens (%s, %d ...) and template holes ($name, ${expr}) match any text, the rest is literal.
 // It must end the case name and start it or follow a separator, so `trims` does not hide `trims the name of a place`.
@@ -70,6 +71,7 @@ const titlePattern = (t) => {
   for (const m of t.matchAll(HOLE)) { re += esc(t.slice(last, m.index)) + '[\\s\\S]*'; last = m.index + m[0].length }
   return new RegExp(`(?:^|[>›]\\s*)${re}${esc(t.slice(last))}$`)
 }
+export const holeOnly = (t) => !t.replace(HOLE, '').trim()
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export const caught = (cases, excluded) => cases.some((c) => c.status === 'fail' && !isExcluded(c.name, excluded))

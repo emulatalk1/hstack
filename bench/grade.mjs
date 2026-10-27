@@ -4,6 +4,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { ROOT, withEnv } from './env.mjs'
 import { readJunit } from './lib/junit.mjs'
+import { runGroup } from './lib/proc.mjs'
 import { checksFrom, fixMatches, results, score, verdict } from './lib/score.mjs'
 import { loadTask } from './lib/task.mjs'
 
@@ -16,15 +17,12 @@ export async function resolveCommit(repo, commit) {
   return out.trim()
 }
 
-// Run cmd in the env fn received; stale JUnit deleted first, killed after task.timeoutSec. stdio: 2 (stderr) or 'ignore'.
+// Run cmd in the env fn received; stale JUnit deleted first, its group killed after task.timeoutSec and after it exits. stdio: 2 (stderr) or 'ignore'.
 export async function runForJunit(task, { dir, junitPath, env }, cmd, extraEnv = {}, stdio = 2) {
   rmSync(junitPath, { force: true }) // a stale file must not be graded
-  const proc = Bun.spawn(['sh', '-c', cmd], { cwd: dir, env: { ...env, ...extraEnv }, detached: true, stdin: 'ignore', stdout: stdio, stderr: stdio })
-  let timedOut = false
-  const timer = setTimeout(() => { timedOut = true; try { process.kill(-proc.pid, 'SIGKILL') } catch {} }, task.timeoutSec * 1000)
-  await proc.exited // the exit code does not matter: failing tests exit non-zero
-  clearTimeout(timer)
-  if (timedOut) return { cases: null, junit: 'timeout' } // whatever file it left is partial
+  // the exit code does not matter: failing tests exit non-zero
+  const { code } = await runGroup(['sh', '-c', cmd], { cwd: dir, env: { ...env, ...extraEnv }, stdout: stdio, stderr: stdio, timeoutSec: task.timeoutSec })
+  if (code === 'timeout') return { cases: null, junit: 'timeout' } // whatever file it left is partial
   try { return { cases: readJunit(await Bun.file(junitPath).text()), junit: 'ok' } } catch { return { cases: null, junit: 'missing' } }
 }
 

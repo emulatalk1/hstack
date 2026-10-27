@@ -16,7 +16,9 @@ export function parseTask(t, machine) {
   if (typeof t.repo !== 'string' || !isAbsolute(t.repo)) bad('repo', 'must be an absolute path')
   // check the written, resolved and symlink-resolved forms so no spelling slips past the forbid list
   const repos = [resolve(t.repo), real(resolve(t.repo))]
-  for (const f of machine?.forbid?.paths ?? []) {
+  const forbid = machine?.forbid?.paths // fail closed: a machine file without a readable forbid list guards nothing
+  if (!Array.isArray(forbid) || !forbid.every((f) => typeof f === 'string')) throw new Error('machine forbid.paths must be an array of strings')
+  for (const f of forbid) {
     const roots = [resolve(f), real(resolve(f))]
     if (repos.some((r) => roots.some((root) => under(r, root)))) bad('repo', `is under forbidden path ${f}`)
   }
