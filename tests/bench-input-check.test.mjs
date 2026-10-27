@@ -33,6 +33,12 @@ test('flags framework config values, module specifiers and named framework ident
   for (const t of ['generateStaticParams', '`generateStaticParams`', 'searchParams', '`searchParams`']) expect(rulesOf(t)).toContain('framework name')
 })
 
+test('flags the names the sweep found: admin slots, redirect(), next build and backticked Tailwind names', () => {
+  for (const t of ['`providers`', '`graphics`', '`admin.group`', '`meta.icons`', '`redirect()`', 'a plain `next build`', 'Tailwind `md` 721 px', 'never `font-bold`'])
+    expect(rulesOf(t)).toContain('framework name')
+  expect(check('Breakpoints md and lg in prose; a redirect to the list.')).toEqual([])
+})
+
 test('leaves headers, CSS, phone links and API field names alone', () => {
   for (const t of ['`Cache-Control: private, no-cache`', '`x-nextjs-cache: HIT`', '`min-width: 0`', '`prefers-reduced-motion: reduce`', '`tel:+84900000001`', '`/_next/image`', '`SCHEMA_PUSH=false`', '`propertyType`', '`externalId, title, price`', '`subject:"Lê Thị Cúc"`', '`trang/[n]`', '`image/png`', '`image/svg+xml`'])
     expect([t, check(t)]).toEqual([t, []])

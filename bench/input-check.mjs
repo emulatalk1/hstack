@@ -8,7 +8,9 @@ const span = (body) => new RegExp('^(?:[^`]*`[^`]*`)*[^`]*`' + body + '`')
 const FRAMEWORK_NAMES = [
   'generateStaticParams', 'generateMetadata', 'searchParams', 'overrideAccess', 'idType', 'renderToStaticMarkup',
   'serverExternalPackages', 'isrFlushToDisk', 'agentRules', 'beforeDashboard', 'beforeNavLinks', 'prodMigrations',
-  'force-dynamic', 'use server',
+  'force-dynamic', 'use server', 'providers', 'graphics', 'admin.group', 'meta.icons', 'redirect()', 'next build',
+  // Tailwind names only as a whole backticked span: "md" and "lg" are prose words too
+  '`md`', '`lg`', '`sm`', '`font-bold`',
 ]
 export const RULES = [
   ['code fence', /^\s*(```|~~~)/],
