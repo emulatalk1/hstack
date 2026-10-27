@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { armArgs, countInterventions, initInfo, probeOk } from '../bench/lib/arm.mjs'
@@ -133,11 +133,15 @@ test('run-arm: DONE on the first resume is zero interventions, and the product i
     expect(readFileSync(opt(c.args, '--settings'), 'utf8')).toBe('{}\n')
   }
   expect(show('bench/p1-B-1:made.txt')).toBe('turn 1\n')
+  const dir = join(data, 'results', 'p1-B-1')
+  expect(readdirSync(dir).sort()).toEqual(['0-probe.jsonl', '1-main.jsonl', '2-resume-1.jsonl', 'settings.json'])
+  expect(readFileSync(join(dir, '2-resume-1.jsonl'), 'utf8')).toContain('" DONE\\n"')
+  expect(readdirSync(join(data, 'results')).filter((f) => f.endsWith('.json'))).toEqual(['p1-B-1.json'])
   expect(show('bench/p1-B-1:a.txt')).toBe('base\n')
   expect(show('bench/p1-B-1~1').split('\n')).toContain('    base ' + git('rev-parse', '--short=7', 'HEAD~1').stdout.toString().trim())
   const res = result('p1-B-1')
   expect(res).toMatchObject({ task: 'p1', arm: 'B', run: 1, status: 'done', resumes: ['DONE'], interventions: 0, branch: 'bench/p1-B-1',
-    usage: { input: 20, output: 4 }, probeUsage: { input: 1, output: 2 }, models: ['main-m'], probeModels: ['probe-m'] })
+    usage: { input: 20, output: 4 }, transcripts: dir, probeUsage: { input: 1, output: 2 }, models: ['main-m'], probeModels: ['probe-m'] })
   expect(Date.parse(res.end) >= Date.parse(res.start)).toBe(true)
   expect(existsSync(main.cwd)).toBe(false)
   // the same run again is refused before any call: the results file exists
@@ -154,6 +158,7 @@ test('run-arm: a run that never says DONE is abandoned after 5 resumes, 5 + 3 in
   for (const x of c) { expect(opt(x.args, '--model')).toBe('small-m'); expect(opt(x.args, '--append-system-prompt')).toBe('Write no tests. Do not run or check your work. Stop after one pass.') }
   expect(result('p1-B--1')).toMatchObject({ status: 'abandoned', resumes: Array(5).fill('other'), interventions: 8 })
   expect(show('bench/p1-B--1:made.txt')).toBe('turn 5\n')
+  expect(readdirSync(join(data, 'results', 'p1-B--1')).sort()).toEqual(['0-probe.jsonl', '1-main.jsonl', ...[1, 2, 3, 4, 5].map((i) => `${i + 1}-resume-${i}.jsonl`), 'settings.json'])
 })
 
 test('run-arm: a B probe whose init lists a plugin stops with exit 2, no main turn and no branch', async () => {

@@ -72,10 +72,16 @@ export async function runArm(args, { root = ROOT } = {}) {
   // AskUserQuestion is not among the tools under -p (init of CLI 2.1.310), so a PreToolUse hook on it never fires: the
   // settings hold no hook, every arm gets the same empty file, and interventions come from resumes only (hookLines 0).
   // bench/responder-hook.mjs stays for a mode where the tool does reach the agent.
-  mkdirSync(results, { recursive: true })
-  const settings = join(results, `${name}.settings.json`)
+  // the run folder keeps the settings and every turn's raw stream-json (prereg 7.2 labels a sample; 3 reads model ids)
+  const runDir = join(results, name), settings = join(runDir, 'settings.json')
+  mkdirSync(runDir, { recursive: true })
   await Bun.write(settings, '{}\n')
-  const turn = (o, cwd) => runClaude({ model, pluginDirs, appendSystemPrompt, settings, permissionMode: 'bypassPermissions', ...o }, cwd, { timeoutSec: cfg.turnTimeoutSec })
+  let k = 0
+  const turn = async (o, cwd, label) => {
+    const r = await runClaude({ model, pluginDirs, appendSystemPrompt, settings, permissionMode: 'bypassPermissions', ...o }, cwd, { timeoutSec: cfg.turnTimeoutSec })
+    await Bun.write(join(runDir, `${k++}-${label}.jsonl`), r.out)
+    return r
+  }
 
   // dropSettings off: the task repo's own .claude/ reaches every arm alike
   return withExport(task, base, name, async (dir) => {
@@ -84,7 +90,7 @@ export async function runArm(args, { root = ROOT } = {}) {
     await git(dir, ...BENCH, 'commit', '-q', '--no-verify', '--allow-empty', '-m', `base ${base.slice(0, 7)}`)
 
     const start = new Date().toISOString()
-    const probe = await turn({ prompt: 'Reply OK.' }, dir) // its own session, the main run's model, plugins and settings
+    const probe = await turn({ prompt: 'Reply OK.' }, dir, 'probe') // its own session, the main run's model, plugins and settings
     let info, why
     try { info = initInfo(probe.out); why = probe.code !== 0 ? `probe exited ${probe.code}` : probeOk(arm, info, expected, userSkills) } catch (e) { why = e.message }
     if (why) { console.error(`probe refused: ${why}`); return 2 }
@@ -92,7 +98,7 @@ export async function runArm(args, { root = ROOT } = {}) {
     const sessionId = randomUUID(), outs = [], resumes = []
     let reason = null
     for (let i = 0; ; i++) {
-      const r = await turn(i === 0 ? { prompt: input, sessionId } : { prompt: CONTINUE, resume: sessionId }, dir)
+      const r = await turn(i === 0 ? { prompt: input, sessionId } : { prompt: CONTINUE, resume: sessionId }, dir, i === 0 ? 'main' : `resume-${i}`)
       outs.push(r.out)
       let text = null
       try { text = finalText(r.out) } catch {}
@@ -110,7 +116,7 @@ export async function runArm(args, { root = ROOT } = {}) {
       status: abandoned ? 'abandoned' : 'done', reason, resumes,
       interventions: countInterventions({ hookLines: 0, resumes, abandoned }), // hookLines 0: no hook under -p, see the settings above
       usage: { input: sum('input'), output: sum('output'), cacheRead: sum('cacheRead'), cacheWrite: sum('cacheWrite') },
-      models: [...new Set(us.flatMap((u) => u.models))], probeUsage, probeModels, probe: info, branch: null,
+      models: [...new Set(us.flatMap((u) => u.models))], probeUsage, probeModels, probe: info, transcripts: runDir, branch: null,
     }
     let err
     try {
