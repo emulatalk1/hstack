@@ -1,5 +1,9 @@
 # Update Log
 
+## 2026-10-27
+
+* **Creation**: Added the [Own services plan (stack A)](/plans/2026-10-27-own-services.md) as a record, status `superseded`: it was drafted (own Postgres and Mailpit per project, assigned ports, the compose file in `.hstack/`) and set aside the same day for a stack-agnostic harness with a throwaway environment per run.
+
 ## 2026-10-26
 
 * **Approve**: the decision [hstack runs on Bun](/decisions/2026-10-26-bun-runtime.md) (status `stable`). The user approved it after the Bun runtime build and its final review.
