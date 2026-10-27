@@ -47,7 +47,8 @@ function freshDir(task, label, root, what) {
 }
 
 // A folder with no .git: empty, or the files of commit (git archive). A worktree would share the repo's refs and objects.
-export async function withExport(task, commit, label, fn, root = ROOT) {
+// dropSettings: remove the export's .claude/settings{,.local}.json, whose hooks would run inside a headless agent.
+export async function withExport(task, commit, label, fn, root = ROOT, { dropSettings = false } = {}) {
   const dir = freshDir(task, label, root, 'folder')
   mkdirSync(dir)
   try {
@@ -56,6 +57,10 @@ export async function withExport(task, commit, label, fn, root = ROOT) {
       const tar = Bun.spawn(['tar', '-x', '-C', dir], { stdin: archive.stdout, stderr: 'pipe' })
       const [a, t] = [await archive.exited, await tar.exited]
       if (a !== 0 || t !== 0) throw new Error(`git -C ${task.repo} archive ${commit} | tar -x failed (exit ${a}, ${t}): ${(await new Response(archive.stderr).text()).trim()}`)
+      const dot = join(dir, '.claude'), st = lstatSync(dot, { throwIfNoEntry: false })
+      // a .claude symlink would point the settings elsewhere, and removing through it would delete outside the export
+      if (dropSettings && st?.isSymbolicLink()) rmSync(dot)
+      else if (dropSettings && st?.isDirectory()) for (const f of ['settings.json', 'settings.local.json']) rmSync(join(dot, f), { recursive: true, force: true })
     }
     return await fn(dir)
   } finally {

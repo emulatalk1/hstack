@@ -65,10 +65,13 @@ const sub = `${ROOT}/test-${rand()}`
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-agent-')))
 const data = join(tmp, 'data'), repo = join(tmp, 'repo'), log = join(tmp, 'stub.log')
 const git = (...a) => Bun.spawnSync(['git', '-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
-mkdirSync(join(repo, 'src'), { recursive: true })
+mkdirSync(join(repo, 'src'), { recursive: true }); mkdirSync(join(repo, '.claude/agents'), { recursive: true })
 git('init', '-q')
 writeFileSync(join(repo, 'src/a.txt'), 'start\n')
-git('add', '.'); git('commit', '-qm', 'base')
+// the task repo's own hook must not run inside an audit agent
+writeFileSync(join(repo, '.claude/settings.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'sleep 3000' }] }] } }))
+writeFileSync(join(repo, '.claude/agents/x.md'), 'an agent')
+git('add', '-f', '.'); git('commit', '-qm', 'base')
 const base = git('rev-parse', 'HEAD')
 writeFileSync(join(repo, 'src/a.txt'), 'buggy\n')
 git('commit', '-qam', 'task end')
@@ -86,12 +89,13 @@ writeFileSync(join(tmp, 'review.md'), 'REVIEW-BRIEF\n')
 // STUB_LAYER: result | noresult | fail; STUB_JUDGE: the judge's reply text
 const stub = join(tmp, 'claude-stub')
 writeFileSync(stub, `#!/usr/bin/env bun
-import { appendFileSync, readdirSync } from 'node:fs'
+import { appendFileSync, existsSync, readdirSync } from 'node:fs'
 const a = process.argv.slice(2), judge = a[a.indexOf('--tools') + 1] === '' && a.includes('--tools')
 const say = (o) => console.log(JSON.stringify(o))
 const url = /http:\\/\\/localhost:\\d+/.exec(a[1])?.[0]
 const page = url ? await (await fetch(url)).text() : null
-appendFileSync(process.env.STUB_LOG, JSON.stringify({ judge, args: a, cwd: process.cwd(), files: readdirSync(process.cwd()), page }) + '\\n')
+const dot = existsSync('.claude') ? readdirSync('.claude') : null, env = Object.keys(process.env).filter((k) => /BENCH/.test(k))
+appendFileSync(process.env.STUB_LOG, JSON.stringify({ judge, args: a, cwd: process.cwd(), files: readdirSync(process.cwd()).sort(), dot, env, page }) + '\\n')
 console.error('STUB-ERR FINDING-SECRET')
 say({ type: 'system', subtype: 'init' })
 say({ type: 'assistant', message: { id: judge ? 'j' : 'l', model: judge ? 'judge-m' : 'layer-m', usage: { input_tokens: judge ? 3 : 10, output_tokens: 2 }, content: [] } })
@@ -134,19 +138,19 @@ test('sealed review prints exactly "<id> caught": the agent sees the brief, the 
   const r = await cli([mkTask(layers), bug('b1'), 'review', '--sealed'])
   expect(r).toMatchObject({ stdout: 'b1 caught\n', stderr: '', code: 0 })
   const [l, j] = calls()
-  expect(l).toMatchObject({ judge: false, files: [] })
+  expect(l).toMatchObject({ judge: false, files: [], env: [] })
   expect(l.cwd.startsWith(realpathSync(ROOT))).toBe(true)
   expect(l.args[1]).toStartWith('REVIEW-BRIEF')
   expect(l.args[1]).toContain('FILTERED-INPUT of p1')
   expect(l.args[1]).toContain('+buggy')
   expect(l.args[1]).not.toContain('fixed')
   expect(l.args.slice(l.args.indexOf('--permission-mode'), l.args.indexOf('--permission-mode') + 2)).toEqual(['--permission-mode', 'default'])
-  expect(j.judge).toBe(true)
+  expect(j).toMatchObject({ judge: true, env: [] })
   expect(j.files).toEqual([])
   expect(j.args[1]).toContain('Did any finding describe this defect (same behaviour, same place)? Reply with one JSON object only.')
   expect(j.args[1]).toContain('DESCRIPTION-SECRET')
   expect(j.args[1]).toContain('FINDING-SECRET: a.txt says buggy')
-  expect(j.args[1]).not.toContain('REVIEW-BRIEF')
+  for (const s of ['REVIEW-BRIEF', '+buggy', 'FILTERED-INPUT']) expect(j.args[1]).not.toContain(s)
   const res = result('b1', 'review')
   expect(res).toMatchObject({ id: 'b1', layer: 'review', verdict: 'caught', models: { layer: ['layer-m'], judge: ['judge-m'] } })
   expect(res.usage).toEqual({ layer: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 }, judge: { input: 3, output: 2, cacheRead: 0, cacheWrite: 0 } })
@@ -174,6 +178,7 @@ test('sealed: a layer or judge that outlives timeoutSec is killed and is "<id> e
     expect(r).toMatchObject({ stdout: `${id} error\n`, stderr: '', code: 1 })
     expect(Date.now() - t0).toBeLessThan(15000)
     expect(calls().length).toBe(who === 'layer' ? 1 : 2)
+    expect(readdirSync(sub)).toEqual([]) // no export or empty folder left after the kill
   }
 })
 test('dev mode prints the quote and stores the findings, and passes the agent stderr through', async () => {
@@ -186,7 +191,7 @@ test('audit runs in an export of the task end commit, with no .git and the layer
   const r = await cli([mkTask(layers), bug('b5'), 'audit', '--sealed'])
   expect(r).toMatchObject({ stdout: 'b5 caught\n', stderr: '', code: 0 })
   const [l] = calls()
-  expect(l.files).toEqual(['src'])
+  expect(l).toMatchObject({ files: ['.claude', 'src'], dot: ['agents'] })
   expect(l.args[1]).toBe('REVIEW-BRIEF\n')
   expect(l.args.slice(l.args.indexOf('--tools'), l.args.indexOf('--tools') + 2)).toEqual(['--tools', 'Read,Grep'])
   expect(existsSync(l.cwd)).toBe(false)
@@ -198,6 +203,12 @@ test('evaluator: the agent gets the URL of the app with the bug reapplied, from 
   expect(l).toMatchObject({ files: [], page: 'buggy\n' })
   expect(l.args[1]).toContain('FILTERED-INPUT of p1')
   expect(readdirSync(sub)).toEqual([])
+})
+test('evaluator: a teardown failure after the agent ran still writes the record and is "<id> error"', async () => {
+  const r = await cli([mkTask(layers, { teardown: ['echo TD-SECRET; exit 4'] }), bug('b8'), 'evaluator', '--sealed'])
+  expect(r).toMatchObject({ stdout: 'b8 error\n', stderr: '', code: 1 })
+  expect(calls().length).toBe(1) // the judge does not run
+  expect(result('b8', 'evaluator')).toMatchObject({ verdict: 'error', usage: { layer: { input: 10 } } })
 })
 test('refuses a bad layer, a missing brief, missing bug fields and a missing input, naming what is wrong', async () => {
   const t = mkTask(layers)

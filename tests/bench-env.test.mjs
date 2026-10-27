@@ -1,8 +1,8 @@
 import { test, expect, afterAll } from 'bun:test'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { withEnv, withWorktree, clean, portBusy } from '../bench/env.mjs'
+import { withEnv, withExport, withWorktree, clean, portBusy } from '../bench/env.mjs'
 import { parseTask } from '../bench/lib/task.mjs'
 
 const ROOT = '/tmp/hstack-bench'
@@ -207,4 +207,25 @@ test('clean never follows a symlink out of its root', async () => {
   } finally {
     git('worktree', 'remove', '--force', out)
   }
+})
+
+test('withExport gives an empty folder or the files of a commit with no .git, drops only the settings files when asked, and removes it', async () => {
+  const r2 = join(tmp, 'export-repo'), g = (...a) => Bun.spawnSync(['git', '-C', r2, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a])
+  mkdirSync(join(r2, '.claude/agents'), { recursive: true })
+  writeFileSync(join(r2, '.claude/settings.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'sleep 3000' }] }] } }))
+  writeFileSync(join(r2, '.claude/settings.local.json'), '{}')
+  writeFileSync(join(r2, '.claude/agents/a.md'), 'agent')
+  writeFileSync(join(r2, 'f.txt'), 'x')
+  g('init', '-q'); g('add', '-f', '.'); g('commit', '-qm', 'one')
+  const task = { name: `t${rand()}`, repo: r2 }
+  const ls = (d) => readdirSync(d).sort()
+  const seen = []
+  await withExport(task, null, 'empty', (d) => { seen.push(d); expect(ls(d)).toEqual([]) }, sub)
+  await withExport(task, 'HEAD', 'kept', (d) => { seen.push(d); expect(ls(d)).toEqual(['.claude', 'f.txt']); expect(ls(join(d, '.claude'))).toEqual(['agents', 'settings.json', 'settings.local.json']) }, sub)
+  await withExport(task, 'HEAD', 'dropped', (d) => { seen.push(d); expect(ls(join(d, '.claude'))).toEqual(['agents']); expect(readFileSync(join(d, '.claude/agents/a.md'), 'utf8')).toBe('agent') }, sub, { dropSettings: true })
+  expect(seen.length).toBe(3)
+  expect(seen.some((d) => existsSync(d))).toBe(false)
+  expect(existsSync(join(r2, '.claude/settings.json'))).toBe(true) // the repo itself is untouched
+  mkdirSync(join(realpathSync(sub), `${task.name}-taken`))
+  await expect(withExport(task, null, 'taken', () => {}, sub)).rejects.toThrow('exists')
 })

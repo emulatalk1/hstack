@@ -36,37 +36,42 @@ export async function agentReplay(args, { root = ROOT } = {}) {
   const input = layer === 'audit' ? '' : await Bun.file(inputPath).text().catch(() => null)
   if (input === null) throw new Error(`filtered input ${inputPath} is missing`)
 
+  // the agent must not find the data folder (results, other bugs) or the bench's own variables
+  const agentEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('BENCH_') && k !== 'HSTACK_BENCH_MACHINE'))
   const claude = async (opts, cwd) => {
     // shortcut: the prompt rides in argv, so a task diff over ~1 MB (macOS ARG_MAX) fails to start and `ps` shows the
     // sealed description while the judge runs; move the prompt to stdin when a diff that large or a shared machine comes up
     const p = Bun.spawn([process.env.BENCH_CLAUDE || 'claude', ...claudeArgs(opts)],
-      { cwd, detached: true, stdin: 'ignore', stdout: 'pipe', stderr: sealed ? 'ignore' : 2 }) // sealed: the agent's output shows the bug
+      { cwd, env: agentEnv, detached: true, stdin: 'ignore', stdout: 'pipe', stderr: sealed ? 'ignore' : 2 }) // sealed: the agent's output shows the bug
     let timedOut = false
     const timer = setTimeout(() => { timedOut = true; try { process.kill(-p.pid, 'SIGKILL') } catch {} }, task.timeoutSec * 1000)
     const [out, code] = [await new Response(p.stdout).text(), await p.exited]
     clearTimeout(timer)
+    try { process.kill(-p.pid, 'SIGKILL') } catch {} // whatever the agent left running in its group
     return { out, code: timedOut ? 'timeout' : code }
   }
   const agent = (prompt, commit) => withExport(task, commit, `agent-${bug.id}-${layer}`,
-    (cwd) => claude({ prompt, permissionMode: 'default', tools: cfg.tools, allow: cfg.allow }, cwd), root)
+    (cwd) => claude({ prompt, permissionMode: 'default', tools: cfg.tools, allow: cfg.allow }, cwd), root, { dropSettings: true })
 
   const start = new Date().toISOString()
-  let run
+  let run, envErr
   if (layer === 'evaluator') {
     const at = await resolveCommit(task.repo, bug.at)
-    run = await withEnv(task, at, `eval-${bug.id}`, ({ url }) => agent(`${brief}\n\n## Input\n\n${input}\n\n## App\n\nThe app runs at ${url}.\n`),
+    await withEnv(task, at, `eval-${bug.id}`, async ({ url }) => { run = await agent(`${brief}\n\n## Input\n\n${input}\n\n## App\n\nThe app runs at ${url}.\n`) },
       { root, quiet: sealed, before: reverseApply(bug, sealed) })
+      .catch((e) => { if (!run) throw e; envErr = e }) // a stop or teardown failure after the agent ran must not lose its record
   } else {
     // the bug is present at the task's end by construction (its fix came later), so nothing is applied
     const [base, end] = await Promise.all([resolveCommit(task.repo, bug.base), resolveCommit(task.repo, bug.end)])
     if (layer === 'audit') run = await agent(brief, end)
-    else run = await agent(`${brief}\n\n## Input\n\n${input}\n\n## Diff of the task\n\n${await Bun.$`git -C ${task.repo} diff ${base} ${end}`.quiet().text()}`)
+    else run = await agent(`${brief}\n\n## Input\n\n${input}\n\n## Diff of the task\n\n${await Bun.$`git -C ${task.repo} diff --no-ext-diff --no-color ${base} ${end}`.quiet().text()}`)
   }
 
   const rec = { id: bug.id, layer, sealed, start, end: null, verdict: 'error', models: {}, usage: {} }
   const count = (who, out) => { const { models, ...u } = usage(out); rec.usage[who] = u; rec.models[who] = models }
   count('layer', run.out)
   try {
+    if (envErr) throw envErr
     if (run.code !== 0) throw new Error(`layer exited ${run.code}`)
     const findings = finalText(run.out)
     if (!sealed) rec.findings = findings
