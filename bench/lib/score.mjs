@@ -46,6 +46,8 @@ export function checksFrom(manifest, labels = {}) {
   for (const m of manifest) {
     if (m.dropped === true || m.interface === 'none') continue
     const l = labels[m.id]
+    if (!(m.severity in WEIGHT)) throw new Error(`check ${m.id}: severity ${JSON.stringify(m.severity)} must be high, medium or low`)
+    if (l !== undefined && !['build', 'requirement', 'out', 'partly'].includes(l)) throw new Error(`check ${m.id}: label ${JSON.stringify(l)} must be build, requirement, out or partly`)
     if (l === undefined) unlabelled.push(m.id)
     checks.push({ id: m.id, bucket: l === 'partly' ? 'requirement' : l ?? 'out', severity: m.severity })
   }

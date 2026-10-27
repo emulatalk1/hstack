@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Grade the oracle at a commit (or validate checks on ref/bad/base). Logic lives in lib/score.mjs.
 import { mkdirSync, rmSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { ROOT, withEnv } from './env.mjs'
 import { readJunit } from './lib/junit.mjs'
 import { checksFrom, fixMatches, results, score, verdict } from './lib/score.mjs'
@@ -20,10 +20,12 @@ async function runOracle(task, oracleDir, commit, root) {
   return withEnv(task, commit, `grade-${commit.slice(0, 7)}`, async ({ dir, junitPath, env }) => {
     rmSync(junitPath, { force: true }) // a stale file must not be graded
     const proc = Bun.spawn(['sh', '-c', task.oracle], { cwd: dir, env: { ...env, BENCH_ORACLE: oracleDir }, detached: true, stdin: 'ignore', stdout: 2, stderr: 2 })
-    const timer = setTimeout(() => { try { process.kill(-proc.pid, 'SIGKILL') } catch {} }, task.timeoutSec * 1000)
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; try { process.kill(-proc.pid, 'SIGKILL') } catch {} }, task.timeoutSec * 1000)
     await proc.exited // the exit code does not matter: failing tests exit non-zero
     clearTimeout(timer)
-    try { return readJunit(await Bun.file(junitPath).text()) } catch { return null }
+    if (timedOut) return { cases: null, junit: 'timeout' } // whatever file it left is partial
+    try { return { cases: readJunit(await Bun.file(junitPath).text()), junit: 'ok' } } catch { return { cases: null, junit: 'missing' } }
   }, { root })
 }
 
@@ -38,6 +40,8 @@ export async function grade(args, { root = ROOT } = {}) {
   const [taskPath, oracleArg] = pos
   if (!taskPath || !oracleArg || pos.length !== 2 || (!flags.at && !flags.validate) || (flags.at && flags.validate) || (flags.validate && flags.validate.some((x) => !x)) || (flags.base && !flags.validate)) throw new Error(USAGE)
   const task = await loadTask(taskPath)
+  // the JUnit file must live inside the worktree: it is deleted before the run and the worktree is removed after
+  if (isAbsolute(task.junit) || relative('/w', resolve('/w', task.junit)).startsWith('..')) throw new Error(`task junit ${task.junit} must be a relative path inside the worktree`)
   const oracleDir = resolve(oracleArg), evDir = dirname(oracleDir)
   const labelsFile = Bun.file(join(evDir, 'labels.json'))
   const manifest = await Bun.file(join(oracleDir, 'manifest.json')).json()
@@ -45,24 +49,26 @@ export async function grade(args, { root = ROOT } = {}) {
   const { checks, unlabelled } = checksFrom(manifest, (await labelsFile.exists()) ? await labelsFile.json() : {})
   const ids = checks.map((c) => c.id)
 
-  const run = async (commit) => {
-    const full = await resolveCommit(task.repo, commit)
-    const cases = await runOracle(task, oracleDir, full, root)
+  const run = async (full) => {
+    const { cases, junit } = await runOracle(task, oracleDir, full, root)
     const res = results(cases, ids)
-    const g = { commit: full, task: task.name, at: new Date().toISOString(), junit: cases ? 'ok' : 'missing',
+    const g = { commit: full, task: task.name, at: new Date().toISOString(), junit,
       checks: checks.map((c) => ({ ...c, result: res.get(c.id) })), unlabelled, score: score(checks, res) }
-    // a ref spelled safely names its file as written; anything else falls back to the full hash
-    const file = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(commit) ? commit : full
+    const file = join(evDir, 'grades', `${full.slice(0, 7)}.json`)
     mkdirSync(join(evDir, 'grades'), { recursive: true })
-    await Bun.write(join(evDir, 'grades', `${file}.json`), JSON.stringify(g, null, 2) + '\n')
+    await Bun.write(file, JSON.stringify(g, null, 2) + '\n')
     const n = (r) => g.checks.filter((c) => c.result === r).length
     console.log(`${full.slice(0, 7)} pass=${n('pass')} fail=${n('fail')} precondition=${n('precondition')} error=${n('error')} build=${g.score.build} requirement=${g.score.requirement} featureMissing=${g.score.featureMissing}`)
-    return { full, res }
+    return { full, res, junit, file }
   }
 
-  if (flags.at) return void (await run(flags.at))
-  const [refArg, badArg] = flags.validate
-  const ref = await run(refArg), bad = await run(badArg), base = flags.base ? await run(flags.base) : null
+  // resolve every commit before the first env run, so a typo costs nothing
+  const resolveAll = (list) => Promise.all(list.map((c) => resolveCommit(task.repo, c)))
+  if (flags.at) return void (await run((await resolveAll([flags.at]))[0]))
+  const [refFull, badFull, baseFull] = await resolveAll([...flags.validate, ...(flags.base ? [flags.base] : [])])
+  const ref = await run(refFull), bad = await run(badFull), base = baseFull ? await run(baseFull) : null
+  // a run without results would turn every check into `broken` and silently disqualify them
+  for (const r of [ref, bad, base]) if (r && r.junit !== 'ok') throw new Error(`no results for ${r.full} (junit ${r.junit}); validation not written; see ${r.file}`)
   const mine = checks.filter((c) => fixMatches(manifestFix.get(c.id) ?? '', ref.full))
   const v = { ref: ref.full, bad: bad.full, base: base?.full ?? null, at: new Date().toISOString(),
     checks: mine.map((c) => {

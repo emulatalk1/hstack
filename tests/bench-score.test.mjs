@@ -51,6 +51,12 @@ test('checksFrom drops dropped and interface none, maps partly to requirement, l
   })
 })
 
+test('checksFrom refuses an unknown severity or label, naming the id', () => {
+  expect(() => checksFrom([{ id: 'a-T1', severity: 'urgent', interface: 'api' }])).toThrow(/a-T1.*severity/)
+  expect(() => checksFrom([{ id: 'b-T1', interface: 'api' }])).toThrow(/b-T1.*severity/)
+  expect(() => checksFrom([{ id: 'c-T1', severity: 'low', interface: 'api' }], { 'c-T1': 'maybe' })).toThrow(/c-T1.*label/)
+})
+
 test('fixMatches compares 7 characters in either direction', () => {
   expect(fixMatches('d82f2b0', 'd82f2b0aaaaaaaaaaaa')).toBe(true)
   expect(fixMatches('d82f2b0', 'd82f')).toBe(true)
@@ -93,10 +99,13 @@ const mkTask = (oracle, timeoutSec = 20) => {
   return f
 }
 writeFileSync(join(tmp, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
+const prevMachine = process.env.HSTACK_BENCH_MACHINE
 process.env.HSTACK_BENCH_MACHINE = join(tmp, 'machine.json')
 const quiet = async (fn) => { const log = console.log; const out = []; console.log = (s) => out.push(s); try { await fn() } finally { console.log = log } return out }
 
 afterAll(async () => {
+  if (prevMachine === undefined) delete process.env.HSTACK_BENCH_MACHINE
+  else process.env.HSTACK_BENCH_MACHINE = prevMachine
   await clean(sub)
   rmSync(tmp, { recursive: true, force: true })
 })
@@ -104,7 +113,7 @@ afterAll(async () => {
 test('grade writes per-check results, buckets and the score; the oracle sees BENCH_ORACLE', async () => {
   const task = mkTask('cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"; test -f "$BENCH_ORACLE/manifest.json"; exit 1')
   const out = await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))
-  const g = await Bun.file(join(tmp, 'ev', 'grades', `${c1}.json`)).json()
+  const g = await Bun.file(join(tmp, 'ev', 'grades', `${c7}.json`)).json()
   expect(out.length).toBe(1)
   expect(g).toMatchObject({ commit: c1, junit: 'ok', unlabelled: ['zzzzzzz-T1'], score: { build: 1, requirement: 0, featureMissing: 0.5, scored: 2 } })
   expect(g.checks).toEqual([
@@ -117,18 +126,43 @@ test('grade writes per-check results, buckets and the score; the oracle sees BEN
 test('a missing JUnit file grades every check an error, never a pass', async () => {
   const task = mkTask('true')
   await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))
-  const g = await Bun.file(join(tmp, 'ev', 'grades', `${c1}.json`)).json()
+  const g = await Bun.file(join(tmp, 'ev', 'grades', `${c7}.json`)).json()
   expect(g.junit).toBe('missing')
   expect(g.checks.map((c) => c.result)).toEqual(['error', 'error', 'error'])
 })
 
-test('an oracle that outlives timeoutSec is killed and its results do not count', async () => {
-  const task = mkTask('sleep 60', 4)
+test('an oracle killed on timeout counts as missing even if it left a file', async () => {
+  const task = mkTask(`cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"; sleep 60`, 4)
   const t0 = Date.now()
   await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))
   expect(Date.now() - t0).toBeLessThan(30000)
-  expect((await Bun.file(join(tmp, 'ev', 'grades', `${c1}.json`)).json()).junit).toBe('missing')
+  expect((await Bun.file(join(tmp, 'ev', 'grades', `${c7}.json`)).json()).junit).toBe('timeout')
 }, 30000)
+
+test('--validate refuses to write when a run had no results, and keeps the grade files', async () => {
+  rmSync(join(tmp, 'ev', `validation-${c7}.json`), { force: true })
+  await expect(grade([mkTask('true'), oracleDir, '--validate', c1, c1], { root: sub })).rejects.toThrow(new RegExp(`no results for ${c1}.*grades/${c7}.json`))
+  expect(existsSync(join(tmp, 'ev', `validation-${c7}.json`))).toBe(false)
+  expect((await Bun.file(join(tmp, 'ev', 'grades', `${c7}.json`)).json()).junit).toBe('missing')
+})
+
+test('the grade file is named by the resolved hash, and a bad later commit fails before any run', async () => {
+  const task = mkTask('cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"')
+  rmSync(join(tmp, 'ev', 'grades'), { recursive: true, force: true })
+  await quiet(() => grade([task, oracleDir, '--at', 'HEAD'], { root: sub }))
+  expect(existsSync(join(tmp, 'ev', 'grades', `${c7}.json`))).toBe(true)
+  rmSync(join(tmp, 'ev', 'grades'), { recursive: true, force: true })
+  await expect(grade([task, oracleDir, '--validate', c1, 'deadbeef'], { root: sub })).rejects.toThrow(/unknown commit/)
+  expect(existsSync(join(tmp, 'ev', 'grades'))).toBe(false)
+})
+
+test('an absolute or escaping task junit path is refused', async () => {
+  for (const junit of ['/tmp/x.xml', '../x.xml']) {
+    const f = join(tmp, `task-${rand()}.json`)
+    writeFileSync(f, JSON.stringify({ name: 'tj', repo, db: null, port, start: 'true', ready: 'http://127.0.0.1/', oracle: 'true', junit }))
+    await expect(grade([f, oracleDir, '--at', c1], { root: sub })).rejects.toThrow(/inside the worktree/)
+  }
+})
 
 test('an unknown commit is refused', async () => {
   await expect(grade([mkTask('true'), oracleDir, '--at', 'deadbeef'], { root: sub })).rejects.toThrow(/unknown commit/)
@@ -141,5 +175,5 @@ test('--validate judges only the checks of the ref and writes validation-<ref7>.
   expect(v).toMatchObject({ ref: c1, bad: c1, base: null })
   expect(v.checks.map((c) => c.id)).toEqual([`${c7}-T1`, `${c7}-T2`])
   expect(v.checks.map((c) => c.verdict)).toEqual(['weak', 'broken'])
-  expect(existsSync(join(tmp, 'ev', 'grades', `${c1}.json`))).toBe(true)
+  expect(existsSync(join(tmp, 'ev', 'grades', `${c7}.json`))).toBe(true)
 })
