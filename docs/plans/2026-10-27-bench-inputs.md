@@ -2,8 +2,11 @@
 type: plan
 title: "Benchmark inputs and replay readiness plan"
 description: "Prereg step 3a (the filtered input, filter log and interface sheet of every real-estate task, each written by a sealed agent) and the three gaps to close before the sealed replays of step 3: an early patch check in replay, agent-replay run end to end once per layer, and the int and e2e layers run once with their baseline."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.310, at: "2026-10-27T17:30:00+07:00" }
+verified:
+  - { by: claude-code-advisor/2.1.310, at: "2026-10-27T18:10:00+07:00" }
+  - { by: human:emulatalk1, at: "2026-10-27T23:10:29+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md

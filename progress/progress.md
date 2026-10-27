@@ -382,7 +382,7 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     Final: parked — proc.mjs reads stdout after clearing the timer (a setsid grandchild holding the pipe hangs the read; same as before) — Ruling: deferred — cost if wrong: a hung run, visible.
     Final: minor (deferred): punctuation-only titles; git diff honours diff.noprefix/mnemonicPrefix; non-bench tests leave hstack-* folders in $TMPDIR; git spawn unification; run-arm results rmSync
 
-## 2026-10-27 — bench inputs plan (`docs/plans/2026-10-27-bench-inputs.md`), draft
+## 2026-10-27 — bench inputs plan (`docs/plans/2026-10-27-bench-inputs.md`), stable
 
 - On record (sealing): while mapping plans to tasks for this plan, the controller printed the `##` and `### Task 1` headings of the fix plans 7a, 9 and 10, including 7a's Task 1 title, which names its fixes. Not a patch and not a held-out clause; noted as the prereg noted b5b3cec-01.
 - Plan written with two advisor rounds. Approved by the user; built subagent-driven (ledger copy below).
@@ -553,3 +553,4 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     Final fix wave: implementer opus 138.4k/13.7 min; re-review opus: all addressed, no new breakage
 
 - Final review: opus 175.9k/11.5 min · fix wave opus 138.4k/13.7 min · re-review opus · all addressed
+- Build approved by the user (2026-10-27 23:10); plan marked `stable`. Asked whether `real_estate_test` ever existed on real-estate-postgres-1, the user does not know: its absence stays unexplained, and step 3's clean check snapshots `pg_database` before and after.
