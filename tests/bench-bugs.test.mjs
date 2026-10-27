@@ -84,6 +84,7 @@ test('owner is the task with the most tsv lines over the bug\'s hunks, ties to t
   expect(read(dir, 'tie')).toMatchObject({ task: 't1', base: c0, end: k1, out: null })
   expect(read(dir, 'rows')).toMatchObject({ task: 't1', out: null })
   expect(read(dir, 'rowend')).toMatchObject({ task: 't2', out: 'fix in end' })
+  expect(readdirSync(dir).filter((n) => n.endsWith('.tmp'))).toEqual([]) // each write is a temp file renamed over the bug file
 })
 
 test('a fix inside a task\'s range with no tsv row makes that task the owner, out "fix in end"', async () => {
@@ -178,14 +179,54 @@ test('sealed mode prints counts and opaque ids only', async () => {
   expect(read(dir, 'ho-01')).toMatchObject({ task: 't2', out: null })
 })
 
+test('sealed mode prints no name or value outside its allowed shape', async () => {
+  const dir = folder([
+    { id: '29f4daf-01', fix: fA }, // a dev-style id would name the fix commit
+    { id: 'ho-07', fix: fA, source: 'weird source', kind: 'a sentence about the bug', severity: 'catastrophic' },
+  ], {
+    'ho-08.json': JSON.stringify({ id: 'secretid', fix: fA, at: merge, patch: 'ok.patch', description: 'd', hunks: [{ file: 'src/a.txt', old: 2 }] }),
+    'done.json': JSON.stringify({ finished: 'text that leaks' }),
+    'x.run.json': JSON.stringify({ usage: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 }, models: ['leaky model name'] }),
+  })
+  const r = await cli([task, dir, '--sealed'])
+  expect(r).toMatchObject({ code: 1, stderr: '' })
+  expect(r.stdout).toBe([
+    'ho-08.json invalid',
+    'bugs: 1',
+    'source: other-value 1',
+    'kind: other-value 1',
+    'severity: other-value 1',
+    'task: none 1',
+    'out: no owner 1',
+    'usable: unit 1, int 1, e2e 1, evaluator 0, review 0, audit 0',
+    'patch does not apply: none',
+    'fix is a merge commit: none',
+    'finished: invalid',
+    'invalid 1',
+    'usage 1/1/1/1 models other-value',
+    '',
+  ].join('\n'))
+  for (const s of ['29f4daf', 'secretid', 'weird', 'sentence', 'catastrophic', 'text', 'leaky']) expect(r.stdout + r.stderr).not.toContain(s)
+  // dev mode still takes a dev id
+  expect((await cli([task, dir])).stdout).toContain('29f4daf-01 task=none out=no owner\n')
+})
+
+test('sealed: a well-formed bug file with an unknown fix or a bad at is invalid, and neither sha nor a path is printed', async () => {
+  const dir = folder([{ id: 'ho-05', fix: '0000000' }, { id: 'ho-06', fix: fA, at: 'fffffff' }])
+  const r = await cli([task, dir, '--sealed'])
+  expect(r).toMatchObject({ code: 1, stderr: '' })
+  expect(r.stdout).toStartWith('ho-05.json invalid\nho-06.json invalid\nbugs: 0\n')
+  for (const s of ['0000000', 'fffffff', 'src/', repo, tmp]) expect(r.stdout).not.toContain(s)
+})
+
 test('usage sums every run record in the folder', async () => {
   const rec = (usage, models) => JSON.stringify({ label: 'x', usage, models })
-  const dir = folder([{ id: 'own', fix: fA }], {
-    'extension.reply.md.run.json': rec({ input: 1, output: 20, cacheRead: 300, cacheWrite: 4000 }, ['m-a']),
-    'extension-2.reply.md.run.json': rec({ input: 2, output: 30, cacheRead: 400, cacheWrite: 5000 }, ['m-a', 'm-b']),
+  const dir = folder([{ id: 'ho-01', fix: fA }], {
+    'extension.reply.md.run.json': rec({ input: 1, output: 20, cacheRead: 300, cacheWrite: 4000 }, ['claude-a']),
+    'extension-2.reply.md.run.json': rec({ input: 2, output: 30, cacheRead: 400, cacheWrite: 5000 }, ['claude-a', 'claude-b']),
   })
   const r = await cli([task, dir, '--sealed'])
   expect(r.code).toBe(0)
   expect(r.stdout).toContain('bugs: 1\n') // run records are not bug files
-  expect(r.stdout).toEndWith('usage 3/50/700/9000 models m-a,m-b\n')
+  expect(r.stdout).toEndWith('usage 3/50/700/9000 models claude-a,claude-b\n')
 })

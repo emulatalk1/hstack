@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Give each bug file of a folder its owner task and say which layers it can feed (check mode), or list the bug files
 // a layer can take (--usable: reads the written `out` only, so batches running at once can all call it).
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { ROOT, withWorktree } from './env.mjs'
 import { resolveCommit } from './grade.mjs'
@@ -11,6 +11,9 @@ import { readBug, reverseApply } from './replay.mjs'
 const USAGE = 'usage: bun bench/bugs.mjs <task.json> <folder> [--sealed] [--usable <unit|int|e2e|evaluator|review|audit>]'
 const TESTS = [null, 'no owner', 'fix in end']
 const USABLE = { unit: TESTS, int: TESTS, e2e: TESTS, evaluator: [null, 'fix in end'], review: [null], audit: [null] }
+// sealed: a string the bug file's writer chose is printed only in one of these shapes
+const SEALED_ID = /^ho-\d+$/, SEALED_MODEL = /^claude-[a-z0-9-]+$/
+const SEALED_SETS = { source: ['catalog', 'extension'], kind: ['UI', 'logic', 'validation', 'data', 'other'], severity: ['high', 'medium', 'low'] }
 
 // exit code of a git command that answers yes (0) or no (1)
 const gitCode = (repo, ...args) => Bun.spawn(['git', '-C', repo, ...args], { stdout: 'ignore', stderr: 'ignore' }).exited
@@ -83,12 +86,20 @@ export async function bugs(args, { root = ROOT } = {}) {
     return null
   }
 
-  const done = [], fail = (n, e) => console.log(sealed ? `${n} invalid` : `${n} invalid: ${e.message}`)
-  let code = 0
+  // sealed: a file named outside ho-NN.json is only counted
+  let code = 0, hidden = 0
+  const fail = (n, e) => {
+    code = 1
+    if (!sealed) console.log(`${n} invalid: ${e.message}`)
+    else if (/^ho-\d+\.json$/.test(n)) console.log(`${n} invalid`)
+    else hidden++
+  }
+  const done = []
   for (const n of names) {
     const path = join(folder, n)
     try {
       const bug = await readBugFile(path)
+      if (sealed && !SEALED_ID.test(bug.id)) throw new Error('sealed bug id must match ^ho-\\d+$')
       let t = null, out = null
       if (bug.dropped) out = 'dropped'
       else {
@@ -106,24 +117,30 @@ export async function bugs(args, { root = ROOT } = {}) {
       }
       // the raw file, not readBug's copy: that one holds the patch as an absolute path
       const { task: _t, base: _b, end: _e, out: _o, ...rest } = await Bun.file(path).json()
-      await Bun.write(path, JSON.stringify({ ...rest, task: t, ...(t ? { base: tasks[t].base, end: tasks[t].end } : {}), out }, null, 2) + '\n')
+      const tmp = join(folder, `.${n}.${process.pid}.tmp`) // renamed over the file, so a reader never sees half of it
+      writeFileSync(tmp, JSON.stringify({ ...rest, task: t, ...(t ? { base: tasks[t].base, end: tasks[t].end } : {}), out }, null, 2) + '\n')
+      renameSync(tmp, path)
       done.push({ ...bug, task: t, out })
       if (!sealed) console.log(`${bug.id} task=${t ?? 'none'} out=${out ?? 'ok'}`)
     } catch (e) {
       fail(n, e)
-      code = 1
     }
   }
 
   const ids = (o) => done.filter((b) => b.out === o).map((b) => b.id).join(' ') || 'none'
   console.log(`bugs: ${done.length}`)
-  for (const f of ['source', 'kind', 'severity', 'task']) console.log(tally(f, done.map((b) => b[f] ?? 'none')))
+  const shown = (f, v) => (v === undefined ? 'none' : sealed && !SEALED_SETS[f].includes(v) ? 'other-value' : v)
+  for (const f of ['source', 'kind', 'severity']) console.log(tally(f, done.map((b) => shown(f, b[f]))))
+  console.log(tally('task', done.map((b) => b.task ?? 'none')))
   console.log(tally('out', done.map((b) => b.out ?? 'ok')))
   console.log(`usable: ${Object.entries(USABLE).map(([l, outs]) => `${l} ${done.filter((b) => outs.includes(b.out)).length}`).join(', ')}`)
   console.log(`patch does not apply: ${ids('patch does not apply')}`)
   console.log(`fix is a merge commit: ${ids('fix is a merge commit')}`)
   const donePath = join(folder, 'done.json')
-  if (existsSync(donePath)) console.log(`finished: ${await Bun.file(donePath).json().then((d) => d?.finished, () => 'invalid')}`)
+  if (existsSync(donePath)) {
+    const f = await Bun.file(donePath).json().then((d) => d?.finished, () => undefined)
+    console.log(`finished: ${typeof f === 'boolean' || (!sealed && f !== undefined) ? f : 'invalid'}`)
+  }
   const sum = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, models = []
   for (const n of readdirSync(folder).filter((n) => n.endsWith('.run.json')).sort()) {
     try {
@@ -131,9 +148,11 @@ export async function bugs(args, { root = ROOT } = {}) {
       for (const k of Object.keys(sum)) if (!Number.isFinite(rec.usage[k])) throw new Error(`usage ${k} is not a number`)
       for (const k of Object.keys(sum)) sum[k] += rec.usage[k]
       for (const m of rec.models ?? []) if (!models.includes(m)) models.push(m)
-    } catch (e) { fail(n, e); code = 1 }
+    } catch (e) { fail(n, e) }
   }
-  console.log(`usage ${Object.values(sum).join('/')} models ${models.join(',') || 'none'}`)
+  if (hidden) console.log(`invalid ${hidden}`)
+  const named = sealed ? [...new Set(models.map((m) => (typeof m === 'string' && SEALED_MODEL.test(m) ? m : 'other-value')))] : models
+  console.log(`usage ${Object.values(sum).join('/')} models ${named.join(',') || 'none'}`)
   return code
 }
 
