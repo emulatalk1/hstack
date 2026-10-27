@@ -230,3 +230,27 @@ test('usage sums every run record in the folder', async () => {
   expect(r.stdout).toContain('bugs: 1\n') // run records are not bug files
   expect(r.stdout).toEndWith('usage 3/50/700/9000 models claude-a,claude-b\n')
 })
+
+test('--fix-tally prints one count per listed sha only, reads no git and writes nothing', async () => {
+  const dir = folder([{ id: 'ho-01', fix: fA }, { id: 'ho-02', fix: fA, dropped: 'x' }, { id: 'ho-03', fix: fT }, { id: 'ho-04', fix: 'deadbeefsecret' }],
+    { 'ho-05.json': '{ secret-token', 'label2-done.json': JSON.stringify({ considered: 1, fix: fA }), 'x.run.json': JSON.stringify({ fix: fA }) })
+  const before = Object.fromEntries(readdirSync(dir).map((n) => [n, readFileSync(join(dir, n), 'utf8')]))
+  rmSync(sub, { recursive: true, force: true })
+  const r = await cli([task, dir, '--sealed', '--fix-tally', `${fA},${fNone},0000000`])
+  expect(r).toEqual({ stdout: `${fA} 2\n${fNone} 0\n0000000 0\n`, stderr: '', code: 0 })
+  expect(Object.fromEntries(readdirSync(dir).map((n) => [n, readFileSync(join(dir, n), 'utf8')]))).toEqual(before)
+  expect(existsSync(sub)).toBe(false)
+  for (const bad of ['abc', 'ABCDEF0', `${fA},`, `${fA},nothex12`, '']) {
+    const x = await cli([task, dir, '--sealed', '--fix-tally', bad])
+    expect(x).toMatchObject({ stdout: '', code: 2 })
+    expect(x.stderr).toContain('^[0-9a-f]{7,40}$')
+  }
+})
+
+test('a <name>-done.json beside the bugs is not a bug file', async () => {
+  const dir = folder([{ id: 'ho-01', fix: fA, hunks: [{ file: 'src/a.txt', old: 2 }] }], { 'label2-done.json': JSON.stringify({ considered: 1 }) })
+  const r = await cli([task, dir, '--sealed'])
+  expect(r.code).toBe(0)
+  expect(r.stdout).toContain('bugs: 1\n')
+  expect(r.stdout).not.toContain('invalid')
+})

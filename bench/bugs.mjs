@@ -8,7 +8,7 @@ import { resolveCommit } from './grade.mjs'
 import { loadTask } from './lib/task.mjs'
 import { readBug, reverseApply } from './replay.mjs'
 
-const USAGE = 'usage: bun bench/bugs.mjs <task.json> <folder> [--sealed] [--usable <unit|int|e2e|evaluator|review|audit>]'
+const USAGE = 'usage: bun bench/bugs.mjs <task.json> <folder> [--sealed] [--usable <unit|int|e2e|evaluator|review|audit> | --fix-tally <sha,sha,...>]'
 const TESTS = [null, 'no owner', 'fix in end']
 const USABLE = { unit: TESTS, int: TESTS, e2e: TESTS, evaluator: [null, 'fix in end'], review: [null], audit: [null] }
 // sealed: a string the bug file's writer chose is printed only in one of these shapes
@@ -52,9 +52,18 @@ export async function bugs(args, { root = ROOT } = {}) {
   const sealed = args.includes('--sealed')
   const pos = args.filter((a) => a !== '--sealed')
   const u = pos.indexOf('--usable'), layer = u >= 0 ? pos.splice(u, 2)[1] : undefined
-  if (pos.length !== 2 || (u >= 0 && !Object.hasOwn(USABLE, layer))) throw new Error(USAGE)
+  const f = pos.indexOf('--fix-tally'), shas = f >= 0 ? pos.splice(f, 2)[1]?.split(',') : undefined
+  if (pos.length !== 2 || (u >= 0 && !Object.hasOwn(USABLE, layer)) || (u >= 0 && f >= 0) || (f >= 0 && !shas)) throw new Error(USAGE)
+  for (const sha of shas ?? []) if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error(`--fix-tally value ${sha} must match ^[0-9a-f]{7,40}$`)
   const [taskPath, folder] = pos
-  const names = readdirSync(folder).filter((n) => n.endsWith('.json') && !n.endsWith('.run.json') && n !== 'done.json').sort()
+  // done.json and any <name>-done.json (a sealed agent's progress note) are not bug files
+  const names = readdirSync(folder).filter((n) => n.endsWith('.json') && !n.endsWith('.run.json') && !/(^|-)done\.json$/.test(n)).sort()
+
+  if (shas) { // sealed-safe: prints only the listed shas and their counts; no git, no write
+    const fixes = await Promise.all(names.map((n) => Bun.file(join(folder, n)).json().then((b) => b?.fix, () => undefined)))
+    for (const sha of shas) console.log(`${sha} ${fixes.filter((x) => typeof x === 'string' && x.startsWith(sha)).length}`)
+    return 0
+  }
 
   if (layer) { // no git, no worktree, no write
     // a file that does not parse has no out either; its parse message could quote it
