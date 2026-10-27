@@ -555,3 +555,24 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
 - Final review: opus 175.9k/11.5 min · fix wave opus 138.4k/13.7 min · re-review opus · all addressed
 - Build approved by the user (2026-10-27 23:10); plan marked `stable`. Asked whether `real_estate_test` ever existed on real-estate-postgres-1, the user does not know: its absence stays unexplained, and step 3's clean check snapshots `pg_database` before and after.
 - Prereg §5 human read (step 9, done early, 2026-10-27): 2 inputs drawn by sorting sha256("<task>|hstack-bench-2026-10-27-human-read") over the 15 tasks other than p8b: p3 and p7b. The user's answers for both: (1) no code, test, path or internal name noticed; (2) hard to read because of the writing style, acceptable when the reader is an agent, a human-facing text would need rewriting; (3) somewhat hard to act on, for the same reason. Ruling: inputs keep the source plans' style (§5 allows only removing pointers; every input reader is an agent). Controller finding while pasting p3: its Global Constraints still hold framework identifiers (`idType: 'uuid'`, `overrideAccess: false`, `draft: true`, `revalidate = 600`, `generateStaticParams`, `next/image`); the Task 3 identifier fix ran only on p7c and p6b. To do before step 3: sweep all 16 inputs for such identifiers, sealed fix runs, and add the patterns to input-check.
+
+## 2026-10-28 — bench replay plan (`docs/plans/2026-10-27-bench-replay.md`)
+
+- Task 1 (framework identifier sweep of the 16 inputs, item 4): `bench/input-check.mjs` gains `config value`, `module specifier` and `framework name` (commit 1988693), then the sweep's names `providers`, `graphics`, `admin.group`, `meta.icons`, `redirect()`, `next build` and the Tailwind names as whole backticked spans `` `md` ``, `` `lg` ``, `` `sm` ``, `` `font-bold` `` (commit 619fa27). Controller rulings on the sweep's unclear groups: package names (`payload`, `zod`, `sharp`, `@axe-core/playwright`) out of the class; Payload admin CSS variables and `.payload-settings` kept (CSS); axe tags kept (how a page is measured); `Local API`, `server components`, `client component` kept (prose concepts); `trang/[n]` kept (URL path). 16 sealed sweep runs (no tools; brief `<data>/briefs/sweep.md`); the sweep replies only fed the list, since they named the same text in some tasks and not others. Hit lines = the rule hits once the list was final. Fix runs sealed, no tools; each pre-sweep input kept as `superseded/input-pre-sweep.md`; each task's `filter-log.md` has a "Sweep" section (names the sweep found, names the rules found, names kept, every rewritten line old → new). Step 7 on all 16: input-check PASS, step IDs unchanged, the diff touches only hit lines, `/…` spans and double-quoted strings unchanged, every sheet PASS and no sheet bullet is a hit name (no sheet change), `git -C <copy> status` clean. Per task: hit lines (rules) / sweep names, names kept, fix runs, summed sealed usage of sweep and fix runs (input/output/cacheRead/cacheWrite, all opus-5-5):
+  - p1: 0 / none, —, 0 fix; 2/744/649/6072
+  - p2: 0 / none, —, 0 fix; 2/953/649/7825
+  - p3: 4 (11, 16, 26, 27) / 7, kept `payload`, 1 fix; 4/7226/1298/16523
+  - p4: 0 / 2, kept `payload`, `zod`, 0 fix; 2/904/649/8757
+  - p5: 3 (11, 13, 24) / 7, kept `payload`, 1 fix; 4/6259/1298/14391
+  - p6a: 1 (31) / 3, kept `payload`, 1 fix; 4/10079/1298/21772
+  - p6b: 0 / none, —, 0 fix; 2/798/649/8375
+  - p6c: 0 / none, —, 0 fix; 2/923/649/8172
+  - p7b: 0 / 1, kept `payload`, 0 fix; 2/604/649/4834
+  - p7c: 3 (10, 11, 21) / 4, `--experimental-build-mode compile` rewritten with its line's `next build` hit and not listed, 1 fix; 4/9358/1298/18405
+  - p8a: 1 (23) / 10, kept `trang/[n]`, `@axe-core/playwright`, 5 axe tags, 1 fix; 4/7550/1298/15777
+  - p8b: 5 (20, 23, 25, 26, 36) / 11, kept `payload`; `legalStatus: 'castle'` (P8b-F1-S3) rewritten keeping the field and the value, 1 fix; 4/7414/1298/15209
+  - p8b1: 0 / 1, kept `sharp`, 0 fix; 2/793/649/4656
+  - p8c: 2 (23, 27) / 9, kept `payload`, `Local API`, `server components`, `client component`, 3 fixes (run 1 echoed the prompt; run 2 dropped the kept sentence with `<span>` and "server components"; run 3 named it); 8/20982/2596/32898
+  - p8d: 1 (24) / 3, —, 1 fix; 4/8082/1298/17784
+  - p8e: 2 (21, 28) / 21, kept `payload`, 9 Payload CSS variables, `.payload-settings`, 1 fix; 4/7615/1298/14999
+  - sum: 27 sealed runs (16 sweeps, 11 fix runs); 54/90284/17523/216449
