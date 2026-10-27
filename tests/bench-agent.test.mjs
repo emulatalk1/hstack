@@ -36,6 +36,12 @@ test('usage counts a message split over several assistant events once, and final
   expect(() => finalText(JSON.stringify({ type: 'result', subtype: 'error_max_turns' }))).toThrow('no result')
 })
 
+test('usage takes the totals from the result event when it has them, and adds its models', () => {
+  const t = [JSON.stringify({ type: 'assistant', message: { id: 'a', model: 'x', usage: { input_tokens: 2, output_tokens: 7 }, content: [] } }),
+    JSON.stringify({ type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 4, output_tokens: 168, cache_read_input_tokens: 6396, cache_creation_input_tokens: 3201 }, modelUsage: { x: {}, z: {} } })].join('\n')
+  expect(usage(t)).toEqual({ input: 4, output: 168, cacheRead: 6396, cacheWrite: 3201, models: ['x', 'z'] })
+})
+
 test('judgeVerdict accepts one JSON object and throws on prose', () => {
   expect(judgeVerdict('{"caught": true, "quote": "the total is off"}')).toEqual({ caught: true, quote: 'the total is off' })
   expect(judgeVerdict(' {"caught": false, "quote": ""}\n')).toEqual({ caught: false, quote: '' })
@@ -90,6 +96,7 @@ console.error('STUB-ERR FINDING-SECRET')
 say({ type: 'system', subtype: 'init' })
 say({ type: 'assistant', message: { id: judge ? 'j' : 'l', model: judge ? 'judge-m' : 'layer-m', usage: { input_tokens: judge ? 3 : 10, output_tokens: 2 }, content: [] } })
 const mode = process.env.STUB_LAYER ?? 'result'
+if (process.env.STUB_SLEEP === (judge ? 'judge' : 'layer')) await Bun.sleep(60000)
 if (judge) say({ type: 'result', subtype: 'success', result: process.env.STUB_JUDGE })
 else if (mode === 'result') say({ type: 'result', subtype: 'success', result: 'FINDING-SECRET: a.txt says buggy' })
 if (!judge && mode === 'fail') process.exit(3)
@@ -97,11 +104,11 @@ if (!judge && mode === 'fail') process.exit(3)
 chmodSync(stub, 0o755)
 
 const port = (() => { const l = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } }); const p = l.port; l.stop(true); return p })()
-const mkTask = (layers) => {
+const mkTask = (layers, extra = {}) => {
   const f = join(tmp, `task-${rand()}.json`)
   writeFileSync(f, JSON.stringify({
     name: `t${rand()}`, repo, db: null, port, start: `bun -e "Bun.serve({ port: Number(process.env.BENCH_PORT), fetch: () => new Response(Bun.file('src/a.txt')) })"`,
-    ready: `http://127.0.0.1:${port}/`, oracle: 'true', junit: 'results.xml', timeoutSec: 20, layers,
+    ready: `http://127.0.0.1:${port}/`, oracle: 'true', junit: 'results.xml', timeoutSec: 20, layers, ...extra,
   }))
   return f
 }
@@ -159,6 +166,15 @@ test('sealed: no result event, a failing layer or a judge reply that is not one 
     expect(JSON.stringify(result(id, 'review'))).not.toContain('SECRET')
   }
   expect(calls().length).toBe(2) // the bad judge reply still ran the judge once
+})
+test('sealed: a layer or judge that outlives timeoutSec is killed and is "<id> error"', async () => {
+  for (const [id, who] of [['b7', 'layer'], ['b7j', 'judge']]) {
+    const t0 = Date.now()
+    const r = await cli([mkTask(layers, { timeoutSec: 1 }), bug(id), 'review', '--sealed'], { STUB_SLEEP: who })
+    expect(r).toMatchObject({ stdout: `${id} error\n`, stderr: '', code: 1 })
+    expect(Date.now() - t0).toBeLessThan(15000)
+    expect(calls().length).toBe(who === 'layer' ? 1 : 2)
+  }
 })
 test('dev mode prints the quote and stores the findings, and passes the agent stderr through', async () => {
   const r = await cli([mkTask(layers), bug('b4'), 'review'])

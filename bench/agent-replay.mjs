@@ -37,10 +37,15 @@ export async function agentReplay(args, { root = ROOT } = {}) {
   if (input === null) throw new Error(`filtered input ${inputPath} is missing`)
 
   const claude = async (opts, cwd) => {
+    // shortcut: the prompt rides in argv, so a task diff over ~1 MB (macOS ARG_MAX) fails to start and `ps` shows the
+    // sealed description while the judge runs; move the prompt to stdin when a diff that large or a shared machine comes up
     const p = Bun.spawn([process.env.BENCH_CLAUDE || 'claude', ...claudeArgs(opts)],
-      { cwd, stdin: 'ignore', stdout: 'pipe', stderr: sealed ? 'ignore' : 2 }) // sealed: the agent's output shows the bug
+      { cwd, detached: true, stdin: 'ignore', stdout: 'pipe', stderr: sealed ? 'ignore' : 2 }) // sealed: the agent's output shows the bug
+    let timedOut = false
+    const timer = setTimeout(() => { timedOut = true; try { process.kill(-p.pid, 'SIGKILL') } catch {} }, task.timeoutSec * 1000)
     const [out, code] = [await new Response(p.stdout).text(), await p.exited]
-    return { out, code }
+    clearTimeout(timer)
+    return { out, code: timedOut ? 'timeout' : code }
   }
   const agent = (prompt, commit) => withExport(task, commit, `agent-${bug.id}-${layer}`,
     (cwd) => claude({ prompt, permissionMode: 'default', tools: cfg.tools, allow: cfg.allow }, cwd), root)

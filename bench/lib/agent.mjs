@@ -22,14 +22,18 @@ export function finalText(streamJson) {
 }
 
 export function usage(streamJson) {
-  // one API message is streamed as one assistant event per content block, each with the message's usage: count it once
-  const byId = new Map(), models = []
-  events(streamJson).forEach((e, i) => {
+  const ev = events(streamJson), byId = new Map(), models = []
+  ev.forEach((e, i) => {
     if (e?.type !== 'assistant' || !e.message) return
+    // fallback only: one API message streams as one event per content block, each with a usage snapshot, so count it once
     byId.set(e.message.id ?? i, e.message.usage ?? {})
     if (e.message.model && !models.includes(e.message.model)) models.push(e.message.model)
   })
-  const sum = (k) => [...byId.values()].reduce((n, u) => n + (u[k] ?? 0), 0)
+  const result = ev.filter((e) => e?.type === 'result').at(-1)
+  for (const m of Object.keys(result?.modelUsage ?? {})) if (!models.includes(m)) models.push(m)
+  // the result event's usage is the run total; assistant snapshots undercount output
+  const parts = result?.usage ? [result.usage] : [...byId.values()]
+  const sum = (k) => parts.reduce((n, u) => n + (u[k] ?? 0), 0)
   return { input: sum('input_tokens'), output: sum('output_tokens'), cacheRead: sum('cache_read_input_tokens'), cacheWrite: sum('cache_creation_input_tokens'), models }
 }
 
