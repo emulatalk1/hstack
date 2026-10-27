@@ -2,7 +2,8 @@
 
 ## 2026-10-27
 
-* **Approve**: the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (status `stable`), with the order "whole measuring stick first, then the plugin". The budget line is still open.
+* **Approve**: the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (status `stable`), with the order "whole measuring stick first, then the plugin". 
+* **Update**: [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md): the user set no budget limit; the plan runs to completion and the cut ladder is not used.
 * **Creation**: Added the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (draft), with its scripts in `bench/` (oracle sources by blame, input check, sample sizes).
 
 ## 2026-10-26

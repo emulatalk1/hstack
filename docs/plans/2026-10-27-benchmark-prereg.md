@@ -227,13 +227,13 @@ Formula: N = ((z₀.₉₇₅ + z₀.₈) · σ_d / Δ)², α = 0.05 two-sided, 
 
 Assumptions: Δ = 0.15 (the smallest build-score difference that matters), σ_d = 0.25 (not yet measured; middle of the table). That gives N = 22; add 2 for the normal approximation at small N: **24 external tasks**, 8 per stack.
 
-N adjustment rule (pre-registered): the trial run (section 12, step 11) measures σ_d on 4 tasks. If the measured σ_d > 0.25, N is recomputed from the table, up to what the budget allows; beyond the budget, follow the cut ladder (section 11). N never drops below 24 because a measured σ_d is small. The trial run is not analysed.
+N adjustment rule (pre-registered): the trial run (section 12, step 11) measures σ_d on 4 tasks. If the measured σ_d > 0.25, N is recomputed from the table (no budget cap, section 11). N never drops below 24 because a measured σ_d is small. The trial run is not analysed.
 
 Bugs for the guard measure: n = z² p(1−p)/h². With p = 0.3 and half-width h = 0.1: **81 bugs** (10 held-out + 72 seeded on external tasks; 9 seeded on `real-estate` make up for the narrow logic-kind held-out).
 
 ## 11. Cost and budget
 
-**Budget for the measuring stick: ___ tokens / ___ hours** (the user fills this in).
+**Budget: no limit** (the user, 2026-10-27: "no budget limit, just finish it"). The plan runs to completion on the user's Claude Max 5x subscription; its weekly limit sets the pace, not the scope. The cut ladder below is therefore not used; any later cut is an explicit change to this plan, committed with its reason, never a silent drop of k, N or a comparison. The estimates below are for information only; each step records the usage it actually took (tokens from the transcripts and the change in the weekly limit shown by `/usage`), and the measured numbers replace the estimates.
 
 Estimates; historical mark: outsourcing's plan 8b cost about 4.75M tokens (plan writing with spikes 2.97M, build 0.69M, final reviews 0.50M, fix wave 0.14M, two evaluators 0.46M; task reviews not recorded). The cost of B and of the new harness is not measured yet; the trial run measures both before the lock. Tokens count input and output, as the progress log records them.
 
@@ -252,7 +252,7 @@ Estimates; historical mark: outsourcing's plan 8b cost about 4.75M tokens (plan 
 
 Hours: a plan-sized `real-estate` build takes about 5 hours for H and 1.5 for B; a PR-sized external task about 1.5 and 0.5. With 4 runs in parallel: about 60 hours for `real-estate`, 45 for external tasks (W included), plus about 10 for grading and layer measures: **about 115 wall-clock hours**.
 
-Cut ladder when over budget, in order; each step drops one named comparison and never lowers k or N of H1–H3:
+Cut ladder (not in use while the budget has no limit; kept so that a later cut has a pre-registered order), in order; each step drops one named comparison and never lowers k or N of H1–H3:
 
 1. W runs on 8 external tasks (3 per stack, at least 2), not 24: saves 48M. H4 must still be met on those 8.
 2. `real-estate` down to 6 tasks (p6c, p8a, p8b, p8b1, p8c, p8d: catalog oracle and no held-out commit needed): saves 117M. This is the secondary set.
