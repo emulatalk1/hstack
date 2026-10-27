@@ -33,7 +33,7 @@ Every comparison is paired on the same task, with a 95% confidence interval (sec
 | H4 | The measuring stick discriminates | build + requirement score of H minus W (weak variant) | lower bound > 0 | external tasks |
 | H5 | The test suite the harness writes guards | seeded-bug catch rate of that suite; mutation score on changed lines | seeded catch rate lower bound ≥ 0.5 | external tasks + `real-estate` |
 
-Floor rule for H1 (pre-registered): after the tasks of the trial run (section 12, step 3) are classified again with the interface sheet, if the median number of **traceable** checks per task is below 5, H1's build score no longer comes from the fix-commit oracle but from a **step oracle**: the task's own tests for its feature steps (a `real-estate` plan names one test per step; for external tasks, the FAIL_TO_PASS tests the classifiers mark traceable), rewritten black-box per 6.2, at most 15 per task chosen by seed, validated to pass on the task's end product and fail at the task base. All fix-commit checks then score H2. H1's threshold stays.
+Floor rule for H1 (pre-registered): once every task's checks are classified with the interface sheet (section 12, step 6), if the median number of **traceable** checks per task is below 5, H1's build score no longer comes from the fix-commit oracle but from a **step oracle**: the task's own tests for its feature steps (a `real-estate` plan names one test per step; for external tasks, the FAIL_TO_PASS tests the classifiers mark traceable), rewritten black-box per 6.2, at most 15 per task chosen by seed, validated to pass on the task's end product and fail at the task base. All fix-commit checks then score H2. H1's threshold stays.
 
 H1, H2 and H3 are the three primary tests, with a Holm correction across them. H4 validates the stick: if H4 is not met, H1–H3 are not reported (the stick cannot tell a weak harness apart). H5 is secondary and reported on its own.
 
@@ -79,7 +79,7 @@ Oracle candidates: source hunks of later commits whose removed lines (or, for a 
 
 Rerun: `bun bench/oracle-sources.mjs <repo> <commit,...>`; each task's result is in `.evidence/bench/tasks/<task>.tsv`.
 
-A task is kept when: (a) its filtered input passes `bench/input-check.mjs`; (b) after the fix / requirement-change labelling, at least 3 valid oracle checks remain **that belong to the task**, i.e. are not in the "pre-existing" bucket (7.1); (c) it needs no data outside the repo (for example the `showcase-data/` folder). Before the task-base rule, p5 and p7c were expected to fail (b), leaving 14. p8b gave about 1 task-owned check per 3 catalog hunks (9 or 11 of 30), so tasks with 6 or fewer catalog hunks (p4, p6b, p7b, p8a) may well fail, and the number kept may be only 8–10. The real number is fixed at step 4 of section 12. At most 12 tasks run: if more than 12 qualify, keep the 12 with the most valid oracle checks (ties: the earlier task). The final task list is committed before any run, with the reason each task was dropped.
+A task is kept when: (a) its filtered input passes `bench/input-check.mjs`; (b) after the fix / requirement-change labelling, at least 3 valid oracle checks remain **that belong to the task**, i.e. are not in the "pre-existing" bucket (7.1); (c) it needs no data outside the repo (for example the `showcase-data/` folder). Before the task-base rule, p5 and p7c were expected to fail (b), leaving 14. p8b gave about 1 task-owned check per 3 catalog hunks (9 or 11 of 30), so tasks with 6 or fewer catalog hunks (p4, p6b, p7b, p8a) may well fail, and the number kept may be only 8–10. The real number is fixed at step 10 of section 12 (stick v1). At most 12 tasks run: if more than 12 qualify, keep the 12 with the most valid oracle checks (ties: the earlier task). The final task list is committed before any run, with the reason each task was dropped.
 
 `real-estate` is a private repo created after the models' knowledge cutoff (June 2026), so it is not in training data. It stays secondary for the reason in section 2.
 
@@ -154,6 +154,8 @@ For external tasks: the reference is the PR's merge commit, the known-bad versio
 
 W (section 3) must score below H (H4). If not, the stick is not sensitive enough and H1–H3 are not reported.
 
+Because the stick is finished before any plugin exists (section 12), it also gets a canary that needs no plugin: arm B against **B−**, Claude Code without the plugin told to write no tests, run no self-check and stop after one pass. On 6 external tasks (the first 2 of each stack in the sorted list), k = 2, the stick must score B− below B (bootstrap lower bound > 0 on build + requirement score). If not, the stick is fixed before Part 2 starts. These runs also measure B's cost and its spread between runs of one task; they are not part of the H1–H3 analysis.
+
 ## 8. Per-layer measures
 
 ### 8.1 Replay
@@ -222,7 +224,7 @@ Formula: N = ((z₀.₉₇₅ + z₀.₈) · σ_d / Δ)², α = 0.05 two-sided, 
 
 Assumptions: Δ = 0.15 (the smallest build-score difference that matters), σ_d = 0.25 (not yet measured; middle of the table). That gives N = 22; add 2 for the normal approximation at small N: **24 external tasks**, 8 per stack.
 
-N adjustment rule (pre-registered): the trial run (section 12, step 3) measures σ_d on 4 tasks. If the measured σ_d > 0.25, N is recomputed from the table, up to what the budget allows; beyond the budget, follow the cut ladder (section 11). N never drops below 24 because a measured σ_d is small. The trial run is not analysed.
+N adjustment rule (pre-registered): the trial run (section 12, step 11) measures σ_d on 4 tasks. If the measured σ_d > 0.25, N is recomputed from the table, up to what the budget allows; beyond the budget, follow the cut ladder (section 11). N never drops below 24 because a measured σ_d is small. The trial run is not analysed.
 
 Bugs for the guard measure: n = z² p(1−p)/h². With p = 0.3 and half-width h = 0.1: **81 bugs** (10 held-out + 72 seeded on external tasks; 9 seeded on `real-estate` make up for the narrow logic-kind held-out).
 
@@ -240,7 +242,8 @@ Estimates; historical mark: outsourcing's plan 8b cost about 4.75M tokens (plan 
 | Oracle preparation (rewrite, validation, 2 classifications, labelling) | 12 `real-estate` tasks × 0.55M (measured on p8b) + 24 external tasks × 0.3M | 14M |
 | Layer measures (81 seeded + 10 held-out; review 0.25M + exploratory 0.15M + batched audit 0.2M per bug) | 91 × 0.6M | 55M |
 | Trial run | 4 tasks × 2 arms × 2M | 16M |
-| **Total** |  | **about 528M** |
+| Stick canary B vs B− (7.3) | 6 tasks × 2 runs × (0.4M + 0.3M) | 8M |
+| **Total** |  | **about 536M** |
 
 Hours: a plan-sized `real-estate` build takes about 5 hours for H and 1.5 for B; a PR-sized external task about 1.5 and 0.5. With 4 runs in parallel: about 60 hours for `real-estate`, 45 for external tasks (W included), plus about 10 for grading and layer measures: **about 115 wall-clock hours**.
 
@@ -254,12 +257,27 @@ Cut ladder when over budget, in order; each step drops one named comparison and 
 
 ## 12. Run order and lock
 
-1. Commit this plan (status `draft`), advisor round, user approval (`stable`).
-2. Build `bench/replay`, the oracle grading script, the fixed responder, a throwaway environment per stack. Run the held-out replay and lock its result.
-3. Trial run: 2 `real-estate` tasks (p8b and one other) and 2 external tasks, arms H and B, k = 1. Measure tokens, hours, σ_d. Not analysed.
-4. Lock: commit the final task list, the validated oracle (a hash of each file), N by rule 10.2, the plugin commits for arms H and W, the model IDs. No change from here.
-5. Run in the shuffled order. Record every run, failed ones included.
-6. Grade and analyse exactly per sections 9–10; report every deviation from this plan.
+The user chose on 2026-10-27 to finish the whole measuring stick before any plugin work (not the shorter path of a minimal stick and the plugin in parallel).
+
+**Part 1: the measuring stick (no plugin exists yet)**
+
+1. Commit this plan (status `draft`), advisor round, user approval (`stable`). From here the rules of sections 2–10 change only by a commit with its reason.
+2. Build the tools: `bench/replay`, the oracle grading script, the fixed responder (9.3), a throwaway environment per stack.
+3. Held-out set: the extension of 8.2 by a sealed agent, then the replay of the existing layers on dev + held-out: unit + int, e2e, the blind evaluator, a blind review (a task reviewer given the requirement and the bug diff only) and the whole-repo audit. Lock the result.
+4. External tasks: build the candidate list, sort it once by the rule of 4.2, commit the sample.
+5. Oracles: for every external task and every eligible `real-estate` task (held-out commits only after step 3 is locked): oracle sources, black-box rewrite, the interface sheet, validation including the task-base run (7.1), two classifiers. Agents that write oracles, interface sheets and seeded bugs never share context with the session that will design the plugin.
+6. Reclassify p8b with the interface sheet; with all tasks classified, apply the H1 floor rule (section 2) and, if it applies, write the step oracles.
+7. Seeded bugs (8.3), validated and sealed.
+8. Stick canary without the plugin (7.3): B against B− on 6 external tasks, k = 2.
+9. Human steps: settle classifier disagreements, read the input and oracle samples (5, 7.1), check the intervention rules on historical transcripts (7.2).
+10. Stick v1: commit the task lists, a hash of every oracle, seeded and held-out file, and the step-1 to step-9 results. Only then does Part 2 (the plugin) begin. The plugin designer never opens the content of oracles, seeded bugs or held-out patches; it sees only scores.
+
+**Part 2: measuring the plugin (needs the plugin)**
+
+11. Trial run: 2 `real-estate` tasks (p8b and one other) and 2 external tasks (the first of the sorted list), arms H and B, k = 1. Measure tokens, hours, σ_d; apply the N rule of 10.2. Not analysed.
+12. Lock: the plugin commits of arms H and W, the model IDs, N. No change from here.
+13. Run in the shuffled order, H and B in the same time window with the same model and CLI version (B runs of step 8 are not reused, because the model and CLI may have changed). Record every run, failed ones included.
+14. Grade and analyse exactly per sections 9–10; report every deviation from this plan.
 
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
@@ -296,7 +314,7 @@ Run on 2026-10-27, 5 agents, about 551k tokens, 45 minutes; validation ran on th
 6. Weak checks are a real kind (guarding what was right). They are out of the score as 7.1 says; no rule change.
 7. Oracle preparation for a plan-sized task: about 0.55M tokens and 45 minutes, more than the 0.3M of section 11. Section 11 uses 0.55M for `real-estate` tasks.
 
-**Not done on p8b:** explicit precondition steps in the specs; the interface sheet and the reclassification; a human read of the 2 unclear checks; human settling of the 3 disagreements; the human read of the input and the oracle sample; a real build of arm H or B (part of the trial run, section 12 step 3).
+**Not done on p8b:** explicit precondition steps in the specs; the interface sheet and the reclassification; a human read of the 2 unclear checks; human settling of the 3 disagreements; the human read of the input and the oracle sample; a real build of arm H or B (part of the trial run, section 12 step 11).
 
 ## 15. Known limits
 
