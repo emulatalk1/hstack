@@ -62,6 +62,7 @@ test('writes the reply to --out and version, tools, usage and models to the run 
   expect(c.args[1]).toBe('PROMPT-TEXT\n')
   expect(c.args.slice(c.args.indexOf('--permission-mode'), c.args.indexOf('--permission-mode') + 2)).toEqual(['--permission-mode', 'default'])
   expect(c.args.slice(c.args.indexOf('--tools'), c.args.indexOf('--tools') + 2)).toEqual(['--tools', 'Read,Grep,Glob'])
+  expect(c.args).toContain('--no-session-persistence')
   const x = rec(o)
   expect(x).toMatchObject({ at: null, code: 0, version: '9.9.9', tools: ['Read', 'Grep', 'Glob'], usage: { input: 7, output: 2, cacheRead: 0, cacheWrite: 0 }, models: ['stub-m'] })
   expect(x.label).toStartWith('l-')

@@ -29,7 +29,7 @@ export async function sealedAgent(args, { root = ROOT } = {}) {
   const at = flags.at ?? null
 
   const start = new Date().toISOString()
-  const run = await withExport(task, at, `sealed-${label}`, (cwd) => runClaude({ prompt, permissionMode: 'default', tools }, cwd, { timeoutSec: task.timeoutSec }), root, { dropSettings: true })
+  const run = await withExport(task, at, `sealed-${label}`, (cwd) => runClaude({ prompt, permissionMode: 'default', noPersist: true, tools }, cwd, { timeoutSec: task.timeoutSec }), root, { dropSettings: true })
   let info = { version: null, tools: null }
   try { info = initInfo(run.out) } catch {}
   const { models, ...u } = usage(run.out)

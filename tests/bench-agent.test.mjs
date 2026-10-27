@@ -18,6 +18,10 @@ test('claudeArgs passes the system prompt, permission mode, tools and allow list
   expect(a.slice(8)).toEqual(['--append-system-prompt', 'be brief', '--permission-mode', 'default', '--tools', 'Read,Grep', '--allowedTools', 'Read,Bash(git diff:*)'])
   expect(claudeArgs({ prompt: 'x', tools: [] }).slice(8)).toEqual(['--tools', ''])
 })
+test('claudeArgs turns session persistence off only when asked', () => {
+  expect(claudeArgs({ prompt: 'x', noPersist: true }).slice(8)).toEqual(['--no-session-persistence'])
+  expect(claudeArgs({ prompt: 'x' })).not.toContain('--no-session-persistence')
+})
 
 const fixture = [
   JSON.stringify({ type: 'system', subtype: 'init', tools: [] }),
@@ -35,6 +39,10 @@ test('usage counts a message split over several assistant events once, and final
   expect(usage(t)).toEqual({ input: 3, output: 6, cacheRead: 7, cacheWrite: 3, models: ['x', 'y'] })
   expect(() => finalText(t)).toThrow('no result')
   expect(() => finalText(JSON.stringify({ type: 'result', subtype: 'error_max_turns' }))).toThrow('no result')
+})
+test('finalText throws on a result marked is_error, even one that carries text', () => {
+  expect(() => finalText(JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result: 'API Error: 500' }))).toThrow('is_error')
+  expect(finalText(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok' }))).toBe('ok')
 })
 
 test('usage takes the totals from the result event when it has them, and adds its models', () => {
@@ -148,6 +156,7 @@ test('sealed review prints exactly "<id> caught": the agent sees the brief and t
   expect(l.args[1]).not.toContain('+buggy')
   expect(l.args.slice(l.args.indexOf('--permission-mode'), l.args.indexOf('--permission-mode') + 2)).toEqual(['--permission-mode', 'default'])
   expect(j).toMatchObject({ judge: true, env: [] })
+  for (const c of [l, j]) expect(c.args).toContain('--no-session-persistence')
   expect(j.files).toEqual([])
   expect(j.args[1]).toContain('Did any finding describe this defect (same behaviour, same place)? Reply with one JSON object only.')
   expect(j.args[1]).toContain('DESCRIPTION-SECRET')
@@ -182,13 +191,14 @@ test('a task diff over 1 MB reaches the reviewer as a file', async () => {
   expect(l).toMatchObject({ files: ['task.diff'], dsize: size })
   expect(l.args[1].length).toBeLessThan(1000)
 })
-test('the agent env carries no database variable', () => {
-  const keep = { PGPASSWORD: 'p', PGHOST: 'h', DATABASE_URL: 'u', BENCH_X: 'b', HSTACK_BENCH_MACHINE: 'm' }
+test('the agent env carries no database variable and points docker at no daemon', () => {
+  const keep = { PGPASSWORD: 'p', PGHOST: 'h', DATABASE_URL: 'u', BENCH_X: 'b', HSTACK_BENCH_MACHINE: 'm', PAYLOAD_DROP_DATABASE: 'true', DOCKER_HOST: 'unix:///var/run/docker.sock' }
   const old = Object.fromEntries(Object.keys(keep).map((k) => [k, process.env[k]]))
   Object.assign(process.env, keep)
   try {
     const env = agentEnv()
-    for (const k of Object.keys(keep)) expect(env).not.toHaveProperty(k)
+    for (const k of Object.keys(keep)) if (k !== 'DOCKER_HOST') expect(env).not.toHaveProperty(k)
+    expect(env.DOCKER_HOST).toBe('unix:///nonexistent')
     expect(env.HOME).toBe(process.env.HOME)
   } finally {
     for (const [k, v] of Object.entries(old)) v === undefined ? delete process.env[k] : (process.env[k] = v)

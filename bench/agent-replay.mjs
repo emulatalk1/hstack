@@ -17,7 +17,11 @@ const NEEDS = { review: ['task', 'base', 'end', 'fix'], audit: ['task', 'base', 
 const strings = (v) => v === undefined || (Array.isArray(v) && v.every((s) => typeof s === 'string'))
 
 // the agent must not find the data folder (results, other bugs), the bench's own variables, or a way into a database
-export const agentEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(BENCH_|PG)/.test(k) && k !== 'HSTACK_BENCH_MACHINE' && k !== 'DATABASE_URL'))
+// an agent's docker CLI must reach no daemon: the inputs of p1-p6c say `docker compose down -v`
+export const agentEnv = () => ({
+  ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(BENCH_|PG)/.test(k) && !['HSTACK_BENCH_MACHINE', 'DATABASE_URL', 'PAYLOAD_DROP_DATABASE'].includes(k))),
+  DOCKER_HOST: 'unix:///nonexistent',
+})
 
 // One headless claude call (binary from BENCH_CLAUDE); its process group is killed after timeoutSec and after it exits.
 export async function runClaude(opts, cwd, { timeoutSec, quiet = false }) {
@@ -54,7 +58,7 @@ export async function agentReplay(args, { root = ROOT } = {}) {
 
   const claude = (opts, cwd) => runClaude(opts, cwd, { timeoutSec: task.timeoutSec, quiet: sealed }) // sealed: the agent's output shows the bug
   const agent = (prompt, commit, diff) => withExport(task, commit, `agent-${bug.id}-${layer}`,
-    async (cwd) => { if (diff !== undefined) await Bun.write(join(cwd, 'task.diff'), diff); return claude({ prompt, permissionMode: 'default', tools: cfg.tools, allow: cfg.allow }, cwd) }, root, { dropSettings: true })
+    async (cwd) => { if (diff !== undefined) await Bun.write(join(cwd, 'task.diff'), diff); return claude({ prompt, permissionMode: 'default', noPersist: true, tools: cfg.tools, allow: cfg.allow }, cwd) }, root, { dropSettings: true })
 
   const start = new Date().toISOString()
   let run, envErr
@@ -83,7 +87,7 @@ export async function agentReplay(args, { root = ROOT } = {}) {
     const findings = finalText(run.out)
     if (!sealed) rec.findings = findings
     const prompt = `${JUDGE} Its shape: {"caught": true|false, "quote": "<the words of the finding that describes it, or empty>"}\n\n## Defect\n\n${bug.description}\n\n## Findings\n\n${findings}\n`
-    const j = await withExport(task, null, `judge-${bug.id}-${layer}`, (cwd) => claude({ prompt, tools: [] }, cwd), root) // own empty cwd: no project settings
+    const j = await withExport(task, null, `judge-${bug.id}-${layer}`, (cwd) => claude({ prompt, noPersist: true, tools: [] }, cwd), root) // own empty cwd: no project settings
     count('judge', j.out)
     if (j.code !== 0) throw new Error(`judge exited ${j.code}`)
     const v = judgeVerdict(finalText(j.out))

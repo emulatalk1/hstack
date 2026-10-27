@@ -143,6 +143,7 @@ test('run-arm: a question then DONE on the first resume is one intervention, and
     expect(opt(c.args, '--permission-mode')).toBe('bypassPermissions')
     expect(c.args).not.toContain('--model') // B with no cfg.model: the CLI default
     expect(c.args).not.toContain('--plugin-dir')
+    expect(c.args).not.toContain('--no-session-persistence') // the arm resumes its session
     expect(readFileSync(opt(c.args, '--settings'), 'utf8')).toBe('{}\n')
   }
   expect(show('bench/p1-B-1:made.txt')).toBe('turn 1\n')
