@@ -2,8 +2,11 @@
 type: plan
 title: "Measuring stick: pre-registration plan (Part 1)"
 description: "Hypotheses, task set, oracle, validation, task and run counts, cost and acceptance thresholds of the benchmark that measures the hstack harness, registered before any run."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.310, at: "2026-10-27T09:10:00+07:00" }
+verified:
+  - { by: claude-code-advisor/2.1.310, at: "2026-10-27T10:40:00+07:00" }
+  - { by: human:emulatalk1, at: "2026-10-27T10:41:18+07:00" }
 sources:
   - id: layers
     resource: /design/2026-10-26-layers.md

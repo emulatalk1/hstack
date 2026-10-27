@@ -2,6 +2,7 @@
 
 ## 2026-10-27
 
+* **Approve**: the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (status `stable`), with the order "whole measuring stick first, then the plugin". The budget line is still open.
 * **Creation**: Added the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (draft), with its scripts in `bench/` (oracle sources by blame, input check, sample sizes).
 
 ## 2026-10-26
