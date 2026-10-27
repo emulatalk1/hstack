@@ -197,6 +197,17 @@ test('a patch that does not reverse-apply is an error, never "missed"', async ()
   expect(r.code).toBe(2)
   expect(r.stdout).toBe('')
 })
+test('a patch that does not reverse-apply stops before the baseline runs', async () => {
+  const runs = join(tmp, 'bad-runs.log')
+  const t = mkTask({ unit: layer('x', '', runs) })
+  const name = JSON.parse(readFileSync(t, 'utf8')).name
+  const r = await cli([t, bug('b5s', { patch: 'bad.patch' }), 'unit', '--sealed'])
+  expect(r).toMatchObject({ stdout: '', stderr: 'b5s patch does not apply\n', code: 2 })
+  expect(existsSync(runs)).toBe(false) // the layer command never ran
+  expect((existsSync(join(tmp, 'results')) ? readdirSync(join(tmp, 'results')) : []).filter((n) => n.includes(name))).toEqual([])
+  expect((await cli([t, bug('b5d', { patch: 'bad.patch' }), 'unit'])).code).toBe(2)
+  expect(existsSync(runs)).toBe(false)
+})
 test('refuses a missing or non-string layer, a missing testTitle and an unsafe id', async () => {
   expect((await cli([mkTask({ unit: layer('x') }), bug('b6'), 'e2e'])).stderr).toContain('layer e2e')
   expect((await cli([mkTask({ unit: 5 }), bug('b6'), 'unit'])).stderr).toContain('layer unit')

@@ -59,7 +59,7 @@ test('judgeVerdict accepts the object inside a single json fence, and its error 
 })
 
 // CLI smoke tests. A stub stands in for claude: the judge call is the one with `--tools ""`.
-const { agentReplay } = await import('../bench/agent-replay.mjs')
+const { agentReplay, agentEnv } = await import('../bench/agent-replay.mjs')
 const dropRoot = releaseRoot()
 const rand = () => Math.random().toString(36).slice(2, 8)
 const sub = `${ROOT}/test-${rand()}`
@@ -90,13 +90,14 @@ writeFileSync(join(tmp, 'review.md'), 'REVIEW-BRIEF\n')
 // STUB_LAYER: result | noresult | fail; STUB_JUDGE: the judge's reply text
 const stub = join(tmp, 'claude-stub')
 writeFileSync(stub, `#!/usr/bin/env bun
-import { appendFileSync, existsSync, readdirSync } from 'node:fs'
+import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 const a = process.argv.slice(2), judge = a[a.indexOf('--tools') + 1] === '' && a.includes('--tools')
 const say = (o) => console.log(JSON.stringify(o))
 const url = /http:\\/\\/localhost:\\d+/.exec(a[1])?.[0]
 const page = url ? await (await fetch(url)).text() : null
+const dsize = existsSync('task.diff') ? statSync('task.diff').size : null, diff = dsize !== null && dsize < 10000 ? readFileSync('task.diff', 'utf8') : null
 const dot = existsSync('.claude') ? readdirSync('.claude') : null, env = Object.keys(process.env).filter((k) => /BENCH/.test(k))
-appendFileSync(process.env.STUB_LOG, JSON.stringify({ judge, args: a, cwd: process.cwd(), files: readdirSync(process.cwd()).sort(), dot, env, page }) + '\\n')
+appendFileSync(process.env.STUB_LOG, JSON.stringify({ judge, args: a, cwd: process.cwd(), files: readdirSync(process.cwd()).sort(), dot, env, page, dsize, diff }) + '\\n')
 console.error('STUB-ERR FINDING-SECRET')
 say({ type: 'system', subtype: 'init' })
 say({ type: 'assistant', message: { id: judge ? 'j' : 'l', model: judge ? 'judge-m' : 'layer-m', usage: { input_tokens: judge ? 3 : 10, output_tokens: 2 }, content: [] } })
@@ -135,16 +136,16 @@ const cli = async (args, env = {}) => {
 const result = (id, layer) => JSON.parse(readFileSync(join(data, 'results', `${id}-${layer}.json`), 'utf8'))
 afterAll(async () => { await clean(sub); rmSync(tmp, { recursive: true, force: true }); dropRoot() })
 
-test('sealed review prints exactly "<id> caught": the agent sees the brief, the filtered input and the task diff in an empty folder', async () => {
+test('sealed review prints exactly "<id> caught": the agent sees the brief and the filtered input in the prompt and the task diff as the only file in its folder', async () => {
   const r = await cli([mkTask(layers), bug('b1'), 'review', '--sealed'])
   expect(r).toMatchObject({ stdout: 'b1 caught\n', stderr: '', code: 0 })
   const [l, j] = calls()
-  expect(l).toMatchObject({ judge: false, files: [], env: [] })
+  expect(l).toMatchObject({ judge: false, files: ['task.diff'], env: [] })
+  expect(l.diff).toBe(git('diff', '--no-ext-diff', '--no-color', base, end) + '\n')
+  expect(l.diff).toContain('+buggy')
   expect(l.cwd.startsWith(realpathSync(ROOT))).toBe(true)
-  expect(l.args[1]).toStartWith('REVIEW-BRIEF')
-  expect(l.args[1]).toContain('FILTERED-INPUT of p1')
-  expect(l.args[1]).toContain('+buggy')
-  expect(l.args[1]).not.toContain('fixed')
+  expect(l.args[1]).toBe('REVIEW-BRIEF\n\n\n## Input\n\nFILTERED-INPUT of p1\n\n\n## Diff of the task\n\nThe full diff of the task, from its base to its end, is the file task.diff in your working folder.\n')
+  expect(l.args[1]).not.toContain('+buggy')
   expect(l.args.slice(l.args.indexOf('--permission-mode'), l.args.indexOf('--permission-mode') + 2)).toEqual(['--permission-mode', 'default'])
   expect(j).toMatchObject({ judge: true, env: [] })
   expect(j.files).toEqual([])
@@ -158,6 +159,40 @@ test('sealed review prints exactly "<id> caught": the agent sees the brief, the 
   expect(Date.parse(res.end) >= Date.parse(res.start)).toBe(true)
   expect(JSON.stringify(res)).not.toContain('SECRET')
   expect(existsSync(l.cwd) || existsSync(j.cwd)).toBe(false)
+})
+test('a task diff over 1 MB reaches the reviewer as a file', async () => {
+  const big = join(tmp, 'big')
+  mkdirSync(big)
+  const g = (...a) => Bun.spawnSync(['git', '-C', big, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
+  g('init', '-q')
+  writeFileSync(join(big, 'a.txt'), 'start\n'); g('add', '.'); g('commit', '-qm', 'base')
+  const b = g('rev-parse', 'HEAD')
+  writeFileSync(join(big, 'big.txt'), ('y'.repeat(99) + '\n').repeat(11000)); g('add', '.'); g('commit', '-qm', 'end')
+  const e = g('rev-parse', 'HEAD')
+  writeFileSync(join(big, 'a.txt'), 'fixed\n'); g('commit', '-qam', 'fix')
+  const f = g('rev-parse', 'HEAD')
+  const size = Buffer.byteLength(g('diff', '--no-ext-diff', '--no-color', b, e) + '\n')
+  expect(size).toBeGreaterThan(1_100_000)
+  const task = JSON.parse(readFileSync(mkTask(layers), 'utf8'))
+  const t = join(tmp, `task-${rand()}.json`)
+  writeFileSync(t, JSON.stringify({ ...task, name: `t${rand()}`, repo: big }))
+  const r = await cli([t, bug('b9', { base: b, end: e, fix: f }), 'review', '--sealed'])
+  expect(r).toMatchObject({ stdout: 'b9 caught\n', stderr: '', code: 0 })
+  const [l] = calls()
+  expect(l).toMatchObject({ files: ['task.diff'], dsize: size })
+  expect(l.args[1].length).toBeLessThan(1000)
+})
+test('the agent env carries no database variable', () => {
+  const keep = { PGPASSWORD: 'p', PGHOST: 'h', DATABASE_URL: 'u', BENCH_X: 'b', HSTACK_BENCH_MACHINE: 'm' }
+  const old = Object.fromEntries(Object.keys(keep).map((k) => [k, process.env[k]]))
+  Object.assign(process.env, keep)
+  try {
+    const env = agentEnv()
+    for (const k of Object.keys(keep)) expect(env).not.toHaveProperty(k)
+    expect(env.HOME).toBe(process.env.HOME)
+  } finally {
+    for (const [k, v] of Object.entries(old)) v === undefined ? delete process.env[k] : (process.env[k] = v)
+  }
 })
 test('sealed: a judge that says false is "<id> missed"', async () => {
   const r = await cli([mkTask(layers), bug('b2'), 'review', '--sealed'], { STUB_JUDGE: judgeSays(false) })

@@ -3,7 +3,7 @@
 // with the bug reintroduced, and count only failures that neither a test added or changed from the fix on nor the baseline explains.
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { ROOT, withEnv } from './env.mjs'
+import { ROOT, withEnv, withWorktree } from './env.mjs'
 import { checkJunitPath, resolveCommit, runForJunit } from './grade.mjs'
 import { readJunit } from './lib/junit.mjs'
 import { caught, excludedTitles, failingNames, holeOnly, isTestPath, notCounted } from './lib/replay.mjs'
@@ -27,16 +27,16 @@ export async function readBug(bugPath, fields) {
   return bug
 }
 
-// withEnv's `before`: reverse-apply the bug's fix patch, checked first.
+// withEnv's `before`: reverse-apply the bug's fix patch, checked first (checkOnly: only the check).
 // sealed: git's own messages quote the bug's lines (trailing whitespace warnings, failed hunks)
-export const reverseApply = (bug, sealed) => async (dir) => {
+export const reverseApply = (bug, sealed, { checkOnly = false } = {}) => async (dir) => {
   const apply = async (...a) => {
     const q = sealed ? 'ignore' : 2
     const code = await Bun.spawn(['git', 'apply', '--whitespace=nowarn', ...a, bug.patch], { cwd: dir, stdout: q, stderr: q }).exited
     if (code !== 0) throw new Error(sealed ? `${bug.id} patch does not apply` : `git apply ${a.join(' ')} ${bug.patch} failed (exit ${code})`)
   }
   await apply('-R', '--check')
-  await apply('-R')
+  if (!checkOnly) await apply('-R')
 }
 
 export async function replay(args, { root = ROOT } = {}) {
@@ -72,6 +72,9 @@ export async function replay(args, { root = ROOT } = {}) {
   }, { root, quiet: sealed, before, start: false })
   // zero non-skip cases means the layer ran nothing (a wrong project filter), which must not read as a miss
   const ran = (cases) => cases?.some((c) => c.status !== 'skip')
+
+  // a patch that does not apply costs one checkout here, not a full baseline
+  await withWorktree(task, at, `check-${bug.id}`, reverseApply(bug, sealed, { checkOnly: true }), root)
 
   // the baseline serves every bug at this (task, at, layer), so it runs with an empty exclude list; only a good one is kept
   const results = join(dirname(resolve(process.env.HSTACK_BENCH_MACHINE)), 'results')
