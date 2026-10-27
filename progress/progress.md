@@ -205,3 +205,179 @@ Task review cost, one line per task (review = the task reviewer plus any re-revi
     Fix round 3/5 (implementer sonnet 104.6k/1.3 min; re-review opus 92.4k/10.4 min): ADDRESSED; no exit-0 case where Compose would use another name (Psych, Bun.YAML, kubectl; go-yaml scanner source read; Compose not run).
     Fix-3: minor (deferred): JS .trim() treats NBSP/U+3000/VT/FF/BOM-only lines as blank before name: (oracles error or read our name); header regex accepts `---#x` (oracles error); a JS-blank continuation after name: passes (name stays ours or Compose errors); `version:` before `name:` refused (common layout; README now says so — controller one-line README edit).
     C1: complete (commits 97d3ef3..64d3b7d + README line).
+
+## 2026-10-27 — benchmark tools plan (`docs/plans/2026-10-27-bench-tools.md`), branch `worktree-bridge-cse_01LckcHdPjiRPz5DvPEJXEaJ`
+
+Built subagent-driven: one implementer per task, a fresh task reviewer and scoped re-reviews, a whole-branch review, one fix wave and one re-review. Tokens are the subagent totals the harness reported at each hand-back (a resumed agent reports its running total); minutes are wall clock per hand-back.
+
+- Task 1 (JUnit reader): implementer sonnet 50.1k, 1.1 min (1 fix round) · review sonnet 52.7k/1.4 min + re-review haiku 52.2k/0.7 min · 1 Important fixed (Playwright writes the error as CDATA text)
+- Task 2 (task file, safety): implementer sonnet 49.6k, 0.9 min · review sonnet 50.4k/0.6 min · review clean
+- Task 3 (throwaway env): implementer opus 89.6k, 12.1 min (1 fix round) · review opus 65.8k/2.2 min + re-review sonnet 49.9k/0.5 min · 1 Important fixed (clean followed a symlink out of its root)
+- Task 4 (scores, grader): implementer sonnet 81.6k, 5.2 min (1 fix round) · review opus 70.6k/4.3 min + re-review sonnet 53.3k/0.5 min · 2 Important fixed (grade file named as typed; validation written from a run with no results)
+- Task 5 (test-layer replay): implementer sonnet 93.1k, 6.9 min (1 fix round) · review opus 71.5k/2.8 min + re-review sonnet 57.7k/0.6 min · 3 Important fixed (sealed leak through git apply; it.each titles; merge-commit fixes)
+- Task 6 (agent-layer replay): implementer opus 138.7k, about 33 min (pre-review fix + 1 fix round) · review opus 92.8k/5.7 min + re-review sonnet 57.7k/0.7 min · 1 Important fixed (audit export carried the repo's Stop hook)
+- Task 7 (arm runner, responder): implementer opus 148.4k, about 34 min incl. the real-CLI probe (pre-review fix + 1 fix round) · review opus 88.3k/5.2 min + re-review sonnet 71.7k/1.2 min · 3 Important fixed (intervention count vs 9.3; product fetch trusted the agent repo; no plugin commit)
+- Task 8 (real-estate task file, p8b check): implementer opus 272.1k, about 89 min of real app runs (1 fix round) · review opus 135.8k/11.0 min + re-review sonnet 58.5k/0.8 min · 1 Important fixed (table-row exclusion took the next row); 20/20 pilot verdicts reproduced
+- Final review: opus 148.4k/12.8 min · fix wave opus 228.8k/22.6 min (F1–F6 + 11 ride-alongs) · re-review opus 125.8k/6.4 min · all addressed
+- Controller (this session): not measured here; read `/usage` for the weekly-limit change.
+- Total subagent tokens: about 2.46M (sum of the final totals above).
+
+### SDD ledger copy (taken before the workspace is deleted)
+
+    # SDD ledger — plan: docs/plans/2026-10-27-bench-tools.md
+    
+    Spec: docs/plans/2026-10-27-benchmark-prereg.md (stable). Branch worktree-bridge-cse_01LckcHdPjiRPz5DvPEJXEaJ, start e326f66.
+    Data: /Users/hbchuc/Documents/programing/vibe-code/hstack/.evidence/bench (main checkout; not present in this worktree).
+    
+    ## Pre-flight scan
+    
+    | Rows | Produces vs consumes | Found |
+    |---|---|---|
+    | T1 self | fixtures vs reader rule | consistent as written, but see T1↔T4↔T8 |
+    | T1↔T4↔T8 | readJunit `message` (attribute wins) vs results() looks for PRECONDITION in message vs Playwright 1.58.2 junit.js:167 puts `file:line:col title` in the attribute and the error in the element text | CONFLICT: no Playwright check could ever grade `precondition` |
+    | T1↔T4 | checkId vs Playwright testcase name (`titlePath().slice(3)` = bare title) | clean |
+    | T2 self | fixtures vs parseTask rules; forbid rule admits outsourcing-hstack | clean |
+    | T2↔T5↔T6 | Task type has no `layers`; T5 `layers.<name>` = command string; T6 `layers.<layer>.brief` | CONFLICT: shape of layers |
+    | T2↔T6↔T7 | `<results>` folder used by T6/T7, never defined | GAP |
+    | T3↔T5/T6 | withEnv(task, commit, label, fn): fn runs after start; replay must `git apply -R` before setup/start | CONFLICT |
+    | T3↔T6/T7 | audit layer and run-arm need a worktree with no app start | GAP |
+    | T3 self | 'clean removes only its own folder' test would wipe a real run under /tmp/hstack-bench; port check by Bun.listen on 127.0.0.1 may miss a listener on :: (a stale dev server would then be graded) | RISK |
+    | T3↔T8 | the run.sh curl warm-up has no task-file field | GAP |
+    | T4 self | score fixture 0.75/0/(1/3)/3 and verdict order | clean; base `error` not covered |
+    | T4↔T8 | `--validate` writes one validation.json, T8 runs it once per fix commit over all 20 checks | CONFLICT (overwrite) |
+    | T5 self | both excludedTitles fixtures and caught | clean |
+    | T6 self | bug.json for review/audit needs the owning task's base and end commits and the sealed description; not in the field list | GAP |
+    | T6↔T7 | claudeArgs has no appendSystemPrompt; armArgs('B-') returns one | CONFLICT |
+    | T7 self (real CLI probe, 2.1.310, `-p --setting-sources project,local --strict-mcp-config`) | init `plugins` lists 3 `path: builtin` entries (cc-plugin-agents-md, cc-plugin-telemetry, cc-plugin-plugin-authoring); `tools` has no AskUserQuestion; `permissionMode: default`; user skills (cua-driver, synced) not listed; no `:` command | CONFLICT: probeOk "equal exactly" refuses every B run; hook cannot fire; Step 5 cannot write hello.txt without a permission mode |
+    | T7 safety | the copy's .env.example points DATABASE_URL at `real_estate`; an arm agent with full permissions could seed it | RISK |
+    | T8 | docs/log.md exists | clean |
+    
+    ## Rulings
+    
+    - Ruling: readJunit `message` = the message attribute and the element text, joined by "\n" when both are non-empty (either alone when the other is empty); Task 1's first fixture expects 'Expected: 400\nstack' — Playwright puts the error only in the element text (junit.js:167) — cost if wrong: messages carry a duplicated line for runners that repeat the message in the body (vitest); harmless.
+    - Ruling: results() grades a failed case `precondition` when a line of its message starts, after spaces and an optional `<Word>Error: `, with `PRECONDITION:` (multiline regex `^\s*(?:\w*Error:\s*)?PRECONDITION:`) — "contains" would also match Playwright's code frame, which prints the spec lines around the failing one (`  12 |   expect(x, 'PRECONDITION: …')`) — cost if wrong: a precondition written another way grades `fail`.
+    - Ruling: `layers.<name>` is a command string for test layers (Task 5) and an object `{ brief: <path relative to the task file> }` for agent layers (Task 6); Task 2 passes `layers` and `testTitle` through unvalidated-optional (Task 5/6 validate what they use) — cost if wrong: one more shape check later.
+    - Ruling: `<results>` = `<dir of HSTACK_BENCH_MACHINE>/results/` (this machine: .evidence/bench/results/) — gitignored, per machine, no new field — cost if wrong: results move by one constant.
+    - Ruling: Task 3 exports `withWorktree(task, commit, label, fn: (dir) => T)` (refuse if the path exists, add, fn, remove in finally) and `withEnv(task, commit, label, fn, { before }?)` built on it, where `before(dir)` runs after the worktree is added and before setup — replay applies its reverse patch there; audit and run-arm use withWorktree — cost if wrong: none, both are needed by later tasks.
+    - Ruling: `clean(root = '/tmp/hstack-bench')` refuses a root that is not /tmp/hstack-bench or under it; tests pass their own sub-root so they never touch a real run. Paths compare after realpath (/tmp is /private/tmp on macOS) — cost if wrong: none.
+    - Ruling: a port is busy when a TCP connect to 127.0.0.1:<port> or [::1]:<port> succeeds or Bun.listen on it fails; the test opens its listener on 0.0.0.0 and on :: — a missed stale server would be graded instead of the commit under test — cost if wrong: a false "busy".
+    - Ruling: no warm-up field; the real-estate task file runs the warm-up script in front of its oracle and e2e commands (`sh warmup.sh && …`) — cost if wrong: none.
+    - Ruling: verdict with base `error` → `broken` (cannot be validated in this run; rerun) — cost if wrong: an infra failure at base drops a check until rerun, visible in the file.
+    - Ruling: `--validate <ref> <bad> [--base]` judges only the checks whose manifest `fix_commit` matches ref (prefix match) and writes `<oracle dir>/../validation-<ref7>.json`; every run executes the whole oracle (no grade reuse: a stale grade is worse than an hour of wall clock) — cost if wrong: about 15 env cycles in Task 8 instead of 11.
+    - Ruling: bug.json for review/audit gains `base` and `end` (the owning task's commits) and every bug.json has `description` (the sealed text for the judge); the filtered input is `<dir of HSTACK_BENCH_MACHINE>/<task>/input.md`. Task 6's CLI cannot run end to end yet (only p8b has a filtered input, and it owns no replayed bug); its scope is the unit tests plus a CLI that parses and refuses bad input — cost if wrong: field names change at step 3.
+    - Ruling: claudeArgs accepts `appendSystemPrompt` (→ `--append-system-prompt`) and always adds `--permission-mode bypassPermissions`, the same for all four arms (spec 3: same tool permissions; `-p` with mode default denies every write) — cost if wrong: arms run with full permissions in their /tmp worktree.
+    - Ruling: run-arm refuses a task whose `db` is not null ("arm runs have no database guard yet") — an agent with full permissions in the real-estate copy could point .env at `real_estate` (.env.example does); shortcut comment names the upgrade (before prereg step 8 / 11) — cost if wrong: step 8 needs a small guard first.
+    - Ruling: probeOk ignores init plugins whose `path` is `builtin` (they ship with the CLI and load for every arm alike) — cost if wrong: a builtin plugin that changes behaviour goes unseen, the same for all arms.
+    - Ruling: AskUserQuestion is absent from `-p` tools (probe above); Task 7 Step 5 confirms it on its own probe and then follows the plan's branch (interventions from resumes only, hook removed from the settings file, hook script and test kept) — cost if wrong: none.
+    - Ruling: Task 8 uses absolute paths into the main checkout's .evidence/bench (no symlink: `.evidence/` in .gitignore matches only a folder, so a symlink would show as untracked) — cost if wrong: none.
+    
+    ## Tasks
+    Task 1: dispatched (sonnet), BASE e326f66
+    Task 1: implementer sonnet 46.7k tokens, 0.7 min, commit f761cdd; review dispatched (sonnet)
+    Task 1: review 1 (sonnet 52.7k, 1.4 min): Needs fixes — I1 CDATA failure text not handled (my dispatch wrongly said Playwright escapes text); minors 1 (system-out scanned), 2 (fromCodePoint RangeError) ride along; Task 1: minor (deferred): decode regex has the i flag (&AMP; accepted)
+    Task 1: fix round 1/5 (implementer sonnet 50.1k, 0.4 min; re-review haiku): 3 addressed, 0 open; commits f761cdd..a77ca4d
+    Task 1: minor (deferred): system-out strip regex swallows a failure after a self-closing <system-out/> followed by a later </system-out> (false pass; Playwright does not emit this shape) — fix with the reviewer's regex `<system-(?:out|err)\b(?:[^>]*\/>|[\s\S]*?<\/system-(?:out|err)>)`
+    Task 1: minor (deferred): mixed plain text + CDATA in one element drops the plain text
+    Task 1: complete (commits e326f66..a77ca4d, review clean)
+    Task 1 cost: implementer sonnet 46.7k/0.7 min + fix 50.1k/0.4 min; review sonnet 52.7k/1.4 min + re-review haiku 52.2k/0.7 min
+    - Ruling: Task 2 validates name `^[a-z0-9][a-z0-9_-]*$` (it becomes a /tmp folder name), resolves repo symlinks before the forbid check, passes testTitle (must compile) and layers (plain object, default {}) through — cost if wrong: a stricter name than a later task file wants.
+    Task 2: dispatched (sonnet), BASE a77ca4d
+    Task 2: implementer sonnet 49.6k/0.9 min, commit a985fdd; review sonnet: Approved, no Critical/Important
+    Task 2: minor (deferred, recommend fix before merge — safety gate): parseTask fails open when machine.forbid.paths is missing or mistyped (task.mjs:19); require an array of strings
+    Task 2: minor (deferred): realpath only for existing paths; a missing repo under a symlinked or differently-cased forbidden dir passes (task.mjs:5) — fix by realpath of nearest existing ancestor
+    Task 2: minor (deferred): loadTask errors on missing/invalid JSON omit the file name
+    Task 2: complete (commits a77ca4d..a985fdd, review clean)
+    Task 3: dispatched (opus), BASE a985fdd
+    - Ruling: Task 3 command env/cwd/error contract — BENCH_* on top of process.env, cwd worktree, sh -c, non-zero setup/teardown throws, start exiting before ready fails at once, start log at <root>/<name>-<label>.log — cost if wrong: none, the plan was silent.
+    Task 3: implementer opus, commit 9420cdd; added opts.pollMs (tests only), fn gets env too, portBusy exported
+    Task 3: implementer opus 82.6k/10.4 min; review 1 opus 65.8k/2.2 min: Needs fixes — I1 clean follows a symlink under root and force-removes an outside worktree; minors 2 (ready fetch aborted at pollMs), 6 (test gaps), 7 (message wording) ride along
+    Task 3: minor (deferred): clean SIGKILLs the whole group of a group leader whose cwd is under root (a user shell cd'd there); clean does not check forbid.paths of the owning repo; `up` swallows Ctrl-C during the ready wait
+    Task 3: fix round 1/5 (implementer opus 89.6k/1.7 min; re-review sonnet): 4 addressed, 0 open; commits 9420cdd..ba0ec1b
+    Task 3: complete (commits a985fdd..ba0ec1b, review clean)
+    Task 4: dispatched (sonnet), BASE ba0ec1b
+    Task 3 cost: implementer opus 82.6k/10.4 min + fix 89.6k/1.7 min; review opus 65.8k/2.2 min + re-review sonnet 49.9k/0.5 min
+    - Ruling: Task 4 — a skipped case is `error`; several cases per id, worst wins; checks = manifest entries not dropped and interface != none; grade sets BENCH_ORACLE=<abs oracle dir> for the oracle command (one task file serves every real-estate task); oracle killed after timeoutSec; stale JUnit deleted first; CLI body exported as grade(args, { root }) for a sub-root smoke test — cost if wrong: small interface changes in Task 8.
+    Task 4: implementer sonnet 73.7k/3.7 min, commit 61f400e; review dispatched (opus)
+    Task 4: review 1 opus 70.6k/4.3 min: Needs fixes — I1 grade file named as typed (HEAD.json); I2 validate writes verdicts from a run with no JUnit; minors 3-7 ride along
+    - Ruling: grade files are `grades/<resolved hash 7>.json` (plan's `<commit>.json`, matching the validation file); validate refuses to write when any run had no results or timed out; grade refuses an absolute task.junit — cost if wrong: none.
+    Task 4: minor (deferred): spec 9.1 divides by valid checks only; the grader takes weak/broken checks out only via manifest `dropped` — the validation result must be written back to the manifest by hand (Task 8 / README must say so)
+    Task 3: minor (deferred): the env test's setup-failure case prints 'command failed (exit 3)' to stderr during bun test (output not pristine)
+    Task 4: fix round 1/5 (implementer sonnet 81.6k/1.5 min; re-review sonnet 53.3k/0.5 min): 7 addressed, 0 open; commits 61f400e..da0a101; full suite run by controller: 111 pass
+    Task 4: minor (deferred): `severity in WEIGHT` passes prototype names (use Object.hasOwn); junit `..foo/x.xml` falsely refused
+    Task 4: complete (commits ba0ec1b..da0a101, review clean)
+    - Ruling: Task 5 — replay runs through withEnv with before = `git apply -R <patch>` (after `git apply -R --check`; failure is an error, never "missed"); label `replay-<id>`; patch path relative to bug.json; a layer run with no JUnit prints `<id> error` and exits non-zero; sealed mode sends the layer command's own output to /dev/null (failure output shows the bug), dev mode to stderr — cost if wrong: none.
+    Task 5: dispatched (sonnet), BASE da0a101
+    Task 5: implementer sonnet 77.0k/3.8 min, commit 11d6839 (grade.mjs exports resolveCommit, runForJunit, checkJunitPath); review dispatched (opus)
+    Task 5: review 1 opus 71.5k/2.8 min: Needs fixes — I1 sealed leak via git apply stderr; I2 it.each/template titles never excluded (partly plan-mandated "contains"); I3 merge-commit fix excludes nothing; minors 4 (substring hides a catch), 5 (sealed setup/start output), 6 (zero cases = missed) ride along
+    - Ruling: caught() matches each excluded title as an end-anchored pattern after the start or a `>`/`›` separator, with printf tokens and `$x`/`${…}` as wildcards — spec 8.1 "drop every test the fix added (it.each included)" outranks the brief's "contains" — cost if wrong: a title that ends differently in the runner's name (suffix added by the runner) is not excluded and counts as a catch.
+    - Ruling: the layer command honouring BENCH_EXCLUDE is a speed and cleanliness measure only; caught() is the rule that decides — cost if wrong: none.
+    Task 5: minor (deferred): quoted `+++ "b/…"` paths missed; .bench-exclude written inside the worktree; any added line (even blank) excludes its test
+    Task 5: fix round 1/5 (implementer sonnet 93.1k/3.1 min; re-review sonnet 57.7k/0.6 min): 6 addressed, 0 open; commits 11d6839..8650187; withEnv gained `quiet`
+    Task 5: minor (deferred): dev-mode "(excluded)" label still uses includes(), can disagree with caught(); a title that is only a hole (`${x}`) excludes every case
+    Task 5 cost: implementer sonnet 77.0k/3.8 min + fix 93.1k/3.1 min; review opus 71.5k/2.8 min + re-review sonnet 57.7k/0.6 min
+    Task 5: complete (commits da0a101..8650187, review clean)
+    - Ruling (correction of the pre-flight claudeArgs ruling): `permissionMode`, `tools` and `allow` are claudeArgs parameters (→ `--permission-mode`, `--tools`, `--allowedTools`); run-arm passes bypassPermissions for every arm alike, agent replay passes `default` — the pre-flight "always bypass" would let a replay agent read the fix — cost if wrong: none.
+    - Ruling: agent replay layers never see a `.git`: review cwd = an empty folder (diff in the prompt), audit cwd = `git archive <end>` export under /tmp/hstack-bench, evaluator app in the withEnv worktree but the agent's cwd an empty folder with only the URL; layer object `{ brief, tools?, allow? }`; a worktree shares refs and objects, so `git log --all` or `git diff` would show the fix or the bug — cost if wrong: replay agents get less than the old replay gave them.
+    - Ruling: judgeVerdict accepts one JSON object, bare or in a single ```json fence; anything else throws; the judge runs with `--tools ""` — cost if wrong: none.
+    - Ruling: Task 6 sealed contract mirrors Task 5 (stdout exactly `<id> caught|missed`, layer and judge output to ignore, no result event or judge parse failure → `<id> error` and exit non-zero; sealed results JSON holds usage, models, times and verdict, never findings or quote); the binary comes from env BENCH_CLAUDE (default `claude`) so a stub can test the CLI as a subprocess — cost if wrong: none.
+    - Ruling (flag for Task 7): run-arm must not work in a worktree of the copy (the arm agent would see the task's future commits); use a fresh repo from `git archive <base>` + init + one commit, and fetch the product back into the copy as `bench/<task>-<arm>-<n>` — cost if wrong: a separate repo per run.
+    Task 6: dispatched (opus), BASE 8650187
+    Task 6: implementer opus 115.0k/12.9 min, commit 73a99e9; real-CLI probe: Read outside cwd denied under -p mode default
+    - Ruling: usage() takes totals from the last result event's usage (authoritative; assistant sums undercount output, 23 vs 168 on the probe), falling back to per-message-id deduplicated assistant sums; layer and judge killed after timeoutSec → `<id> error` — cost if wrong: none.
+    - Ruling: prompt stays in argv (shortcut comment): a task diff over ~1 MB fails to start, and the sealed description shows in `ps` on this machine while the judge runs — cost if wrong: a large task needs the stdin change.
+    Task 6: pre-review fixes sent to the implementer
+    Task 6: pre-review fix c6bd209 (implementer opus, total 121.4k/16.0 min incl. first pass); review dispatched (opus)
+    Task 6: review 1 opus 92.8k/5.7 min: Needs fixes — I1 audit export carries the repo's .claude/settings.json Stop hook (nested unrecorded claude, 50-min sleep); minors 2-7 ride along
+    - Ruling: the agent-replay export drops .claude/settings.json and settings.local.json (option of the export helper); replay layers measure their brief, not the old harness's hooks; deterministic, no dependence on how -p treats asyncRewake hooks — cost if wrong: an audit misses project settings that only change permissions.
+    Task 6: minor (deferred, for the lock): layer and judge pass no --model, so the judge model follows the CLI default (recorded from the transcript); fix at prereg step 12
+    Task 6: minor (deferred): evaluator tools reaching http://localhost under mode default depend on the task file's `allow` (WebFetch to localhost not probed)
+    - Ruling (flag for Task 7): the same Stop hook (question-wait.py, waits for a human for 3000 s) reaches every arm through the task base's tracked .claude/settings.json; Task 7 must decide whether arms keep it — cost if wrong: arm runs stall or spend unrecorded tokens.
+    Task 6: fix round 1 implementer opus 138.7k/4.2 min, commit 1b623a8; re-review dispatched (sonnet)
+    - Ruling (closes the Task 7 hook flag): the copy outsourcing-hstack/real-estate is its own repo and tracks no .claude/ (checked `git ls-tree d1ea76b .claude` and HEAD: empty); the Stop hook the reviewer read lives in the parent outsourcing repo, which no tool exports. Arms keep the task repo's .claude/ as the plan says (export option dropSettings off) — cost if wrong: an external repo with a hook stalls an arm; visible as a timeout.
+    Task 6: fix round 1/5 (re-review sonnet): 7 addressed, 0 open; commits c6bd209..1b623a8
+    Task 6: minor (deferred): the audit export still carries .mcp.json, CLAUDE.md and .claude/agents|skills (only the two settings files are dropped); agentEnv leaves other HSTACK_BENCH_* variables
+    Task 6 cost: implementer opus 138.7k total/~33 min (3 passes); review opus 92.8k/5.7 min + re-review sonnet
+    Task 6: complete (commits 8650187..1b623a8, review clean)
+    - Ruling: Task 7 CLI `bun bench/run-arm.mjs <task.json> <arm> <run-no> --input <data>/<task>/input.md --at <base>`; the bench task id is the input's folder name; arm config from `<dir of HSTACK_BENCH_MACHINE>/arms.json` `{ model?, smallModel, plugins: { H: [], W: [] }, turnTimeoutSec? (default 14400) }`; the product is built in a fresh repo (withExport of <base>, dropSettings off, git init, one commit) and fetched into the copy as bench/<task>-<arm>-<n>; the probe turn runs in its own session; a turn timeout abandons the run; the agent env drops BENCH_* — cost if wrong: CLI flags change before step 8.
+    Task 7: dispatched (opus), BASE 1b623a8
+    Task 7: implementer opus 114.3k/13.7 min, commit fb763d1; real-CLI Step 5: arm B 25 s, probe ok, DONE on resume 1, hello.txt on bench/hello-B-1, interventions 0; AskUserQuestion absent → settings `{}`, interventions from resumes only
+    - Ruling: each arm run keeps its raw transcripts (`<results>/<task>-<arm>-<n>/<k>-<turn>.jsonl`) and its settings.json in that folder — prereg 7.2 labels interventions on transcripts — cost if wrong: disk only.
+    - Ruling: a turn that exits non-zero counts as not DONE and the run resumes (implementer's correction) — cost if wrong: a crashing CLI burns 5 resumes before abandoning.
+    Task 7: minor (deferred): with full permissions an arm agent can read the data folder by absolute path; Ctrl-C leaves no record; BENCH_INTERVENTIONS would not reach a wired hook (agent env drops BENCH_*); expected H/W plugin names come from plugin.json name
+    Task 7: pre-review fix e5c7b86 (transcripts); review 1 opus 88.3k/5.2 min: Needs fixes — I1 (plan-mandated) main-turn question then DONE counts 0, fixed 9.3 text never sent; I2 product add/commit/fetch trust the agent repo (tags fetched, post-commit hook ran with runner env); I3 (plan-mandated) no plugin commit recorded; minors ride along
+    - Ruling: every arm's main prompt ends with "When the task is done, reply exactly DONE."; CONTINUE = "No more information; decide from the requirement. Continue until the task is done. When it is done, reply exactly DONE."; countInterventions unchanged, fed the outcome of every turn the runner answered with a resume (main turn included) — spec 9.3 and plan focus 5 outrank the brief's use of the formula; an abandoned run still counts 5 + 3 — cost if wrong: one intervention per run where the main turn ended early.
+    - Ruling: product git calls run with hooks and fsmonitor off, --no-tags on the fetch, scrubbed env, 300 s timeouts; the record holds each plugin dir's commit and dirty flag (spec 3) — cost if wrong: none.
+    Task 7: fix round 1 implementer opus 148.4k/5.0 min, commit 1271509 (env.mjs gitWith, agentEnv exported); re-review dispatched (sonnet)
+    Task 7: fix round 1/5 (re-review sonnet): 4 addressed, 0 open; commits e5c7b86..1271509
+    Task 7: minor (deferred): the fetch into the copy carries no -c flags (harmless: the copy is the receiving, trusted repo); the scrubbed env and the 300 s git timeout are untested
+    Task 7 cost: implementer opus 148.4k total/~34 min (3 passes incl. real-CLI probe); review opus 88.3k/5.2 min + re-review sonnet
+    Task 7: complete (commits 1b623a8..1271509, review clean)
+    - Ruling: replay runs withEnv with `start: false` (setup, before and teardown still run): the project's own test commands start their own server (real-estate's playwright webServer runs `pnpm dev` on port 3000, and only one next dev may run per folder), so the replay must not start the app itself; Task 8 adds the option with tests — cost if wrong: a stack whose e2e needs a running app gets a layer command that starts it.
+    - Ruling: Task 8 smoke-runs each test layer (unit, int, e2e) once in dev mode on one dev-set bug of .evidence/replay.md and compares with the old result — the plan's steps never run the layer commands — cost if wrong: about an hour of wall clock.
+    Task 8: dispatched (opus), BASE 1271509
+    Task 8: implementer opus 259.4k/84 min, commits 59b0193 (withEnv start:false), 6fe7673 (tools bug: table-test row exclusion), 4a8c73d (README, log); 20/20 verdicts as expected (17 not weak/broken, 3 weak; base 8 pre-existing = 6 + d82f2b0-T4 + dd56b84-T2 settled by precondition, 9 absent-at-base); smokes 4e58ba5-19 unit caught, d82f2b0-05 int missed, d005fa5-03 e2e missed; controller check: no /tmp/hstack-bench, no :3000 listener, no bench_ db, copy status clean, one worktree
+    - Ruling: unit and int layers run without the BENCH_EXCLUDE filter (the int smoke showed that skipping a fix-changed test made a later test in the same file fail, a false catch); caught() alone drops the fix's tests; e2e keeps --grep-invert (Playwright tests run independently there; same risk recorded) — consistent with the earlier ruling that the command's exclusion is speed only — cost if wrong: slower unit/int runs.
+    Task 8: minor (deferred): eb2b016-T1 read absent-at-base (base card has no bedrooms entry), arguably pre-existing — recorded in validation.md for the human step; d82f2b0-T1's own assertion needs the theme-select text, so it fails at every commit after 3997f9e (no effect on products built from d1ea76b); table-row exclusion is an indentation heuristic (shortcut comment)
+    Task 8: review dispatched (opus)
+    Task 8: review 1 opus 135.8k/11.0 min: Needs fixes — I1 table-row walk-back stops on a row's closing `],` and excludes the next unchanged row (proven on 4e58ba5); minors 3 (README), 4 (layer.sh pat) ride along; verdict counts 20/20 confirmed from validation-*.json
+    Task 8: parked — eb2b016-T1 precondition asks for a bedrooms entry on the 0-bedroom card (near the main assertion; a pure existence precondition would read pre-existing, 9 → 8 absent-at-base) — Ruling: keep it; it matches the pre-registered expectation and the pilot's reading, both readings are in validation.md, and the human settles it at prereg step 9 — cost if wrong: one check moves between the task-8b and pre-existing buckets.
+    Task 8: parked — dd56b84-T1 precondition (failed-import banner) depends on an import failing and lacks the expectImports guard — Ruling: keep for the human step with the one above — cost if wrong: a product without a failing import reads precondition instead of fail.
+    Task 8: minor (deferred): env.sh `[!a-z0-9_]` class depends on the locale (bench_ prefix still required)
+    Task 8: fix round 1/5 (implementer opus 272.1k total/~89 min; re-review sonnet): 3 addressed, 0 open; commits 4a8c73d..7169673; unit smoke rerun still caught
+    Task 8: complete (commits 1271509..7169673, 2 parked)
+    Final review: dispatched (opus), range e326f66..7169673
+    Final review (opus): with fixes — I1 weak/pre-existing checks still scored; I2 exclusion reads only the fix commit (spec 8.1: assertion must exist before the fix); I3 no baseline run at `at`; I4 one known-bad version (spec 7.1 asks for parent and end product); I5 test hygiene; I6 arm agent can read oracle/copy by absolute path; minors 1-9; triage table
+    - Ruling: grade leaves out of the score every id whose verdict in any validation-*.json is weak, broken or pre-existing, and lists them (spec 7.1) — cost if wrong: none.
+    - Ruling: replay excludes tests added or changed anywhere in <fix>^..<at> in test files (diff `<fix>^ <at>`, post files at `at`), not only in the fix commit — spec 8.1 "the failing assertion existed before the fix" outranks the plan's narrower reading — cost if wrong: fewer catches counted (conservative).
+    - Ruling: replay runs a baseline of the layer at `at` without the patch, once per (task, at7, layer), kept as <results>/baseline-<task>-<at7>-<layer>.xml; a catch is a failing case that is neither excluded nor failing in the baseline; a baseline with no results is `error`. e2e also drops its --grep-invert filter so one baseline serves every bug (same reasoning as unit/int) — cost if wrong: e2e replays run the whole chromium project.
+    - Ruling: --validate takes --bad more than once (parent and the task's end product, spec 7.1): weak if the check passes on any bad, broken if any bad is neither pass nor fail; Task 8's pilot check is not rerun (the pilot already graded the end product 730509b: it fails all 16 non-weak valid checks except the in-task fix) — cost if wrong: the end-product leg is first exercised at prereg step 5.
+    - Ruling: run-arm greps the kept transcripts for the data folder path and task.repo and records `leak: true|false` (no sandbox yet; must be closed before prereg step 8) — cost if wrong: a leak is flagged, not prevented.
+    - Ruling: one fix wave also takes T2 fail-open forbid list, T1 system-out regex, T5 hole-only title guard (refuse a title with no literal text), test hygiene, agent-replay refusing an existing result, grade printing junit= and exiting non-zero when not ok, agent-replay refusing a bug whose fix is an ancestor of `end`, the CLI version in initInfo, one shared kill-after-timeout helper with the post-exit group kill, a ps note for e2e titles; git spawn unification and run-arm's results rmSync wait — cost if wrong: none.
+    Final fix wave: dispatched (opus)
+    Final fix wave: implementer opus, commits 7169673..871409f (5 commits); 179 pass, output pristine; smoke 4e58ba5-19 unit still caught with baseline (479 cases, 0 failing), 313 titles excluded
+    Final re-review (opus): all F1–F6 and ride-alongs ADDRESSED; no new Critical/Important
+    Final: parked — baseline runs before reverseApply, so a patch that does not apply is found only after a full baseline (~20 min for e2e) — Ruling: real, deferred; add an ancestry or apply --check pre-step before prereg step 3 — cost if wrong: wasted wall clock only.
+    Final: parked — F6 leak scan untested on a real transcript; substring needles match sibling paths and a plugin dir inside the data folder would flag every H/W run — Ruling: check the first real probe transcript before relying on `leak`; must be replaced by a sandbox before prereg step 8 — cost if wrong: a false or missed leak flag.
+    Final: parked — the baseline key ignores the layer command and script contents (a stale baseline is reused after editing layer.sh); two concurrent replays at the same at/layer share the baseline label — Ruling: delete baselines after editing a layer; runs are sequential on port 3000 — cost if wrong: a stale baseline.
+    Final: parked — proc.mjs reads stdout after clearing the timer (a setsid grandchild holding the pipe hangs the read; same as before) — Ruling: deferred — cost if wrong: a hung run, visible.
+    Final: minor (deferred): punctuation-only titles; git diff honours diff.noprefix/mnemonicPrefix; non-bench tests leave hstack-* folders in $TMPDIR; git spawn unification; run-arm results rmSync

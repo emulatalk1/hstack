@@ -1,0 +1,59 @@
+# bench: the benchmark tools
+
+Bun scripts for the measuring stick: run a task's product in a throwaway worktree, grade it against a hidden oracle, replay a bug against a layer, run an arm headless. Tasks, oracles, bugs and results live in the data folder, never here. Set `HSTACK_BENCH_MACHINE` to the machine file (`<data>/machine.json`, `{ "forbid": { "paths": [...] } }`); its folder is the data folder.
+
+## Task file (`<data>/env/<task>.json`)
+
+| field | meaning |
+|---|---|
+| `name` | short id, `^[a-z0-9][a-z0-9_-]*$`; worktrees are `/tmp/hstack-bench/<name>-<label>` |
+| `repo` | absolute path of the product repo; refused under a forbidden path |
+| `db` | `null` or a database name matching `^bench_[a-z0-9_]+$` |
+| `port`, `ready` | the app's port (must be free) and the URL that answers 2xx-4xx once it is up |
+| `setup[]`, `start`, `teardown[]` | shell commands (`sh -c`, cwd = worktree); `start` runs in its own process group and is killed after |
+| `oracle` | the command that runs the oracle and writes JUnit at `BENCH_JUNIT` |
+| `junit` | the JUnit path, relative to the worktree; grade and replay refuse an absolute path or one that leaves the worktree (the file is deleted before a run and goes with the worktree) |
+| `layers` | `{ unit, int, e2e: <command> }` for replay; `{ review, audit, evaluator: { brief, tools?, allow? } }` for agent-replay |
+| `testTitle` | regex whose first group is a test title, to find the tests added or changed from a fix on |
+| `timeoutSec` | bounds the ready wait and every oracle or layer command (default 1800) |
+
+## Environment of every command
+
+`BENCH_DIR` (worktree), `BENCH_DB`, `BENCH_PORT`, `BENCH_URL` (`http://localhost:<port>`), `BENCH_JUNIT` (absolute); the oracle also gets `BENCH_ORACLE` (the oracle folder), a layer `BENCH_EXCLUDE` (a file with one excluded title per line, empty in a baseline run; bench decides what counts, so a layer should run every test: one that skips the titles makes its baseline serve one bug only, can break a later test that needs a skipped one, and shows the titles in `ps` when they ride in argv). A command that creates or drops a database asserts the `bench_` pattern on the name first.
+
+## Contracts
+
+- **JUnit**: one `<testcase>` per check; its `name` starts with the check id (`<sha7>-T<n> ...`). A case with `<failure>` or `<error>` fails, one with `<skipped>` is an error, a missing case is an error.
+- **`PRECONDITION:`**: each check first asserts that its feature's page, form, field or endpoint exists, with a message that starts with `PRECONDITION:`. A failed case is `precondition` (feature missing) when a line of its message starts, after spaces and an optional `<Word>Error: ` (`Error: `, `AssertionError: `), with `PRECONDITION:`; otherwise it is `fail`.
+
+## Commands
+
+```sh
+bun bench/env.mjs up <task.json> <commit>          # the app at a commit until Ctrl-C
+bun bench/env.mjs clean                            # remove everything under /tmp/hstack-bench
+bun bench/grade.mjs <task.json> <oracle dir> --at <commit>
+bun bench/grade.mjs <task.json> <oracle dir> --validate <ref> --bad <commit> [--bad <commit> ...] [--base <commit>]
+bun bench/replay.mjs <task.json> <bug.json> <unit|int|e2e> [--sealed]        # starts no app; the layer does
+bun bench/agent-replay.mjs <task.json> <bug.json> <review|audit|evaluator> [--sealed]
+bun bench/run-arm.mjs <task.json> <B|B-|H|W> <run-no> --input <data>/<task>/input.md --at <base>
+```
+
+`grade --at` prints `<sha7> junit=<ok|missing|timeout> pass=… excluded=… build=…` and exits non-zero when the JUnit is not ok (the grade file is still written). It reads every `validation-*.json` next to the oracle folder and leaves out of the score each check whose verdict there is `weak`, `broken` or `pre-existing` (spec 7.1); the grade file lists them as `excluded: [{ id, verdict }]` and keeps their per-check result.
+
+`--validate` runs the oracle on the ref, on every known-bad version (`--bad`, more than once: the fix's parent and the task's end product; the old `--validate <ref> <bad>` form still works) and on the base. Verdicts, in this order: `broken` (ref not pass), `weak` (passes on any bad), `broken` (any bad neither pass nor fail), `pre-existing` (base fails), `absent-at-base` (base precondition), `broken` (base error: the base run gave no result), `valid` (base passes, or no base). Sealed mode prints only `<id> caught|missed|error`. `bug.json` is `{ id, at, patch, fix }`, `patch` relative to it and in the fix's direction (replay applies it with `-R`); agent-replay adds `task` (the task that introduced the bug) and, for review and audit, that task's `base` and `end` (and needs `fix`: a bug whose fix is already in `end` is refused, since the end product holds the fix). agent-replay and run-arm refuse a run whose record in `results/` exists.
+
+An arm record (`results/<task>-<arm>-<n>.json`) holds the CLI `version` from the init event, and `leak: true|false` with `leakTurns`, the kept transcripts that name the data folder or the task repo (written or resolved path). The arm agent can read both by absolute path: the flag only detects it, and a sandbox must replace it before prereg step 8.
+
+`replay` first runs the layer at `at` without the bug: the baseline, kept as `<data>/results/baseline-<task>-<at7>-<layer>.xml` and reused by every bug at that task, commit and layer (delete it to rerun; a baseline with no results or no non-skip case is `<id> error` and is not kept). It then runs the layer with the patch reverse-applied. Excluded titles are the tests added or changed in test files from the fix's parent to `at` (`git diff <fix>^ <at>`, files read at `at`; spec 8.1: the failing assertion must have existed before the fix); a title with no literal text (only `%s`, `$name`, `${x}`) would match every case and is dropped (dev mode says so on stderr). A catch is a failing case that is neither excluded nor failing in the baseline, matched by name. Dev mode prints each failing case as `FAIL <name>`, marked `(excluded)` or `(fails at baseline)` when it does not count, and the baseline file and its failing count on stderr; sealed mode is quiet in both runs. `fix` must not be a merge commit.
+
+## Data layout (`<data>` = the machine file's folder)
+
+```
+machine.json  arms.json
+env/<task>.json  env/<task>/*.sh          task files and their scripts
+<task>/input.md                           filtered input of a task
+<task>/oracle/{manifest.json,*.spec.*}    the oracle; <task>/labels.json buckets its checks
+<task>/grades/<sha7>.json                 grade --at, and each run of --validate
+<task>/validation-<ref7>.json             --validate verdicts: { ref, bad: [...], base, checks: [{ id, ref, bad: [...], base, verdict }] }
+results/                                  agent-replay and run-arm records, one folder per arm run, replay baselines
+```

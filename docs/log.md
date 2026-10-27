@@ -3,6 +3,12 @@
 ## 2026-10-27
 
 * **Creation**: Added the [Own services plan (stack A)](/plans/2026-10-27-own-services.md) as a record, status `superseded`: it was drafted (own Postgres and Mailpit per project, assigned ports, the compose file in `.hstack/`) and set aside the same day for a stack-agnostic harness with a throwaway environment per run.
+* **Approve**: the built [benchmark tools plan](/plans/2026-10-27-bench-tools.md) (status `stable`). The build departs from the task text where the pre-registration or the evidence required it (precondition marker, replay exclusion over the fix to the replay commit, a baseline run, two known-bad versions, intervention count, no `.git` for replay agents, a fresh repo per arm run); every ruling is in the progress log.
+* **Update**: Checked the benchmark tools against the p8b pilot (task 8 of the [benchmark tools plan](/plans/2026-10-27-bench-tools.md)): the five oracle validations, now with a `PRECONDITION:` step per check, give the pilot's 17 non-weak and 3 weak checks, and at the task base 8 checks of older behaviour and 9 of features the task added. Added `bench/README.md`. Replay now starts no app of its own and excludes only the fix's own row of a table test.
+* **Creation**: Added the [benchmark tools plan](/plans/2026-10-27-bench-tools.md) (draft), step 2 of the pre-registration.
+* **Approve**: the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (status `stable`), with the order "whole measuring stick first, then the plugin". 
+* **Update**: [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md): the user set no budget limit; the plan runs to completion and the cut ladder is not used.
+* **Creation**: Added the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (draft), with its scripts in `bench/` (oracle sources by blame, input check, sample sizes).
 
 ## 2026-10-26
 
