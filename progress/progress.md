@@ -381,3 +381,8 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     Final: parked — the baseline key ignores the layer command and script contents (a stale baseline is reused after editing layer.sh); two concurrent replays at the same at/layer share the baseline label — Ruling: delete baselines after editing a layer; runs are sequential on port 3000 — cost if wrong: a stale baseline.
     Final: parked — proc.mjs reads stdout after clearing the timer (a setsid grandchild holding the pipe hangs the read; same as before) — Ruling: deferred — cost if wrong: a hung run, visible.
     Final: minor (deferred): punctuation-only titles; git diff honours diff.noprefix/mnemonicPrefix; non-bench tests leave hstack-* folders in $TMPDIR; git spawn unification; run-arm results rmSync
+
+## 2026-10-27 — bench inputs plan (`docs/plans/2026-10-27-bench-inputs.md`), draft
+
+- On record (sealing): while mapping plans to tasks for this plan, the controller printed the `##` and `### Task 1` headings of the fix plans 7a, 9 and 10, including 7a's Task 1 title, which names its fixes. Not a patch and not a held-out clause; noted as the prereg noted b5b3cec-01.
+- Plan written with two advisor rounds; waiting for the user's approval before the build.
