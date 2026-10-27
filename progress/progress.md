@@ -593,3 +593,25 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
       usage 376/139175/44001861/449017 models claude-opus-5-5
 
   After: the copy's `git status` clean, its worktree list holds only the main checkout, no `probe-x` branch, `/tmp/hstack-bench-outside.txt` absent, `/tmp/hstack-bench` empty.
+- Task 4 fix round 1 (review: approved, with the finding below; controller: harden the held-out set before any run).
+  - Known limit of the extension run: its prefix allow rules admitted file writes the probe did not test: `git -C <copy> log/show/diff … --output=<path>`, `git -C <copy> grep -O<cmd>` (runs a command), `git apply -R --check --apply --unsafe-paths`, and perhaps a `>` redirect after `grep:*` or `head:*`. The clean checks after the run covered only the copy (`git status` clean, no new branch or ref, HEAD unchanged), the harness repo (`git status`: only the earlier `.hstack/`), `.evidence/replay.md` (mtime 2026-10-25) and `/tmp` (`/tmp/hstack-bench-outside.txt` absent, `/tmp/hstack-bench` empty).
+  - Stray-write scan of the extension run's window (02:29:05 to 02:53:13 +07, launch to the first poll that found it gone): `find ~ /private/tmp -newermt … ! -newermt … -type f`, pruning `<sealed>`, `~/.claude`, `~/Library` and `~/.bun`: 8 files, in `~/Pictures/Photos Library.photoslibrary/` (6: macOS media analysis caches and the Photos database) and `<data>/logs/` (2: `extension.pid` and `extension.exit`, written by the controller's wrapper). None could be a write by the agent. A file the agent wrote and then deleted, or that changed again after the window, is not seen by this scan.
+  - `bench/bugs.mjs --fix-tally <sha,...>` (commit 75dd864, TDD): per listed sha only, the number of bug files whose `fix` starts with it; a value not `^[0-9a-f]{7,40}$` is refused; `<name>-done.json` is not a bug file. On the held-out folder: 29f4daf 1, 36d089b 1, 400f58a 1, 5b6646d 3, 89583d2 3, b5b3cec 1, and 0 for each of 69ebe27, dd56b84, 4e58ba5, d82f2b0, 6cedf96, e41d45f, eb2b016, 24c426f, 090f6f2, d005fa5, 0870afc and 730509b, as expected. Sealed check mode also prints `dropped by source` and, per `<name>-done.json`, `considered` and `finished` only.
+  - Second labeller over the 88 extension bugs. Settings `<data>/briefs/label2-settings.json`: `additionalDirectories` `<sealed>`; `allow` `Read(//…/heldout/**)`, `Edit(//…/heldout/**)`, `Bash(git -C <copy> show:*)`; `sandbox` `{ enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: false }` (keys from the CLI 2.1.310 settings schema; sandbox writes are its working folder plus the `Edit(...)` allow paths). Probe (`<data>/replay-dev/label2-probe/`): Edit creates `ok.txt` done; `git show --output=/tmp/hstack-bench-outside2.txt` DENIED (ran, `Operation not permitted`: the sandbox); `git show … > /tmp/hstack-bench-outside3.txt` DENIED (the permission system: a redirect outside the working folders); `git show -s --format=%s 69ebe27` done; a second probe showed `--output=<probe dir>/inside.txt` is written, so the `/tmp` denial is the sandbox, not the rule. Both outside files absent. One sealed run (`label2`, brief `<data>/briefs/label2.md`), exit 0, about 7 minutes (03:12:55 to 03:20 +07); no continuation run. `bun bench/bugs.mjs <data>/env/real-estate.json <data>/heldout --sealed` (exit 0) printed:
+
+        bugs: 98
+        source: catalog 10, extension 88
+        kind: UI 45, data 12, logic 18, other 2, validation 21
+        severity: high 9, low 63, medium 26
+        task: none 23, p1 8, p2 9, p3 5, p4 18, p6a 4, p6b 4, p6c 8, p7b 5, p8a 6, p8b 1, p8c 2, p8d 3, p8e 2
+        out: dropped 21, fix in end 28, no owner 2, ok 47
+        dropped by source: extension 21
+        usable: unit 77, int 77, e2e 77, evaluator 75, review 47, audit 47
+        patch does not apply: none
+        fix is a merge commit: none
+        finished: true
+        label2-done: considered 88, finished true
+        usage 530/178928/54682966/719089 models claude-opus-5-5
+
+    Disagreement N = 21; agreement (88 − 21)/88 = 67/88 = 76.1%. The usage line sums the extension and label2 run records (label2 alone: 154/39753/10681105/270072). Probe usage (not sealed, opus-5-5): label2-probe 10/688/37047/9843, label2-probe2 8/690/30511/5890. Prereg §8.2 registers the second labeller and the fix-tally check (commit 4915b37).
+  - After: the copy's `git status` clean, HEAD 8730783, branches `hstack-tools` and `main` only, no ref changed since 02:00; `/tmp/hstack-bench-outside{,2,3}.txt` absent; `/tmp/hstack-bench` empty. A scan of the label2 window found only the controller's files, `~/.claude.json` and one `~/.npm/_logs` file stamped at the launch second (the CLI's own start-up, outside the Bash sandbox), and the Photos caches.

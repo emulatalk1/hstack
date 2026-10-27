@@ -142,6 +142,8 @@ export async function bugs(args, { root = ROOT } = {}) {
   for (const f of ['source', 'kind', 'severity']) console.log(tally(f, done.map((b) => shown(f, b[f]))))
   console.log(tally('task', done.map((b) => b.task ?? 'none')))
   console.log(tally('out', done.map((b) => b.out ?? 'ok')))
+  const gone = done.filter((b) => b.out === 'dropped')
+  console.log(gone.length ? tally('dropped by source', gone.map((b) => shown('source', b.source))) : 'dropped by source: none')
   console.log(`usable: ${Object.entries(USABLE).map(([l, outs]) => `${l} ${done.filter((b) => outs.includes(b.out)).length}`).join(', ')}`)
   console.log(`patch does not apply: ${ids('patch does not apply')}`)
   console.log(`fix is a merge commit: ${ids('fix is a merge commit')}`)
@@ -149,6 +151,12 @@ export async function bugs(args, { root = ROOT } = {}) {
   if (existsSync(donePath)) {
     const f = await Bun.file(donePath).json().then((d) => d?.finished, () => undefined)
     console.log(`finished: ${typeof f === 'boolean' || (!sealed && f !== undefined) ? f : 'invalid'}`)
+  }
+  // a sealed agent's progress note: only its count and finished flag, and its name when short and plain
+  for (const n of readdirSync(folder).filter((n) => /.-done\.json$/.test(n)).sort()) {
+    const d = await Bun.file(join(folder, n)).json().catch(() => ({}))
+    const name = /^[a-z0-9]{1,16}-done\.json$/.test(n) ? n.slice(0, -5) : 'other-done'
+    console.log(`${name}: considered ${Number.isInteger(d?.considered) ? d.considered : 'invalid'}, finished ${typeof d?.finished === 'boolean' ? d.finished : d?.finished === undefined ? 'none' : 'invalid'}`)
   }
   const sum = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, models = []
   for (const n of readdirSync(folder).filter((n) => n.endsWith('.run.json')).sort()) {

@@ -120,6 +120,7 @@ test('a dropped bug is counted and never usable', async () => {
   expect(r.stdout).toContain('gone task=none out=dropped\n')
   expect(r.stdout).toContain('bugs: 2\n')
   expect(r.stdout).toContain('out: dropped 1, ok 1\n')
+  expect(r.stdout).toContain('dropped by source: none 1\n')
   expect(read(dir, 'gone')).toMatchObject({ task: null, out: 'dropped' })
   for (const l of ['unit', 'int', 'e2e', 'evaluator', 'review', 'audit']) expect(await usable(dir, l)).toEqual(['kept.json'])
 })
@@ -168,6 +169,7 @@ test('sealed mode prints counts and opaque ids only', async () => {
     'severity: high 1, low 2',
     'task: none 1, t2 2',
     'out: fix is a merge commit 1, ok 1, patch does not apply 1',
+    'dropped by source: none',
     'usable: unit 1, int 1, e2e 1, evaluator 1, review 1, audit 1',
     'patch does not apply: ho-02',
     'fix is a merge commit: ho-03',
@@ -198,6 +200,7 @@ test('sealed mode prints no name or value outside its allowed shape', async () =
     'severity: other-value 1',
     'task: none 1',
     'out: no owner 1',
+    'dropped by source: none',
     'usable: unit 1, int 1, e2e 1, evaluator 0, review 0, audit 0',
     'patch does not apply: none',
     'fix is a merge commit: none',
@@ -253,4 +256,18 @@ test('a <name>-done.json beside the bugs is not a bug file', async () => {
   expect(r.code).toBe(0)
   expect(r.stdout).toContain('bugs: 1\n')
   expect(r.stdout).not.toContain('invalid')
+  expect(r.stdout).toContain('label2-done: considered 1, finished none\n')
+})
+
+test('a <name>-done.json prints only its name (when short and plain), considered and finished', async () => {
+  const dir = folder([{ id: 'ho-01', fix: fA, hunks: [{ file: 'src/a.txt', old: 2 }] }], {
+    'label2-done.json': JSON.stringify({ considered: 88, finished: true, next: 'ho-secret' }),
+    'Secret_Name-done.json': JSON.stringify({ considered: 'many' }),
+  })
+  const r = await cli([task, dir, '--sealed'])
+  expect(r.code).toBe(0)
+  expect(r.stdout).toContain('label2-done: considered 88, finished true\n')
+  expect(r.stdout).toContain('other-done: considered invalid, finished none\n')
+  expect(r.stdout).not.toContain('secret')
+  expect(r.stdout).not.toContain('Secret')
 })
