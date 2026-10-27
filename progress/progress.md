@@ -386,3 +386,20 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
 
 - On record (sealing): while mapping plans to tasks for this plan, the controller printed the `##` and `### Task 1` headings of the fix plans 7a, 9 and 10, including 7a's Task 1 title, which names its fixes. Not a patch and not a held-out clause; noted as the prereg noted b5b3cec-01.
 - Plan written with two advisor rounds; waiting for the user's approval before the build.
+- Task 3 (prereg step 3a, filtered inputs): 16/16 inputs written by sealed filter runs (no tool, opus 5.5), every input passes `bench/input-check.mjs`, ID accounting clean (every source step ID kept on a step line or named in the log's dropped sections; no ID outside the source), every input has a Goal and feature steps. Source = plan at the harness commit H before the task's first commit, cut before `## File map`; p1–p6c add the feature-list entries at H. Numbering checked against 3 evaluation PASS lines per task (p1 from the plan 2 evaluation, plan 1's has none). Per task: kept/dropped steps, input-check, fix runs, summed sealed usage (input/output/cacheRead/cacheWrite, models):
+  - p1: 46/0, PASS, 0 fix; 2/9926/649/10623, opus-5-5
+  - p2: 53/0, PASS after 1 fix ("import properties" false positive); 4/18077/1298/20423, opus-5-5
+  - p3: 53/5 (P3-F8 fixes plan 2), PASS, 0 fix; 2/11494/649/14225, opus-5-5
+  - p4: 40/7 (P4-F6 fixes plan 3), PASS, 0 fix; 2/13325/649/15750, opus-5-5
+  - p5: 15/9 (P5-F3 fixes plan 4), PASS, 0 fix; 2/13448/649/15534, opus-5-5
+  - p6a: 35/0, PASS, 0 fix; 2/17242/649/18524, opus-5-5
+  - p6b: 25/0, PASS after 1 fix ("it (" false positive); 4/20673/1298/24214, opus-5-5
+  - p6c: 35/0, PASS after 1 fix (".csv files"); 4/28792/1298/25448, opus-5-5
+  - p7b: 13/21 (P7b-F3, F4, F5 fix earlier plans; only the new part kept), PASS, 0 fix; 2/14003/649/15720, opus-5-5
+  - p7c: 48/13 (P7c-F6, F7 carried fixes), PASS, 0 fix; 2/25375/649/27021, opus-5-5
+  - p8a: 41/5, PASS after 1 fix ("behind it (SC 2.4.11)"); 4/24008/1298/36879, opus-5-5
+  - p8b: 35/11 (P8b-F5, as the pilot), PASS, 0 fix; 2 runs (first on brief v1, discarded: it also dropped 3 steps inside kept groups); 4/41431/2894/63587, opus-5-5
+  - p8b1: 17/0, PASS, 0 fix; 2 runs (brief v1 run discarded for one brief across tasks); 4/22108/2895/20440, opus-5-5
+  - p8c: 40/16, PASS, 0 fix; 2/19693/649/39499, opus-5-5
+  - p8d: 62/13, PASS, 0 fix; 2/17946/649/45176, opus-5-5
+  - p8e: 41/11, PASS, 0 fix; 2/15818/649/34060, opus-5-5
