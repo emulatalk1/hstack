@@ -37,6 +37,11 @@ test('flags the names the sweep found: admin slots, redirect(), next build and b
   for (const t of ['`providers`', '`graphics`', '`admin.group`', '`meta.icons`', '`redirect()`', 'a plain `next build`', 'Tailwind `md` 721 px', 'never `font-bold`'])
     expect(rulesOf(t)).toContain('framework name')
   expect(check('Breakpoints md and lg in prose; a redirect to the list.')).toEqual([])
+  expect(rulesOf('compile mode (`--experimental-build-mode compile`)')).toContain('framework name')
+})
+
+test('matches providers, graphics and next build only as a whole backticked span', () => {
+  for (const t of ['email providers and graphics cards', 'carried to the next build of the site']) expect(check(t)).toEqual([])
 })
 
 test('leaves headers, CSS, phone links and API field names alone', () => {
