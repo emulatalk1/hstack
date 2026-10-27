@@ -37,6 +37,7 @@ bun bench/replay.mjs <task.json> <bug.json> <unit|int|e2e> [--sealed]        # s
 bun bench/agent-replay.mjs <task.json> <bug.json> <review|audit|evaluator> [--sealed]
 bun bench/run-arm.mjs <task.json> <B|B-|H|W> <run-no> --input <data>/<task>/input.md --at <base>
 bun bench/sealed-agent.mjs <task.json> <label> --prompt <file> --out <file> [--at <commit>] [--tools <name,name,...>]
+bun bench/bugs.mjs <task.json> <folder> [--sealed] [--usable <unit|int|e2e|evaluator|review|audit>]
 ```
 
 `sealed-agent` runs one `claude -p` with the prompt file's text and the listed tools (none by default), in an empty folder or the files of `--at` with no `.git` and no `.claude/settings.json`, and the agent env (no `BENCH_*`, `PG*`, `HSTACK_BENCH_MACHINE`, `DATABASE_URL` or `PAYLOAD_DROP_DATABASE`; `DOCKER_HOST=unix:///nonexistent`), with `--no-session-persistence` (`noPersist`) so no transcript is kept under `~/.claude/projects`; it writes the reply to `--out` and `<out>.run.json` (`label`, `at`, `start`, `end`, `code`, `version`, `tools`, `usage`, `models`), refuses an existing `--out` or run record, and on no result or a non-zero exit writes only the run record and exits 1.
@@ -49,11 +50,14 @@ An arm record (`results/<task>-<arm>-<n>.json`) holds the CLI `version` from the
 
 `replay` first checks that the patch reverse-applies (`git apply -R --check` in a throwaway worktree at `at`); one that does not is an error (exit 2, sealed: `<id> patch does not apply`) before any baseline is read or run. It then runs the layer at `at` without the bug: the baseline, kept as `<data>/results/baseline-<task>-<at7>-<layer>.xml` and reused by every bug at that task, commit and layer (delete it to rerun; a baseline with no results or no non-skip case is `<id> error` and is not kept). It then runs the layer with the patch reverse-applied. Excluded titles are the tests added or changed in test files from the fix's parent to `at` (`git diff <fix>^ <at>`, files read at `at`; spec 8.1: the failing assertion must have existed before the fix); a title with no literal text (only `%s`, `$name`, `${x}`) would match every case and is dropped (dev mode says so on stderr). A catch is a failing case that is neither excluded nor failing in the baseline, matched by name. Dev mode prints each failing case as `FAIL <name>`, marked `(excluded)` or `(fails at baseline)` when it does not count, and the baseline file and its failing count on stderr; sealed mode is quiet in both runs. `fix` must not be a merge commit.
 
+`bugs` reads every `<folder>/*.json` except `*.run.json` and `done.json` as a bug file: `{ id, fix, at, patch, description, hunks: [{ file, old }], kind?, severity?, source?, dropped? }`, `old` the start of the hunk's old side in `git diff -U0 --no-renames <fix>^ <fix>` (a pure addition gives the line it follows), `dropped` a reason. Without `--usable` it checks each bug and writes into its file `task` (the owner, `null` with none), `base` and `end` (from `tasks.json`, only with an owner) and `out`, the first that holds of `"dropped"`, `"patch does not apply"` (`git apply -R --check` at `at`, in a throwaway `check-<id>` worktree), `"fix is a merge commit"`, `"no owner"`, `"fix in end"` (`git merge-base --is-ancestor <fix> <end>`), else `null`. The owner is the task with the most `task_lines` in `<data>/tasks/<task>.tsv` over the rows that match a hunk (`commit` = the fix's 7-char sha, same `file`, `old_lines` starting at `old`), a tie going to the earlier task in `tasks.json`; with no such row, the first task whose range (`git rev-list --first-parent <base>..<end>`) holds the fix. Usable: unit, int and e2e take `out` `null`, `"no owner"` or `"fix in end"`; the evaluator `null` or `"fix in end"`; review and audit `null`. `--usable <layer>` prints the usable bug file paths, one per line; it reads only the written `out` (a file without one is an error: run the check first), runs no git and writes nothing, so batches running at once can all call it. Dev mode prints `<id> task=<task|none> out=<out|ok>` per bug, then the totals; sealed mode prints only the totals: bugs, by `source`, `kind`, `severity`, owner task and `out`, usable per layer, the ids whose `out` is `patch does not apply` or `fix is a merge commit`, `finished: <value>` from `<folder>/done.json` (that field only) and `usage <input>/<output>/<cacheRead>/<cacheWrite> models <list>` summed over `<folder>/*.run.json`. A file that is not a valid bug file prints `<file name> invalid` (dev mode adds why) and the exit is 1.
+
 ## Data layout (`<data>` = the machine file's folder)
 
 ```
 machine.json  arms.json
 tasks.json                                { "<task>": { plan, no, base, end, n, harness } } per task
+tasks/<task>.tsv                          per fix hunk the task touched: commit file old_lines task_lines tests_changed subject (task_lines: its old-side lines from this task)
 briefs/                                   sealed-agent briefs: filter.md, interface.md (interface-v1.md superseded)
 env/<task>.json  env/<task>/*.sh          task files and their scripts
 env/<task>/briefs/                        layer briefs (review.md, audit.md, evaluator.md) and their SOURCES.md
@@ -64,6 +68,6 @@ env/<task>/briefs/                        layer briefs (review.md, audit.md, eva
 <task>/grades/<sha7>.json                 grade --at, and each run of --validate
 <task>/validation-<ref7>.json             --validate verdicts: { ref, bad: [...], base, checks: [{ id, ref, bad: [...], base, verdict }] }
 results/                                  agent-replay and run-arm records, one folder per arm run, replay baselines
-replay-dev/                               the dev replays of the build (smoke.md, bug files, patches, logs, agent/ records)
+replay-dev/                               the dev replays of the build (smoke.md, bug files, patches, logs, agent/ records); bugs/ the 20 dev bug files of step 3
 transcripts/                              the bench agents' session transcripts from before noPersist (moved from ~/.claude/projects)
 ```
