@@ -33,6 +33,8 @@ Tất cả so sánh là theo cặp trên cùng task, khoảng tin cậy 95% (m�
 | H4 | Cây thước phân biệt được | điểm build + requirement của H trừ W (biến thể yếu) | cận dưới > 0 | task ngoài |
 | H5 | Bộ test harness sinh ra canh gác được | tỉ lệ bắt lỗi cấy của bộ test đó; mutation score trên dòng vừa đổi | tỉ lệ bắt lỗi cấy cận dưới ≥ 0,5 | task ngoài + `real-estate` |
 
+Quy tắc sàn cho H1 (đăng ký trước): sau khi phân loại lại các task của lần chạy thử (mục 12 bước 3) với bảng interface, nếu trung vị số kiểm tra **lần ngược được** mỗi task dưới 5, điểm build của H1 không lấy từ oracle commit sửa lỗi nữa mà từ **oracle bước**: test gốc mà chính task viết cho các feature step (plan `real-estate` nêu một test cho mỗi step; với task ngoài là các test FAIL_TO_PASS mà người phân loại xếp lần ngược được), viết lại hộp đen theo mục 6.2, tối đa 15 mỗi task chọn theo hạt giống, kiểm định qua trên sản phẩm cuối của task và hỏng ở commit gốc. Khi đó mọi kiểm tra từ commit sửa lỗi chấm H2. Ngưỡng của H1 giữ nguyên.
+
 H1, H2, H3 là ba phép thử chính; hiệu chỉnh Holm cho ba phép thử này. H4 là kiểm định cây thước: nếu H4 không đạt thì không công bố H1–H3 (cây thước không phân biệt được harness yếu). H5 là phụ, báo cáo riêng.
 
 `real-estate` là tập phụ: 20 bug của nó đã định hình thiết kế cũ, nên kết quả trên `real-estate` được báo cáo nhưng không dùng để nghiệm thu.
@@ -102,7 +104,7 @@ Quy tắc lọc cho plan `real-estate` (đã thử trên p8b, mục 14):
 - **Bỏ trong phần giữ**: con trỏ tới test, đường dẫn và tên file mã nguồn hoặc test, tên định danh nội bộ. **Giữ** interface công khai: URL, tham số query, chữ trên UI, đường dẫn API, mã trạng thái, lệnh CLI của project.
 - **Mockup**: không đưa. Bước nói "giống mockup" giữ câu, gắn nhãn `[visual, mockup not given]`; kiểm tra oracle chỉ dựa vào mockup bị loại khỏi điểm.
 
-**Bảng interface.** Kiểm tra oracle cần tên công khai để chạy: nhãn trường, tên truy cập của form, chữ của option, khoá tham số URL, tên trường API. Input đã lọc không nêu hết các tên này (p8b: chỉ 2 trong số các khoá giá và sắp xếp). Nếu builder tự đặt tên khác, kiểm tra hỏng vì tên chứ không vì hành vi, và điểm requirement lẫn hai thứ. Vì vậy input kèm một bảng interface: mọi tên công khai mà kiểm tra oracle dùng **và đã có ở sản phẩm cuối của task** (p8b: 730509b), lấy từ chính sản phẩm đó, chỉ tên, không có hành vi. Tên chỉ xuất hiện sau commit sửa lỗi (ví dụ nhãn "Tên địa điểm" do d82f2b0 thêm) không vào bảng, vì chính tên đó là thứ bị kiểm. Bảng do người viết oracle lập, người lọc kiểm lại bằng `bench/input-check.mjs`.
+**Bảng interface.** Kiểm tra oracle cần tên công khai để chạy: nhãn trường, tên truy cập của form, chữ của option, khoá tham số URL, tên trường API. Input đã lọc không nêu hết các tên này (p8b: chỉ 2 trong số các khoá giá và sắp xếp). Nếu builder tự đặt tên khác, kiểm tra hỏng vì tên chứ không vì hành vi, và điểm requirement lẫn hai thứ. Vì vậy input kèm một bảng interface: **toàn bộ** tên công khai của các tính năng task làm ra, đọc từ sản phẩm cuối của task (p8b: 730509b): mọi nhãn, chữ option, tên truy cập của form, khoá tham số URL, tên trường API của các trang và endpoint mà feature step nhắc tới. Chỉ tên, không có hành vi. Bảng không được lập từ các kiểm tra oracle (một danh sách chọn lọc sẽ cho builder biết kiểm tra ẩn chạm vào đâu); người lập là một agent chưa đọc oracle, và bảng phải qua `bench/input-check.mjs`. Tên chỉ có sau commit sửa lỗi (ví dụ nhãn "Tên địa điểm" do d82f2b0 thêm) tự nhiên không có trong bảng.
 
 Người lọc (một agent) không thấy commit sửa lỗi, plan sau, log tiến độ hay oracle. `bench/input-check.mjs` phải in PASS trên mọi input; nó tìm code fence, đường dẫn mã nguồn hoặc test, tên file mã nguồn, lời gọi test, con trỏ tiêu đề test và cú pháp code. Đây là bằng chứng máy cho "input không chứa code hay test"; một người đọc thêm 2 input ngẫu nhiên.
 
@@ -135,6 +137,8 @@ Bất đồng do người phân xử; độ đồng thuận trước phân xử 
 ## 7. Kiểm định cây thước
 
 ### 7.1 Oracle
+
+Mỗi kiểm tra có bước tiền điều kiện tường minh (mục 6.2) và chạy thêm ở **commit gốc của task**. Kiểm tra hỏng ở commit gốc **sau khi** qua tiền điều kiện là bug có từ trước task (quy tắc blame gán nhầm vì task viết lại một dòng bên cạnh hay chính dòng đó): nó vào nhóm "có từ trước", không tính vào điểm nào của task này, và được chuyển làm oracle cho task đã gây ra nó. Hỏng ở tiền điều kiện là bình thường (tính năng chưa có).
 
 Mỗi kiểm tra phải **hỏng trên phiên bản lỗi đã biết** (commit cha của commit sửa lỗi, và sản phẩm cuối thật của task) và **qua trên lời giải chuẩn** (commit sửa lỗi), trong cùng một lần chạy. Kiểm tra qua cả hai là "yếu", hỏng cả hai là "hỏng"; cả hai loại bị loại khỏi điểm (được sửa phần cơ chế, không bao giờ làm yếu khẳng định). Một người xác nhận mẫu 10 kiểm tra mỗi stack: đọc kiểm tra cạnh test gốc và nói nó có kiểm cùng hành vi không.
 
@@ -278,17 +282,21 @@ Chạy ngày 2026-10-27, 5 agent, khoảng 551k token, 45 phút; phần kiểm �
 
 **Kiểm định (mục 7.1).** Trên 20 kiểm tra: **17 hợp lệ** (qua trên commit sửa, hỏng trên commit cha), **3 yếu** (dd56b84-T3, 24c426f-T4, 24c426f-T5: qua cả hai; đây là kiểm tra canh gác "không đổi cái đang đúng", không phải hồi quy), 0 hỏng. Người kiểm định sửa hai chỗ cơ chế, không làm yếu khẳng định nào: dọn dẹp import chấp nhận 403 (app cố ý cấm xoá import), và đọc màu viền lặp lại cho tới khi chuyển cảnh CSS xong. Sản phẩm cuối thật của plan 8b (730509b) qua 4/20: 730509b-T1 (đã sửa trong task) và 3 kiểm tra yếu; hỏng cả 16 kiểm tra hợp lệ còn lại. Người chưa xác nhận mẫu (mục 7.1).
 
+**Chạy ở commit gốc d1ea76b** (theo góp ý của advisor, sau lần kiểm định): 3 qua (đúng 3 kiểm tra yếu), 17 hỏng. Đọc dòng lỗi đầu (spec chưa có bước tiền điều kiện riêng): 9 hỏng vì tính năng 8b chưa có; **6 hỏng ở khẳng định chính dù tính năng đã có** (24c426f-T1, T2, T3, T6, T7: import đọc ô mã thành số; d82f2b0-T1: trang tài khoản cuộn ngang 60 px), tức bug có từ trước 8b mà quy tắc blame gán cho 8b; 2 chưa rõ (d82f2b0-T4, dd56b84-T2: thẻ có từ trước nhưng 8b dựng lại). Vậy trong 17 kiểm tra hợp lệ, chỉ 9 chắc chắn thuộc 8b, cộng 2 chưa rõ. Đã thêm quy tắc chạy ở commit gốc và nhóm "có từ trước" (mục 7.1).
+
 **Phân loại (mục 6.3), hai agent độc lập.** Agent 1: lần ngược 1, một phần 2, không lần ngược 22. Agent 2: 0, 3, 22. Đồng ý 22/25 (88%), κ = 0,44, Gwet AC1 = 0,87. Ba bất đồng (730509b-T1, dd56b84-T3, 24c426f-T6) chờ người phân xử.
 
-**Điều rút ra, đã sửa vào bản này:**
+**Điều rút ra, đã sửa vào bản này.** Bảng interface, nhánh AC1 của ngưỡng đồng thuận, quy tắc chạy ở commit gốc và quy tắc sàn của H1 đều được thêm **sau khi** đã thấy kết quả p8b. Vì vậy phân loại p8b chỉ là thử nghiệm để sửa quy tắc, không phải lần chạy xác nhận; nó phải chạy lại với quy tắc mới trước khi khoá.
 
 1. Trên p8b, gần như mọi bug mà các commit sửa lỗi bắt được nằm ở mép input không nói tới: oracle của task này chủ yếu chấm bước requirement (22/25), gần như không chấm bước build. Khớp với kết luận cũ "test chỉ chốt những gì spec có nói".
-2. Một phần lý do "không lần ngược được" là tên công khai, không phải hành vi: cả hai agent nêu tên truy cập của form "Lọc bất động sản" và chữ option "Biệt thự" không có trong input. Đã thêm bảng interface (mục 5) và quy tắc phân loại chỉ xét hành vi (mục 6.3). Việc phân loại p8b phải chạy lại sau khi có bảng interface.
+2. Một phần lý do "không lần ngược được" là tên công khai, không phải hành vi: cả hai agent nêu tên truy cập của form "Lọc bất động sản" và chữ option "Biệt thự" không có trong input. Đã thêm bảng interface (mục 5) và quy tắc phân loại chỉ xét hành vi (mục 6.3).
 3. κ không dùng được khi một nhãn chiếm 88%: đã thêm nhánh đồng ý thô + AC1 vào ngưỡng (mục 7.2).
-4. Kiểm tra yếu là loại có thật (canh gác cái đang đúng). Chúng bị loại khỏi điểm như mục 7.1 quy định; không đổi quy tắc.
-5. Chi phí chuẩn bị oracle cho một task cỡ plan: khoảng 0,55M token và 45 phút, hơn mức 0,3M ở mục 11. Mục 11 dùng 0,55M cho task `real-estate`.
+4. Quy tắc blame gán nhầm 6/17 kiểm tra hợp lệ cho 8b. Đã thêm quy tắc chạy ở commit gốc (mục 7.1).
+5. Với 0–1 kiểm tra lần ngược được mỗi task, điểm build gần như nhị phân và phép tính N ở mục 10.2 không mô tả nó. Đã thêm quy tắc sàn cho H1 (mục 2).
+6. Kiểm tra yếu là loại có thật (canh gác cái đang đúng). Chúng bị loại khỏi điểm như mục 7.1 quy định; không đổi quy tắc.
+7. Chi phí chuẩn bị oracle cho một task cỡ plan: khoảng 0,55M token và 45 phút, hơn mức 0,3M ở mục 11. Mục 11 dùng 0,55M cho task `real-estate`.
 
-**Chưa làm trên p8b:** bảng interface và phân loại lại; người phân xử 3 bất đồng; người đọc lại input và xác nhận mẫu oracle; một lần build thật của nhánh H hay B (thuộc lần chạy thử, mục 12 bước 3).
+**Chưa làm trên p8b:** bước tiền điều kiện tường minh trong spec; bảng interface và phân loại lại; một người đọc 2 kiểm tra chưa rõ; người phân xử 3 bất đồng; người đọc lại input và xác nhận mẫu oracle; một lần build thật của nhánh H hay B (thuộc lần chạy thử, mục 12 bước 3).
 
 ## 15. Giới hạn đã biết
 
