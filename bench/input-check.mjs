@@ -11,6 +11,7 @@ export const RULES = [
   ['test call', /\b(it|test|describe|expect|assert)\s*\(/],
   ['test title pointer', /—\s*`[^`]+`\s*'[^']+'/],
   ['code syntax', /(=>|\bimport\s+[\w{*]|\brequire\(|\bconst\s+\w+\s*=|\bfunction\s+\w+\s*\(|;\s*$)/],
+  ['template code', /\$\{|\$[0-9]/],
 ]
 
 export function check(text) {
