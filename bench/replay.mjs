@@ -15,6 +15,27 @@ async function git(cwd, ...args) {
   return out
 }
 
+// bug.json with a safe id and the given fields as non-empty strings; patch resolved relative to bug.json
+export async function readBug(bugPath, fields) {
+  const bug = await Bun.file(bugPath).json()
+  if (typeof bug?.id !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(bug.id)) throw new Error('bug id must match ^[A-Za-z0-9_.-]+$')
+  for (const f of fields) if (typeof bug[f] !== 'string' || bug[f] === '') throw new Error(`bug ${f} must be a non-empty string`)
+  if (typeof bug.patch === 'string') bug.patch = resolve(dirname(resolve(bugPath)), bug.patch)
+  return bug
+}
+
+// withEnv's `before`: reverse-apply the bug's fix patch, checked first.
+// sealed: git's own messages quote the bug's lines (trailing whitespace warnings, failed hunks)
+export const reverseApply = (bug, sealed) => async (dir) => {
+  const apply = async (...a) => {
+    const q = sealed ? 'ignore' : 2
+    const code = await Bun.spawn(['git', 'apply', '--whitespace=nowarn', ...a, bug.patch], { cwd: dir, stdout: q, stderr: q }).exited
+    if (code !== 0) throw new Error(sealed ? `${bug.id} patch does not apply` : `git apply ${a.join(' ')} ${bug.patch} failed (exit ${code})`)
+  }
+  await apply('-R', '--check')
+  await apply('-R')
+}
+
 export async function replay(args, { root = ROOT } = {}) {
   const sealed = args.includes('--sealed')
   const pos = args.filter((a) => a !== '--sealed')
@@ -25,10 +46,7 @@ export async function replay(args, { root = ROOT } = {}) {
   const cmd = Object.hasOwn(task.layers, layer) ? task.layers[layer] : undefined
   if (typeof cmd !== 'string' || cmd === '') throw new Error(`layer ${layer} must be a command string in the task's layers`)
   if (!task.testTitle) throw new Error('task testTitle is required for replay')
-  const bug = await Bun.file(bugPath).json()
-  if (typeof bug?.id !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(bug.id)) throw new Error('bug id must match ^[A-Za-z0-9_.-]+$')
-  for (const f of ['at', 'patch', 'fix']) if (typeof bug[f] !== 'string' || bug[f] === '') throw new Error(`bug ${f} must be a non-empty string`)
-  const patch = resolve(dirname(resolve(bugPath)), bug.patch) // relative to bug.json
+  const bug = await readBug(bugPath, ['at', 'patch', 'fix'])
   const [at, fix] = await Promise.all([resolveCommit(task.repo, bug.at), resolveCommit(task.repo, bug.fix)])
 
   const merge = await git(task.repo, 'rev-parse', '-q', '--verify', `${fix}^2`).then(() => true, () => false)
@@ -41,18 +59,12 @@ export async function replay(args, { root = ROOT } = {}) {
     try { postFix.set(path, await git(task.repo, 'show', `${fix}:${path}`)) } catch {} // deleted by the fix
   const excluded = excludedTitles(diff, postFix, task.testTitle)
 
-  // sealed: git's own messages quote the bug's lines (trailing whitespace warnings, failed hunks)
-  const apply = async (dir, ...a) => {
-    const q = sealed ? 'ignore' : 2
-    const code = await Bun.spawn(['git', 'apply', '--whitespace=nowarn', ...a, patch], { cwd: dir, stdout: q, stderr: q }).exited
-    if (code !== 0) throw new Error(sealed ? `${bug.id} patch does not apply` : `git apply ${a.join(' ')} ${patch} failed (exit ${code})`)
-  }
   const { cases } = await withEnv(task, at, `replay-${bug.id}`, async (e) => {
     const file = `${e.dir}/.bench-exclude`
     await Bun.write(file, excluded.map((t) => t + '\n').join(''))
     // sealed: the layer's own output would show the bug
     return runForJunit(task, e, cmd, { BENCH_EXCLUDE: file }, sealed ? 'ignore' : 2)
-  }, { root, quiet: sealed, before: async (dir) => { await apply(dir, '-R', '--check'); await apply(dir, '-R') } })
+  }, { root, quiet: sealed, before: reverseApply(bug, sealed) })
 
   // zero non-skip cases means the layer ran nothing (a wrong project filter), which must not read as a miss
   if (!cases || !cases.some((c) => c.status !== 'skip')) { console.log(`${bug.id} error`); return 1 }

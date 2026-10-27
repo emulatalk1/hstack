@@ -36,12 +36,35 @@ const git = async (repo, ...args) => {
   if (code !== 0) throw new Error(`git -C ${repo} ${args.join(' ')} failed (exit ${code}): ${err.trim()}`)
 }
 
-export async function withWorktree(task, commit, label, fn, root = ROOT) {
+// <root>/<task>-<label>, refused if it exists; the root is created
+function freshDir(task, label, root, what) {
   const r = checkRoot(root)
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(label)) throw new Error(`label ${label} must match ^[A-Za-z0-9][A-Za-z0-9._-]*$`)
   const dir = join(r, `${task.name}-${label}`)
-  if (lstatSync(dir, { throwIfNoEntry: false })) throw new Error(`worktree ${dir} exists`)
+  if (lstatSync(dir, { throwIfNoEntry: false })) throw new Error(`${what} ${dir} exists`)
   mkdirSync(r, { recursive: true })
+  return dir
+}
+
+// A folder with no .git: empty, or the files of commit (git archive). A worktree would share the repo's refs and objects.
+export async function withExport(task, commit, label, fn, root = ROOT) {
+  const dir = freshDir(task, label, root, 'folder')
+  mkdirSync(dir)
+  try {
+    if (commit) {
+      const archive = Bun.spawn(['git', '-C', task.repo, 'archive', commit], { stdout: 'pipe', stderr: 'pipe' })
+      const tar = Bun.spawn(['tar', '-x', '-C', dir], { stdin: archive.stdout, stderr: 'pipe' })
+      const [a, t] = [await archive.exited, await tar.exited]
+      if (a !== 0 || t !== 0) throw new Error(`git -C ${task.repo} archive ${commit} | tar -x failed (exit ${a}, ${t}): ${(await new Response(archive.stderr).text()).trim()}`)
+    }
+    return await fn(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+export async function withWorktree(task, commit, label, fn, root = ROOT) {
+  const dir = freshDir(task, label, root, 'worktree')
   await git(task.repo, 'worktree', 'add', '--detach', dir, commit)
   try {
     return await fn(dir)
