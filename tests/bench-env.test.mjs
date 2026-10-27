@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { withEnv, withWorktree, clean, portBusy } from '../bench/env.mjs'
@@ -31,6 +31,8 @@ const mk = (extra = {}) => {
   }, { forbid: { paths: [] } })
 }
 const opts = { root: sub, pollMs: 100 }
+const serve = (body) => `bun -e "Bun.serve({ port: Number(process.env.BENCH_PORT), fetch: () => ${body} })"`
+const pgrep = (pat) => Bun.spawnSync(['pgrep', '-f', pat]).stdout.toString().trim()
 const worktrees = () => git('worktree', 'list', '--porcelain').split('\n').filter((l) => l.startsWith('worktree ')).length
 const lsofUnder = async (dir) => (await Bun.$`lsof -a -d cwd -Fn`.nothrow().quiet().text()).split('\n').filter((l) => l.startsWith('n' + dir))
 
@@ -71,7 +73,7 @@ test('two labels at one commit get two folders', async () => {
       expect(await (await fetch(eb.url)).text()).toBe('v1')
     }, opts)
     const c = mk({ name: a.name })
-    await expect(withEnv(c, c1, 'B-1', async () => {}, opts)).rejects.toThrow(/exists/)
+    await expect(withEnv(c, c1, 'B-1', async () => {}, opts)).rejects.toThrow(`worktree ${ea.dir} exists`)
   }, opts)
   expect(worktrees()).toBe(1)
 })
@@ -154,5 +156,43 @@ test('clean removes only its own folder', async () => {
   } finally {
     sleeper.kill('SIGKILL')
     rmSync(keep, { recursive: true, force: true })
+  }
+})
+
+test('kills children of the start shell, not only the shell', async () => {
+  const mark = `sleep ${3000 + Math.floor(Math.random() * 900)}`
+  const task = mk({ start: `${mark} & ${start}` })
+  await withEnv(task, c1, 'kids', async () => { expect(pgrep(mark)).not.toBe('') }, opts)
+  expect(pgrep(mark)).toBe('')
+  expect(await portBusy(task.port)).toBe(false)
+})
+
+test('a 404 page counts as ready', async () => {
+  const task = mk({ start: serve(`new Response('no', { status: 404 })`) })
+  expect(await withEnv(task, c1, 'nf', async (e) => (await fetch(e.url)).status, opts)).toBe(404)
+})
+
+test('times out when the app never becomes ready, and stops it', async () => {
+  const mark = `sleep ${4000 + Math.floor(Math.random() * 900)}`
+  const task = mk({ start: mark, timeoutSec: 1 })
+  const log = `${realpathSync(sub)}/${task.name}-slow.log`
+  await expect(withEnv(task, c1, 'slow', async () => {}, opts)).rejects.toThrow(`app not ready at ${task.ready} after 1 s; log: ${log}`)
+  expect(pgrep(mark)).toBe('')
+  expect(worktrees()).toBe(1)
+})
+
+test('clean never follows a symlink out of its root', async () => {
+  const mine = `${ROOT}/test-${rand()}-link`
+  const out = join(tmp, 'outwt')
+  git('worktree', 'add', '-q', '--detach', out, c1)
+  mkdirSync(mine, { recursive: true })
+  symlinkSync(out, `${mine}/link`)
+  try {
+    await clean(mine)
+    expect(await Bun.file(join(out, 'page.txt')).text()).toBe('v1')
+    expect(git('worktree', 'list', '--porcelain')).toContain(`worktree ${out}`)
+    expect(existsSync(mine)).toBe(false)
+  } finally {
+    git('worktree', 'remove', '--force', out)
   }
 })

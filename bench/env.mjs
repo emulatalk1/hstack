@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Throwaway environment: a detached git worktree under /tmp/hstack-bench, the task's app started in it, and cleanup.
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { loadTask } from './lib/task.mjs'
 
@@ -40,7 +40,7 @@ export async function withWorktree(task, commit, label, fn, root = ROOT) {
   const r = checkRoot(root)
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(label)) throw new Error(`label ${label} must match ^[A-Za-z0-9][A-Za-z0-9._-]*$`)
   const dir = join(r, `${task.name}-${label}`)
-  if (existsSync(dir)) throw new Error(`worktree path ${dir} exists`)
+  if (lstatSync(dir, { throwIfNoEntry: false })) throw new Error(`worktree ${dir} exists`)
   mkdirSync(r, { recursive: true })
   await git(task.repo, 'worktree', 'add', '--detach', dir, commit)
   try {
@@ -57,7 +57,9 @@ async function waitReady(task, proc, log, pollMs) {
   proc.exited.then((c) => { exit = c })
   const deadline = Date.now() + task.timeoutSec * 1000
   for (;;) {
-    const res = await fetch(task.ready, { signal: AbortSignal.timeout(pollMs), redirect: 'manual' }).catch(() => null)
+    // bound by the deadline, not the poll interval: a dev server's first request can compile for longer than 2 s
+    const signal = AbortSignal.timeout(Math.max(1, deadline - Date.now()))
+    const res = await Promise.race([fetch(task.ready, { signal, redirect: 'manual' }).catch(() => null), proc.exited.then(() => null)])
     if (res && res.status >= 200 && res.status < 500) return
     if (exit !== null) throw new Error(`start exited (exit ${exit}) before ready; log: ${log}`)
     if (Date.now() >= deadline) throw new Error(`app not ready at ${task.ready} after ${task.timeoutSec} s; log: ${log}`)
@@ -122,6 +124,8 @@ export async function clean(root = ROOT) {
   }
   for (const name of readdirSync(r)) {
     const p = join(r, name), dotgit = join(p, '.git')
+    // git resolves a symlink and would remove its target; rmSync below unlinks the link itself
+    if (!lstatSync(p).isDirectory() || !under(realpathSync(p), r)) continue
     let gitdir
     try { gitdir = readFileSync(dotgit, 'utf8').match(/^gitdir: (.+)$/m)?.[1] } catch {}
     if (gitdir) {
