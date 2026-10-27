@@ -102,6 +102,8 @@ Quy tắc lọc cho plan `real-estate` (đã thử trên p8b, mục 14):
 - **Bỏ trong phần giữ**: con trỏ tới test, đường dẫn và tên file mã nguồn hoặc test, tên định danh nội bộ. **Giữ** interface công khai: URL, tham số query, chữ trên UI, đường dẫn API, mã trạng thái, lệnh CLI của project.
 - **Mockup**: không đưa. Bước nói "giống mockup" giữ câu, gắn nhãn `[visual, mockup not given]`; kiểm tra oracle chỉ dựa vào mockup bị loại khỏi điểm.
 
+**Bảng interface.** Kiểm tra oracle cần tên công khai để chạy: nhãn trường, tên truy cập của form, chữ của option, khoá tham số URL, tên trường API. Input đã lọc không nêu hết các tên này (p8b: chỉ 2 trong số các khoá giá và sắp xếp). Nếu builder tự đặt tên khác, kiểm tra hỏng vì tên chứ không vì hành vi, và điểm requirement lẫn hai thứ. Vì vậy input kèm một bảng interface: mọi tên công khai mà kiểm tra oracle dùng **và đã có ở sản phẩm cuối của task** (p8b: 730509b), lấy từ chính sản phẩm đó, chỉ tên, không có hành vi. Tên chỉ xuất hiện sau commit sửa lỗi (ví dụ nhãn "Tên địa điểm" do d82f2b0 thêm) không vào bảng, vì chính tên đó là thứ bị kiểm. Bảng do người viết oracle lập, người lọc kiểm lại bằng `bench/input-check.mjs`.
+
 Người lọc (một agent) không thấy commit sửa lỗi, plan sau, log tiến độ hay oracle. `bench/input-check.mjs` phải in PASS trên mọi input; nó tìm code fence, đường dẫn mã nguồn hoặc test, tên file mã nguồn, lời gọi test, con trỏ tiêu đề test và cú pháp code. Đây là bằng chứng máy cho "input không chứa code hay test"; một người đọc thêm 2 input ngẫu nhiên.
 
 ## 6. Oracle
@@ -126,6 +128,8 @@ Hai agent phân loại độc lập, chỉ thấy input đã lọc và oracle:
 - **không lần ngược được**: builder có thể làm đủ input mà vẫn hỏng kiểm tra này. → chấm bước requirement.
 - **một phần**: tách thành hai kiểm tra ở mức khẳng định nếu được; không tách được thì vào nhóm requirement.
 
+Tên công khai có trong bảng interface (mục 5) được coi là input đã nêu; người phân loại chỉ xét hành vi.
+
 Bất đồng do người phân xử; độ đồng thuận trước phân xử (Cohen κ) được báo cáo. Hai con số build và requirement không bao giờ gộp.
 
 ## 7. Kiểm định cây thước
@@ -138,7 +142,7 @@ Với task ngoài: lời giải chuẩn là commit merge của PR; phiên bản 
 
 ### 7.2 Người chấm
 
-- Phân loại lần ngược (mục 6.3): κ giữa hai agent; người phân xử mọi bất đồng và chấm lại mẫu 20 kiểm tra đồng thuận. Ngưỡng dùng được: κ ≥ 0,6 và người đồng ý ≥ 90% trên mẫu đồng thuận; không đạt thì viết lại quy tắc phân loại và chạy lại trước khi khoá.
+- Phân loại lần ngược (mục 6.3): κ giữa hai agent; người phân xử mọi bất đồng và chấm lại mẫu 20 kiểm tra đồng thuận. Ngưỡng dùng được: (κ ≥ 0,6 hoặc, khi một nhãn chiếm hơn 80%, đồng ý thô ≥ 85% và Gwet AC1 ≥ 0,7) và người đồng ý ≥ 90% trên mẫu đồng thuận. Lý do có nhánh "hoặc": khi gần như mọi kiểm tra cùng một nhãn, κ thấp dù hai bên gần như luôn đồng ý (p8b, mục 14); không đạt thì viết lại quy tắc phân loại và chạy lại trước khi khoá.
 - LLM-judge (nếu dùng cho chấm chất lượng mù ở mục 13): hiệu chỉnh trên 30 đầu ra có nhãn của hai người; báo cáo độ đồng thuận judge–người; chỉ dùng nếu nó không thấp hơn độ đồng thuận người–người quá 0,1.
 - Can thiệp (mục 9.3): hai người ghi nhãn độc lập theo bộ quy tắc trên mẫu 20 transcript; κ ≥ 0,7 trước khi một người ghi nhãn phần còn lại.
 
@@ -229,10 +233,10 @@ Số ước tính, mốc lịch sử: plan 8b của outsourcing tốn khoảng 4
 | Task ngoài, H và B | 24 task × 3 lần × (1,5M + 0,4M) | 137M |
 | Task ngoài, W | 24 × 3 × 1,0M | 72M |
 | `real-estate`, H và B | 12 task × 3 × (5M + 1,5M) | 234M |
-| Chuẩn bị oracle (viết lại, 2 phân loại, gắn nhãn) | 36 task × 0,3M | 11M |
+| Chuẩn bị oracle (viết lại, kiểm định, 2 phân loại, gắn nhãn) | 12 task `real-estate` × 0,55M (đo trên p8b) + 24 task ngoài × 0,3M | 14M |
 | Phép đo lớp (81 lỗi + 10 held-out, review 0,25M + exploratory 0,15M + audit gộp 0,2M mỗi lỗi) | 91 × 0,6M | 55M |
 | Lần chạy thử | 4 task × 2 nhánh × 2M | 16M |
-| **Tổng** |  | **khoảng 525M** |
+| **Tổng** |  | **khoảng 528M** |
 
 Giờ: build `real-estate` cỡ plan khoảng 5 giờ cho H và 1,5 giờ cho B; task ngoài cỡ PR khoảng 1,5 và 0,5 giờ. Với 4 lần chạy song song: khoảng 60 giờ cho `real-estate`, 45 giờ cho task ngoài (cả W), cộng khoảng 10 giờ cho chấm và phép đo lớp: **khoảng 115 giờ đồng hồ**.
 
@@ -266,11 +270,30 @@ Thang cắt khi vượt ngân sách, theo thứ tự; mỗi bậc là bỏ một
 
 Chạy bằng workflow với vai tách biệt: người lọc không thấy commit sửa lỗi; người viết oracle không thấy plan hay input; hai người phân loại không thấy nhau, git hay plan gốc; người kiểm định chạy oracle trên bản sao. Đầu ra ở `.evidence/bench/8b/`.
 
-KẾT QUẢ THỬ: điền sau khi workflow chạy xong.
+Chạy ngày 2026-10-27, 5 agent, khoảng 551k token, 45 phút; phần kiểm định chạy trên bản sao `outsourcing-hstack` (worktree tạm, DB `real_estate_bench8b` tạo mới và đã xoá), không chạm `outsourcing` hay DB `real_estate`.
+
+**Lọc input.** Giữ Goal, 3/5 ý User decisions, 15/15 Global Constraints, 35 feature step (F1 6, F2 7, F3 8, F4 14); bỏ F5 (11 step sửa plan 8a). Bỏ trong phần giữ: 33 con trỏ test, 2 con trỏ lệnh và lớp thủ công, 11 đường dẫn hoặc tên file, 28 định danh nội bộ, 1 tag công cụ, 15 con trỏ plan hoặc task. `bench/input-check.mjs`: plan gốc 4192 lỗi, input đã lọc PASS. Sửa sau khi người lọc làm xong và trước khi người phân loại đọc: bỏ cả mục Known limits (mục 5; ghi trong `filter-log.md`, bản cũ giữ riêng). Còn lại: người đọc chưa đọc lại input (mục 5 yêu cầu).
+
+**Oracle.** 5 commit sửa lỗi (d82f2b0, dd56b84, eb2b016, 24c426f và 730509b trong task) thêm hoặc đổi 96 test. Giữ 25 test kiểm hành vi của hunk trong phạm vi; bỏ 71 (phần lớn kiểm code task khác viết: survey, email, dashboard, lead). Trong 25 test giữ lại, 5 test không có đường kiểm qua interface công khai (ngày cập nhật không đọc được, dùng lại request nội bộ, kiểu của component), nên còn 20 kiểm tra hộp đen, chỉ dùng trình duyệt và REST công khai. Mức nghiêm trọng của 25 test: cao 2, vừa 8, thấp 15.
+
+**Kiểm định (mục 7.1).** Trên 20 kiểm tra: **17 hợp lệ** (qua trên commit sửa, hỏng trên commit cha), **3 yếu** (dd56b84-T3, 24c426f-T4, 24c426f-T5: qua cả hai; đây là kiểm tra canh gác "không đổi cái đang đúng", không phải hồi quy), 0 hỏng. Người kiểm định sửa hai chỗ cơ chế, không làm yếu khẳng định nào: dọn dẹp import chấp nhận 403 (app cố ý cấm xoá import), và đọc màu viền lặp lại cho tới khi chuyển cảnh CSS xong. Sản phẩm cuối thật của plan 8b (730509b) qua 4/20: 730509b-T1 (đã sửa trong task) và 3 kiểm tra yếu; hỏng cả 16 kiểm tra hợp lệ còn lại. Người chưa xác nhận mẫu (mục 7.1).
+
+**Phân loại (mục 6.3), hai agent độc lập.** Agent 1: lần ngược 1, một phần 2, không lần ngược 22. Agent 2: 0, 3, 22. Đồng ý 22/25 (88%), κ = 0,44, Gwet AC1 = 0,87. Ba bất đồng (730509b-T1, dd56b84-T3, 24c426f-T6) chờ người phân xử.
+
+**Điều rút ra, đã sửa vào bản này:**
+
+1. Trên p8b, gần như mọi bug mà các commit sửa lỗi bắt được nằm ở mép input không nói tới: oracle của task này chủ yếu chấm bước requirement (22/25), gần như không chấm bước build. Khớp với kết luận cũ "test chỉ chốt những gì spec có nói".
+2. Một phần lý do "không lần ngược được" là tên công khai, không phải hành vi: cả hai agent nêu tên truy cập của form "Lọc bất động sản" và chữ option "Biệt thự" không có trong input. Đã thêm bảng interface (mục 5) và quy tắc phân loại chỉ xét hành vi (mục 6.3). Việc phân loại p8b phải chạy lại sau khi có bảng interface.
+3. κ không dùng được khi một nhãn chiếm 88%: đã thêm nhánh đồng ý thô + AC1 vào ngưỡng (mục 7.2).
+4. Kiểm tra yếu là loại có thật (canh gác cái đang đúng). Chúng bị loại khỏi điểm như mục 7.1 quy định; không đổi quy tắc.
+5. Chi phí chuẩn bị oracle cho một task cỡ plan: khoảng 0,55M token và 45 phút, hơn mức 0,3M ở mục 11. Mục 11 dùng 0,55M cho task `real-estate`.
+
+**Chưa làm trên p8b:** bảng interface và phân loại lại; người phân xử 3 bất đồng; người đọc lại input và xác nhận mẫu oracle; một lần build thật của nhánh H hay B (thuộc lần chạy thử, mục 12 bước 3).
 
 ## 15. Giới hạn đã biết
 
 - Ước tính token và giờ ở mục 11 chưa đo; lần chạy thử thay chúng bằng số đo trước khi khoá.
 - Quy tắc blame bỏ sót bug do thiếu code ở chỗ task không viết dòng nào gần đó, và có thể gán sai khi một hunk sửa dòng của nhiều task.
 - Bộ trả lời cố định làm mức tự động của H và B so được với nhau, nhưng không đo được chất lượng câu hỏi của agent.
+- Oracle `real-estate` là chính những bug harness cũ để lọt, nên nó thiên về loại mép harness cũ hay bỏ sót. Không dùng nó để so harness cũ với harness mới; H và B đều build mới nên vẫn so được, nhưng chỉ task ngoài dùng để nghiệm thu.
 - `real-estate` có một stack và chỉ greenfield theo nghĩa cả repo do harness cũ dựng; task ngoài mới kiểm tra được tính tổng quát.
