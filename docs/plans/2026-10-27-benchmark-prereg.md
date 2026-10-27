@@ -79,7 +79,7 @@ Mỗi plan có tính năng mới là một task. Commit gốc là commit ngay tr
 
 Chạy lại: `bun bench/oracle-sources.mjs <repo> <commit,...>`; kết quả mỗi task ở `.evidence/bench/tasks/<task>.tsv`.
 
-Điều kiện một task được giữ: (a) input đã lọc qua `bench/input-check.mjs`; (b) sau khi gắn nhãn sửa lỗi / đổi requirement, còn ít nhất 3 kiểm tra oracle hợp lệ (mục 7.1); (c) không cần dữ liệu ngoài repo (ví dụ thư mục `showcase-data/`). Dự kiến p5 và p7c rớt ở (b), còn 14. Tối đa 12 task được chạy: nếu hơn 12 task đạt, giữ 12 task có nhiều kiểm tra oracle hợp lệ nhất (hoà thì task sớm hơn). Danh sách task cuối cùng được commit trước khi chạy, cùng lý do loại từng task.
+Điều kiện một task được giữ: (a) input đã lọc qua `bench/input-check.mjs`; (b) sau khi gắn nhãn sửa lỗi / đổi requirement, còn ít nhất 3 kiểm tra oracle hợp lệ **và thuộc task**, tức không ở nhóm "có từ trước" (mục 7.1); (c) không cần dữ liệu ngoài repo (ví dụ thư mục `showcase-data/`). Trước quy tắc chạy ở commit gốc, dự kiến p5 và p7c rớt ở (b), còn 14. p8b cho khoảng 1 kiểm tra thuộc task trên 3 hunk catalog (9 hoặc 11 trên 30), nên các task có từ 6 hunk catalog trở xuống (p4, p6b, p7b, p8a) dễ rớt, và số task đạt có thể chỉ 8–10. Số thật được chốt ở bước 4 của mục 12. Tối đa 12 task được chạy: nếu hơn 12 task đạt, giữ 12 task có nhiều kiểm tra oracle hợp lệ nhất (hoà thì task sớm hơn). Danh sách task cuối cùng được commit trước khi chạy, cùng lý do loại từng task.
 
 `real-estate` là repo riêng tư, tạo sau knowledge cutoff của model (tháng 6/2026), nên không có trong dữ liệu huấn luyện. Nó vẫn là tập phụ vì lý do ở mục 2.
 
@@ -185,7 +185,7 @@ Một agent cấy lỗi (chỉ thấy lời giải chuẩn và requirement) cấ
 - Điểm build = tổng trọng số kiểm tra **lần ngược được** đã qua / tổng trọng số kiểm tra lần ngược được hợp lệ.
 - Điểm requirement = như trên, trên kiểm tra **không lần ngược được**.
 - Kiểm tra hỏng ở bước tiền điều kiện được đếm là hỏng và được đếm thêm vào "thiếu tính năng"; tỉ lệ thiếu tính năng báo cáo riêng.
-- Task qua = mọi kiểm tra build nghiêm trọng cao và vừa đều qua.
+- Task qua = mọi kiểm tra build nghiêm trọng cao và vừa đều qua, theo oracle mà H1 đang dùng (oracle commit sửa lỗi, hoặc oracle bước nếu quy tắc sàn ở mục 2 áp dụng).
 
 ### 9.2 pass^k
 
