@@ -24,9 +24,9 @@ export async function portBusy(port) {
   try { Bun.listen({ hostname: '127.0.0.1', port, socket: { data() {} } }).stop(true); return false } catch { return true }
 }
 
-async function run(cmd, cwd, env) {
+async function run(cmd, cwd, env, quiet) {
   // output to stderr so a CLI that prints results on stdout stays clean
-  const code = await Bun.spawn(['sh', '-c', cmd], { cwd, env, stdout: 2, stderr: 2 }).exited
+  const code = await Bun.spawn(['sh', '-c', cmd], { cwd, env, stdout: quiet ? 'ignore' : 2, stderr: quiet ? 'ignore' : 2 }).exited
   if (code !== 0) throw new Error(`command failed (exit ${code}): ${cmd}`)
 }
 
@@ -88,10 +88,10 @@ export async function withEnv(task, commit, label, fn, opts = {}) {
     const junitPath = isAbsolute(task.junit) ? task.junit : join(dir, task.junit)
     const env = { ...process.env, BENCH_DIR: dir, BENCH_DB: task.db ?? '', BENCH_PORT: String(task.port), BENCH_URL: url, BENCH_JUNIT: junitPath }
     let proc, failed = false, later
+    const log = `${dir}.log` // next to the worktree, so it survives the worktree's removal
     try {
       if (opts.before) await opts.before(dir)
-      for (const cmd of task.setup) await run(cmd, dir, env)
-      const log = `${dir}.log` // next to the worktree, so it survives the worktree's removal
+      for (const cmd of task.setup) await run(cmd, dir, env, opts.quiet)
       const fd = openSync(log, 'w')
       try { proc = Bun.spawn(['sh', '-c', task.start], { cwd: dir, env, detached: true, stdin: 'ignore', stdout: fd, stderr: fd }) } finally { closeSync(fd) }
       await waitReady(task, proc, log, opts.pollMs ?? 2000)
@@ -103,7 +103,8 @@ export async function withEnv(task, commit, label, fn, opts = {}) {
       // fn's error wins; otherwise the first stop or teardown error; every teardown command still runs
       const note = (e) => { if (failed) console.error(e.message); else later ??= e }
       if (proc) await stop(proc, task.port).catch(note)
-      for (const cmd of task.teardown) await run(cmd, dir, env).catch(note)
+      for (const cmd of task.teardown) await run(cmd, dir, env, opts.quiet).catch(note)
+      if (opts.quiet) rmSync(log, { force: true }) // quiet: nothing of the run stays on disk or screen
       if (later) throw later
     }
   }, opts.root ?? ROOT)

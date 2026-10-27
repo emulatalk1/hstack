@@ -121,6 +121,18 @@ test('fails at once when start exits before ready, naming the log', async () => 
   expect(await Bun.file(log).text()).toBe('starting\n')
 })
 
+test('quiet sends setup and teardown output nowhere and removes the start log', async () => {
+  const task = mk({ setup: ['echo SETUP-OUT; echo SETUP-ERR >&2'], teardown: ['echo TD-OUT'] })
+  const log = `${realpathSync(sub)}/${task.name}-q.log`
+  const p = Bun.spawn(['bun', '-e', `import { withEnv } from '${join(import.meta.dir, '../bench/env.mjs')}'; await withEnv(JSON.parse(process.argv[1]), '${c1}', 'q', async () => {}, { root: '${sub}', pollMs: 100, quiet: true })`, JSON.stringify(task)],
+    { stdout: 'pipe', stderr: 'pipe' })
+  const [out, err, code] = [await new Response(p.stdout).text(), await new Response(p.stderr).text(), await p.exited]
+  expect({ out, err, code }).toEqual({ out: '', err: '', code: 0 })
+  expect(existsSync(log)).toBe(false)
+  const loud = await withEnv(task, c1, 'loud', async () => {}, opts).then(() => `${realpathSync(sub)}/${task.name}-loud.log`)
+  expect(existsSync(loud)).toBe(true)
+})
+
 test('withWorktree alone adds and removes a worktree, running before nothing else', async () => {
   const task = mk()
   const out = await withWorktree(task, c1, 'audit', async (dir) => Bun.file(join(dir, 'page.txt')).text(), sub)

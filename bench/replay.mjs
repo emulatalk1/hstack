@@ -31,6 +31,9 @@ export async function replay(args, { root = ROOT } = {}) {
   const patch = resolve(dirname(resolve(bugPath)), bug.patch) // relative to bug.json
   const [at, fix] = await Promise.all([resolveCommit(task.repo, bug.at), resolveCommit(task.repo, bug.fix)])
 
+  const merge = await git(task.repo, 'rev-parse', '-q', '--verify', `${fix}^2`).then(() => true, () => false)
+  if (merge) throw new Error(`fix ${fix} is a merge commit; give the commit that made the change`)
+
   // the fix's diff and the post-fix test files, read before any env starts
   const diff = await git(task.repo, 'show', '--format=', fix)
   const postFix = new Map()
@@ -38,18 +41,21 @@ export async function replay(args, { root = ROOT } = {}) {
     try { postFix.set(path, await git(task.repo, 'show', `${fix}:${path}`)) } catch {} // deleted by the fix
   const excluded = excludedTitles(diff, postFix, task.testTitle)
 
+  // sealed: git's own messages quote the bug's lines (trailing whitespace warnings, failed hunks)
   const apply = async (dir, ...a) => {
-    const code = await Bun.spawn(['git', 'apply', ...a, patch], { cwd: dir, stdout: 2, stderr: 2 }).exited
-    if (code !== 0) throw new Error(`git apply ${a.join(' ')} ${patch} failed (exit ${code})`)
+    const q = sealed ? 'ignore' : 2
+    const code = await Bun.spawn(['git', 'apply', '--whitespace=nowarn', ...a, patch], { cwd: dir, stdout: q, stderr: q }).exited
+    if (code !== 0) throw new Error(sealed ? `${bug.id} patch does not apply` : `git apply ${a.join(' ')} ${patch} failed (exit ${code})`)
   }
   const { cases } = await withEnv(task, at, `replay-${bug.id}`, async (e) => {
     const file = `${e.dir}/.bench-exclude`
     await Bun.write(file, excluded.map((t) => t + '\n').join(''))
     // sealed: the layer's own output would show the bug
     return runForJunit(task, e, cmd, { BENCH_EXCLUDE: file }, sealed ? 'ignore' : 2)
-  }, { root, before: async (dir) => { await apply(dir, '-R', '--check'); await apply(dir, '-R') } })
+  }, { root, quiet: sealed, before: async (dir) => { await apply(dir, '-R', '--check'); await apply(dir, '-R') } })
 
-  if (!cases) { console.log(`${bug.id} error`); return 1 }
+  // zero non-skip cases means the layer ran nothing (a wrong project filter), which must not read as a miss
+  if (!cases || !cases.some((c) => c.status !== 'skip')) { console.log(`${bug.id} error`); return 1 }
   if (!sealed) for (const c of cases) if (c.status === 'fail') console.log(`FAIL ${c.name}${excluded.some((t) => c.name.includes(t)) ? ' (excluded)' : ''}`)
   console.log(`${bug.id} ${caught(cases, excluded) ? 'caught' : 'missed'}`)
   return 0

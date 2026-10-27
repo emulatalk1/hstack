@@ -29,5 +29,17 @@ export function excludedTitles(diff, postFix, testTitle) {
   return out
 }
 
-export const caught = (cases, excluded) =>
-  cases.some((c) => c.status === 'fail' && !excluded.some((t) => c.name.includes(t)))
+// A title becomes a pattern: printf tokens (%s, %d ...) and template holes ($name, ${expr}) match any text, the rest is literal.
+// It must end the case name and start it or follow a separator, so `trims` does not hide `trims the name of a place`.
+const HOLE = /%[sdifjoOpc#%]|\$[A-Za-z_]\w*(?:\.\w+)*|\$\{[^}]*\}/g
+const titlePattern = (t) => {
+  let re = '', last = 0
+  for (const m of t.matchAll(HOLE)) { re += esc(t.slice(last, m.index)) + '[\\s\\S]*'; last = m.index + m[0].length }
+  return new RegExp(`(?:^|[>›]\\s*)${re}${esc(t.slice(last))}$`)
+}
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+export function caught(cases, excluded) {
+  const pats = excluded.map(titlePattern)
+  return cases.some((c) => c.status === 'fail' && !pats.some((re) => re.test(c.name.trim())))
+}

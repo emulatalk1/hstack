@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from 'bun:test'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { excludedTitles, caught } from '../bench/lib/replay.mjs'
@@ -42,6 +42,20 @@ test('a title found twice is listed once, at its first appearance', () => {
 test('a diff without a test file gives no titles, and caught ignores skips and passes', () => {
   expect(excludedTitles('+++ b/src/a.ts\n@@ -1 +1 @@\n+x', new Map(), vitest)).toEqual([])
   expect(caught([{ name: 'a', status: 'skip', message: '' }, { name: 'b', status: 'pass', message: '' }], [])).toBe(false)
+})
+
+test('an it.each or template title excludes the runner\'s formatted names, and only whole titles', () => {
+  const f = (name) => ({ name, status: 'fail', message: '' })
+  expect(caught([f('suite > rejects "a b" for 3')], ['rejects %s for %d'])).toBe(false)
+  expect(caught([f('suite > rejects a place')], ['rejects ${name}'])).toBe(false)
+  expect(caught([f('suite > rejects a place')], ['rejects $name'])).toBe(false)
+  expect(caught([f('suite > rejects a.b place')], ['rejects $row.name'])).toBe(false)
+  expect(caught([f('f.test.ts \u203a suite \u203a trims')], ['trims'])).toBe(false)
+  expect(caught([f('trims')], ['trims'])).toBe(false)
+  expect(caught([f('suite > trims the name of a place')], ['trims'])).toBe(true)
+  expect(caught([f('suite > retrims')], ['trims'])).toBe(true)
+  expect(caught([f('suite > costs 5 (x)')], ['costs 5 (x)'])).toBe(false) // regex characters are literal
+  expect(caught([f('suite > costs 55 xx')], ['costs 5 (x)'])).toBe(true)
 })
 
 // CLI smoke test. Layers write JUnit by hand: the "bug" is the word buggy in src/a.txt, which the fix changed.
@@ -123,4 +137,33 @@ test('refuses a missing or non-string layer, a missing testTitle and an unsafe i
   expect((await cli([mkTask({ unit: layer('x') }, { testTitle: undefined }), bug('b6'), 'unit'])).stderr).toContain('testTitle')
   expect((await cli([mkTask({ unit: layer('x') }), bug('bad id'), 'unit'])).stderr).toContain('id')
   for (const r of [await cli([mkTask({ unit: layer('x') }), bug('b6'), 'constructor'])]) expect(r.code).toBe(2)
+})
+
+test('sealed: git apply says nothing about the bug, not even for a re-added line with trailing whitespace', async () => {
+  writeFileSync(join(tmp, 'bugs/ws.patch'), readFileSync(join(tmp, 'bugs/fix.patch'), 'utf8').replace('-buggy', '-buggy   '))
+  expect(Bun.spawnSync(['git', 'apply', '-R', '--check', join(tmp, 'bugs/ws.patch')], { cwd: repo }).exitCode).not.toBeNull() // fixture sanity
+  const r = await cli([mkTask({ unit: layer('older check') }), bug('b7', { patch: 'ws.patch' }), 'unit', '--sealed'])
+  expect(r).toMatchObject({ stdout: 'b7 caught\n', stderr: '', code: 0 })
+  const bad = await cli([mkTask({ unit: layer('x') }), bug('b8', { patch: 'bad.patch' }), 'unit', '--sealed'])
+  expect(bad).toMatchObject({ stdout: '', stderr: 'b8 patch does not apply\n', code: 2 })
+})
+test('sealed: setup, teardown and start output are silent and no start log is left behind', async () => {
+  const t = mkTask({ unit: layer('older check') }, { setup: ['echo SETUP-OUT; echo SETUP-ERR >&2'], teardown: ['echo TD-OUT; echo TD-ERR >&2'] })
+  const r = await cli([t, bug('b9'), 'unit', '--sealed'])
+  expect(r).toMatchObject({ stdout: 'b9 caught\n', stderr: '', code: 0 })
+  expect(readdirSync(sub).filter((n) => n.endsWith('-replay-b9.log'))).toEqual([])
+})
+test('a run with no non-skip case is an error, not a miss', async () => {
+  const empty = `{ echo '<testsuite>'; echo '<testcase name="s > skipped"><skipped/></testcase>'; echo '</testsuite>'; } > "$BENCH_JUNIT"`
+  expect(await cli([mkTask({ unit: empty }), bug('b10'), 'unit', '--sealed'])).toMatchObject({ stdout: 'b10 error\n', code: 1 })
+  expect(await cli([mkTask({ unit: 'echo "<testsuite/>" > "$BENCH_JUNIT"' }), bug('b11'), 'unit', '--sealed'])).toMatchObject({ stdout: 'b11 error\n', code: 1 })
+})
+test('a merge commit as the fix is refused', async () => {
+  const main = git('rev-parse', '--abbrev-ref', 'HEAD')
+  git('checkout', '-q', '-b', 'side', c0)
+  writeFileSync(join(repo, 'side.txt'), 's'); git('add', '.'); git('commit', '-qm', 'side')
+  git('checkout', '-q', main); git('merge', '-q', '--no-ff', 'side', '-m', 'merge')
+  const r = await cli([mkTask({ unit: layer('x') }), bug('b12', { fix: git('rev-parse', 'HEAD') }), 'unit', '--sealed'])
+  expect(r).toMatchObject({ stdout: '', code: 2 })
+  expect(r.stderr).toContain('merge commit')
 })
