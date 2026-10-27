@@ -427,3 +427,114 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
   - probe (2 claude -p runs): 14/3265/49611/12128 (run 1 also lists opus-4-8)
   - sum of the task's agent runs: 178/78162/5071700/366278; about 26 min of runs
 - Task 6 (int and e2e layers with their baseline, gap c): one dev run each, replay checks the reverse patch first. int on d82f2b0-05: patch check passed, baseline 260 cases, 0 failing, kept as `results/baseline-re-69ebe27-int.xml`; bug run 2 failed / 258 passed, both the fix's own tests marked `(excluded)`: **missed** (old record: missed). e2e on d005fa5-03: patch check passed, baseline 402 cases (392 passed, 10 skipped, 0 failing), kept as `…-e2e.xml`; bug run 1 failed / 391 passed / 10 skipped, the one failure the fix-changed test marked `(excluded)`: **missed** (old record: missed). No bench/ change, no agent tokens. Wall clock: int 10.3 min (21:24 to 21:34), e2e 40.7 min (21:38 to 22:19); about 51 min.
+
+### SDD ledger copy (taken before the final review; SDD deletes the original)
+
+    # SDD ledger — plan: docs/plans/2026-10-27-bench-inputs.md
+    
+    Spec: docs/plans/2026-10-27-benchmark-prereg.md (stable) + docs/plans/2026-10-27-bench-tools.md / bench/README.md. Branch worktree-bridge-cse_01LckcHdPjiRPz5DvPEJXEaJ, start a6880ea (merge-base with main 8dbac4a).
+    Data: /Users/hbchuc/Documents/programing/vibe-code/hstack/.evidence/bench (main checkout; absent from this worktree).
+    
+    ## Pre-flight scan
+    
+    | Rows | Produces vs consumes | Found |
+    |---|---|---|
+    | T1 self | CLI args, run record fields, tests vs steps | clean; `tools` comes from initInfo (arm.mjs), exists |
+    | T1↔T2 | sealed-agent uses runClaude→agentEnv; T2 widens agentEnv | clean: T1 inherits the PG*/DATABASE_URL drop |
+    | T1↔T3/T4 | sealed-agent label regex `^[a-z0-9][a-z0-9_.-]*$` vs labels filter-p8b1, interface-p6a; folder `re-sealed-<label>` via freshDir regex | clean |
+    | T2 self | patch check contract (exit 2, stdout '') matches existing test | clean |
+    | T2↔T5 | review diff as task.diff; T5 brief says read task.diff in parts | clean |
+    | T2↔T6 | precheck worktree label `check-<id>`, runs before baseline | clean |
+    | T3 self | ID prefix rule: p1–p6c title-derived, p7b–p8e from first step ID (P8b.1 checked) | clean |
+    | T3↔T4 | tasks.json {plan,no,base,end,n,harness}; T4 reads end | clean |
+    | T3↔T5 | <data>/p8b symlink → 8b; agent-replay join(data,'p8b','input.md') | clean |
+    | T4 self | p8b check values confirmed in git first (Step 2) | clean |
+    | T5 self | one bug file with review+audit+evaluator fields; NEEDS per layer | clean |
+    | T5↔T6 | both use port 3000 / bench_re; sequential | clean |
+    | Global | data writes are absolute paths into the main checkout's .evidence | RISK: implementers must not create .evidence in the worktree |
+    
+    ## Rulings
+    - Ruling: implementers write data only under /Users/hbchuc/Documents/programing/vibe-code/hstack/.evidence/bench (absolute), scratch under /tmp/hstack-bench or the SDD workspace — the worktree has no .evidence and a new one would hide data from later tools — cost if wrong: none.
+    
+    ## Tasks
+    Task 1: dispatched (sonnet), BASE a6880ea
+    Task 1: implementer sonnet, commit 9025b37, DONE_WITH_CONCERNS (tools record in init order; bad --at writes no record); probe: Read/Grep/Glob outside cwd denied, no-tools = []
+    Task 1: implementer sonnet 75.6k/3.7 min; review dispatched (sonnet)
+    Task 1: review sonnet 57.9k/0.6 min: Approved, no Critical/Important; ⚠️ probe and pristine output checked by controller (full suite 184 pass, no stray lines; report records the probe usage and replies)
+    - Ruling: run record `tools` stays in init order (["Glob","Grep","Read"]); later checks compare as a set — the plan's literal array was the expectation, the set is the requirement — cost if wrong: none.
+    Task 1: minor (deferred): --at test name/comment overclaims (.claude/settings.json removal and file content not asserted; covered by bench-env.test.mjs:246)
+    Task 1: minor (deferred): lenient argv (`--prompt --out x`, `Read,,Grep` passed through)
+    Task 1: minor (deferred): finalText ignores is_error (shared, pre-existing)
+    Task 1: minor (deferred): a bad --at throws in withExport before any run record
+    Task 1: minor (deferred): seal probe had no in-folder control read; Task 4's sheet runs (reading code in their folder) serve as the control
+    Task 1: complete (commits a6880ea..9025b37, review clean)
+    Task 1 cost: implementer sonnet 75.6k/3.7 min; review sonnet 57.9k/0.6 min
+    Task 2: dispatched (sonnet), BASE 9025b37
+    Task 2: implementer sonnet, commit 43d21e3, DONE; 187 pass
+    Task 2: implementer sonnet 84.7k/3.5 min; review dispatched (opus)
+    Task 2: review opus: Approved, no Critical/Important; ⚠️ commit body checked by controller (present)
+    Task 2: minor (deferred): README sealed-agent paragraph (line 26) still names only BENCH_*/machine variables
+    Task 2: minor (deferred): new replay test reads bugs/bad.patch written by the previous test (hidden order coupling)
+    Task 2: minor (deferred): env test's HOME assertion is vacuous when HOME is unset
+    Task 2: minor (deferred, plan-level): agentEnv does not drop PAYLOAD_DROP_DATABASE (destructive Payload flag); never set in the bench env today
+    Task 2: complete (commits 9025b37..43d21e3, review clean)
+    Task 2 cost: implementer sonnet 84.7k/3.5 min; review opus
+    Task 2 cost: review opus 74.4k/3.8 min
+    Task 3: dispatched (opus), BASE 43d21e3
+    Task 3: implementer opus 182.0k/29.8 min, commits 5463319 (prereg §5/§15), c231850 (progress); DONE_WITH_CONCERNS: 16/16 inputs PASS (4 fix runs), ID accounting clean, numbering 48/48
+    - Ruling: a step whose whole text is a test pointer keeps, as a behaviour sentence, what its title states; a step with its own text loses pointer and title — prereg §5 "rewritten only to remove pointers" leaves the title's behaviour as the step's content, and the H1 floor rule's step oracle needs those behaviours stated to be traceable; the pilot never met a pointer-only step. Recorded in prereg §5 by a commit with its reason — cost if wrong: re-filter p1, p6a, p6b, p6c, p7b, p7c, p8e and their sheets (~1 h of sealed runs).
+    - Ruling (plan text wrong): for p7b–p8e the ID prefix `<no>` comes from the feature-step group heading, not the first step ID in the section (that rule gave P7c for p8c and P1 for p8e, whose sections first quote other plans' IDs) — cost if wrong: none, accounting checked both directions.
+    - Ruling: explicit step IDs were added to the p7b–p8e sources, matching the harness evaluations' IDs (the plans number steps without IDs on each line) — cost if wrong: none; IDs only.
+    - Ruling: p1's numbering check uses plan 2's evaluation P1 lines (plan 1's evaluation has no PASS lines) — cost if wrong: none, 3/3 matched.
+    - Ruling: the filter brief was revised once after the first p8b run (group is the drop unit; a whole-fix plan alone is cut inside groups); p8b and p8b1 rerun on the final brief so all 16 come from one brief; v1 records kept and counted — cost if wrong: none.
+    Task 3: minor (deferred): the verbatim §5 rule carries the bare group ID "P8b-F5" into every filter prompt (no content)
+    Task 3: minor (deferred): 5 sealed runs ran at once for ~1 min (limit 4); no effect
+    Task 3: §5 test-title sentence c7a4bb3 (implementer 182.5k total); review dispatched (opus) on the data
+    Task 3: review 1 opus: Needs fixes — I1 p7c input names the protected real_estate_test (8×, "drop real_estate_test…"), p1–p6c keep `docker compose down -v`, p8b1 uses real_estate_showcase; minors 1–7 (identifiers inconsistently stripped: p7c force-dynamic/revalidate/generateStaticParams, p6b renderToStaticMarkup; process steps with IDs; fault-check constraint; p4 raw rm -rf; p8a Goal keeps F6 fix; brief carries 8b token/byte clause; p8b1 lacks showcase.json format; progress lacks SDD usage)
+    - Ruling: protected database names are internal identifiers (§5 strip): a fix run rewrites p7c's `real_estate_test` to "the test database (the app's database name plus `_test`)", as p6b and p8c already say; reset steps (`down -v`, `rm -rf media`) and p8b1's own showcase database stay (they carry preconditions); the real guard is the run-arm isolation gate already parked (run-arm refuses db tasks until arms get their own Docker/Postgres, prereg step 8), now named for p1–p6c, p7c and p8b1 — cost if wrong: an arm without isolation could still be told to reset volumes; run-arm refuses it today.
+    - Ruling: framework API names are internal identifiers too: the same p7c fix run rewrites `dynamic = 'force-dynamic'`, `revalidate = 600`, `generateStaticParams` returning `[]`, `prodMigrations` and build paths as behaviours (as p8a and the pilot did), and one p6b fix run rewrites `renderToStaticMarkup`/`react-dom/server.edge` — cost if wrong: two inputs say a little less than the plan.
+    - Ruling: process steps that carry their own step ID inside a kept group stay (they are the plan's feature steps; prereg 6.2 gives a step with no public path `interface: none` when the step oracle is written, so they never score) — cost if wrong: the classifiers read a few process lines.
+    Task 3: minor (deferred): fault-check constraint sentence kept in p7b/p7c/p8a/p8b/p8d, dropped in p8c/p8e; p4 keeps raw `rm -rf media`
+    Task 3: minor (deferred, on record): p8a's Goal/Global Constraints keep the F6 disk fix while F6 is dropped (its checks fall to the requirement bucket, §5's deliberate consequence)
+    Task 3: minor (deferred, on record): the verbatim §5 drop-whole bullet carries the 8b spike-token and byte-size clause into every filter prompt, besides "P8b-F5"
+    Task 3: minor (deferred, run-arm note): p8b1's showcase.json format lives only in a drop-whole section; a builder learns it from the folder
+    Task 3: review 1 opus 170.3k/9.2 min; fix round 1 sent to implementer (p7c protected db names + framework identifiers, p6b identifier)
+    Task 3: fix round 1 implementer done (196.8k total), commit 866de76; deviations: p7c real_estate_staging and an example error naming real_estate also rewritten (second p7c fix run); re-review dispatched (sonnet)
+    Task 3: fix round 1/5 (re-review sonnet): 3 addressed, 0 open; commits c7a4bb3..866de76; p7c fix1+fix2, p6b fix2
+    Task 3: minor (deferred): p7c keeps `revalidate = 0` (a framework token), env names NODE_ENV/SCHEMA_PUSH and project commands (commands kept by §5)
+    Task 3: complete (commits 43d21e3..866de76, review clean)
+    Task 3 cost: implementer opus 196.8k total/~34 min (incl. fix round); review opus 170.3k/9.2 min + re-review sonnet; sealed filter runs in progress.md
+    Task 4: dispatched (opus), BASE 866de76
+    Task 4: implementer opus, commit 77561ef, DONE_WITH_CONCERNS (41/1457 names not verbatim: templates, escapes, composed strings; export includes tests/)
+    Task 4: implementer opus 112.8k/12.1 min; review dispatched (opus)
+    Task 4: review 1 opus: Needs fixes — I1 brief added a `message` kind (and `other public text`): p4/p2/p6c/p3 sheets list validation messages for edges the input never states (hint where hidden checks look); I2 23 bullets hold JS template code (`${…}`, `$1`) in p2/p6c/p8b1, missed by input-check; minors (duplicate name, file-named sections in p8b1, `media/imports`, trailing-newline normalisation)
+    - Ruling: sheet kinds = Step 1's list (field labels, option texts, form accessible names, button and link texts, URL paths and query parameter keys, API paths and field names) plus headings, placeholders and column headers (pure names, no edge); no message kind and no "other public text" — prereg §5 lists names, not messages, and a message names an edge; a template gives its fixed text only; no string holding `${`, `$<digit>` or a code identifier. Brief v2, all 16 sheets rerun on it (one brief for all, as Task 3), p8b check redone — cost if wrong: checks that assert an exact message fail on the text and fall to the requirement bucket.
+    - Ruling: bench/input-check.mjs gains a `template code` rule (`\$\{` or `\$[0-9]`) with a test, in this fix round, and all 16 inputs are re-checked with it — mechanical check beats a reviewer's grep — cost if wrong: one more pattern.
+    Task 4: review 1 opus 98.5k/4.2 min; fix round 1 sent to implementer (brief v2, input-check template rule, rerun 16)
+    Task 4: fix round 1 implementer done (144.2k total), commits 012c8e0 (input-check template rule), 86d2d6e (progress); 16 v2 sheets, 9 fix runs; re-review dispatched (opus)
+    Task 4: fix round 1/5 (re-review opus): 3 addressed, 0 open; commits 77561ef..86d2d6e
+    Task 4: minor (deferred): error-page headings ("Không tìm thấy trang", "Đã có lỗi xảy ra") kept as headings while p7b's empty state was removed — line drawn by hand; both are stated by their inputs
+    Task 4: minor (deferred): p8d sheet has a section (/yeu-cau-tu-van/da-gui) its input never mentions (a page name, no edge)
+    Task 4: minor (deferred): input-check `\$[0-9]` would also flag a price written "$5"; no current input affected
+    Task 4: minor (deferred): repeats removed across kinds (a name's second role, e.g. column header, lost; pre-fix sheets kept as interface-main.md)
+    Task 4: complete (commits 866de76..86d2d6e, review clean)
+    Task 4 cost: implementer opus 144.2k total/~22 min; review opus 98.5k/4.2 min + re-review opus
+    Task 5: dispatched (opus), BASE 86d2d6e
+    Task 5: implementer opus, commits 3d5a01d, 2f2a3b6 (progress); DONE: review 3.0 min, audit 5.6 min, evaluator 16.4 min, all exit 0, verdict missed; Files reviewed 67/67; probe ok
+    - Ruling: ratify the evaluator launching the installed headless shell (bundle 1208) by executablePath under bun's cached playwright 1.64.1 (which wants 1248) — the stop rule existed to forbid a network install, and nothing was installed; the probe and the run worked — cost if wrong: a version-skew browser quirk shows up as an evaluator false finding or a crash, visible in its record.
+    Task 5: implementer opus 150.2k/40.6 min; review dispatched (opus)
+    Task 5: review opus: Approved, no Critical/Important; ⚠️ setup/teardown reflow unverifiable (app ran fine)
+    Task 5: minor (deferred, fix before step 3 reuses it): review.md keeps old-harness text ("file structure from the plan", "controller", "plan-mandated … the human decides", lines 83, 90-91, 107-109)
+    Task 5: minor (deferred, fix before step 3): review.md asks for per-file `Reviewed:` lines but also "no process narration"; the run gave none, so `Files reviewed:` (67/67) is a list, not proof of reading (cacheWrite 122.7k vs an 803 KB diff, 595 KB of it migration JSON)
+    Task 5: minor (deferred): evaluator.md launches Chromium by a machine-specific executablePath and imports bare 'playwright' (bun cache 1.64.1); pin `playwright@1.64.1` in the import
+    Task 5: minor (deferred): the judge's caught path (non-empty quote) has not run end to end with the real CLI; step 3's dev review runs will exercise it
+    Task 5: complete (commits 86d2d6e..2f2a3b6, review clean)
+    Task 5 cost: implementer opus 150.2k/40.6 min; review opus; layer runs in progress.md
+    Task 5 cost: review opus 96.8k/4.4 min
+    Task 6: dispatched (sonnet), BASE 2f2a3b6
+    Task 6: implementer sonnet, commit 5090361; DONE: int missed (baseline 260/0 failing), e2e missed (baseline 402: 392 pass/10 skip/0 failing), both as old record
+    Task 6: implementer sonnet 76.1k/56.6 min (mostly waiting on runs); review dispatched (sonnet)
+    Task 6: review sonnet 59.4k/0.8 min: Approved, no issues; controller re-checked clean state (no /tmp/hstack-bench, :3000 free, no bench_ db, copy clean, one worktree)
+    Task 6: complete (commits 2f2a3b6..5090361, review clean)
+    Task 6 cost: implementer sonnet 76.1k/56.6 min; review sonnet 59.4k/0.8 min
+    Final review: dispatched (opus), range 8dbac4a..HEAD
