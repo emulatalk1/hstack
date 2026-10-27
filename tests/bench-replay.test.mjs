@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { excludedTitles, caught } from '../bench/lib/replay.mjs'
 import { clean } from '../bench/env.mjs'
+import { ROOT, releaseRoot } from './bench-root.mjs'
 
 const vitest = String.raw`^\s*(?:it|test)(?:\.each\([^)]*\))?\(\s*['"\x60](.+?)['"\x60]`
 test('takes added and changed test titles, not titles in source files', () => {
@@ -116,7 +117,7 @@ test('a title of holes only excludes nothing, since it would match every case', 
 
 // CLI smoke test. Layers write JUnit by hand: the "bug" is the word buggy in src/a.txt, which the fix changed.
 const { replay } = await import('../bench/replay.mjs')
-const ROOT = '/tmp/hstack-bench'
+const dropRoot = releaseRoot()
 const rand = () => Math.random().toString(36).slice(2, 8)
 const sub = `${ROOT}/test-${rand()}`
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-replay-')))
@@ -158,7 +159,7 @@ const cli = async (args) => {
   const [stdout, stderr, code] = [await new Response(p.stdout).text(), await new Response(p.stderr).text(), await p.exited]
   return { stdout, stderr, code }
 }
-afterAll(async () => { await clean(sub); rmSync(tmp, { recursive: true, force: true }) })
+afterAll(async () => { await clean(sub); rmSync(tmp, { recursive: true, force: true }); dropRoot() })
 
 test('sealed: a failure outside the fix tests prints exactly "<id> caught" and nothing else', async () => {
   const r = await cli([mkTask({ unit: layer('older check') }), bug('b1'), 'unit', '--sealed'])

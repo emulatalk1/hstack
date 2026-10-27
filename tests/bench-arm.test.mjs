@@ -5,11 +5,12 @@ import { join } from 'node:path'
 import { armArgs, countInterventions, initInfo, probeOk } from '../bench/lib/arm.mjs'
 import { claudeArgs } from '../bench/lib/agent.mjs'
 import { clean } from '../bench/env.mjs'
+import { ROOT, releaseRoot } from './bench-root.mjs'
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-arm-')))
-const ROOT = '/tmp/hstack-bench'
+const dropRoot = releaseRoot()
 const sub = `${ROOT}/test-arm-${Math.random().toString(36).slice(2, 8)}`
-afterAll(async () => { await clean(sub); rmSync(tmp, { recursive: true, force: true }) })
+afterAll(async () => { await clean(sub); rmSync(tmp, { recursive: true, force: true }); dropRoot() })
 
 test('the hook denies the question with the fixed answer and logs it', async () => {
   const log = join(tmp, 'interventions.jsonl')

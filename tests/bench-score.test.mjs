@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { results, score, verdict, checksFrom, fixMatches, unscored } from '../bench/lib/score.mjs'
 import { grade } from '../bench/grade.mjs'
 import { clean } from '../bench/env.mjs'
+import { ROOT, releaseRoot } from './bench-root.mjs'
 
 test('weights high 3, medium 2, low 1 and keeps the buckets apart', () => {
   const checks = [{ id: 'a', bucket: 'build', severity: 'high' }, { id: 'b', bucket: 'build', severity: 'low' },
@@ -80,7 +81,7 @@ test('fixMatches compares 7 characters in either direction', () => {
 })
 
 // CLI smoke test: temp repo, oracle command writes a JUnit file (one pass, one PRECONDITION failure)
-const ROOT = '/tmp/hstack-bench'
+const dropRoot = releaseRoot()
 const rand = () => Math.random().toString(36).slice(2, 8)
 const sub = `${ROOT}/test-${rand()}`
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-score-')))
@@ -131,6 +132,7 @@ afterAll(async () => {
   else process.env.HSTACK_BENCH_MACHINE = prevMachine
   await clean(sub)
   rmSync(tmp, { recursive: true, force: true })
+  dropRoot()
 })
 
 test('grade writes per-check results, buckets and the score; the oracle sees BENCH_ORACLE', async () => {

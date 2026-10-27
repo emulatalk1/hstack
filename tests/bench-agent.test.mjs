@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { claudeArgs, finalText, judgeVerdict, usage } from '../bench/lib/agent.mjs'
 import { clean } from '../bench/env.mjs'
+import { ROOT, releaseRoot } from './bench-root.mjs'
 
 test('claudeArgs loads no user settings and no MCP servers, and one plugin dir per plugin', () => {
   const a = claudeArgs({ prompt: 'hi', model: 'm', settings: 's.json', pluginDirs: ['/p1', '/p2'], addDirs: ['/d'] })
@@ -59,7 +60,7 @@ test('judgeVerdict accepts the object inside a single json fence, and its error 
 
 // CLI smoke tests. A stub stands in for claude: the judge call is the one with `--tools ""`.
 const { agentReplay } = await import('../bench/agent-replay.mjs')
-const ROOT = '/tmp/hstack-bench'
+const dropRoot = releaseRoot()
 const rand = () => Math.random().toString(36).slice(2, 8)
 const sub = `${ROOT}/test-${rand()}`
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-agent-')))
@@ -132,7 +133,7 @@ const cli = async (args, env = {}) => {
   return { stdout, stderr, code }
 }
 const result = (id, layer) => JSON.parse(readFileSync(join(data, 'results', `${id}-${layer}.json`), 'utf8'))
-afterAll(async () => { await clean(sub); rmSync(tmp, { recursive: true, force: true }) })
+afterAll(async () => { await clean(sub); rmSync(tmp, { recursive: true, force: true }); dropRoot() })
 
 test('sealed review prints exactly "<id> caught": the agent sees the brief, the filtered input and the task diff in an empty folder', async () => {
   const r = await cli([mkTask(layers), bug('b1'), 'review', '--sealed'])

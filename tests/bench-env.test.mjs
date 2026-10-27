@@ -3,9 +3,10 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { withEnv, withExport, withWorktree, clean, portBusy } from '../bench/env.mjs'
+import { ROOT, releaseRoot } from './bench-root.mjs'
 import { parseTask } from '../bench/lib/task.mjs'
 
-const ROOT = '/tmp/hstack-bench'
+const dropRoot = releaseRoot()
 const rand = () => Math.random().toString(36).slice(2, 8)
 const sub = `${ROOT}/test-${rand()}`
 const subReal = realpathSync('/tmp') + sub.slice('/tmp'.length) // lsof prints realpaths (/private/tmp on macOS)
@@ -41,6 +42,7 @@ afterAll(async () => {
   expect(worktrees()).toBe(1)
   expect(await lsofUnder(subReal)).toEqual([])
   rmSync(tmp, { recursive: true, force: true })
+  dropRoot()
 })
 
 test('starts the app at a commit, calls fn with its URL, and leaves no worktree or listener', async () => {
@@ -103,10 +105,15 @@ for (const hostname of ['0.0.0.0', '::']) {
   })
 }
 
-test('stops the app and removes the worktree when fn throws', async () => {
+test('stops the app and removes the worktree when fn throws, reporting a teardown error on stderr', async () => {
   const task = mk({ teardown: ['exit 3'] })
   let dir
-  await expect(withEnv(task, c1, 'throw', async (e) => { dir = e.dir; throw new Error('boom') }, opts)).rejects.toThrow('boom')
+  const err = console.error, said = []
+  console.error = (s) => said.push(s)
+  try {
+    await expect(withEnv(task, c1, 'throw', async (e) => { dir = e.dir; throw new Error('boom') }, opts)).rejects.toThrow('boom')
+  } finally { console.error = err }
+  expect(said).toEqual(['command failed (exit 3): exit 3'])
   expect(existsSync(dir)).toBe(false)
   expect(await portBusy(task.port)).toBe(false)
   expect(worktrees()).toBe(1)
@@ -143,7 +150,7 @@ test('quiet sends setup and teardown output nowhere and removes the start log', 
   const [out, err, code] = [await new Response(p.stdout).text(), await new Response(p.stderr).text(), await p.exited]
   expect({ out, err, code }).toEqual({ out: '', err: '', code: 0 })
   expect(existsSync(log)).toBe(false)
-  const loud = await withEnv(task, c1, 'loud', async () => {}, opts).then(() => `${realpathSync(sub)}/${task.name}-loud.log`)
+  const loud = await withEnv({ ...task, setup: [], teardown: [] }, c1, 'loud', async () => {}, opts).then(() => `${realpathSync(sub)}/${task.name}-loud.log`)
   expect(existsSync(loud)).toBe(true)
 })
 
