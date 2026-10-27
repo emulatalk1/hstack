@@ -23,3 +23,17 @@ test('flags template code but not prices', () => {
   expect(check('- message: "Thiếu mã ở cột $1"').map((h) => h.rule)).toEqual(['template code'])
   expect(check('A villa costs 5 tỷ, about $ 5 million.')).toEqual([])
 })
+
+const rulesOf = (text) => check(text).map((h) => h.rule)
+
+test('flags framework config values, module specifiers and named framework identifiers', () => {
+  for (const t of ["`idType: 'uuid'`", '`overrideAccess: false`', '`draft: true`', '`revalidate = 600`', "`dynamic = 'force-dynamic'`", '`images: { unoptimized: true }`'])
+    expect(rulesOf(t)).toContain('config value')
+  for (const t of ['`next/image`', '`react-dom/server.edge`']) expect(rulesOf(t)).toContain('module specifier')
+  for (const t of ['generateStaticParams', '`generateStaticParams`', 'searchParams', '`searchParams`']) expect(rulesOf(t)).toContain('framework name')
+})
+
+test('leaves headers, CSS, phone links and API field names alone', () => {
+  for (const t of ['`Cache-Control: private, no-cache`', '`x-nextjs-cache: HIT`', '`min-width: 0`', '`prefers-reduced-motion: reduce`', '`tel:+84900000001`', '`/_next/image`', '`SCHEMA_PUSH=false`', '`propertyType`', '`externalId, title, price`', '`subject:"Lê Thị Cúc"`', '`trang/[n]`', '`image/png`', '`image/svg+xml`'])
+    expect([t, check(t)]).toEqual([t, []])
+})

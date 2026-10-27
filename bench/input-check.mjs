@@ -2,6 +2,14 @@
 // Fails when a task input holds code, a test, or a pointer into the source or test tree.
 // Usage: bun bench/input-check.mjs <input.md>   (exit 0 clean, 1 hits, 2 usage)
 // shortcut: pattern list, not a parser; widen it when a new task shows a leak it misses.
+// A whole backticked span matching `body`; the leading pairs make the match start at an opening backtick.
+const span = (body) => new RegExp('^(?:[^`]*`[^`]*`)*[^`]*`' + body + '`')
+// shortcut: names the real-estate inputs showed (Next.js and Payload); widen when another stack's inputs show more
+const FRAMEWORK_NAMES = [
+  'generateStaticParams', 'generateMetadata', 'searchParams', 'overrideAccess', 'idType', 'renderToStaticMarkup',
+  'serverExternalPackages', 'isrFlushToDisk', 'agentRules', 'beforeDashboard', 'beforeNavLinks', 'prodMigrations',
+  'force-dynamic', 'use server',
+]
 export const RULES = [
   ['code fence', /^\s*(```|~~~)/],
   ['indented code', /^( {4}|\t)\S/],
@@ -12,6 +20,10 @@ export const RULES = [
   ['test title pointer', /—\s*`[^`]+`\s*'[^']+'/],
   ['code syntax', /(=>|\bimport\s+[\w{*]|\brequire\(|\bconst\s+\w+\s*=|\bfunction\s+\w+\s*\(|;\s*$)/],
   ['template code', /\$\{|\$[0-9]/],
+  ['config value', span(`[a-z]\\w*(?:\\.\\w+)*(?:: | = )(?:true|false|null|-?\\d|['"[{])[^\`]*`)],
+  ['module specifier', span('(?!(?:image|text|application)/)[a-z@][\\w.@-]*/[\\w./-]+')],
+  // lookarounds, not \b: entries may start or end in a non-word character
+  ['framework name', new RegExp('(?<![\\w-])(' + FRAMEWORK_NAMES.map((n) => n.replace(/[.()]/g, '\\$&')).join('|') + ')(?![\\w-])')],
 ]
 
 export function check(text) {
