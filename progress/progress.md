@@ -420,3 +420,9 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
   - p8c: 45, PASS, 0 fix; 2 runs; 28/5803/264559/50639, opus-5-5
   - p8d: 83, PASS, 0 fix; 2 runs; 42/8853/557140/83962, opus-5-5
   - p8e: 65, PASS, 1 fix (v2: 3 repeated names removed); 3 runs; 30/6944/221308/46039, opus-5-5
+- Task 5 (agent layers end to end, gap b): the three layer briefs written in `<data>/env/real-estate/briefs/` (review = superpowers 7.0.0 task reviewer with a read-in-parts rule and a last line `Files reviewed:`; audit = ponytail 5.3.2 ponytail-audit; evaluator = the blind brief's exploratory and Global Constraints parts with the seed's demo users; sources and sha256 in `SOURCES.md`) and wired into the task file's `layers`. Dev bug eb2b016-11 (p8b, the property card's 0 bedrooms) as `replay-dev/eb2b016-11.{json,patch}`. Probe: curl 200, no database variable in the agent's env, no permission denial; Playwright from bun's cache (1.64.1) needs a browser bundle the machine lacks (1248), so the evaluator brief launches the installed 1208 headless shell by `executablePath` (no install), which logged in ("Bảng điều khiển - KeyFit"). One dev run per layer, each exit 0 with a verdict: review **missed** (3.0 min; `Files reviewed:` names 67 of 67 task files), audit **missed** (5.6 min), evaluator **missed** (16.4 min; the old blind brief caught it 1 of 14). No `error`, no bench/ change. Records in `<data>/replay-dev/agent/`, details in `<data>/replay-dev/smoke.md`. Usage (input/output/cacheRead/cacheWrite, all opus-5-5 unless named):
+  - agent-replay review: layer 18/13486/445894/122705, judge 2/16/649/6872
+  - agent-replay audit: layer 72/21850/3043139/138301, judge 2/16/649/4698
+  - agent-replay evaluator: layer 68/39513/1531109/78118, judge 2/16/649/3456
+  - probe (2 claude -p runs): 14/3265/49611/12128 (run 1 also lists opus-4-8)
+  - sum of the task's agent runs: 178/78162/5072215/228307; about 26 min of runs
