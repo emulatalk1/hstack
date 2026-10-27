@@ -1,5 +1,9 @@
 # Update Log
 
+## 2026-10-27
+
+* **Creation**: Added the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (draft), written in Vietnamese on purpose because the user wrote the Part 1 brief in Vietnamese; scripts in `bench/` (oracle sources by blame, input check, sample sizes).
+
 ## 2026-10-26
 
 * **Approve**: the decision [hstack runs on Bun](/decisions/2026-10-26-bun-runtime.md) (status `stable`). The user approved it after the Bun runtime build and its final review.
