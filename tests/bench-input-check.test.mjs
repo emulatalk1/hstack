@@ -17,3 +17,9 @@ test('flags code fences, paths, file names, test calls and test pointers', () =>
   for (const r of ['code fence', 'test or source path', 'source file name', 'test file name', 'test call', 'test title pointer', 'code syntax'])
     expect(rules.has(r)).toBe(true)
 })
+
+test('flags template code but not prices', () => {
+  expect(check('- message: "Lỗi ở tệp ${file}"').map((h) => h.rule)).toEqual(['template code'])
+  expect(check('- message: "Thiếu mã ở cột $1"').map((h) => h.rule)).toEqual(['template code'])
+  expect(check('A villa costs 5 tỷ, about $ 5 million.')).toEqual([])
+})
