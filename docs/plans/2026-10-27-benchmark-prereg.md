@@ -1,7 +1,7 @@
 ---
 type: plan
-title: "Cây thước: kế hoạch đăng ký trước (Phần 1)"
-description: "Giả thuyết, tập task, oracle, kiểm định, số task và số lần chạy, chi phí và ngưỡng nghiệm thu của benchmark đo harness hstack, đăng ký trước khi chạy."
+title: "Measuring stick: pre-registration plan (Part 1)"
+description: "Hypotheses, task set, oracle, validation, task and run counts, cost and acceptance thresholds of the benchmark that measures the hstack harness, registered before any run."
 status: draft
 generated: { by: claude-code/2.1.310, at: "2026-10-27T09:10:00+07:00" }
 sources:
@@ -9,56 +9,56 @@ sources:
     resource: /design/2026-10-26-layers.md
 ---
 
-# Cây thước: kế hoạch đăng ký trước (Phần 1)
+# Measuring stick: pre-registration plan (Part 1)
 
-Bản này được commit **trước** mọi lần chạy tính điểm. Sau khi khoá (mục 12), mọi thay đổi về giả thuyết, thước đo, ngưỡng, tập task hay k phải là một commit mới có lý do, và báo cáo cuối liệt kê từng thay đổi đó.
+This plan is committed **before** any scored run. After the lock (section 12), any change to a hypothesis, measure, threshold, task set or k is a new commit with its reason, and the final report lists every such change.
 
-Dữ liệu gốc của khách (plan, test, patch, input đã lọc, oracle) nằm trong `.evidence/bench/` (gitignore). Script nằm trong `bench/` của repo này; chúng nhận đường dẫn repo làm tham số và không chứa dữ liệu khách. `bench/` không phải nội dung plugin.
+The customer's raw data (plans, tests, patches, filtered inputs, oracles) lives in `.evidence/bench/` (gitignored). The scripts live in `bench/` of this repo; they take repo paths as arguments and hold no customer data. `bench/` is not plugin content.
 
-## 1. Câu hỏi
+## 1. Question
 
-Harness có làm ra sản phẩm đúng requirement và đạt chất lượng hơn Claude Code không plugin hay không, với ít can thiệp của người, đo bằng oracle giữ kín mà harness không đọc được. Lớp nào của harness đáng giữ.
+Does the harness produce output that meets the requirement, at higher quality than Claude Code without the plugin, with few human interventions, measured by a hidden oracle the harness cannot read? Which harness layers are worth keeping?
 
-Không đo ở đây: tốc độ gõ code, độ đẹp UI ngoài những gì oracle kiểm, chi phí hạ tầng ngoài token và giờ.
+Not measured here: typing speed, UI polish beyond what the oracle checks, infrastructure cost beyond tokens and hours.
 
-## 2. Giả thuyết và ngưỡng (đăng ký trước)
+## 2. Hypotheses and thresholds (pre-registered)
 
-Tất cả so sánh là theo cặp trên cùng task, khoảng tin cậy 95% (mục 10). "Đạt" nghĩa là cận dưới của khoảng tin cậy vượt ngưỡng, không phải ước lượng điểm.
+Every comparison is paired on the same task, with a 95% confidence interval (section 10). "Met" means the lower bound of the interval clears the threshold, not the point estimate.
 
-| ID | Giả thuyết | Thước đo | Ngưỡng nghiệm thu | Tập |
+| ID | Hypothesis | Measure | Acceptance threshold | Set |
 |---|---|---|---|---|
-| H1 | Harness build đúng requirement hơn baseline | điểm build (mục 9.1) của H trừ B | cận dưới > 0 **và** ước lượng điểm ≥ 0,10 | task ngoài |
-| H2 | Harness tự nêu ra mép spec không nói tới | điểm requirement (mục 9.1) của H trừ B | cận dưới > 0 | task ngoài |
-| H3 | Mức tự động đủ cao | can thiệp mỗi task của H (mục 9.3) | cận trên ≤ 1,0, và H − B cận trên ≤ 0,5 | task ngoài |
-| H4 | Cây thước phân biệt được | điểm build + requirement của H trừ W (biến thể yếu) | cận dưới > 0 | task ngoài |
-| H5 | Bộ test harness sinh ra canh gác được | tỉ lệ bắt lỗi cấy của bộ test đó; mutation score trên dòng vừa đổi | tỉ lệ bắt lỗi cấy cận dưới ≥ 0,5 | task ngoài + `real-estate` |
+| H1 | The harness builds the stated requirement better than the baseline | build score (9.1) of H minus B | lower bound > 0 **and** point estimate ≥ 0.10 | external tasks |
+| H2 | The harness raises spec edges the requirement does not state | requirement score (9.1) of H minus B | lower bound > 0 | external tasks |
+| H3 | Autonomy is high enough | interventions per task of H (9.3) | upper bound ≤ 1.0, and H − B upper bound ≤ 0.5 | external tasks |
+| H4 | The measuring stick discriminates | build + requirement score of H minus W (weak variant) | lower bound > 0 | external tasks |
+| H5 | The test suite the harness writes guards | seeded-bug catch rate of that suite; mutation score on changed lines | seeded catch rate lower bound ≥ 0.5 | external tasks + `real-estate` |
 
-Quy tắc sàn cho H1 (đăng ký trước): sau khi phân loại lại các task của lần chạy thử (mục 12 bước 3) với bảng interface, nếu trung vị số kiểm tra **lần ngược được** mỗi task dưới 5, điểm build của H1 không lấy từ oracle commit sửa lỗi nữa mà từ **oracle bước**: test gốc mà chính task viết cho các feature step (plan `real-estate` nêu một test cho mỗi step; với task ngoài là các test FAIL_TO_PASS mà người phân loại xếp lần ngược được), viết lại hộp đen theo mục 6.2, tối đa 15 mỗi task chọn theo hạt giống, kiểm định qua trên sản phẩm cuối của task và hỏng ở commit gốc. Khi đó mọi kiểm tra từ commit sửa lỗi chấm H2. Ngưỡng của H1 giữ nguyên.
+Floor rule for H1 (pre-registered): after the tasks of the trial run (section 12, step 3) are classified again with the interface sheet, if the median number of **traceable** checks per task is below 5, H1's build score no longer comes from the fix-commit oracle but from a **step oracle**: the task's own tests for its feature steps (a `real-estate` plan names one test per step; for external tasks, the FAIL_TO_PASS tests the classifiers mark traceable), rewritten black-box per 6.2, at most 15 per task chosen by seed, validated to pass on the task's end product and fail at the task base. All fix-commit checks then score H2. H1's threshold stays.
 
-H1, H2, H3 là ba phép thử chính; hiệu chỉnh Holm cho ba phép thử này. H4 là kiểm định cây thước: nếu H4 không đạt thì không công bố H1–H3 (cây thước không phân biệt được harness yếu). H5 là phụ, báo cáo riêng.
+H1, H2 and H3 are the three primary tests, with a Holm correction across them. H4 validates the stick: if H4 is not met, H1–H3 are not reported (the stick cannot tell a weak harness apart). H5 is secondary and reported on its own.
 
-`real-estate` là tập phụ: 20 bug của nó đã định hình thiết kế cũ, nên kết quả trên `real-estate` được báo cáo nhưng không dùng để nghiệm thu.
+`real-estate` is a secondary set: its 20 bugs shaped the old design, so its results are reported but not used for acceptance.
 
-## 3. Các nhánh chạy
+## 3. Arms
 
-| Nhánh | Là gì |
+| Arm | What it is |
 |---|---|
-| B | Claude Code không plugin, cùng model, cùng prompt task, cùng quyền công cụ, chế độ không hỏi người (mục 9.3) |
-| H | Claude Code với plugin hstack ở một commit đã khoá |
-| W | H nhưng tắt: reviewer trong context riêng, oracle độc lập, cổng chống làm yếu test. Builder tự review. Đây là canary của cây thước |
-| H−lớp | H bỏ một lớp. Chỉ dùng trong phép đo phụ (mục 8), không chạy end-to-end trừ khi ngân sách cho phép |
+| B | Claude Code without the plugin, same model, same task prompt, same tool permissions, no-human mode (9.3) |
+| H | Claude Code with the hstack plugin at a locked commit |
+| W | H with these off: the reviewer in its own context, the independent oracle, the gate against weakened tests. The builder reviews itself. This is the stick's canary |
+| H−layer | H without one layer. Only used in the per-layer measures (section 8); not run end to end unless the budget allows |
 
-Mỗi lần chạy ghi: model ID của mọi agent (lấy từ transcript, không lấy từ cấu hình), ngày giờ, commit của plugin, commit gốc của task, token vào/ra, thời gian, số lần hỏi người.
+Each run records: the model ID of every agent (read from the transcript, not from config), date and time, plugin commit, task base commit, input/output tokens, duration, number of questions to a human.
 
-## 4. Tập task
+## 4. Task set
 
-### 4.1 Task `real-estate` (tập phụ)
+### 4.1 `real-estate` tasks (secondary set)
 
-Mỗi plan có tính năng mới là một task. Commit gốc là commit ngay trước commit đầu tiên của plan. Plan chỉ viết test (4.1, 7a.1) không phải task. Plan sửa lỗi (7a, 9, 10) và các mục "Items carried" không phải task: chúng là nguồn oracle cho task trước.
+Each plan that adds features is one task. Its base commit is the commit just before the plan's first commit. Test-only plans (4.1, 7a.1) are not tasks. Fix plans (7a, 9, 10) and "Items carried" sections are not tasks: they are oracle sources for earlier tasks.
 
-Ứng viên oracle: các hunk mã nguồn của commit đến sau, mà dòng bị xoá (hoặc với hunk chỉ thêm, dòng cũ ngay trước chỗ chèn) do commit của task viết ra, theo `git blame` ở commit cha (`bench/oracle-sources.mjs`). Cột "catalog" chỉ đếm hunk thuộc 23 commit sửa lỗi của `.evidence/replay.md`; các ứng viên còn lại phần lớn là tính năng sau sửa lại code cũ (đổi requirement, không phải bug) và phải được gắn nhãn (mục 6.1).
+Oracle candidates: source hunks of later commits whose removed lines (or, for a pure addition, the old line just before the insertion) were written by the task's commits, by `git blame` at the parent (`bench/oracle-sources.mjs`). The "catalog" column counts only hunks of the 23 fix commits in `.evidence/replay.md`; most other candidates are later features rewriting old code (a requirement change, not a bug) and must be labelled (6.1).
 
-| Task | Plan | Commit gốc | Số commit | Hunk ứng viên (có đổi test) | trong đó thuộc catalog | Commit catalog |
+| Task | Plan | Base commit | Commits | Candidate hunks (with test changes) | of which catalog | Catalog commits |
 |---|---|---|---|---|---|---|
 | p1 | 1 foundation | 691a723 | 16 | 158 | 15 | 0870afc 4e58ba5 89583d2 dd56b84 e41d45f |
 | p2 | 2 properties | 7adfd47 | 12 | 187 | 33 | 24c426f 4e58ba5 89583d2 d82f2b0 e41d45f eb2b016 |
@@ -68,7 +68,7 @@ Mỗi plan có tính năng mới là một task. Commit gốc là commit ngay tr
 | p6a | 6a requests | 31fcab0 | 8 | 115 | 14 | 0870afc 24c426f 36d089b 6cedf96 dd56b84 |
 | p6b | 6b notifications | d7f2fd3 | 7 | 68 | 6 | 090f6f2 6cedf96 dd56b84 |
 | p6c | 6c admin polish | 885c4c2 | 10 | 60 | 26 | 24c426f 6cedf96 d82f2b0 dd56b84 e41d45f |
-| p7b | 7b limits (chỉ phần mới) | 9354f4d | 6 | 23 | 6 | 0870afc 24c426f d82f2b0 |
+| p7b | 7b limits (new part only) | 9354f4d | 6 | 23 | 6 | 0870afc 24c426f d82f2b0 |
 | p7c | 7c launch | 3137149 | 11 | 6 | 2 | 8eccb47 |
 | p8a | 8a brand | 0b02f41 | 8 | 47 | 5 | 730509b d82f2b0 dd56b84 |
 | p8b | 8b listings | d1ea76b | 7 | 50 | 30 | 24c426f d82f2b0 dd56b84 eb2b016 |
@@ -77,231 +77,231 @@ Mỗi plan có tính năng mới là một task. Commit gốc là commit ngay tr
 | p8d | 8d home | bee1c22 | 9 | 44 | 41 | 090f6f2 24c426f 69ebe27 dd56b84 |
 | p8e | 8e admin | d7695d6 | 7 | 17 | 16 | b5b3cec eb2b016 |
 
-Chạy lại: `bun bench/oracle-sources.mjs <repo> <commit,...>`; kết quả mỗi task ở `.evidence/bench/tasks/<task>.tsv`.
+Rerun: `bun bench/oracle-sources.mjs <repo> <commit,...>`; each task's result is in `.evidence/bench/tasks/<task>.tsv`.
 
-Điều kiện một task được giữ: (a) input đã lọc qua `bench/input-check.mjs`; (b) sau khi gắn nhãn sửa lỗi / đổi requirement, còn ít nhất 3 kiểm tra oracle hợp lệ **và thuộc task**, tức không ở nhóm "có từ trước" (mục 7.1); (c) không cần dữ liệu ngoài repo (ví dụ thư mục `showcase-data/`). Trước quy tắc chạy ở commit gốc, dự kiến p5 và p7c rớt ở (b), còn 14. p8b cho khoảng 1 kiểm tra thuộc task trên 3 hunk catalog (9 hoặc 11 trên 30), nên các task có từ 6 hunk catalog trở xuống (p4, p6b, p7b, p8a) dễ rớt, và số task đạt có thể chỉ 8–10. Số thật được chốt ở bước 4 của mục 12. Tối đa 12 task được chạy: nếu hơn 12 task đạt, giữ 12 task có nhiều kiểm tra oracle hợp lệ nhất (hoà thì task sớm hơn). Danh sách task cuối cùng được commit trước khi chạy, cùng lý do loại từng task.
+A task is kept when: (a) its filtered input passes `bench/input-check.mjs`; (b) after the fix / requirement-change labelling, at least 3 valid oracle checks remain **that belong to the task**, i.e. are not in the "pre-existing" bucket (7.1); (c) it needs no data outside the repo (for example the `showcase-data/` folder). Before the task-base rule, p5 and p7c were expected to fail (b), leaving 14. p8b gave about 1 task-owned check per 3 catalog hunks (9 or 11 of 30), so tasks with 6 or fewer catalog hunks (p4, p6b, p7b, p8a) may well fail, and the number kept may be only 8–10. The real number is fixed at step 4 of section 12. At most 12 tasks run: if more than 12 qualify, keep the 12 with the most valid oracle checks (ties: the earlier task). The final task list is committed before any run, with the reason each task was dropped.
 
-`real-estate` là repo riêng tư, tạo sau knowledge cutoff của model (tháng 6/2026), nên không có trong dữ liệu huấn luyện. Nó vẫn là tập phụ vì lý do ở mục 2.
+`real-estate` is a private repo created after the models' knowledge cutoff (June 2026), so it is not in training data. It stays secondary for the reason in section 2.
 
-### 4.2 Task bên ngoài (tập chính, dùng để nghiệm thu)
+### 4.2 External tasks (primary set, used for acceptance)
 
-Quy tắc chọn, đăng ký trước, kiểu SWE-bench-Live:
+Selection rule, pre-registered, in the style of SWE-bench-Live:
 
-1. Repo công khai, có giấy phép mở, có hoạt động sau 2026-07-01, chạy được trong container dùng một lần.
-2. Ba nhóm stack khác hẳn nhau, mỗi nhóm 8 task: (S1) ứng dụng web có cơ sở dữ liệu; (S2) ứng dụng desktop; (S3) CLI hoặc thư viện, bằng một ngôn ngữ khác ngôn ngữ của S1 và S2. Ví dụ có đánh dấu, không ràng buộc: S1 một app Django hoặc Rails, S2 một app Electron hoặc Tauri, S3 một CLI Go hoặc thư viện Rust.
-3. Mỗi task là một issue và PR đã merge, cả hai tạo sau 2026-07-01 (sau cutoff của mọi model trong thí nghiệm; ngày cutoff ghi kèm model ID). PR phải liên kết issue, thêm hoặc sửa test, và có ít nhất một test hỏng trước PR và qua sau PR.
-4. Ít nhất 6 trong 8 repo của mỗi nhóm chưa từng được dùng trong hstack. Mọi repo đều là brownfield. Ít nhất một repo dùng cho phép thử "setup nguội" (mục 13).
-5. Lấy mẫu: liệt kê mọi ứng viên đạt 1–4, sắp theo hash SHA-256 của `<owner>/<repo>#<số PR>` nối với hạt giống `hstack-bench-2026-10-27`, lấy từ đầu danh sách, tối đa 2 task mỗi repo. Danh sách ứng viên và kết quả lấy mẫu được commit trước khi chạy.
-6. Input: chỉ tiêu đề và thân issue, cùng repo ở commit cha của PR. Không đưa mô tả PR, review comment, hay bình luận issue sau khi PR mở (chúng thường chứa lời giải).
-7. Oracle: test của PR, viết lại thành kiểm tra hộp đen ở interface công khai (mục 6.2). Với thư viện, interface là API công khai; với CLI, là chạy chương trình thật.
+1. Public repo with an open licence, active after 2026-07-01, runnable in a throwaway container.
+2. Three clearly different stack groups, 8 tasks each: (S1) a web app with a database; (S2) a desktop app; (S3) a CLI or library in a language other than those of S1 and S2. Marked examples, not binding: S1 a Django or Rails app, S2 an Electron or Tauri app, S3 a Go CLI or a Rust library.
+3. Each task is an issue and a merged PR, both created after 2026-07-01 (after the cutoff of every model in the experiment; the cutoff date is recorded with the model ID). The PR links the issue, adds or changes tests, and has at least one test that fails before the PR and passes after it.
+4. At least 6 of the 8 repos in each group were never used in hstack. Every repo is brownfield. At least one repo per group serves the cold-setup test (section 13).
+5. Sampling: list every candidate meeting 1–4, sort by the SHA-256 of `<owner>/<repo>#<PR number>` joined with the seed `hstack-bench-2026-10-27`, take from the top, at most 2 tasks per repo. The candidate list and the sample are committed before any run.
+6. Input: the issue title and body only, plus the repo at the PR's parent commit. No PR description, review comments, or issue comments after the PR opened (they often hold the solution).
+7. Oracle: the PR's tests, rewritten as black-box checks at the public interface (6.2). For a library the interface is its public API; for a CLI it is running the real program.
 
 ## 5. Input
 
-Quy tắc lọc cho plan `real-estate` (đã thử trên p8b, mục 14):
+Filter rules for a `real-estate` plan (tried on p8b, section 14):
 
-- **Giữ**, chỉ viết lại để bỏ con trỏ: Goal; "User decisions" (bỏ ý chỉ nói về quy trình viết plan); "Global Constraints"; "Feature steps" của tính năng mới.
-- **Bỏ cả mục**: "Items carried", nhóm feature step sửa plan trước (ví dụ P8b-F5), "Decisions taken in the scratch copy", "Changes from the design", "Review Focus", "Known limits", "File map", mọi Task, phần hướng dẫn quy trình. Lý do bỏ "Review Focus", "Known limits" và "Decisions taken in the scratch copy": người viết plan rút chúng ra sau khi đã build thử cả plan trong bản nháp (plan 8b: spike khoảng 1,52M token; Known limits của 8b chứa cả số byte đo trên bản build production), nên chúng là sản phẩm của lần build, không phải requirement. Hệ quả có chủ ý: một mép chỉ nằm trong các mục này sẽ chấm bước requirement.
-- **Bỏ trong phần giữ**: con trỏ tới test, đường dẫn và tên file mã nguồn hoặc test, tên định danh nội bộ. **Giữ** interface công khai: URL, tham số query, chữ trên UI, đường dẫn API, mã trạng thái, lệnh CLI của project.
-- **Mockup**: không đưa. Bước nói "giống mockup" giữ câu, gắn nhãn `[visual, mockup not given]`; kiểm tra oracle chỉ dựa vào mockup bị loại khỏi điểm.
+- **Keep**, rewritten only to remove pointers: Goal; "User decisions" (drop bullets that only describe how the plan was written); "Global Constraints"; the "Feature steps" of new features.
+- **Drop whole**: "Items carried", feature groups that fix earlier plans (for example P8b-F5), "Decisions taken in the scratch copy", "Changes from the design", "Review Focus", "Known limits", "File map", every Task, process instructions. Why "Review Focus", "Known limits" and "Decisions taken in the scratch copy" go: the plan writer drew them out after building the whole plan in a scratch copy (plan 8b: spikes of about 1.52M tokens; 8b's Known limits even hold byte sizes measured on the production build), so they are output of a build, not requirement. Deliberate consequence: an edge stated only in these sections scores the requirement step.
+- **Strip inside kept text**: test pointers, source and test file paths and names, internal identifiers. **Keep** the public interface: URLs, query parameters, UI text, API paths, status codes, the project's CLI commands.
+- **Mockups**: not given. A step that says "looks like the mockup" keeps its sentence with the tag `[visual, mockup not given]`; oracle checks that rest only on a mockup are out of the score.
 
-**Bảng interface.** Kiểm tra oracle cần tên công khai để chạy: nhãn trường, tên truy cập của form, chữ của option, khoá tham số URL, tên trường API. Input đã lọc không nêu hết các tên này (p8b: chỉ 2 trong số các khoá giá và sắp xếp). Nếu builder tự đặt tên khác, kiểm tra hỏng vì tên chứ không vì hành vi, và điểm requirement lẫn hai thứ. Vì vậy input kèm một bảng interface: **toàn bộ** tên công khai của các tính năng task làm ra, đọc từ sản phẩm cuối của task (p8b: 730509b): mọi nhãn, chữ option, tên truy cập của form, khoá tham số URL, tên trường API của các trang và endpoint mà feature step nhắc tới. Chỉ tên, không có hành vi. Bảng không được lập từ các kiểm tra oracle (một danh sách chọn lọc sẽ cho builder biết kiểm tra ẩn chạm vào đâu); người lập là một agent chưa đọc oracle, và bảng phải qua `bench/input-check.mjs`. Tên chỉ có sau commit sửa lỗi (ví dụ nhãn "Tên địa điểm" do d82f2b0 thêm) tự nhiên không có trong bảng.
+**Interface sheet.** Oracle checks need public names to run: field labels, the accessible name of a form, option texts, URL parameter keys, API field names. The filtered input does not state all of them (p8b: only 2 of the price and sort keys). If a builder picks other names, a check fails on the name, not the behaviour, and the requirement score mixes the two. So the input comes with an interface sheet: **every** public name of the features the task builds, read from the task's end product (p8b: 730509b): every label, option text, form accessible name, URL parameter key and API field name of the pages and endpoints the feature steps mention. Names only, no behaviour. The sheet is not built from the oracle checks (a selective list would tell the builder where the hidden checks look); it is compiled by an agent that has not read the oracle, and it must pass `bench/input-check.mjs`. A name that only exists after a fix commit (for example the label "Tên địa điểm" that d82f2b0 adds) is naturally absent from the sheet.
 
-Người lọc (một agent) không thấy commit sửa lỗi, plan sau, log tiến độ hay oracle. `bench/input-check.mjs` phải in PASS trên mọi input; nó tìm code fence, đường dẫn mã nguồn hoặc test, tên file mã nguồn, lời gọi test, con trỏ tiêu đề test và cú pháp code. Đây là bằng chứng máy cho "input không chứa code hay test"; một người đọc thêm 2 input ngẫu nhiên.
+The filter (an agent) never sees fix commits, later plans, progress logs or the oracle. `bench/input-check.mjs` must print PASS on every input; it looks for code fences, source or test paths, source file names, test calls, test title pointers and code syntax. This is the machine evidence for "the input holds no code or test"; a human also reads 2 random inputs.
 
 ## 6. Oracle
 
-### 6.1 Nguồn
+### 6.1 Sources
 
-- `real-estate`: ứng viên theo quy tắc blame ở mục 4.1, cộng các commit sửa lỗi nằm **trong** task (đợt sửa sau final review, ví dụ 730509b của p8b), vì sản phẩm cuối của task phải không còn các lỗi đó.
-- Mỗi commit ứng viên được gắn nhãn "sửa lỗi" (khôi phục hành vi task đã định) hay "đổi requirement" (tính năng sau đổi hành vi) bởi hai agent độc lập, chỉ đọc tiêu đề commit, diff và mục log tiến độ ghi ai tìm ra (như `attribution.md`). Bất đồng do người phân xử. Chỉ "sửa lỗi" vào oracle.
-- Plan sửa lỗi và nội dung commit sửa lỗi không bao giờ vào input của builder.
+- `real-estate`: candidates by the blame rule of 4.1, plus fix commits **inside** the task (the fix wave after the final review, for example 730509b of p8b), because the task's end product must be free of those bugs.
+- Each candidate commit is labelled "fix" (restores behaviour the task intended) or "requirement change" (a later feature changes behaviour) by two independent agents, reading only the commit subject, the diff and the progress-log entry that records who found it (as `attribution.md` does). A human settles disagreements. Only "fix" enters the oracle.
+- Fix plans and the content of fix commits never reach the builder's input.
 
-### 6.2 Viết lại thành hộp đen
+### 6.2 Black-box rewrite
 
-Mỗi test do commit sửa lỗi thêm hoặc đổi, nếu kiểm hành vi của một hunk trong phạm vi, được viết lại thành kiểm tra chỉ dùng interface công khai: trình duyệt, HTTP, API REST công khai (đăng nhập qua API như người dùng), chữ hiển thị, URL; với CLI là chạy chương trình; với thư viện là API công khai. Không import mã của app, không gọi hàm nội bộ, không đọc DB. Test unit hay int được chuyển tới chỗ hành vi lộ ra với người dùng; nếu không có đường công khai, giữ trong manifest với `interface: none` và không tính điểm. Mỗi kiểm tra có một bước tiền điều kiện (tính năng có tồn tại không) tách khỏi khẳng định chính, để phân biệt "thiếu tính năng" với "sai ở mép".
+Each test a fix commit adds or changes, if it checks the behaviour of an in-scope hunk, is rewritten as a check that uses only the public interface: the browser, HTTP, the public REST API (logging in through the API as a user would), visible text, URLs; for a CLI, running the program; for a library, its public API. No import of app code, no internal function calls, no database reads. A unit or int test moves to where the behaviour shows to a user; if there is no public path, it stays in the manifest with `interface: none` and is not scored. Each check has a precondition step (does the feature exist) separate from its main assertion, to tell "feature missing" from "wrong at an edge".
 
-Oracle nằm ngoài cây thư mục builder đọc được và chỉ chạy sau khi lần build kết thúc, bởi script chấm, trong môi trường dùng một lần (DB mới, cổng riêng).
+The oracle lives outside the tree the builder can read and only runs after the build ends, by the grading script, in a throwaway environment (fresh database, own port).
 
-### 6.3 Phân loại từng kiểm tra
+### 6.3 Classifying each check
 
-Hai agent phân loại độc lập, chỉ thấy input đã lọc và oracle:
+Two independent classifier agents, who see only the filtered input and the oracle:
 
-- **lần ngược được**: mọi khẳng định **và** mọi giá trị chọn phần tử hay dựng state mà kiểm tra cần (nhãn, tham số URL, chữ trạng thái, con số) đều được input nói ra hoặc suy ra trực tiếp. Kèm trích dẫn và ID bước. → chấm bước build.
-- **không lần ngược được**: builder có thể làm đủ input mà vẫn hỏng kiểm tra này. → chấm bước requirement.
-- **một phần**: tách thành hai kiểm tra ở mức khẳng định nếu được; không tách được thì vào nhóm requirement.
+- **traceable**: every assertion **and** every selector or setup value the check needs (labels, URL parameters, status words, numbers) is stated or directly implied by the input. With quotes and step IDs. → scores the build step.
+- **not traceable**: a builder could meet the whole input and still fail this check. → scores the requirement step.
+- **partly**: split into two checks at assertion level when possible; if not, it goes to the requirement bucket.
 
-Tên công khai có trong bảng interface (mục 5) được coi là input đã nêu; người phân loại chỉ xét hành vi.
+Public names in the interface sheet (section 5) count as stated by the input; classifiers judge behaviour only.
 
-Bất đồng do người phân xử; độ đồng thuận trước phân xử (Cohen κ) được báo cáo. Hai con số build và requirement không bao giờ gộp.
+A human settles disagreements; agreement before settling (Cohen κ) is reported. The build and requirement numbers are never merged.
 
-## 7. Kiểm định cây thước
+## 7. Validating the stick
 
 ### 7.1 Oracle
 
-Mỗi kiểm tra có bước tiền điều kiện tường minh (mục 6.2) và chạy thêm ở **commit gốc của task**. Kiểm tra hỏng ở commit gốc **sau khi** qua tiền điều kiện là bug có từ trước task (quy tắc blame gán nhầm vì task viết lại một dòng bên cạnh hay chính dòng đó): nó vào nhóm "có từ trước", không tính vào điểm nào của task này, và được chuyển làm oracle cho task đã gây ra nó. Hỏng ở tiền điều kiện là bình thường (tính năng chưa có).
+Each check has an explicit precondition step (6.2) and also runs at the **task base commit**. A check that fails at the base **after** passing its precondition tests a bug older than the task (the blame rule misattributed it because the task rewrote a neighbouring or the same line): it goes to the "pre-existing" bucket, counts in no score of this task, and moves to the oracle of the task that introduced it. Failing at the precondition is expected (the feature does not exist yet).
 
-Mỗi kiểm tra phải **hỏng trên phiên bản lỗi đã biết** (commit cha của commit sửa lỗi, và sản phẩm cuối thật của task) và **qua trên lời giải chuẩn** (commit sửa lỗi), trong cùng một lần chạy. Kiểm tra qua cả hai là "yếu", hỏng cả hai là "hỏng"; cả hai loại bị loại khỏi điểm (được sửa phần cơ chế, không bao giờ làm yếu khẳng định). Một người xác nhận mẫu 10 kiểm tra mỗi stack: đọc kiểm tra cạnh test gốc và nói nó có kiểm cùng hành vi không.
+Each check must **fail on a known-bad version** (the parent of the fix commit, and the task's real end product) and **pass on the reference** (the fix commit), in the same run. A check that passes on both is "weak", one that fails on both is "broken"; both are out of the score (mechanics may be fixed, assertions are never weakened). A human confirms a sample of 10 checks per stack: reads each check next to its original test and says whether they check the same behaviour.
 
-Với task ngoài: lời giải chuẩn là commit merge của PR; phiên bản lỗi là commit cha. Thêm 3 lỗi cấy mỗi task (mục 8.3) làm phiên bản lỗi bổ sung.
+For external tasks: the reference is the PR's merge commit, the known-bad version its parent. Three seeded bugs per task (8.3) add known-bad versions.
 
-### 7.2 Người chấm
+### 7.2 Raters
 
-- Phân loại lần ngược (mục 6.3): κ giữa hai agent; người phân xử mọi bất đồng và chấm lại mẫu 20 kiểm tra đồng thuận. Ngưỡng dùng được: (κ ≥ 0,6 hoặc, khi một nhãn chiếm hơn 80%, đồng ý thô ≥ 85% và Gwet AC1 ≥ 0,7) và người đồng ý ≥ 90% trên mẫu đồng thuận. Lý do có nhánh "hoặc": khi gần như mọi kiểm tra cùng một nhãn, κ thấp dù hai bên gần như luôn đồng ý (p8b, mục 14); không đạt thì viết lại quy tắc phân loại và chạy lại trước khi khoá.
-- LLM-judge (nếu dùng cho chấm chất lượng mù ở mục 13): hiệu chỉnh trên 30 đầu ra có nhãn của hai người; báo cáo độ đồng thuận judge–người; chỉ dùng nếu nó không thấp hơn độ đồng thuận người–người quá 0,1.
-- Can thiệp (mục 9.3): hai người ghi nhãn độc lập theo bộ quy tắc trên mẫu 20 transcript; κ ≥ 0,7 trước khi một người ghi nhãn phần còn lại.
+- Traceability classification (6.3): κ between the two agents; a human settles every disagreement and re-rates a sample of 20 agreed checks. Usable when (κ ≥ 0.6, or, when one label covers more than 80%, raw agreement ≥ 85% and Gwet AC1 ≥ 0.7) and the human agrees with ≥ 90% of the agreed sample. Why the "or" branch: when nearly every check has the same label, κ is low even though the raters almost always agree (p8b, section 14). If not met, rewrite the classification rule and rerun before the lock.
+- LLM judge (if used for the blind quality rating of section 13): calibrated on 30 outputs labelled by two humans; judge–human agreement reported; used only if it is no more than 0.1 below human–human agreement.
+- Interventions (9.3): two humans label a sample of 20 transcripts independently by the rule set; κ ≥ 0.7 before one human labels the rest.
 
-### 7.3 Biến thể yếu
+### 7.3 Weak variant
 
-W (mục 3) phải bị chấm thấp hơn H (H4). Nếu không, cây thước không đủ nhạy và kết quả H1–H3 không được công bố.
+W (section 3) must score below H (H4). If not, the stick is not sensitive enough and H1–H3 are not reported.
 
-## 8. Phép đo phụ cho từng lớp
+## 8. Per-layer measures
 
 ### 8.1 Replay
 
-Chuyển quy trình `.evidence/replay.md` thành script (`bench/replay`): áp patch đảo ở HEAD, bỏ mọi test mà commit sửa thêm vào (kể cả `it.each`), chạy một lớp, ghi bắt hay không, chỉ tính khi khẳng định hỏng có từ trước commit sửa. Giữ hai bẫy đã biết: bỏ một test mỗi lần sửa là sai; e2e phải lọc đúng project.
+Turn the procedure of `.evidence/replay.md` into a script (`bench/replay`): apply the reverse patch at HEAD, drop every test the fix commit added (`it.each` included), run one layer, record caught or not; a catch counts only if the failing assertion existed before the fix. Keep the two known traps: dropping one test per fix is wrong; e2e must filter the right project.
 
-### 8.2 Tập dev và held-out
+### 8.2 Dev and held-out sets
 
-- Dev: 20 bug của `replay.md` (đã định hình thiết kế cũ). Kết quả cũ giữ nguyên: unit + int 1/20, e2e 0/15, evaluator mù 1/14, review 17/20 theo hồ sơ.
-- Held-out: hunk ngoài 11 commit của tập dev, đạt `reverts_cleanly = yes` và có test cùng commit. Theo catalog có 11; bỏ 730509b vì nó là nguồn oracle của p8b (mục 6.1), còn **10** (29f4daf 1, 36d089b 1, 400f58a 1, 5b6646d 3, 89583d2 3, b5b3cec 1); chỉ tính loại logic, validation, data thì còn **4**. Ghi nhận: lúc định hướng cho kế hoạch này, mệnh đề trong catalog của `b5b3cec-01` đã hiện lên màn hình (không phải patch); hunk đó vẫn giữ nhưng được đánh dấu "đã thấy mệnh đề".
-- Mở rộng: một agent không tham gia thiết kế harness đọc tiêu đề và log của các commit chưa được catalog xét (commit không khớp grep, các plan sửa lỗi 7a, 7b, 9, 10, các đợt carried), tách hunk sửa lỗi thành patch đảo vào thư mục niêm phong, kiểm `git apply --check`, và chỉ ghi số lượng ra ngoài. Không ai thiết kế harness mở patch held-out trước lúc chấm; script chấm chỉ in bắt / không bắt.
-- Thứ tự: replay held-out chấm xong và khoá trước khi các commit held-out (29f4daf, 36d089b, 400f58a, 5b6646d, 89583d2, b5b3cec) được mở để làm oracle task `real-estate`. Những task cần các commit đó (p1–p4, p6a, p8e) chờ tới lúc ấy.
+- Dev: the 20 bugs of `replay.md` (they shaped the old design). Old results stand: unit + int 1/20, e2e 0/15, blind evaluator 1/14, review 17/20 by the record.
+- Held-out: hunks outside the 11 dev commits with `reverts_cleanly = yes` and a same-commit test. The catalog gives 11; 730509b leaves because it is an oracle source of p8b (6.1), so **10** remain (29f4daf 1, 36d089b 1, 400f58a 1, 5b6646d 3, 89583d2 3, b5b3cec 1); counting only logic, validation and data kinds, **4**. On record: while orienting for this plan, the catalog clause of `b5b3cec-01` was shown on screen (not the patch); the hunk stays, marked "clause seen".
+- Extension: an agent not involved in harness design reads the subjects and log entries of commits the catalog did not consider (commits that did not match its grep, fix plans 7a, 7b, 9, 10, carried waves), writes the fix hunks as reverse patches into a sealed folder, checks `git apply --check`, and reports only counts. No one designing the harness opens a held-out patch before grading; the grading script prints only caught / not caught.
+- Order: the held-out replay is graded and locked before the held-out commits (29f4daf, 36d089b, 400f58a, 5b6646d, 89583d2, b5b3cec) are opened as oracle sources for `real-estate` tasks. Tasks that need them (p1–p4, p6a, p8e) wait until then.
 
-### 8.3 Lỗi cấy
+### 8.3 Seeded bugs
 
-Một agent cấy lỗi (chỉ thấy lời giải chuẩn và requirement) cấy lỗi một hunk ở các mép: rỗng, null, trùng, chữ hoa, đã xoá, giá trị biên. Mỗi lỗi kèm một kiểm tra hộp đen hỏng trên lỗi và qua trên lời giải chuẩn; lỗi không qua được bước này bị bỏ. Mục tiêu 81 lỗi cấy (mục 10.2): 3 mỗi task ngoài (72) cộng 9 trên `real-estate`. Niêm phong như held-out.
+A seeding agent (sees only the reference solution and the requirement) seeds single-hunk bugs at edges: empty, null, duplicate, letter case, deleted, boundary values. Each bug comes with a black-box check that fails on the bug and passes on the reference; a bug that fails this step is dropped. Target 81 seeded bugs (10.2): 3 per external task (72) plus 9 on `real-estate`. Sealed like the held-out set.
 
-### 8.4 Hai thước đo theo loại lớp
+### 8.4 Two measures for two kinds of layer
 
-- **Lớp canh gác** (test unit, e2e, mutation trên dòng vừa đổi, oracle độc lập, cổng chống làm yếu test): tỉ lệ bắt lỗi có trọng số nghiêm trọng (cao 3, vừa 2, thấp 1) trên held-out + lỗi cấy + kiểm tra oracle. Giữ lớp nếu số bắt được **chỉ nhờ lớp đó** (so H với H−lớp, cặp theo lỗi, kiểm McNemar) có cận dưới khoảng tin cậy > 0.
-- **Lớp khám phá** (exploratory theo charter, review task, final review, audit cả repo): số lỗi thật mà không lớp nào khác tìm ra, xác nhận trên HEAD sạch, trên mỗi triệu token. Mốc lịch sử của evaluator: 1 lỗi duy nhất đã sửa trên khoảng 144k token (`yield.md`, bỏ lặp), tức khoảng 6,9 trên 1M. Giữ lớp nếu cận dưới Poisson 95% ≥ 50% mốc đó (3,5 trên 1M), hoặc nếu lớp tìm ra một lỗi nghiêm trọng cao mà không lớp nào khác tìm.
-- Review đã có hồ sơ 17/20 (`attribution.md`), nhưng chưa đo trong replay; nó vẫn phải đo theo thước khám phá như mọi lớp.
-- Lớp mới: bản tối thiểu, đo, rồi giữ hoặc bỏ theo đúng thước của loại nó.
+- **Guard layers** (unit tests, e2e, mutation on changed lines, the independent oracle, the gate against weakened tests): severity-weighted catch rate (high 3, medium 2, low 1) on held-out + seeded bugs + oracle checks. Keep a layer if the catches **only that layer makes** (H vs H−layer, paired by bug, McNemar) have a confidence lower bound > 0.
+- **Discovery layers** (chartered exploratory testing, task review, final review, whole-repo audit): real defects no other layer found, confirmed on a clean HEAD, per million tokens. Historical evaluator mark: 1 unique fixed defect per about 144k tokens (`yield.md`, repeats removed), about 6.9 per 1M. Keep a layer if its 95% Poisson lower bound is ≥ 50% of that mark (3.5 per 1M), or if it finds a high-severity defect no other layer finds.
+- Review has a record of 17/20 (`attribution.md`) but was never measured in a replay; it is measured by the discovery measure like every layer.
+- New layers: minimal version, measure, then keep or drop by the measure of their kind.
 
-## 9. Thước đo
+## 9. Measures
 
-### 9.1 Điểm của một lần chạy
+### 9.1 Score of one run
 
-- Điểm build = tổng trọng số kiểm tra **lần ngược được** đã qua / tổng trọng số kiểm tra lần ngược được hợp lệ.
-- Điểm requirement = như trên, trên kiểm tra **không lần ngược được**.
-- Kiểm tra hỏng ở bước tiền điều kiện được đếm là hỏng và được đếm thêm vào "thiếu tính năng"; tỉ lệ thiếu tính năng báo cáo riêng.
-- Task qua = mọi kiểm tra build nghiêm trọng cao và vừa đều qua, theo oracle mà H1 đang dùng (oracle commit sửa lỗi, hoặc oracle bước nếu quy tắc sàn ở mục 2 áp dụng).
+- Build score = weight of passed **traceable** checks / weight of all valid traceable checks.
+- Requirement score = the same over **not traceable** checks.
+- A check that fails at its precondition counts as failed and also counts toward "feature missing"; the feature-missing rate is reported on its own.
+- Task passed = every high and medium severity build check passes, on the oracle H1 currently uses (the fix-commit oracle, or the step oracle if the floor rule of section 2 applies).
 
 ### 9.2 pass^k
 
-Với c lần qua trong k lần chạy một task, ước lượng không chệch của pass^j (j ≤ k) là C(c,j)/C(k,j), trung bình trên các task; báo cáo pass^1 và pass^3 cho từng nhánh, kèm khoảng tin cậy bootstrap.
+With c passes in k runs of a task, the unbiased estimate of pass^j (j ≤ k) is C(c,j)/C(k,j), averaged over tasks; report pass^1 and pass^3 per arm, with bootstrap confidence intervals.
 
-### 9.3 Mức tự động
+### 9.3 Autonomy
 
-Lần chạy benchmark không có người ngồi. Mỗi khi agent hỏi người (câu hỏi, yêu cầu xác nhận, danh sách dừng-và-hỏi), một bộ trả lời cố định đáp: "Không có thêm thông tin; tự quyết theo requirement", trừ khi câu hỏi đưa ra các phương án dự phòng thì chọn phương án đầu tiên. Bộ quy tắc ghi nhãn (một can thiệp =):
+Benchmark runs have no human present. Whenever an agent asks a human (a question, a confirmation request, the stop-and-ask list), a fixed responder answers: "No more information; decide from the requirement", except that when the question offers fallback options it picks the first. Labelling rules (one intervention =):
 
-1. mỗi lần agent dừng để chờ người trả lời;
-2. mỗi lần người phải sửa file, chạy lệnh hay khởi động lại để lần chạy đi tiếp;
-3. một lần chạy bị bỏ dở vì không thể đi tiếp = 3 can thiệp.
+1. each time the agent stops to wait for a human answer;
+2. each time a human must edit a file, run a command or restart for the run to continue;
+3. a run abandoned because it cannot continue = 3 interventions.
 
-Không tính: lời nhắc tự động của harness, yêu cầu quyền đã có trong luật cho phép trước. Baseline lịch sử: transcript các phiên outsourcing, ghi nhãn theo cùng quy tắc, mỗi plan là một task (lệch: đó là người thật, có kiến thức riêng).
+Not counted: the harness's own automatic reminders, permission requests already covered by allow rules. Historical baseline: transcripts of the outsourcing sessions, labelled by the same rules, one plan per task (bias: that was a real human with private knowledge).
 
-## 10. Thống kê
+## 10. Statistics
 
-### 10.1 Số lần chạy và cặp
+### 10.1 Runs and pairing
 
-- k = 3 lần chạy mỗi task mỗi nhánh. Điểm của task trong một nhánh = trung bình k lần.
-- So sánh theo cặp: d_t = điểm H − điểm B trên task t. Khoảng tin cậy 95% cho trung bình d bằng bootstrap theo task (10.000 mẫu, lấy lại task, giữ nguyên k lần của mỗi task), và khoảng t để đối chiếu.
-- Seed: thứ tự chạy các nhánh trên mỗi task được xáo theo hạt giống cố định, để thời điểm chạy không thiên về một nhánh.
+- k = 3 runs per task per arm. A task's score in an arm = the mean of its k runs.
+- Paired comparison: d_t = score of H − score of B on task t. 95% interval for the mean of d by bootstrap over tasks (10,000 resamples, resampling tasks, keeping each task's k runs), with the t interval alongside.
+- Seed: the order of arms on each task is shuffled by a fixed seed, so run time does not favour an arm.
 
-### 10.2 Số task (`bench/power.mjs`)
+### 10.2 Number of tasks (`bench/power.mjs`)
 
-Công thức: N = ((z₀,₉₇₅ + z₀,₈) · σ_d / Δ)², α = 0,05 hai phía, lực 0,8.
+Formula: N = ((z₀.₉₇₅ + z₀.₈) · σ_d / Δ)², α = 0.05 two-sided, power 0.8.
 
-| σ_d \ Δ | 0,10 | 0,15 | 0,20 |
+| σ_d \ Δ | 0.10 | 0.15 | 0.20 |
 |---|---|---|---|
-| 0,15 | 18 | 8 | 5 |
-| 0,20 | 32 | 14 | 8 |
-| 0,25 | 50 | 22 | 13 |
-| 0,30 | 71 | 32 | 18 |
+| 0.15 | 18 | 8 | 5 |
+| 0.20 | 32 | 14 | 8 |
+| 0.25 | 50 | 22 | 13 |
+| 0.30 | 71 | 32 | 18 |
 
-Giả định: Δ = 0,15 (mức chênh đáng kể nhỏ nhất của điểm build), σ_d = 0,25 (chưa có số đo; chọn giữa bảng). Ra N = 22; cộng 2 vì xấp xỉ chuẩn ở N nhỏ, thành **24 task ngoài**, 8 mỗi stack.
+Assumptions: Δ = 0.15 (the smallest build-score difference that matters), σ_d = 0.25 (not yet measured; middle of the table). That gives N = 22; add 2 for the normal approximation at small N: **24 external tasks**, 8 per stack.
 
-Quy tắc chỉnh N (đăng ký trước): lần chạy thử (mục 12, bước 3) đo σ_d trên 4 task. Nếu σ_d đo được > 0,25 thì N tính lại theo bảng, tới mức ngân sách cho phép; quá ngân sách thì đi theo thang cắt (mục 11). N không bao giờ giảm dưới 24 vì σ_d đo được nhỏ. Lần chạy thử không vào phân tích.
+N adjustment rule (pre-registered): the trial run (section 12, step 3) measures σ_d on 4 tasks. If the measured σ_d > 0.25, N is recomputed from the table, up to what the budget allows; beyond the budget, follow the cut ladder (section 11). N never drops below 24 because a measured σ_d is small. The trial run is not analysed.
 
-Số lỗi cho thước canh gác: n = z² p(1−p)/h². Với p = 0,3 và nửa độ rộng h = 0,1 cần **81 lỗi** (10 held-out + 72 lỗi cấy ở task ngoài; 9 lỗi cấy `real-estate` bù phần held-out loại logic hẹp).
+Bugs for the guard measure: n = z² p(1−p)/h². With p = 0.3 and half-width h = 0.1: **81 bugs** (10 held-out + 72 seeded on external tasks; 9 seeded on `real-estate` make up for the narrow logic-kind held-out).
 
-## 11. Chi phí và ngân sách
+## 11. Cost and budget
 
-**Ngân sách cho cây thước: ___ token / ___ giờ** (người dùng điền).
+**Budget for the measuring stick: ___ tokens / ___ hours** (the user fills this in).
 
-Số ước tính, mốc lịch sử: plan 8b của outsourcing tốn khoảng 4,75M token (viết plan với spike 2,97M, build 0,69M, final review 0,50M, đợt sửa 0,14M, hai evaluator 0,46M; review task không được ghi). Chi phí của B và của harness mới chưa đo; lần chạy thử đo chúng trước khi khoá. Token tính cả vào và ra như log tiến độ ghi.
+Estimates; historical mark: outsourcing's plan 8b cost about 4.75M tokens (plan writing with spikes 2.97M, build 0.69M, final reviews 0.50M, fix wave 0.14M, two evaluators 0.46M; task reviews not recorded). The cost of B and of the new harness is not measured yet; the trial run measures both before the lock. Tokens count input and output, as the progress log records them.
 
-| Khoản | Phép tính | Token |
+| Item | Calculation | Tokens |
 |---|---|---|
-| Task ngoài, H và B | 24 task × 3 lần × (1,5M + 0,4M) | 137M |
-| Task ngoài, W | 24 × 3 × 1,0M | 72M |
-| `real-estate`, H và B | 12 task × 3 × (5M + 1,5M) | 234M |
-| Chuẩn bị oracle (viết lại, kiểm định, 2 phân loại, gắn nhãn) | 12 task `real-estate` × 0,55M (đo trên p8b) + 24 task ngoài × 0,3M | 14M |
-| Phép đo lớp (81 lỗi + 10 held-out, review 0,25M + exploratory 0,15M + audit gộp 0,2M mỗi lỗi) | 91 × 0,6M | 55M |
-| Lần chạy thử | 4 task × 2 nhánh × 2M | 16M |
-| **Tổng** |  | **khoảng 528M** |
+| External tasks, H and B | 24 tasks × 3 runs × (1.5M + 0.4M) | 137M |
+| External tasks, W | 24 × 3 × 1.0M | 72M |
+| `real-estate`, H and B | 12 tasks × 3 × (5M + 1.5M) | 234M |
+| Oracle preparation (rewrite, validation, 2 classifications, labelling) | 12 `real-estate` tasks × 0.55M (measured on p8b) + 24 external tasks × 0.3M | 14M |
+| Layer measures (81 seeded + 10 held-out; review 0.25M + exploratory 0.15M + batched audit 0.2M per bug) | 91 × 0.6M | 55M |
+| Trial run | 4 tasks × 2 arms × 2M | 16M |
+| **Total** |  | **about 528M** |
 
-Giờ: build `real-estate` cỡ plan khoảng 5 giờ cho H và 1,5 giờ cho B; task ngoài cỡ PR khoảng 1,5 và 0,5 giờ. Với 4 lần chạy song song: khoảng 60 giờ cho `real-estate`, 45 giờ cho task ngoài (cả W), cộng khoảng 10 giờ cho chấm và phép đo lớp: **khoảng 115 giờ đồng hồ**.
+Hours: a plan-sized `real-estate` build takes about 5 hours for H and 1.5 for B; a PR-sized external task about 1.5 and 0.5. With 4 runs in parallel: about 60 hours for `real-estate`, 45 for external tasks (W included), plus about 10 for grading and layer measures: **about 115 wall-clock hours**.
 
-Thang cắt khi vượt ngân sách, theo thứ tự; mỗi bậc là bỏ một phép so sánh có tên, không bao giờ giảm k hay N của H1–H3:
+Cut ladder when over budget, in order; each step drops one named comparison and never lowers k or N of H1–H3:
 
-1. W chỉ chạy trên 8 task ngoài (3 mỗi stack, tối thiểu 2), không phải 24: tiết kiệm 48M. H4 vẫn phải đạt trên 8 task đó.
-2. `real-estate` chỉ còn 6 task (p6c, p8a, p8b, p8b1, p8c, p8d: có oracle catalog và không cần commit held-out): tiết kiệm 117M. Đây là tập phụ.
-3. Bỏ `real-estate` end-to-end, chỉ giữ replay và lỗi cấy trên nó: tiết kiệm thêm 117M.
-4. Phép đo lớp khám phá chỉ đo exploratory và audit (review giữ nguyên, không ablation, dựa trên hồ sơ 17/20): tiết kiệm khoảng 23M.
-5. Không bao giờ cắt: H và B trên 24 task ngoài với k = 3, kiểm định oracle, H4 tối thiểu, held-out replay. Nếu vẫn quá ngân sách sau bậc 4: dừng và hỏi người dùng.
+1. W runs on 8 external tasks (3 per stack, at least 2), not 24: saves 48M. H4 must still be met on those 8.
+2. `real-estate` down to 6 tasks (p6c, p8a, p8b, p8b1, p8c, p8d: catalog oracle and no held-out commit needed): saves 117M. This is the secondary set.
+3. Drop `real-estate` end to end, keep only replay and seeded bugs on it: saves another 117M.
+4. Discovery-layer measures only for exploratory and audit (review kept as is, no ablation, on its 17/20 record): saves about 23M.
+5. Never cut: H and B on 24 external tasks with k = 3, oracle validation, the minimum H4, the held-out replay. If still over budget after step 4: stop and ask the user.
 
-## 12. Thứ tự chạy và khoá
+## 12. Run order and lock
 
-1. Commit bản này (status `draft`), qua advisor, người dùng duyệt (`stable`).
-2. Dựng `bench/replay`, script chấm oracle, bộ trả lời cố định, môi trường dùng một lần cho mỗi stack. Chạy replay held-out và khoá kết quả.
-3. Lần chạy thử: 2 task `real-estate` (p8b và một task khác) và 2 task ngoài, nhánh H và B, k = 1. Đo token, giờ, σ_d. Không vào phân tích.
-4. Khoá: commit danh sách task cuối, oracle đã kiểm định (bản băm của từng file), N theo quy tắc 10.2, commit plugin cho nhánh H và W, model ID. Từ đây không đổi.
-5. Chạy theo thứ tự đã xáo. Ghi mọi lần chạy, kể cả lần hỏng.
-6. Chấm, phân tích theo đúng mục 9–10, báo cáo mọi lệch khỏi bản này.
+1. Commit this plan (status `draft`), advisor round, user approval (`stable`).
+2. Build `bench/replay`, the oracle grading script, the fixed responder, a throwaway environment per stack. Run the held-out replay and lock its result.
+3. Trial run: 2 `real-estate` tasks (p8b and one other) and 2 external tasks, arms H and B, k = 1. Measure tokens, hours, σ_d. Not analysed.
+4. Lock: commit the final task list, the validated oracle (a hash of each file), N by rule 10.2, the plugin commits for arms H and W, the model IDs. No change from here.
+5. Run in the shuffled order. Record every run, failed ones included.
+6. Grade and analyse exactly per sections 9–10; report every deviation from this plan.
 
-## 13. Ngưỡng nghiệm thu (không do agent hay người dùng quyết)
+## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
-1. H1, H2, H3 đạt ngưỡng ở mục 2 trên task ngoài, sau hiệu chỉnh Holm.
-2. H4 đạt: W bị chấm thấp hơn H.
-3. Chạy lại: một máy khác (hoặc một người khác) chạy lại phần chấm từ các sản phẩm đã lưu và ra cùng điểm từng kiểm tra; chạy lại 3 task ngoài từ đầu và điểm nằm trong khoảng tin cậy của task đó.
-4. Setup nguội: trên một repo chưa thấy ở mỗi stack, setup của H chạy xong, probe và canary của mọi năng lực đều qua, người không sửa gì. Không file nào của plugin đổi giữa các stack (so bản băm).
-5. Chấm mù: hai người chấm không biết đầu ra nào của nhánh nào (tên nhánh, file của plugin và dấu vết harness bị gỡ khỏi diff) chấm mẫu 20 cặp; H được ưa hơn B với cận dưới khoảng tin cậy > 50%.
-6. Sau bàn giao một project thật của người khác: số bug báo về trong 30 ngày, báo cáo kèm số tính năng (chưa có ngưỡng; đây là số theo dõi).
+1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
+2. H4 is met: W scores below H.
+3. Rerun: another machine (or another person) reruns the grading from the stored products and gets the same result for every check; 3 external tasks are rerun from scratch and score inside that task's interval.
+4. Cold setup: on an unseen repo in each stack, H's setup finishes, every capability's probe and canary pass, and no human edits anything. No plugin file changes between stacks (compared by hash).
+5. Blind rating: two raters who cannot tell which arm made which output (arm names, plugin files and harness traces removed from the diff) rate a sample of 20 pairs; H is preferred over B with a confidence lower bound > 50%.
+6. After handing over a real project of another person: the number of bugs reported within 30 days, with the number of features (no threshold yet; tracked).
 
-## 14. Thử trên p8b (`real-estate` plan 8b, listings)
+## 14. Trial on p8b (`real-estate` plan 8b, listings)
 
-Chạy bằng workflow với vai tách biệt: người lọc không thấy commit sửa lỗi; người viết oracle không thấy plan hay input; hai người phân loại không thấy nhau, git hay plan gốc; người kiểm định chạy oracle trên bản sao. Đầu ra ở `.evidence/bench/8b/`.
+Run as a workflow with separated roles: the filter never sees fix commits; the oracle writer never sees the plan or the input; the two classifiers see neither each other, git, nor the original plan; the validator runs the oracle on the copy. Output in `.evidence/bench/8b/`.
 
-Chạy ngày 2026-10-27, 5 agent, khoảng 551k token, 45 phút; phần kiểm định chạy trên bản sao `outsourcing-hstack` (worktree tạm, DB `real_estate_bench8b` tạo mới và đã xoá), không chạm `outsourcing` hay DB `real_estate`.
+Run on 2026-10-27, 5 agents, about 551k tokens, 45 minutes; validation ran on the `outsourcing-hstack` copy (a temporary worktree, the database `real_estate_bench8b` created fresh and dropped after), never touching `outsourcing` or the `real_estate` database.
 
-**Lọc input.** Giữ Goal, 3/5 ý User decisions, 15/15 Global Constraints, 35 feature step (F1 6, F2 7, F3 8, F4 14); bỏ F5 (11 step sửa plan 8a). Bỏ trong phần giữ: 33 con trỏ test, 2 con trỏ lệnh và lớp thủ công, 11 đường dẫn hoặc tên file, 28 định danh nội bộ, 1 tag công cụ, 15 con trỏ plan hoặc task. `bench/input-check.mjs`: plan gốc 4192 lỗi, input đã lọc PASS. Sửa sau khi người lọc làm xong và trước khi người phân loại đọc: bỏ cả mục Known limits (mục 5; ghi trong `filter-log.md`, bản cũ giữ riêng). Còn lại: người đọc chưa đọc lại input (mục 5 yêu cầu).
+**Input filter.** Kept Goal, 3 of 5 User decisions, 15 of 15 Global Constraints, 35 feature steps (F1 6, F2 7, F3 8, F4 14); dropped F5 (11 steps fixing plan 8a). Stripped inside kept text: 33 test pointers, 2 command and manual-class pointers, 11 file paths or names, 28 internal identifiers, 1 tool tag, 15 plan or task pointers. `bench/input-check.mjs`: the original plan has 4192 hits, the filtered input passes. Changed after the filter finished and before any classifier read it: the whole Known limits section dropped (section 5; recorded in `filter-log.md`, the old version kept aside). Still open: the human read of the input (section 5).
 
-**Oracle.** 5 commit sửa lỗi (d82f2b0, dd56b84, eb2b016, 24c426f và 730509b trong task) thêm hoặc đổi 96 test. Giữ 25 test kiểm hành vi của hunk trong phạm vi; bỏ 71 (phần lớn kiểm code task khác viết: survey, email, dashboard, lead). Trong 25 test giữ lại, 5 test không có đường kiểm qua interface công khai (ngày cập nhật không đọc được, dùng lại request nội bộ, kiểu của component), nên còn 20 kiểm tra hộp đen, chỉ dùng trình duyệt và REST công khai. Mức nghiêm trọng của 25 test: cao 2, vừa 8, thấp 15.
+**Oracle.** 5 fix commits (d82f2b0, dd56b84, eb2b016, 24c426f, and 730509b inside the task) add or change 96 tests. 25 kept that check the behaviour of an in-scope hunk; 71 dropped (mostly checking code other tasks wrote: surveys, email, dashboard, leads). Of the 25, 5 have no public path (an unreadable update date, internal request reuse, a component's types), leaving 20 black-box checks that use only the browser and the public REST API. Severity of the 25: high 2, medium 8, low 15.
 
-**Kiểm định (mục 7.1).** Trên 20 kiểm tra: **17 hợp lệ** (qua trên commit sửa, hỏng trên commit cha), **3 yếu** (dd56b84-T3, 24c426f-T4, 24c426f-T5: qua cả hai; đây là kiểm tra canh gác "không đổi cái đang đúng", không phải hồi quy), 0 hỏng. Người kiểm định sửa hai chỗ cơ chế, không làm yếu khẳng định nào: dọn dẹp import chấp nhận 403 (app cố ý cấm xoá import), và đọc màu viền lặp lại cho tới khi chuyển cảnh CSS xong. Sản phẩm cuối thật của plan 8b (730509b) qua 4/20: 730509b-T1 (đã sửa trong task) và 3 kiểm tra yếu; hỏng cả 16 kiểm tra hợp lệ còn lại. Người chưa xác nhận mẫu (mục 7.1).
+**Validation (7.1).** Of the 20 checks: **17 valid** (pass on the fix commit, fail on its parent), **3 weak** (dd56b84-T3, 24c426f-T4, 24c426f-T5: pass on both; they guard "keep what was right", they are not regressions), 0 broken. The validator fixed two mechanics and weakened no assertion: the import clean-up accepts 403 (the app forbids deleting imports by design), and the outline colour read is polled until the CSS transition ends. The real end product of plan 8b (730509b) passes 4 of 20: 730509b-T1 (fixed inside the task) and the 3 weak checks; it fails all 16 other valid checks. The human sample (7.1) is still open.
 
-**Chạy ở commit gốc d1ea76b** (theo góp ý của advisor, sau lần kiểm định): 3 qua (đúng 3 kiểm tra yếu), 17 hỏng. Đọc dòng lỗi đầu (spec chưa có bước tiền điều kiện riêng): 9 hỏng vì tính năng 8b chưa có; **6 hỏng ở khẳng định chính dù tính năng đã có** (24c426f-T1, T2, T3, T6, T7: import đọc ô mã thành số; d82f2b0-T1: trang tài khoản cuộn ngang 60 px), tức bug có từ trước 8b mà quy tắc blame gán cho 8b; 2 chưa rõ (d82f2b0-T4, dd56b84-T2: thẻ có từ trước nhưng 8b dựng lại). Vậy trong 17 kiểm tra hợp lệ, chỉ 9 chắc chắn thuộc 8b, cộng 2 chưa rõ. Đã thêm quy tắc chạy ở commit gốc và nhóm "có từ trước" (mục 7.1).
+**Run at the task base d1ea76b** (on the advisor's advice, after the validation): 3 pass (exactly the 3 weak checks), 17 fail. Read from the first error line (the specs have no separate precondition step yet): 9 fail because the 8b feature does not exist yet; **6 fail on the main assertion although the feature exists** (24c426f-T1, T2, T3, T6, T7: the import reads a code cell as a number; d82f2b0-T1: the account page scrolls 60 px sideways), i.e. bugs older than 8b that the blame rule gave to 8b; 2 are unclear (d82f2b0-T4, dd56b84-T2: the card existed but 8b rebuilt it). So of the 17 valid checks, only 9 surely belong to 8b, plus 2 unclear. The task-base rule and the "pre-existing" bucket were added (7.1).
 
-**Phân loại (mục 6.3), hai agent độc lập.** Agent 1: lần ngược 1, một phần 2, không lần ngược 22. Agent 2: 0, 3, 22. Đồng ý 22/25 (88%), κ = 0,44, Gwet AC1 = 0,87. Ba bất đồng (730509b-T1, dd56b84-T3, 24c426f-T6) chờ người phân xử.
+**Classification (6.3), two independent agents.** Agent 1: traceable 1, partly 2, not traceable 22. Agent 2: 0, 3, 22. Agreement 22/25 (88%), κ = 0.44, Gwet AC1 = 0.87. Three disagreements (730509b-T1, dd56b84-T3, 24c426f-T6) await a human.
 
-**Điều rút ra, đã sửa vào bản này.** Bảng interface, nhánh AC1 của ngưỡng đồng thuận, quy tắc chạy ở commit gốc và quy tắc sàn của H1 đều được thêm **sau khi** đã thấy kết quả p8b. Vì vậy phân loại p8b chỉ là thử nghiệm để sửa quy tắc, không phải lần chạy xác nhận; nó phải chạy lại với quy tắc mới trước khi khoá.
+**Lessons, already applied to this plan.** The interface sheet, the AC1 branch of the agreement threshold, the task-base rule and the H1 floor rule were all added **after** seeing the p8b results. So the p8b classification is a rule-tuning trial, not a confirmatory run; it must be rerun under the new rules before the lock.
 
-1. Trên p8b, gần như mọi bug mà các commit sửa lỗi bắt được nằm ở mép input không nói tới: oracle của task này chủ yếu chấm bước requirement (22/25), gần như không chấm bước build. Khớp với kết luận cũ "test chỉ chốt những gì spec có nói".
-2. Một phần lý do "không lần ngược được" là tên công khai, không phải hành vi: cả hai agent nêu tên truy cập của form "Lọc bất động sản" và chữ option "Biệt thự" không có trong input. Đã thêm bảng interface (mục 5) và quy tắc phân loại chỉ xét hành vi (mục 6.3).
-3. κ không dùng được khi một nhãn chiếm 88%: đã thêm nhánh đồng ý thô + AC1 vào ngưỡng (mục 7.2).
-4. Quy tắc blame gán nhầm 6/17 kiểm tra hợp lệ cho 8b. Đã thêm quy tắc chạy ở commit gốc (mục 7.1).
-5. Với 0–1 kiểm tra lần ngược được mỗi task, điểm build gần như nhị phân và phép tính N ở mục 10.2 không mô tả nó. Đã thêm quy tắc sàn cho H1 (mục 2).
-6. Kiểm tra yếu là loại có thật (canh gác cái đang đúng). Chúng bị loại khỏi điểm như mục 7.1 quy định; không đổi quy tắc.
-7. Chi phí chuẩn bị oracle cho một task cỡ plan: khoảng 0,55M token và 45 phút, hơn mức 0,3M ở mục 11. Mục 11 dùng 0,55M cho task `real-estate`.
+1. On p8b nearly every bug the fix commits caught sits at an edge the input does not state: this task's oracle scores mostly the requirement step (22/25) and hardly the build step. This matches the old finding "tests only pin what the spec states".
+2. Part of "not traceable" is public names, not behaviour: both agents note that the form's accessible name "Lọc bất động sản" and the option text "Biệt thự" are not in the input. The interface sheet (section 5) and the behaviour-only classification rule (6.3) were added.
+3. κ is not usable when one label covers 88%: the raw-agreement + AC1 branch was added to the threshold (7.2).
+4. The blame rule gave 6 of 17 valid checks to 8b wrongly. The task-base rule was added (7.1).
+5. With 0–1 traceable checks per task, the build score is nearly binary and the N calculation of 10.2 does not describe it. The H1 floor rule was added (section 2).
+6. Weak checks are a real kind (guarding what was right). They are out of the score as 7.1 says; no rule change.
+7. Oracle preparation for a plan-sized task: about 0.55M tokens and 45 minutes, more than the 0.3M of section 11. Section 11 uses 0.55M for `real-estate` tasks.
 
-**Chưa làm trên p8b:** bước tiền điều kiện tường minh trong spec; bảng interface và phân loại lại; một người đọc 2 kiểm tra chưa rõ; người phân xử 3 bất đồng; người đọc lại input và xác nhận mẫu oracle; một lần build thật của nhánh H hay B (thuộc lần chạy thử, mục 12 bước 3).
+**Not done on p8b:** explicit precondition steps in the specs; the interface sheet and the reclassification; a human read of the 2 unclear checks; human settling of the 3 disagreements; the human read of the input and the oracle sample; a real build of arm H or B (part of the trial run, section 12 step 3).
 
-## 15. Giới hạn đã biết
+## 15. Known limits
 
-- Ước tính token và giờ ở mục 11 chưa đo; lần chạy thử thay chúng bằng số đo trước khi khoá.
-- Quy tắc blame bỏ sót bug do thiếu code ở chỗ task không viết dòng nào gần đó, và có thể gán sai khi một hunk sửa dòng của nhiều task.
-- Bộ trả lời cố định làm mức tự động của H và B so được với nhau, nhưng không đo được chất lượng câu hỏi của agent.
-- Oracle `real-estate` là chính những bug harness cũ để lọt, nên nó thiên về loại mép harness cũ hay bỏ sót. Không dùng nó để so harness cũ với harness mới; H và B đều build mới nên vẫn so được, nhưng chỉ task ngoài dùng để nghiệm thu.
-- `real-estate` có một stack và chỉ greenfield theo nghĩa cả repo do harness cũ dựng; task ngoài mới kiểm tra được tính tổng quát.
+- The token and hour estimates of section 11 are not measured; the trial run replaces them with measurements before the lock.
+- The blame rule misses bugs of missing code where the task wrote no nearby line, and can misattribute when a hunk changes lines of several tasks.
+- The fixed responder makes H's and B's autonomy comparable, but cannot measure the quality of an agent's questions.
+- The `real-estate` oracle is exactly the bugs the old harness let through, so it leans toward the kinds of edge the old harness missed. Do not use it to compare the old harness with the new one; H and B both build fresh, so they remain comparable, but only external tasks count for acceptance.
+- `real-estate` is one stack and greenfield only, in the sense that the old harness built the whole repo; only external tasks test generality.
