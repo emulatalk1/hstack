@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from 'bun:test'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { excludedTitles, caught } from '../bench/lib/replay.mjs'
@@ -139,8 +139,9 @@ const bug = (id, extra = {}) => {
   return f
 }
 const port = (() => { const l = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } }); const p = l.port; l.stop(true); return p })()
-// the layer prints a secret to both streams, then writes one failing case named by $1 when the bug is present
-const layer = (failing) => `echo SECRET-OUT; echo SECRET-ERR >&2; { echo '<testsuite>'; if grep -q buggy src/a.txt; then echo '<testcase name="suite > ${failing}"><failure message="boom"/></testcase>'; fi; echo '</testsuite>'; } > "$BENCH_JUNIT"; echo "excluded: $(cat "$BENCH_EXCLUDE")" >&2`
+// the layer prints a secret to both streams, then writes a passing case, one failing case named by failing when the bug
+// is present, and one named by always in every run (a test broken without the bug); each run adds a line to runs
+const layer = (failing, always = '', runs = '/dev/null') => `echo SECRET-OUT; echo SECRET-ERR >&2; echo run >> ${runs}; { echo '<testsuite><testcase name="suite > steady"/>'; if grep -q buggy src/a.txt; then echo '<testcase name="suite > ${failing}"><failure message="boom"/></testcase>'; fi; ${always ? `echo '<testcase name="suite > ${always}"><failure message="flaky"/></testcase>';` : ''} echo '</testsuite>'; } > "$BENCH_JUNIT"; echo "excluded: $(cat "$BENCH_EXCLUDE")" >&2`
 const mkTask = (layers, extra = {}) => {
   const f = join(tmp, `task-${rand()}.json`)
   writeFileSync(f, JSON.stringify({
@@ -225,6 +226,39 @@ test('a run with no non-skip case is an error, not a miss', async () => {
 test('replay starts no app: a start that would fail does not stop the layer', async () => {
   const r = await cli([mkTask({ unit: layer('older check') }, { start: 'exit 1' }), bug('b13'), 'unit', '--sealed'])
   expect(r).toMatchObject({ stdout: 'b13 caught\n', code: 0 })
+})
+test('the baseline runs once per task, at and layer, without the bug and quiet when sealed; a case failing there is no catch', async () => {
+  const runs = join(tmp, `runs-${rand()}`), t = mkTask({ unit: layer('new check', 'broken before', runs) })
+  const name = JSON.parse(readFileSync(t, 'utf8')).name, base = join(tmp, 'results', `baseline-${name}-${fix.slice(0, 7)}-unit.xml`)
+  const r = await cli([t, bug('b20'), 'unit', '--sealed'])
+  expect(r).toMatchObject({ stdout: 'b20 missed\n', stderr: '', code: 0 })
+  expect(readFileSync(base, 'utf8')).toContain('broken before')
+  expect(readFileSync(base, 'utf8')).not.toContain('new check') // run without the bug
+  const dev = await cli([t, bug('b21'), 'unit'])
+  expect(dev.stdout).toBe('FAIL suite > new check (excluded)\nFAIL suite > broken before (fails at baseline)\nb21 missed\n')
+  expect(dev.stderr).toContain(`baseline ${base}: 1 failing`)
+  expect(readFileSync(runs, 'utf8')).toBe('run\nrun\nrun\n') // one baseline, two bug runs
+  expect((await cli([mkTask({ unit: layer('older check', 'broken before') }), bug('b22'), 'unit', '--sealed'])).stdout).toBe('b22 caught\n')
+})
+test('a baseline with no results is "<id> error", runs no bug run and is not kept', async () => {
+  const runs = join(tmp, `runs-${rand()}`)
+  const onlyBuggy = `echo run >> ${runs}; if grep -q buggy src/a.txt; then echo '<testsuite><testcase name="x"/></testsuite>' > "$BENCH_JUNIT"; fi`
+  const t = mkTask({ unit: onlyBuggy })
+  expect(await cli([t, bug('b23'), 'unit', '--sealed'])).toMatchObject({ stdout: 'b23 error\n', stderr: '', code: 1 })
+  expect(readFileSync(runs, 'utf8')).toBe('run\n')
+  expect(existsSync(join(tmp, 'results', `baseline-${JSON.parse(readFileSync(t, 'utf8')).name}-${fix.slice(0, 7)}-unit.xml`))).toBe(false)
+})
+test('a test added after the fix, before at, is excluded too, and a title of holes only is dropped and reported', async () => {
+  writeFileSync(join(repo, 'tests/later.test.js'), "it('later check', () => {})\nit.each(['a'])('%s', () => {})\n")
+  git('add', '.'); git('commit', '-qm', 'a later test')
+  const later = git('rev-parse', 'HEAD')
+  const r = await cli([mkTask({ unit: layer('later check') }), bug('b24', { at: later }), 'unit'])
+  expect(r.stdout).toBe('FAIL suite > later check (excluded)\nb24 missed\n')
+  expect(r.stderr).toContain('excluded title dropped (no literal text, it would match every case): %s')
+  expect(r.stderr).toMatch(/excluded: new check\n(.+\n)*later check\n/) // the fix's test and the later one reach the layer
+  expect(r.stderr.split('\n')).not.toContain('%s') // the dropped title does not
+  const sealed = await cli([mkTask({ unit: layer('older check') }), bug('b25', { at: later }), 'unit', '--sealed'])
+  expect(sealed).toMatchObject({ stdout: 'b25 caught\n', stderr: '' })
 })
 test('a merge commit as the fix is refused', async () => {
   const main = git('rev-parse', '--abbrev-ref', 'HEAD')

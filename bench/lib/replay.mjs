@@ -1,4 +1,4 @@
-// Which tests did a fix add or change, and does a failing case count as a catch. Pure; the CLI feeds it git output.
+// Which tests were added or changed from a fix on, and does a failing case count as a catch. Pure; the CLI feeds it git output.
 export const isTestPath = (p) => /(^|\/)(tests?|__tests__|spec)\//.test(p) || /\.(spec|test)\./.test(p)
 
 export function excludedTitles(diff, postFix, testTitle) {
@@ -74,4 +74,10 @@ const titlePattern = (t) => {
 export const holeOnly = (t) => !t.replace(HOLE, '').trim()
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-export const caught = (cases, excluded) => cases.some((c) => c.status === 'fail' && !isExcluded(c.name, excluded))
+export const failingNames = (cases) => new Set(cases.filter((c) => c.status === 'fail').map((c) => c.name.trim()))
+// why a failing case is no catch: 'excluded' (a test added or changed from the fix on), 'baseline' (it fails without the bug too), or null
+export const notCounted = (name, excluded, baseFails) => (isExcluded(name, excluded) ? 'excluded' : baseFails.has(name.trim()) ? 'baseline' : null)
+export const caught = (cases, excluded, baseline = []) => {
+  const b = failingNames(baseline)
+  return cases.some((c) => c.status === 'fail' && !notCounted(c.name, excluded, b))
+}

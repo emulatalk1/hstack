@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
-// Replay a bug against a test layer: reintroduce it in a worktree, run the layer, and count only failures the fix's own tests did not cause.
-import { dirname, resolve } from 'node:path'
+// Replay a bug against a test layer: run the layer at `at` once without the bug (the baseline, kept and reused), then
+// with the bug reintroduced, and count only failures that neither a test added or changed from the fix on nor the baseline explains.
+import { existsSync, mkdirSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { ROOT, withEnv } from './env.mjs'
 import { checkJunitPath, resolveCommit, runForJunit } from './grade.mjs'
-import { caught, excludedTitles, isExcluded, isTestPath } from './lib/replay.mjs'
+import { readJunit } from './lib/junit.mjs'
+import { caught, excludedTitles, failingNames, holeOnly, isTestPath, notCounted } from './lib/replay.mjs'
 import { loadTask } from './lib/task.mjs'
 
 const USAGE = 'usage: bun bench/replay.mjs <task.json> <bug.json> <layer> [--sealed]'
@@ -52,24 +55,45 @@ export async function replay(args, { root = ROOT } = {}) {
   const merge = await git(task.repo, 'rev-parse', '-q', '--verify', `${fix}^2`).then(() => true, () => false)
   if (merge) throw new Error(`fix ${fix} is a merge commit; give the commit that made the change`)
 
-  // the fix's diff and the post-fix test files, read before any env starts
-  const diff = await git(task.repo, 'show', '--format=', fix)
-  const postFix = new Map()
-  for (const path of (await git(task.repo, 'show', '--format=', '--name-only', '-z', fix)).split('\0').filter(isTestPath))
-    try { postFix.set(path, await git(task.repo, 'show', `${fix}:${path}`)) } catch {} // deleted by the fix
-  const excluded = excludedTitles(diff, postFix, task.testTitle)
+  // spec 8.1: a catch counts only if its assertion existed before the fix, so the tests added or changed anywhere from the
+  // fix's parent to `at` are out (read at `at`, before any env starts)
+  const diff = await git(task.repo, 'diff', '--no-ext-diff', '--no-color', `${fix}^`, at)
+  const post = new Map()
+  for (const path of (await git(task.repo, 'diff', '--name-only', '-z', `${fix}^`, at)).split('\0').filter(isTestPath))
+    try { post.set(path, await git(task.repo, 'show', `${at}:${path}`)) } catch {} // deleted by at
+  const titles = excludedTitles(diff, post, task.testTitle), excluded = titles.filter((t) => !holeOnly(t))
+  if (!sealed) for (const t of titles.filter(holeOnly)) console.error(`excluded title dropped (no literal text, it would match every case): ${t}`)
 
-  const { cases } = await withEnv(task, at, `replay-${bug.id}`, async (e) => {
+  // sealed: the layer's own output would show the bug; a layer starts the app itself if it needs one
+  const runLayer = (label, titleList, before) => withEnv(task, at, label, async (e) => {
     const file = `${e.dir}/.bench-exclude`
-    await Bun.write(file, excluded.map((t) => t + '\n').join(''))
-    // sealed: the layer's own output would show the bug
+    await Bun.write(file, titleList.map((t) => t + '\n').join(''))
     return runForJunit(task, e, cmd, { BENCH_EXCLUDE: file }, sealed ? 'ignore' : 2)
-  }, { root, quiet: sealed, before: reverseApply(bug, sealed), start: false }) // a layer starts the app itself if it needs one
-
+  }, { root, quiet: sealed, before, start: false })
   // zero non-skip cases means the layer ran nothing (a wrong project filter), which must not read as a miss
-  if (!cases || !cases.some((c) => c.status !== 'skip')) { console.log(`${bug.id} error`); return 1 }
-  if (!sealed) for (const c of cases) if (c.status === 'fail') console.log(`FAIL ${c.name}${isExcluded(c.name, excluded) ? ' (excluded)' : ''}`)
-  console.log(`${bug.id} ${caught(cases, excluded) ? 'caught' : 'missed'}`)
+  const ran = (cases) => cases?.some((c) => c.status !== 'skip')
+
+  // the baseline serves every bug at this (task, at, layer), so it runs with an empty exclude list; only a good one is kept
+  const results = join(dirname(resolve(process.env.HSTACK_BENCH_MACHINE)), 'results')
+  const baseFile = join(results, `baseline-${task.name}-${at.slice(0, 7)}-${layer}.xml`)
+  let baseline
+  if (existsSync(baseFile)) baseline = readJunit(await Bun.file(baseFile).text())
+  else {
+    const r = await runLayer(`baseline-${at.slice(0, 7)}-${layer}`, [])
+    baseline = r.cases
+    if (ran(baseline)) { mkdirSync(results, { recursive: true }); await Bun.write(baseFile, r.xml) }
+  }
+  if (!ran(baseline)) { console.log(`${bug.id} error`); return 1 }
+  const baseFails = failingNames(baseline)
+  if (!sealed) console.error(`baseline ${baseFile}: ${baseFails.size} failing`)
+
+  const { cases } = await runLayer(`replay-${bug.id}`, excluded, reverseApply(bug, sealed))
+  if (!ran(cases)) { console.log(`${bug.id} error`); return 1 }
+  if (!sealed) for (const c of cases) if (c.status === 'fail') {
+    const why = notCounted(c.name, excluded, baseFails)
+    console.log(`FAIL ${c.name}${why === 'excluded' ? ' (excluded)' : why ? ' (fails at baseline)' : ''}`)
+  }
+  console.log(`${bug.id} ${caught(cases, excluded, baseline) ? 'caught' : 'missed'}`)
   return 0
 }
 

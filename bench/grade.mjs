@@ -23,7 +23,7 @@ export async function runForJunit(task, { dir, junitPath, env }, cmd, extraEnv =
   // the exit code does not matter: failing tests exit non-zero
   const { code } = await runGroup(['sh', '-c', cmd], { cwd: dir, env: { ...env, ...extraEnv }, stdout: stdio, stderr: stdio, timeoutSec: task.timeoutSec })
   if (code === 'timeout') return { cases: null, junit: 'timeout' } // whatever file it left is partial
-  try { return { cases: readJunit(await Bun.file(junitPath).text()), junit: 'ok' } } catch { return { cases: null, junit: 'missing' } }
+  try { const xml = await Bun.file(junitPath).text(); return { cases: readJunit(xml), junit: 'ok', xml } } catch { return { cases: null, junit: 'missing' } }
 }
 
 // the JUnit file must live inside the worktree: it is deleted before the run and the worktree is removed after
