@@ -2,6 +2,7 @@
 
 ## 2026-10-27
 
+* **Approve**: the built [benchmark tools plan](/plans/2026-10-27-bench-tools.md) (status `stable`). The build departs from the task text where the pre-registration or the evidence required it (precondition marker, replay exclusion over the fix to the replay commit, a baseline run, two known-bad versions, intervention count, no `.git` for replay agents, a fresh repo per arm run); every ruling is in the progress log.
 * **Update**: Checked the benchmark tools against the p8b pilot (task 8 of the [benchmark tools plan](/plans/2026-10-27-bench-tools.md)): the five oracle validations, now with a `PRECONDITION:` step per check, give the pilot's 17 non-weak and 3 weak checks, and at the task base 8 checks of older behaviour and 9 of features the task added. Added `bench/README.md`. Replay now starts no app of its own and excludes only the fix's own row of a table test.
 * **Creation**: Added the [benchmark tools plan](/plans/2026-10-27-bench-tools.md) (draft), step 2 of the pre-registration.
 * **Approve**: the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (status `stable`), with the order "whole measuring stick first, then the plugin". 

@@ -2,8 +2,10 @@
 type: plan
 title: "Benchmark tools plan"
 description: "Step 2 of the benchmark pre-registration: the throwaway environment, the oracle grader, the bug replay for test and agent layers, and the arm runner with its fixed responder, all stack-agnostic, with stack details in task files."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.310, at: "2026-10-27T10:55:00+07:00" }
+verified:
+  - { by: human:emulatalk1, at: "2026-10-27T15:44:34+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
