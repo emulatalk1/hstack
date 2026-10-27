@@ -1,8 +1,8 @@
 import { test, expect, afterAll } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { results, score, verdict, checksFrom, fixMatches } from '../bench/lib/score.mjs'
+import { results, score, verdict, checksFrom, fixMatches, unscored } from '../bench/lib/score.mjs'
 import { grade } from '../bench/grade.mjs'
 import { clean } from '../bench/env.mjs'
 
@@ -42,6 +42,22 @@ test('a precondition failure at the base is not pre-existing', () => {
   expect(verdict({ ref: 'pass', bad: 'error' })).toBe('broken')
 })
 
+test('with several known-bad versions a check is weak if it passes on any, broken if any is neither pass nor fail', () => {
+  expect(verdict({ ref: 'pass', bad: ['fail', 'fail'], base: 'pass' })).toBe('valid')
+  expect(verdict({ ref: 'pass', bad: ['fail', 'pass'] })).toBe('weak')
+  expect(verdict({ ref: 'pass', bad: ['precondition', 'pass'] })).toBe('weak')
+  expect(verdict({ ref: 'pass', bad: ['fail', 'precondition'] })).toBe('broken')
+  expect(verdict({ ref: 'pass', bad: ['fail', 'error'], base: 'pass' })).toBe('broken')
+  expect(verdict({ ref: 'pass', bad: ['fail', 'fail'], base: 'fail' })).toBe('pre-existing')
+})
+
+test('unscored lists each check of this oracle that a validation found weak, broken or pre-existing, once', () => {
+  const v = [{ checks: [{ id: 'a-T1', verdict: 'weak' }, { id: 'a-T2', verdict: 'valid' }, { id: 'a-T3', verdict: 'absent-at-base' }] },
+    { checks: [{ id: 'b-T1', verdict: 'pre-existing' }, { id: 'b-T2', verdict: 'broken' }, { id: 'a-T1', verdict: 'broken' }, { id: 'gone-T1', verdict: 'weak' }] }]
+  expect(unscored(v, ['a-T1', 'a-T2', 'a-T3', 'b-T1', 'b-T2'])).toEqual([{ id: 'a-T1', verdict: 'weak' }, { id: 'b-T1', verdict: 'pre-existing' }, { id: 'b-T2', verdict: 'broken' }])
+  expect(unscored([], ['a-T1'])).toEqual([])
+})
+
 test('checksFrom drops dropped and interface none, maps partly to requirement, lists the unlabelled', () => {
   const m = [{ id: 'a-T1', severity: 'high', interface: 'browser' }, { id: 'b-T1', severity: 'low', interface: 'api', dropped: true },
     { id: 'c-T1', severity: 'low', interface: 'none' }, { id: 'd-T1', severity: 'medium' }, { id: 'e-T1', severity: 'low', interface: 'api' }]
@@ -76,6 +92,9 @@ writeFileSync(join(repo, 'page.txt'), 'v1')
 git('add', '.'); git('commit', '-qm', 'one')
 const c1 = git('rev-parse', 'HEAD')
 const c7 = c1.slice(0, 7)
+git('checkout', '-q', '-b', 'side'); writeFileSync(join(repo, 'page.txt'), 'v2'); git('commit', '-qam', 'two')
+const c2 = git('rev-parse', 'HEAD')
+git('checkout', '-q', '-')
 
 const freePort = () => { const l = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } }); const p = l.port; l.stop(true); return p }
 const port = freePort()
@@ -83,6 +102,8 @@ const xml = `<testsuites><testsuite name="s"><testcase name="${c7}-T1 ok"/><test
 const oracleDir = join(tmp, 'ev', 'oracle')
 mkdirSync(oracleDir, { recursive: true })
 writeFileSync(join(oracleDir, 'xml.txt'), xml)
+// at c2 both checks fail plainly
+writeFileSync(join(oracleDir, 'xml2.txt'), `<testsuite><testcase name="${c7}-T1 ok"><failure message="no"/></testcase><testcase name="${c7}-T2 no form"><failure message="no"/></testcase></testsuite>`)
 writeFileSync(join(oracleDir, 'manifest.json'), JSON.stringify([
   { id: `${c7}-T1`, fix_commit: c7, severity: 'high', interface: 'browser' },
   { id: `${c7}-T2`, fix_commit: c7, severity: 'low', interface: 'browser' },
@@ -101,7 +122,9 @@ const mkTask = (oracle, timeoutSec = 20) => {
 writeFileSync(join(tmp, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
 const prevMachine = process.env.HSTACK_BENCH_MACHINE
 process.env.HSTACK_BENCH_MACHINE = join(tmp, 'machine.json')
-const quiet = async (fn) => { const log = console.log; const out = []; console.log = (s) => out.push(s); try { await fn() } finally { console.log = log } return out }
+const quiet = async (fn) => { const log = console.log; const out = []; console.log = (s) => out.push(s); try { out.code = await fn() } finally { console.log = log } return out }
+const noValidations = () => { for (const f of readdirSync(join(tmp, 'ev'))) if (f.startsWith('validation-')) rmSync(join(tmp, 'ev', f)) }
+const byPage = 'if grep -q v2 page.txt; then cp "$BENCH_ORACLE/xml2.txt" "$BENCH_JUNIT"; else cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"; fi'
 
 afterAll(async () => {
   if (prevMachine === undefined) delete process.env.HSTACK_BENCH_MACHINE
@@ -114,8 +137,9 @@ test('grade writes per-check results, buckets and the score; the oracle sees BEN
   const task = mkTask('cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"; test -f "$BENCH_ORACLE/manifest.json"; exit 1')
   const out = await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))
   const g = await Bun.file(join(tmp, 'ev', 'grades', `${c7}.json`)).json()
-  expect(out.length).toBe(1)
-  expect(g).toMatchObject({ commit: c1, junit: 'ok', unlabelled: ['zzzzzzz-T1'], score: { build: 1, requirement: 0, featureMissing: 0.5, scored: 2 } })
+  expect(out).toEqual([`${c7} junit=ok pass=1 fail=0 precondition=1 error=1 excluded=0 build=1 requirement=0 featureMissing=0.5`])
+  expect(out.code).toBe(0)
+  expect(g).toMatchObject({ commit: c1, junit: 'ok', excluded: [], unlabelled: ['zzzzzzz-T1'], score: { build: 1, requirement: 0, featureMissing: 0.5, scored: 2 } })
   expect(g.checks).toEqual([
     { id: `${c7}-T1`, bucket: 'build', severity: 'high', result: 'pass' },
     { id: `${c7}-T2`, bucket: 'requirement', severity: 'low', result: 'precondition' },
@@ -123,9 +147,11 @@ test('grade writes per-check results, buckets and the score; the oracle sees BEN
   ])
 })
 
-test('a missing JUnit file grades every check an error, never a pass', async () => {
+test('a missing JUnit file grades every check an error, never a pass, and grade --at says so and exits non-zero', async () => {
   const task = mkTask('true')
-  await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))
+  const out = await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))
+  expect(out.code).toBe(1)
+  expect(out[0]).toStartWith(`${c7} junit=missing `)
   const g = await Bun.file(join(tmp, 'ev', 'grades', `${c7}.json`)).json()
   expect(g.junit).toBe('missing')
   expect(g.checks.map((c) => c.result)).toEqual(['error', 'error', 'error'])
@@ -141,7 +167,7 @@ test('an oracle killed on timeout counts as missing even if it left a file', asy
 
 test('--validate refuses to write when a run had no results, and keeps the grade files', async () => {
   rmSync(join(tmp, 'ev', `validation-${c7}.json`), { force: true })
-  await expect(grade([mkTask('true'), oracleDir, '--validate', c1, c1], { root: sub })).rejects.toThrow(new RegExp(`no results for ${c1}.*grades/${c7}.json`))
+  await expect(quiet(() => grade([mkTask('true'), oracleDir, '--validate', c1, c1], { root: sub }))).rejects.toThrow(new RegExp(`no results for ${c1}.*grades/${c7}.json`))
   expect(existsSync(join(tmp, 'ev', `validation-${c7}.json`))).toBe(false)
   expect((await Bun.file(join(tmp, 'ev', 'grades', `${c7}.json`)).json()).junit).toBe('missing')
 })
@@ -172,8 +198,39 @@ test('--validate judges only the checks of the ref and writes validation-<ref7>.
   const task = mkTask('cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"')
   await quiet(() => grade([task, oracleDir, '--validate', c1, c1], { root: sub }))
   const v = await Bun.file(join(tmp, 'ev', `validation-${c7}.json`)).json()
-  expect(v).toMatchObject({ ref: c1, bad: c1, base: null })
+  expect(v).toMatchObject({ ref: c1, bad: [c1], base: null })
   expect(v.checks.map((c) => c.id)).toEqual([`${c7}-T1`, `${c7}-T2`])
   expect(v.checks.map((c) => c.verdict)).toEqual(['weak', 'broken'])
   expect(existsSync(join(tmp, 'ev', 'grades', `${c7}.json`))).toBe(true)
+  noValidations()
+})
+
+test('--validate takes --bad more than once: weak when the check passes on any bad, and the file records every bad', async () => {
+  noValidations()
+  const task = mkTask(byPage), file = join(tmp, 'ev', `validation-${c7}.json`)
+  await quiet(() => grade([task, oracleDir, '--validate', c1, '--bad', c2], { root: sub }))
+  expect((await Bun.file(file).json()).checks[0]).toEqual({ id: `${c7}-T1`, ref: 'pass', bad: ['fail'], base: null, verdict: 'valid' })
+  await quiet(() => grade([task, oracleDir, '--validate', c1, '--bad', c2, '--bad', c1, '--base', c2], { root: sub }))
+  const v = await Bun.file(file).json()
+  expect(v).toMatchObject({ ref: c1, bad: [c2, c1], base: c2 })
+  expect(v.checks[0]).toEqual({ id: `${c7}-T1`, ref: 'pass', bad: ['fail', 'pass'], base: 'fail', verdict: 'weak' })
+  await quiet(() => grade([task, oracleDir, '--validate', c1, c2], { root: sub })) // the old positional form
+  expect(await Bun.file(file).json()).toMatchObject({ bad: [c2], checks: [{ verdict: 'valid' }, { verdict: 'broken' }] })
+  for (const args of [['--validate', c1], ['--validate', c1, '--bad'], ['--at', c1, '--bad', c2], ['--validate', c1, c2, c2], ['--at', c1, '--validate', c1, c2]])
+    await expect(grade([task, oracleDir, ...args], { root: sub })).rejects.toThrow('usage')
+  noValidations()
+}, 30000)
+
+test('grade leaves weak, broken and pre-existing checks out of the score and lists them, keeping their results', async () => {
+  noValidations()
+  writeFileSync(join(tmp, 'ev', 'validation-aaaaaaa.json'), JSON.stringify({ checks: [{ id: `${c7}-T2`, verdict: 'pre-existing' }, { id: `${c7}-T1`, verdict: 'valid' }] }))
+  const out = await quiet(() => grade([mkTask('cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"'), oracleDir, '--at', c1], { root: sub }))
+  expect(out[0]).toContain(' excluded=1 ')
+  const g = await Bun.file(join(tmp, 'ev', 'grades', `${c7}.json`)).json()
+  expect(g.excluded).toEqual([{ id: `${c7}-T2`, verdict: 'pre-existing' }])
+  expect(g.checks.find((c) => c.id === `${c7}-T2`).result).toBe('precondition')
+  expect(g.score).toEqual({ build: 1, requirement: null, featureMissing: 0, scored: 1 })
+  writeFileSync(join(tmp, 'ev', 'validation-bbbbbbb.json'), '{ not json')
+  await expect(grade([mkTask('true'), oracleDir, '--at', c1], { root: sub })).rejects.toThrow('validation-bbbbbbb.json is not valid JSON')
+  noValidations()
 })

@@ -30,14 +30,25 @@ export function score(checks, res) {
   return { build: share('build'), requirement: share('requirement'), featureMissing: scored.length ? missing / scored.length : 0, scored: scored.length }
 }
 
+// bad: the result on one known-bad version, or a list of them (the fix's parent and the task's end product)
 export function verdict({ ref, bad, base }) {
+  const bads = [].concat(bad)
   if (ref !== 'pass') return 'broken'
-  if (bad === 'pass') return 'weak'
-  if (bad !== 'fail') return 'broken'
+  if (bads.includes('pass')) return 'weak'
+  if (bads.some((b) => b !== 'fail')) return 'broken'
   if (base === 'fail') return 'pre-existing'
   if (base === 'precondition') return 'absent-at-base'
   if (base === 'error') return 'broken' // the base run could not be validated
   return 'valid'
+}
+
+// spec 7.1: a weak, broken or pre-existing check counts in no score; validations: the parsed validation-*.json files
+const UNSCORED = ['weak', 'broken', 'pre-existing']
+export function unscored(validations, ids) {
+  const out = []
+  for (const v of validations) for (const c of v.checks ?? [])
+    if (ids.includes(c.id) && UNSCORED.includes(c.verdict) && !out.some((e) => e.id === c.id)) out.push({ id: c.id, verdict: c.verdict })
+  return out
 }
 
 // manifest entries without `dropped` and with an interface other than 'none' are the checks; labels: { id: bucket }

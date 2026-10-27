@@ -32,13 +32,15 @@ Bun scripts for the measuring stick: run a task's product in a throwaway worktre
 bun bench/env.mjs up <task.json> <commit>          # the app at a commit until Ctrl-C
 bun bench/env.mjs clean                            # remove everything under /tmp/hstack-bench
 bun bench/grade.mjs <task.json> <oracle dir> --at <commit>
-bun bench/grade.mjs <task.json> <oracle dir> --validate <ref> <bad> [--base <commit>]
+bun bench/grade.mjs <task.json> <oracle dir> --validate <ref> --bad <commit> [--bad <commit> ...] [--base <commit>]
 bun bench/replay.mjs <task.json> <bug.json> <unit|int|e2e> [--sealed]        # starts no app; the layer does
 bun bench/agent-replay.mjs <task.json> <bug.json> <review|audit|evaluator> [--sealed]
 bun bench/run-arm.mjs <task.json> <B|B-|H|W> <run-no> --input <data>/<task>/input.md --at <base>
 ```
 
-Verdicts of `--validate`, in this order: `broken` (ref not pass), `weak` (bad passes), `broken` (bad neither pass nor fail), `pre-existing` (base fails), `absent-at-base` (base precondition), `broken` (base error: the base run gave no result), `valid` (base passes, or no base). Sealed mode prints only `<id> caught|missed|error`. `bug.json` is `{ id, at, patch, fix }`, `patch` relative to it and in the fix's direction (replay applies it with `-R`); agent-replay adds `task` (the task that introduced the bug) and, for review and audit, that task's `base` and `end`.
+`grade --at` prints `<sha7> junit=<ok|missing|timeout> pass=… excluded=… build=…` and exits non-zero when the JUnit is not ok (the grade file is still written). It reads every `validation-*.json` next to the oracle folder and leaves out of the score each check whose verdict there is `weak`, `broken` or `pre-existing` (spec 7.1); the grade file lists them as `excluded: [{ id, verdict }]` and keeps their per-check result.
+
+`--validate` runs the oracle on the ref, on every known-bad version (`--bad`, more than once: the fix's parent and the task's end product; the old `--validate <ref> <bad>` form still works) and on the base. Verdicts, in this order: `broken` (ref not pass), `weak` (passes on any bad), `broken` (any bad neither pass nor fail), `pre-existing` (base fails), `absent-at-base` (base precondition), `broken` (base error: the base run gave no result), `valid` (base passes, or no base). Sealed mode prints only `<id> caught|missed|error`. `bug.json` is `{ id, at, patch, fix }`, `patch` relative to it and in the fix's direction (replay applies it with `-R`); agent-replay adds `task` (the task that introduced the bug) and, for review and audit, that task's `base` and `end`.
 
 ## Data layout (`<data>` = the machine file's folder)
 
@@ -48,6 +50,6 @@ env/<task>.json  env/<task>/*.sh          task files and their scripts
 <task>/input.md                           filtered input of a task
 <task>/oracle/{manifest.json,*.spec.*}    the oracle; <task>/labels.json buckets its checks
 <task>/grades/<sha7>.json                 grade --at, and each run of --validate
-<task>/validation-<ref7>.json             --validate verdicts
+<task>/validation-<ref7>.json             --validate verdicts: { ref, bad: [...], base, checks: [{ id, ref, bad: [...], base, verdict }] }
 results/                                  agent-replay and run-arm records, one folder per arm run
 ```
