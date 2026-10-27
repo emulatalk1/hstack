@@ -63,6 +63,20 @@ test('starts the app at a commit, calls fn with its URL, and leaves no worktree 
   expect(await Bun.file(`${tmp}/teardown.txt`).text()).toBe(`${seen.junitPath}\n`)
 })
 
+test('start: false runs before, setup, fn and teardown but starts no app and leaves no log', async () => {
+  const task = mk({ setup: ['echo s > setup.txt'], start: `touch ${tmp}/started; ${start}`, teardown: [`echo t > ${tmp}/td-nostart.txt`] })
+  const seen = []
+  const out = await withEnv(task, c1, 'nostart', async (e) => {
+    seen.push(await Bun.file(join(e.dir, 'setup.txt')).text(), await portBusy(task.port))
+    return 7
+  }, { ...opts, start: false, before: async () => seen.push('before') })
+  expect(out).toBe(7)
+  expect(seen).toEqual(['before', 's\n', false])
+  expect(existsSync(`${tmp}/started`)).toBe(false)
+  expect(await Bun.file(`${tmp}/td-nostart.txt`).text()).toBe('t\n')
+  expect(readdirSync(realpathSync(sub)).filter((n) => n.endsWith('-nostart.log'))).toEqual([])
+})
+
 test('two labels at one commit get two folders', async () => {
   const a = mk()
   const b = mk({ name: a.name })

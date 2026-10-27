@@ -158,6 +158,10 @@ test('a run with no non-skip case is an error, not a miss', async () => {
   expect(await cli([mkTask({ unit: empty }), bug('b10'), 'unit', '--sealed'])).toMatchObject({ stdout: 'b10 error\n', code: 1 })
   expect(await cli([mkTask({ unit: 'echo "<testsuite/>" > "$BENCH_JUNIT"' }), bug('b11'), 'unit', '--sealed'])).toMatchObject({ stdout: 'b11 error\n', code: 1 })
 })
+test('replay starts no app: a start that would fail does not stop the layer', async () => {
+  const r = await cli([mkTask({ unit: layer('older check') }, { start: 'exit 1' }), bug('b13'), 'unit', '--sealed'])
+  expect(r).toMatchObject({ stdout: 'b13 caught\n', code: 0 })
+})
 test('a merge commit as the fix is refused', async () => {
   const main = git('rev-parse', '--abbrev-ref', 'HEAD')
   git('checkout', '-q', '-b', 'side', c0)

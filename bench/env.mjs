@@ -122,9 +122,12 @@ export async function withEnv(task, commit, label, fn, opts = {}) {
     try {
       if (opts.before) await opts.before(dir)
       for (const cmd of task.setup) await run(cmd, dir, env, opts.quiet)
-      const fd = openSync(log, 'w')
-      try { proc = Bun.spawn(['sh', '-c', task.start], { cwd: dir, env, detached: true, stdin: 'ignore', stdout: fd, stderr: fd }) } finally { closeSync(fd) }
-      await waitReady(task, proc, log, opts.pollMs ?? 2000)
+      // start: false for a caller whose command starts the app itself (a test suite with its own web server)
+      if (opts.start !== false) {
+        const fd = openSync(log, 'w')
+        try { proc = Bun.spawn(['sh', '-c', task.start], { cwd: dir, env, detached: true, stdin: 'ignore', stdout: fd, stderr: fd }) } finally { closeSync(fd) }
+        await waitReady(task, proc, log, opts.pollMs ?? 2000)
+      }
       return await fn({ dir, url, db: task.db, junitPath, env })
     } catch (e) {
       failed = true

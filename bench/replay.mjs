@@ -64,7 +64,7 @@ export async function replay(args, { root = ROOT } = {}) {
     await Bun.write(file, excluded.map((t) => t + '\n').join(''))
     // sealed: the layer's own output would show the bug
     return runForJunit(task, e, cmd, { BENCH_EXCLUDE: file }, sealed ? 'ignore' : 2)
-  }, { root, quiet: sealed, before: reverseApply(bug, sealed) })
+  }, { root, quiet: sealed, before: reverseApply(bug, sealed), start: false }) // a layer starts the app itself if it needs one
 
   // zero non-skip cases means the layer ran nothing (a wrong project filter), which must not read as a miss
   if (!cases || !cases.some((c) => c.status !== 'skip')) { console.log(`${bug.id} error`); return 1 }
