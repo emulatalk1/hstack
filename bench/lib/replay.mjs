@@ -34,7 +34,7 @@ export function excludedTitles(diff, postFix, testTitle) {
 // formatted name of its row (the row's first string in the first printf hole), or the title for a line after the rows.
 // shortcut: reads the common JS table shape by indentation; a row whose first cell is not a string, or a `$name` title,
 // excludes the whole table (every row, also the old ones); parse the table if such a fix test comes up.
-const OPEN = /^\s*(?:it|test)\.each\b/, CLOSE = /^\s*\]\)\(\s*(['"`])(.+?)\1/, STRING = /(['"`])((?:\\.|(?!\1).)*)\1/
+const OPEN = /^\s*(?:it|test)\.each\b/, CLOSE = /^\s*\]\)\(\s*(['"`])(.+?)\1/, FIRST = /^\[?\s*(['"`])((?:\\.|(?!\1).)*)\1/
 const indent = (s) => /^\s*/.exec(s)[0].length
 function tableRowTitle(post, i, re) {
   let open = -1
@@ -49,9 +49,12 @@ function tableRowTitle(post, i, re) {
   if (i >= close) return template // the title or the body of the table test
   const first = post.slice(open + 1, close).find((l) => l.trim())
   const rowIndent = first === undefined ? -1 : indent(first)
+  // the row starts at the nearest line at the row indent that is not a closing bracket (a row's own `],` has that indent)
   let start = i
-  while (start > open && !(post[start].trim() && indent(post[start]) === rowIndent)) start--
-  const cell = start > open && STRING.exec(post.slice(start, close).join('\n'))
+  while (start > open && !(post[start].trim() && !/^[\]})]/.test(post[start].trim()) && indent(post[start]) === rowIndent)) start--
+  // the row's first cell: a string on its first line after the `[`, or the next line when that line is a bare `[`
+  const head = start > open && (post[start].trim() === '[' ? post.slice(start + 1, close).find((l) => l.trim()) ?? '' : post[start]).trim()
+  const cell = head && FIRST.exec(head)
   const hole = /%[sdifjoOpc]/.exec(template)
   if (!cell || !hole || /\$[A-Za-z_{]/.test(template)) return template
   return template.slice(0, hole.index) + cell[2] + template.slice(hole.index + 2)

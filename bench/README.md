@@ -12,7 +12,7 @@ Bun scripts for the measuring stick: run a task's product in a throwaway worktre
 | `port`, `ready` | the app's port (must be free) and the URL that answers 2xx-4xx once it is up |
 | `setup[]`, `start`, `teardown[]` | shell commands (`sh -c`, cwd = worktree); `start` runs in its own process group and is killed after |
 | `oracle` | the command that runs the oracle and writes JUnit at `BENCH_JUNIT` |
-| `junit` | the JUnit path, relative to the worktree |
+| `junit` | the JUnit path, relative to the worktree; grade and replay refuse an absolute path or one that leaves the worktree (the file is deleted before a run and goes with the worktree) |
 | `layers` | `{ unit, int, e2e: <command> }` for replay; `{ review, audit, evaluator: { brief, tools?, allow? } }` for agent-replay |
 | `testTitle` | regex whose first group is a test title, to find the tests a fix added |
 | `timeoutSec` | bounds the ready wait and every oracle or layer command (default 1800) |
@@ -24,7 +24,7 @@ Bun scripts for the measuring stick: run a task's product in a throwaway worktre
 ## Contracts
 
 - **JUnit**: one `<testcase>` per check; its `name` starts with the check id (`<sha7>-T<n> ...`). A case with `<failure>` or `<error>` fails, one with `<skipped>` is an error, a missing case is an error.
-- **`PRECONDITION:`**: each check first asserts that its feature's page, form, field or endpoint exists, with a message that starts with `PRECONDITION:`. A failed case is `precondition` (feature missing) when a line of its message starts, after spaces and an optional `Error: `, with `PRECONDITION:`; otherwise it is `fail`.
+- **`PRECONDITION:`**: each check first asserts that its feature's page, form, field or endpoint exists, with a message that starts with `PRECONDITION:`. A failed case is `precondition` (feature missing) when a line of its message starts, after spaces and an optional `<Word>Error: ` (`Error: `, `AssertionError: `), with `PRECONDITION:`; otherwise it is `fail`.
 
 ## Commands
 
@@ -38,7 +38,7 @@ bun bench/agent-replay.mjs <task.json> <bug.json> <review|audit|evaluator> [--se
 bun bench/run-arm.mjs <task.json> <B|B-|H|W> <run-no> --input <data>/<task>/input.md --at <base>
 ```
 
-Verdicts of `--validate`: `broken` (ref not pass), `weak` (bad passes), `pre-existing` (base fails), `absent-at-base` (base precondition), `valid`. Sealed mode prints only `<id> caught|missed|error`. `bug.json` is `{ id, at, patch, fix }`, `patch` relative to it and in the fix's direction (replay applies it with `-R`); agent-replay adds `task` (the task that introduced the bug) and, for review and audit, that task's `base` and `end`.
+Verdicts of `--validate`, in this order: `broken` (ref not pass), `weak` (bad passes), `broken` (bad neither pass nor fail), `pre-existing` (base fails), `absent-at-base` (base precondition), `broken` (base error: the base run gave no result), `valid` (base passes, or no base). Sealed mode prints only `<id> caught|missed|error`. `bug.json` is `{ id, at, patch, fix }`, `patch` relative to it and in the fix's direction (replay applies it with `-R`); agent-replay adds `task` (the task that introduced the bug) and, for review and audit, that task's `base` and `end`.
 
 ## Data layout (`<data>` = the machine file's folder)
 

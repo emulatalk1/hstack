@@ -48,6 +48,7 @@ test('a line added to a row of a table test excludes that row\'s name, not the t
   expect(excludedTitles(rowDiff(13, lines[12]), post, vitest)).toEqual(['names a broken folder: a survey lead with no province'])
   expect(excludedTitles(rowDiff(6, lines[5]), post, vitest)).toEqual(['names a broken folder: a bad link before a bad photo'])
   expect(excludedTitles(rowDiff(10, lines[9]), post, vitest)).toEqual(['names a broken folder: a bad link before a bad photo'])
+  expect(excludedTitles(rowDiff(12, lines[11]), post, vitest)).toEqual(['names a broken folder: a bad link before a bad photo']) // the row's own `],`
   expect(excludedTitles(rowDiff(15, lines[14]), post, vitest)).toEqual(['names a broken folder: %s']) // the body: every row
   expect(excludedTitles(rowDiff(3, lines[2]), post, vitest)).toEqual(['names a broken folder: %s']) // a new table
   // an old row still counts as a catch
@@ -55,6 +56,14 @@ test('a line added to a row of a table test excludes that row\'s name, not the t
   const ex = excludedTitles(rowDiff(13, lines[12]), post, vitest)
   expect(caught([f('checkShowcase > names a broken folder: a survey lead with no province')], ex)).toBe(false)
   expect(caught([f('checkShowcase > names a broken folder: a repeated property code')], ex)).toBe(true)
+})
+test('a whole multi-line row added before an unchanged row excludes that row only, and a row without a leading string the whole table', () => {
+  const post = new Map([['tests/unit/showcase.test.ts', table]])
+  const lines = table.split('\n')
+  const added = ['+++ b/tests/unit/showcase.test.ts', '@@ -4,0 +5,8 @@', ...lines.slice(4, 12).map((l) => `+${l}`)].join('\n')
+  expect(excludedTitles(added, post, vitest)).toEqual(['names a broken folder: a bad link before a bad photo'])
+  const numeric = new Map([['tests/unit/showcase.test.ts', table.replace("    ['a survey lead with no province',", "    [3, 'a survey lead with no province',")]])
+  expect(excludedTitles(rowDiff(13, '    [3, ...]'), numeric, vitest)).toEqual(['names a broken folder: %s'])
 })
 test('a line after a table test belongs to the next titled test, and a $name title excludes the whole table', () => {
   const post = new Map([['tests/unit/showcase.test.ts', [...table.split('\n'), "  it('later', () => {", '    expect(1)', '  })'].join('\n')]])
