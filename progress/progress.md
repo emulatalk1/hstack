@@ -393,10 +393,10 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
   - p4: 40/7 (P4-F6 fixes plan 3), PASS, 0 fix; 2/13325/649/15750, opus-5-5
   - p5: 15/9 (P5-F3 fixes plan 4), PASS, 0 fix; 2/13448/649/15534, opus-5-5
   - p6a: 35/0, PASS, 0 fix; 2/17242/649/18524, opus-5-5
-  - p6b: 25/0, PASS after 1 fix ("it (" false positive); 4/20673/1298/24214, opus-5-5
+  - p6b: 25/0, PASS after 2 fixes ("it (" false positive; review: `renderToStaticMarkup` as behaviour); 6/26513/1947/32429, opus-5-5
   - p6c: 35/0, PASS after 1 fix (".csv files"); 4/28792/1298/25448, opus-5-5
   - p7b: 13/21 (P7b-F3, F4, F5 fix earlier plans; only the new part kept), PASS, 0 fix; 2/14003/649/15720, opus-5-5
-  - p7c: 48/13 (P7c-F6, F7 carried fixes), PASS, 0 fix; 2/25375/649/27021, opus-5-5
+  - p7c: 48/13 (P7c-F6, F7 carried fixes), PASS, 2 review fixes (protected database names `real_estate_test`, `real_estate_staging`, `real_estate` and framework identifiers rewritten as behaviours); 6/39596/1947/46688, opus-5-5
   - p8a: 41/5, PASS after 1 fix ("behind it (SC 2.4.11)"); 4/24008/1298/36879, opus-5-5
   - p8b: 35/11 (P8b-F5, as the pilot), PASS, 0 fix; 2 runs (first on brief v1, discarded: it also dropped 3 steps inside kept groups); 4/41431/2894/63587, opus-5-5
   - p8b1: 17/0, PASS, 0 fix; 2 runs (brief v1 run discarded for one brief across tasks); 4/22108/2895/20440, opus-5-5
