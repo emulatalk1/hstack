@@ -15,6 +15,23 @@ const JUDGE = 'Did any finding describe this defect (same behaviour, same place)
 const NEEDS = { review: ['task', 'base', 'end'], audit: ['task', 'base', 'end'], evaluator: ['task', 'at', 'patch'] }
 const strings = (v) => v === undefined || (Array.isArray(v) && v.every((s) => typeof s === 'string'))
 
+// the agent must not find the data folder (results, other bugs) or the bench's own variables
+const agentEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('BENCH_') && k !== 'HSTACK_BENCH_MACHINE'))
+
+// One headless claude call (binary from BENCH_CLAUDE); its process group is killed after timeoutSec and after it exits.
+export async function runClaude(opts, cwd, { timeoutSec, quiet = false }) {
+  // shortcut: the prompt rides in argv, so a task diff over ~1 MB (macOS ARG_MAX) fails to start and `ps` shows the
+  // sealed description while the judge runs; move the prompt to stdin when a diff that large or a shared machine comes up
+  const p = Bun.spawn([process.env.BENCH_CLAUDE || 'claude', ...claudeArgs(opts)],
+    { cwd, env: agentEnv(), detached: true, stdin: 'ignore', stdout: 'pipe', stderr: quiet ? 'ignore' : 2 })
+  let timedOut = false
+  const timer = setTimeout(() => { timedOut = true; try { process.kill(-p.pid, 'SIGKILL') } catch {} }, timeoutSec * 1000)
+  const [out, code] = [await new Response(p.stdout).text(), await p.exited]
+  clearTimeout(timer)
+  try { process.kill(-p.pid, 'SIGKILL') } catch {} // whatever the agent left running in its group
+  return { out, code: timedOut ? 'timeout' : code }
+}
+
 export async function agentReplay(args, { root = ROOT } = {}) {
   const sealed = args.includes('--sealed')
   const pos = args.filter((a) => a !== '--sealed')
@@ -36,20 +53,7 @@ export async function agentReplay(args, { root = ROOT } = {}) {
   const input = layer === 'audit' ? '' : await Bun.file(inputPath).text().catch(() => null)
   if (input === null) throw new Error(`filtered input ${inputPath} is missing`)
 
-  // the agent must not find the data folder (results, other bugs) or the bench's own variables
-  const agentEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('BENCH_') && k !== 'HSTACK_BENCH_MACHINE'))
-  const claude = async (opts, cwd) => {
-    // shortcut: the prompt rides in argv, so a task diff over ~1 MB (macOS ARG_MAX) fails to start and `ps` shows the
-    // sealed description while the judge runs; move the prompt to stdin when a diff that large or a shared machine comes up
-    const p = Bun.spawn([process.env.BENCH_CLAUDE || 'claude', ...claudeArgs(opts)],
-      { cwd, env: agentEnv, detached: true, stdin: 'ignore', stdout: 'pipe', stderr: sealed ? 'ignore' : 2 }) // sealed: the agent's output shows the bug
-    let timedOut = false
-    const timer = setTimeout(() => { timedOut = true; try { process.kill(-p.pid, 'SIGKILL') } catch {} }, task.timeoutSec * 1000)
-    const [out, code] = [await new Response(p.stdout).text(), await p.exited]
-    clearTimeout(timer)
-    try { process.kill(-p.pid, 'SIGKILL') } catch {} // whatever the agent left running in its group
-    return { out, code: timedOut ? 'timeout' : code }
-  }
+  const claude = (opts, cwd) => runClaude(opts, cwd, { timeoutSec: task.timeoutSec, quiet: sealed }) // sealed: the agent's output shows the bug
   const agent = (prompt, commit) => withExport(task, commit, `agent-${bug.id}-${layer}`,
     (cwd) => claude({ prompt, permissionMode: 'default', tools: cfg.tools, allow: cfg.allow }, cwd), root, { dropSettings: true })
 

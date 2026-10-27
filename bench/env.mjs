@@ -30,7 +30,7 @@ async function run(cmd, cwd, env, quiet) {
   if (code !== 0) throw new Error(`command failed (exit ${code}): ${cmd}`)
 }
 
-const git = async (repo, ...args) => {
+export const git = async (repo, ...args) => {
   const p = Bun.spawn(['git', '-C', repo, ...args], { stdout: 'pipe', stderr: 'pipe' })
   const [code, err] = [await p.exited, await new Response(p.stderr).text()]
   if (code !== 0) throw new Error(`git -C ${repo} ${args.join(' ')} failed (exit ${code}): ${err.trim()}`)

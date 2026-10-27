@@ -1,6 +1,6 @@
 // Headless claude: the argument list, and what a stream-json transcript and a judge reply say. Pure.
 
-export function claudeArgs({ prompt, model, settings, pluginDirs = [], addDirs = [], appendSystemPrompt, permissionMode, tools, allow }) {
+export function claudeArgs({ prompt, model, settings, pluginDirs = [], addDirs = [], appendSystemPrompt, permissionMode, tools, allow, sessionId, resume }) {
   const a = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--setting-sources', 'project,local', '--strict-mcp-config']
   if (model) a.push('--model', model)
   for (const d of pluginDirs) a.push('--plugin-dir', d)
@@ -10,10 +10,12 @@ export function claudeArgs({ prompt, model, settings, pluginDirs = [], addDirs =
   if (permissionMode) a.push('--permission-mode', permissionMode)
   if (tools) a.push('--tools', tools.join(',')) // [] -> '', which turns every tool off
   if (allow) a.push('--allowedTools', allow.join(','))
+  if (sessionId) a.push('--session-id', sessionId)
+  if (resume) a.push('--resume', resume)
   return a
 }
 
-const events = (s) => s.split('\n').flatMap((l) => { try { return [JSON.parse(l)] } catch { return [] } })
+export const events = (s) => s.split('\n').flatMap((l) => { try { return [JSON.parse(l)] } catch { return [] } })
 
 export function finalText(streamJson) {
   const r = events(streamJson).filter((e) => e?.type === 'result').at(-1)
