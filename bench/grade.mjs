@@ -9,25 +9,32 @@ import { loadTask } from './lib/task.mjs'
 
 const USAGE = 'usage: bun bench/grade.mjs <task.json> <oracle dir> --at <commit> | --validate <ref> <bad> [--base <commit>]'
 
-async function resolveCommit(repo, commit) {
+export async function resolveCommit(repo, commit) {
   const p = Bun.spawn(['git', '-C', repo, 'rev-parse', '--verify', `${commit}^{commit}`], { stdout: 'pipe', stderr: 'pipe' })
   const [out, code] = [await new Response(p.stdout).text(), await p.exited]
   if (code !== 0) throw new Error(`unknown commit ${commit} in ${repo}`)
   return out.trim()
 }
 
-async function runOracle(task, oracleDir, commit, root) {
-  return withEnv(task, commit, `grade-${commit.slice(0, 7)}`, async ({ dir, junitPath, env }) => {
-    rmSync(junitPath, { force: true }) // a stale file must not be graded
-    const proc = Bun.spawn(['sh', '-c', task.oracle], { cwd: dir, env: { ...env, BENCH_ORACLE: oracleDir }, detached: true, stdin: 'ignore', stdout: 2, stderr: 2 })
-    let timedOut = false
-    const timer = setTimeout(() => { timedOut = true; try { process.kill(-proc.pid, 'SIGKILL') } catch {} }, task.timeoutSec * 1000)
-    await proc.exited // the exit code does not matter: failing tests exit non-zero
-    clearTimeout(timer)
-    if (timedOut) return { cases: null, junit: 'timeout' } // whatever file it left is partial
-    try { return { cases: readJunit(await Bun.file(junitPath).text()), junit: 'ok' } } catch { return { cases: null, junit: 'missing' } }
-  }, { root })
+// Run cmd in the env fn received; stale JUnit deleted first, killed after task.timeoutSec. stdio: 2 (stderr) or 'ignore'.
+export async function runForJunit(task, { dir, junitPath, env }, cmd, extraEnv = {}, stdio = 2) {
+  rmSync(junitPath, { force: true }) // a stale file must not be graded
+  const proc = Bun.spawn(['sh', '-c', cmd], { cwd: dir, env: { ...env, ...extraEnv }, detached: true, stdin: 'ignore', stdout: stdio, stderr: stdio })
+  let timedOut = false
+  const timer = setTimeout(() => { timedOut = true; try { process.kill(-proc.pid, 'SIGKILL') } catch {} }, task.timeoutSec * 1000)
+  await proc.exited // the exit code does not matter: failing tests exit non-zero
+  clearTimeout(timer)
+  if (timedOut) return { cases: null, junit: 'timeout' } // whatever file it left is partial
+  try { return { cases: readJunit(await Bun.file(junitPath).text()), junit: 'ok' } } catch { return { cases: null, junit: 'missing' } }
 }
+
+// the JUnit file must live inside the worktree: it is deleted before the run and the worktree is removed after
+export function checkJunitPath(task) {
+  if (isAbsolute(task.junit) || relative('/w', resolve('/w', task.junit)).startsWith('..')) throw new Error(`task junit ${task.junit} must be a relative path inside the worktree`)
+}
+
+const runOracle = (task, oracleDir, commit, root) =>
+  withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir }), { root })
 
 export async function grade(args, { root = ROOT } = {}) {
   const pos = [], flags = {}
@@ -40,8 +47,7 @@ export async function grade(args, { root = ROOT } = {}) {
   const [taskPath, oracleArg] = pos
   if (!taskPath || !oracleArg || pos.length !== 2 || (!flags.at && !flags.validate) || (flags.at && flags.validate) || (flags.validate && flags.validate.some((x) => !x)) || (flags.base && !flags.validate)) throw new Error(USAGE)
   const task = await loadTask(taskPath)
-  // the JUnit file must live inside the worktree: it is deleted before the run and the worktree is removed after
-  if (isAbsolute(task.junit) || relative('/w', resolve('/w', task.junit)).startsWith('..')) throw new Error(`task junit ${task.junit} must be a relative path inside the worktree`)
+  checkJunitPath(task)
   const oracleDir = resolve(oracleArg), evDir = dirname(oracleDir)
   const labelsFile = Bun.file(join(evDir, 'labels.json'))
   const manifest = await Bun.file(join(oracleDir, 'manifest.json')).json()
