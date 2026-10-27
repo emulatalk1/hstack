@@ -54,7 +54,8 @@ export async function bugs(args, { root = ROOT } = {}) {
   const names = readdirSync(folder).filter((n) => n.endsWith('.json') && !n.endsWith('.run.json') && n !== 'done.json').sort()
 
   if (layer) { // no git, no worktree, no write
-    const files = await Promise.all(names.map(async (n) => [n, await Bun.file(join(folder, n)).json()]))
+    // a file that does not parse has no out either; its parse message could quote it
+    const files = await Promise.all(names.map(async (n) => [n, await Bun.file(join(folder, n)).json().catch(() => ({}))]))
     const missing = files.filter(([, b]) => b?.out === undefined)
     for (const [n] of missing) console.error(`${n} has no out: run the check first`)
     if (missing.length) return 1

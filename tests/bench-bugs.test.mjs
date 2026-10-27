@@ -146,6 +146,8 @@ test('--usable creates no worktree and writes nothing', async () => {
   const r = await cli([task, dir, '--usable', 'unit'])
   expect(r).toMatchObject({ stdout: '', code: 1 })
   expect(r.stderr).toContain('new.json has no out: run the check first')
+  writeFileSync(join(dir, 'new.json'), '{ secret-token')
+  expect(await cli([task, dir, '--usable', 'unit'])).toEqual({ stdout: '', stderr: 'new.json has no out: run the check first\n', code: 1 })
 })
 
 test('sealed mode prints counts and opaque ids only', async () => {
