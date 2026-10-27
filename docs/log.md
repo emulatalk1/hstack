@@ -1,5 +1,9 @@
 # Update Log
 
+## 2026-10-28
+
+* **Creation**: Added the [held-out set and layer replay plan](/plans/2026-10-27-bench-replay.md) (draft), step 3 of the pre-registration. Review and audit run on 18 of the 20 dev bugs: ownership by the blame tables gives no usable task to two.
+
 ## 2026-10-27
 
 * **Creation**: Added the [Own services plan (stack A)](/plans/2026-10-27-own-services.md) as a record, status `superseded`: it was drafted (own Postgres and Mailpit per project, assigned ports, the compose file in `.hstack/`) and set aside the same day for a stack-agnostic harness with a throwaway environment per run.
