@@ -425,4 +425,4 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
   - agent-replay audit: layer 72/21850/3043139/138301, judge 2/16/649/4698
   - agent-replay evaluator: layer 68/39513/1531109/78118, judge 2/16/649/3456
   - probe (2 claude -p runs): 14/3265/49611/12128 (run 1 also lists opus-4-8)
-  - sum of the task's agent runs: 178/78162/5072215/228307; about 26 min of runs
+  - sum of the task's agent runs: 178/78162/5071700/366278; about 26 min of runs
