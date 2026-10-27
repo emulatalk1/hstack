@@ -22,6 +22,47 @@ test('a failure of an excluded test is not a catch', () => {
   expect(caught([...cases, { name: 'older test', status: 'fail', message: '' }], ['rejects a name of only spaces'])).toBe(true)
 })
 
+// a table test whose title follows its rows, as in the showcase folder check of the real-estate replay
+const table = [
+  "  it('finds no problem in a complete folder', () => {})", // 1
+  '',
+  '  it.each<[string, () => void, string[]]>([', // 3
+  "    ['a repeated property code', () => {}, ['two properties']],", // 4
+  '    [', // 5
+  "      'a bad link before a bad photo',", // 6
+  '      () => {},', // 7
+  '      [', // 8
+  "        'no property with code SC-9',", // 9
+  "        'photo file missing: x.jpg',", // 10
+  '      ],', // 11
+  '    ],', // 12
+  "    ['a survey lead with no province', () => {}, ['no province']],", // 13
+  "  ])('names a broken folder: %s', (_, change, problems) => {", // 14
+  '    expect(check()).toEqual(problems)', // 15
+  '  })', // 16
+].join('\n')
+const rowDiff = (line, text) => ['+++ b/tests/unit/showcase.test.ts', `@@ -${line - 1},0 +${line},1 @@`, `+${text}`].join('\n')
+test('a line added to a row of a table test excludes that row\'s name, not the test above the table', () => {
+  const post = new Map([['tests/unit/showcase.test.ts', table]])
+  const lines = table.split('\n')
+  expect(excludedTitles(rowDiff(13, lines[12]), post, vitest)).toEqual(['names a broken folder: a survey lead with no province'])
+  expect(excludedTitles(rowDiff(6, lines[5]), post, vitest)).toEqual(['names a broken folder: a bad link before a bad photo'])
+  expect(excludedTitles(rowDiff(10, lines[9]), post, vitest)).toEqual(['names a broken folder: a bad link before a bad photo'])
+  expect(excludedTitles(rowDiff(15, lines[14]), post, vitest)).toEqual(['names a broken folder: %s']) // the body: every row
+  expect(excludedTitles(rowDiff(3, lines[2]), post, vitest)).toEqual(['names a broken folder: %s']) // a new table
+  // an old row still counts as a catch
+  const f = (name) => ({ name, status: 'fail', message: '' })
+  const ex = excludedTitles(rowDiff(13, lines[12]), post, vitest)
+  expect(caught([f('checkShowcase > names a broken folder: a survey lead with no province')], ex)).toBe(false)
+  expect(caught([f('checkShowcase > names a broken folder: a repeated property code')], ex)).toBe(true)
+})
+test('a line after a table test belongs to the next titled test, and a $name title excludes the whole table', () => {
+  const post = new Map([['tests/unit/showcase.test.ts', [...table.split('\n'), "  it('later', () => {", '    expect(1)', '  })'].join('\n')]])
+  expect(excludedTitles(rowDiff(18, '    expect(1)'), post, vitest)).toEqual(['later'])
+  const named = new Map([['tests/unit/showcase.test.ts', table.replace('names a broken folder: %s', 'names $name')]])
+  expect(excludedTitles(rowDiff(13, table.split('\n')[12]), named, vitest)).toEqual(['names $name'])
+})
+
 test('a removed line never counts, even one that looks like a test title', () => {
   const diff = ['+++ b/tests/a.test.ts', '@@ -1,2 +1,1 @@', "-  it('gone', () => {", '-  expect(1)'].join('\n')
   expect(excludedTitles(diff, new Map([['tests/a.test.ts', "it('kept', () => {})"]]), vitest)).toEqual([])
@@ -113,6 +154,14 @@ test('sealed: only the fix\'s own test failing is "<id> missed", and the layer s
   const r = await cli([mkTask({ unit: layer('new check') }), bug('b2'), 'unit', '--sealed'])
   expect(r).toMatchObject({ stdout: 'b2 missed\n', code: 0 })
   expect(r.stderr).not.toContain('SECRET')
+})
+test('dev mode marks a case excluded by a template title, as caught counts it', async () => {
+  const each = `${repo}/tests/each.test.js`
+  writeFileSync(each, "it.each(['name'])('rejects a %s of spaces', () => {})\n")
+  git('add', '.'); git('commit', '-qm', 'fix with a table test')
+  const fix2 = git('rev-parse', 'HEAD')
+  const r = await cli([mkTask({ unit: layer('rejects a name of spaces') }), bug('b14', { at: fix2, fix: fix2 }), 'unit'])
+  expect(r.stdout).toBe('FAIL suite > rejects a name of spaces (excluded)\nb14 missed\n')
 })
 test('dev mode names the failing cases, marks the excluded one, and passes the layer output to stderr', async () => {
   const r = await cli([mkTask({ unit: layer('new check') }), bug('b3'), 'unit'])

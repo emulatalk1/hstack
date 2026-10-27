@@ -3,7 +3,7 @@
 import { dirname, resolve } from 'node:path'
 import { ROOT, withEnv } from './env.mjs'
 import { checkJunitPath, resolveCommit, runForJunit } from './grade.mjs'
-import { caught, excludedTitles, isTestPath } from './lib/replay.mjs'
+import { caught, excludedTitles, isExcluded, isTestPath } from './lib/replay.mjs'
 import { loadTask } from './lib/task.mjs'
 
 const USAGE = 'usage: bun bench/replay.mjs <task.json> <bug.json> <layer> [--sealed]'
@@ -68,7 +68,7 @@ export async function replay(args, { root = ROOT } = {}) {
 
   // zero non-skip cases means the layer ran nothing (a wrong project filter), which must not read as a miss
   if (!cases || !cases.some((c) => c.status !== 'skip')) { console.log(`${bug.id} error`); return 1 }
-  if (!sealed) for (const c of cases) if (c.status === 'fail') console.log(`FAIL ${c.name}${excluded.some((t) => c.name.includes(t)) ? ' (excluded)' : ''}`)
+  if (!sealed) for (const c of cases) if (c.status === 'fail') console.log(`FAIL ${c.name}${isExcluded(c.name, excluded) ? ' (excluded)' : ''}`)
   console.log(`${bug.id} ${caught(cases, excluded) ? 'caught' : 'missed'}`)
   return 0
 }
