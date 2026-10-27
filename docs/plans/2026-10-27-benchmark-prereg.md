@@ -154,7 +154,7 @@ For external tasks: the reference is the PR's merge commit, the known-bad versio
 
 W (section 3) must score below H (H4). If not, the stick is not sensitive enough and H1–H3 are not reported.
 
-Because the stick is finished before any plugin exists (section 12), it also gets a canary that needs no plugin: arm B against **B−**, Claude Code without the plugin told to write no tests, run no self-check and stop after one pass. On 6 external tasks (the first 2 of each stack in the sorted list), k = 2, the stick must score B− below B (bootstrap lower bound > 0 on build + requirement score). If not, the stick is fixed before Part 2 starts. These runs also measure B's cost and its spread between runs of one task; they are not part of the H1–H3 analysis.
+Because the stick is finished before any plugin exists (section 12), it also gets a canary that needs no plugin: arm B against **B−**, Claude Code without the plugin on a smaller model tier, told to write no tests, run no self-check and stop after one pass. On 6 external tasks (the first 2 of each stack in the sorted list), k = 2, the stick passes when the mean of d = score(B) − score(B−) on build + requirement is > 0 **and** at least 5 of the 6 tasks favour B (with n = 6 a bootstrap bound is not reliable). If it fails, tell the two causes apart before changing anything: run B−'s products against the seeded-bug checks of those tasks and have a human read 3 B/B− pairs. If B− is visibly worse and the stick still cannot see it, fix the stick; if B− is not worse, make B− weaker and rerun. These runs also measure B's cost and its spread between runs of one task; they are not part of the H1–H3 analysis.
 
 ## 8. Per-layer measures
 
@@ -242,8 +242,10 @@ Estimates; historical mark: outsourcing's plan 8b cost about 4.75M tokens (plan 
 | Oracle preparation (rewrite, validation, 2 classifications, labelling) | 12 `real-estate` tasks × 0.55M (measured on p8b) + 24 external tasks × 0.3M | 14M |
 | Layer measures (81 seeded + 10 held-out; review 0.25M + exploratory 0.15M + batched audit 0.2M per bug) | 91 × 0.6M | 55M |
 | Trial run | 4 tasks × 2 arms × 2M | 16M |
-| Stick canary B vs B− (7.3) | 6 tasks × 2 runs × (0.4M + 0.3M) | 8M |
+| Stick canary B vs B− (7.3) | 6 tasks × 2 runs × (0.4M + 0.3M) | 8.4M |
 | **Total** |  | **about 536M** |
+
+**Part 1 alone (the stick, before any plugin work):** oracle preparation 14M + held-out replay of tests, e2e and evaluator about 5M + blind review replay on 30 bugs with the full task diff (30 × 0.25M) 7.5M + audit replay (30 × about 1M) 30M + seeded bugs (81 × about 0.1M to seed and validate) 8M + canary 8.4M: **about 73M tokens**. Wall clock, 3 agents in parallel: oracle preparation for 36 tasks about 9 h, replays about 7 h, canary about 4 h, plus setting up a throwaway environment for each of the 3 external stacks (about a day each, not measured): **about 20 hours of agent work plus about 3 days of environment setup, 5–6 working days in all**, plus the human steps. Most of the 536M (the H, B and W rows) is Part 2 and cannot start before the plugin exists.
 
 Hours: a plan-sized `real-estate` build takes about 5 hours for H and 1.5 for B; a PR-sized external task about 1.5 and 0.5. With 4 runs in parallel: about 60 hours for `real-estate`, 45 for external tasks (W included), plus about 10 for grading and layer measures: **about 115 wall-clock hours**.
 
@@ -263,14 +265,14 @@ The user chose on 2026-10-27 to finish the whole measuring stick before any plug
 
 1. Commit this plan (status `draft`), advisor round, user approval (`stable`). From here the rules of sections 2–10 change only by a commit with its reason.
 2. Build the tools: `bench/replay`, the oracle grading script, the fixed responder (9.3), a throwaway environment per stack.
-3. Held-out set: the extension of 8.2 by a sealed agent, then the replay of the existing layers on dev + held-out: unit + int, e2e, the blind evaluator, a blind review (a task reviewer given the requirement and the bug diff only) and the whole-repo audit. Lock the result.
+3. Held-out set: the extension of 8.2 by a sealed agent, then the replay of the existing layers. Sets: unit + int, e2e and the blind evaluator run on held-out only (their dev results stand); review and the whole-repo audit were never replayed, so they run on dev (20) + held-out. Scope, pre-registered so the replay is not easier than real work: a blind task reviewer sees the requirement and the **full diff of the task that introduced the bug** (task base to task end, with the bug present), not the bug hunk; the audit sees the whole repo at that point. Lock the result.
 4. External tasks: build the candidate list, sort it once by the rule of 4.2, commit the sample.
 5. Oracles: for every external task and every eligible `real-estate` task (held-out commits only after step 3 is locked): oracle sources, black-box rewrite, the interface sheet, validation including the task-base run (7.1), two classifiers. Agents that write oracles, interface sheets and seeded bugs never share context with the session that will design the plugin.
 6. Reclassify p8b with the interface sheet; with all tasks classified, apply the H1 floor rule (section 2) and, if it applies, write the step oracles.
 7. Seeded bugs (8.3), validated and sealed.
 8. Stick canary without the plugin (7.3): B against B− on 6 external tasks, k = 2.
 9. Human steps: settle classifier disagreements, read the input and oracle samples (5, 7.1), check the intervention rules on historical transcripts (7.2).
-10. Stick v1: commit the task lists, a hash of every oracle, seeded and held-out file, and the step-1 to step-9 results. Only then does Part 2 (the plugin) begin. The plugin designer never opens the content of oracles, seeded bugs or held-out patches; it sees only scores.
+10. Stick v1: commit the task lists, a hash of every oracle, seeded and held-out file, and the step-1 to step-9 results. Only then does Part 2 (the plugin) begin. The plugin designer never opens the content of oracles, seeded bugs or held-out patches; it sees only scores. Exception on record: the session that wrote this plan read p8b's whole oracle (manifest, behaviours, specs, base-run errors) and may design the plugin, so p8b is used only in the trial run (step 11, not analysed) and is never one of the scored `real-estate` tasks.
 
 **Part 2: measuring the plugin (needs the plugin)**
 
@@ -322,4 +324,5 @@ Run on 2026-10-27, 5 agents, about 551k tokens, 45 minutes; validation ran on th
 - The blame rule misses bugs of missing code where the task wrote no nearby line, and can misattribute when a hunk changes lines of several tasks.
 - The fixed responder makes H's and B's autonomy comparable, but cannot measure the quality of an agent's questions.
 - The `real-estate` oracle is exactly the bugs the old harness let through, so it leans toward the kinds of edge the old harness missed. Do not use it to compare the old harness with the new one; H and B both build fresh, so they remain comparable, but only external tasks count for acceptance.
+- The plan author has read p8b's oracle; p8b is therefore trial-only (section 12, step 10).
 - `real-estate` is one stack and greenfield only, in the sense that the old harness built the whole repo; only external tasks test generality.
