@@ -267,7 +267,8 @@ The user chose on 2026-10-27 to finish the whole measuring stick before any plug
 **Part 1: the measuring stick (no plugin exists yet)**
 
 1. Commit this plan (status `draft`), advisor round, user approval (`stable`). From here the rules of sections 2–10 change only by a commit with its reason.
-2. Build the tools: `bench/replay`, the oracle grading script, the fixed responder (9.3), a throwaway environment per stack.
+2. Build the tools: `bench/replay`, the oracle grading script, the fixed responder (9.3), a throwaway environment per stack (`docs/plans/2026-10-27-bench-tools.md`).
+3a. Filter the input of every `real-estate` task (section 5). Moved ahead of step 3 on 2026-10-27, because the blind review replay gives the reviewer the filtered input of the task that introduced the bug, and the raw plan's Review Focus can name that bug. Filtering needs no fix commit, so the held-out set stays sealed.
 3. Held-out set: the extension of 8.2 by a sealed agent, then the replay of the existing layers. Sets: unit + int, e2e and the blind evaluator run on held-out only (their dev results stand); review and the whole-repo audit were never replayed, so they run on dev (20) + held-out. Scope, pre-registered so the replay is not easier than real work: a blind task reviewer sees the requirement and the **full diff of the task that introduced the bug** (task base to task end, with the bug present), not the bug hunk; the audit sees the whole repo at that point. Lock the result.
 4. External tasks: build the candidate list, sort it once by the rule of 4.2, commit the sample.
 5. Oracles: for every external task and every eligible `real-estate` task (held-out commits only after step 3 is locked): oracle sources, black-box rewrite, the interface sheet, validation including the task-base run (7.1), two classifiers. Agents that write oracles, interface sheets and seeded bugs never share context with the session that will design the plugin.
