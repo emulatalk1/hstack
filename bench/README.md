@@ -36,7 +36,10 @@ bun bench/grade.mjs <task.json> <oracle dir> --validate <ref> --bad <commit> [--
 bun bench/replay.mjs <task.json> <bug.json> <unit|int|e2e> [--sealed]        # starts no app; the layer does
 bun bench/agent-replay.mjs <task.json> <bug.json> <review|audit|evaluator> [--sealed]
 bun bench/run-arm.mjs <task.json> <B|B-|H|W> <run-no> --input <data>/<task>/input.md --at <base>
+bun bench/sealed-agent.mjs <task.json> <label> --prompt <file> --out <file> [--at <commit>] [--tools <name,name,...>]
 ```
+
+`sealed-agent` runs one `claude -p` with the prompt file's text and the listed tools (none by default), in an empty folder or the files of `--at` with no `.git` and no `.claude/settings.json`, and no `BENCH_*` or machine variable; it writes the reply to `--out` and `<out>.run.json` (`label`, `at`, `start`, `end`, `code`, `version`, `tools`, `usage`, `models`), refuses an existing `--out` or run record, and on no result or a non-zero exit writes only the run record and exits 1.
 
 `grade --at` prints `<sha7> junit=<ok|missing|timeout> pass=… excluded=… build=…` and exits non-zero when the JUnit is not ok (the grade file is still written). It reads every `validation-*.json` next to the oracle folder and leaves out of the score each check whose verdict there is `weak`, `broken` or `pre-existing` (spec 7.1); the grade file lists them as `excluded: [{ id, verdict }]` and keeps their per-check result.
 
