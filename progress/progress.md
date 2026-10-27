@@ -539,3 +539,17 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     Task 6: complete (commits 2f2a3b6..5090361, review clean)
     Task 6 cost: implementer sonnet 76.1k/56.6 min; review sonnet 59.4k/0.8 min
     Final review: dispatched (opus), range 8dbac4a..HEAD
+
+### SDD ledger tail after the final review
+
+    Final review: dispatched (opus), range 8dbac4a..HEAD
+    Final review (opus 175.9k/11.5 min): with fixes — I1 every bench agent's transcript persists in ~/.claude/projects/-private-tmp-hstack-bench-* (judge transcripts hold the defect text; a bun-capable evaluator could read them); I2 p1–p6c inputs say `docker compose down -v` and step 3's evaluator reads them with bun (run-arm's gate does not cover agent-replay); I3 smoke/task-6 record claims real_estate_test untouched but it does not exist on the server; I4 review.md contradiction (`Reviewed:` lines vs no narration) and old-harness text, evaluator.md bare playwright import; minors (progress Tasks 1–2 bullet and stale "waiting" line, README data layout, superseded sheets beside interface.md, plan Task 3 Step 2 prefix text, is_error)
+    - Ruling: claudeArgs gets an opt-in `noPersist` (→ `--no-session-persistence`, checked in `claude --help`); sealed-agent always and agent-replay's layer and judge calls always pass it (run-arm keeps sessions, it resumes); the 64 existing bench transcript folders are MOVED (not deleted) to <data>/transcripts/ — they are evidence (the final review used one to show the reviewer read the diff), and the data folder already holds the oracles, so the move adds no route — cost if wrong: dev-mode replays lose their transcript audit trail; agent-replay keeps findings in the record.
+    - Ruling (amends the Task 3 reset-step ruling): agentEnv sets DOCKER_HOST=unix:///nonexistent and drops PAYLOAD_DROP_DATABASE, so an agent's docker CLI reaches no daemon; setup/teardown run with the bench env and are unaffected; the reset steps stay in the inputs — cost if wrong: an agent that deliberately resets DOCKER_HOST still gets through (intent, not accident); the step 8 sandbox closes it.
+    - Ruling: the real_estate_test record is corrected (absent on real-estate-postgres-1 at the time of the check; nothing in this build could name it: env.sh refuses non-bench_ names); the user is asked whether it ever existed there; step 3's clean check gets a pg_database snapshot before and after (noted in the plan's "Not in this plan") — cost if wrong: none.
+    - Ruling: one fix wave also takes the I4 brief edits (+SOURCES.md), finalText's is_error check (a wrong "missed" is silent), the README data layout and sealed-agent paragraph, superseded sheets moved to <task>/superseded/, the plan's Task 3 Step 2 sentence pointing at the ruling, and the progress.md Tasks 1–2 bullet and stale line — cost if wrong: none.
+    Final fix wave: dispatched (opus)
+    Final fix wave: implementer opus, commits fc7bcb9..963e0ef (8129194 code, 9d87cfb docs, 963e0ef README); 190 pass; 64 transcripts moved, 46 superseded files moved; re-review dispatched (opus)
+    Final fix wave: implementer opus 138.4k/13.7 min; re-review opus: all addressed, no new breakage
+
+- Final review: opus 175.9k/11.5 min · fix wave opus 138.4k/13.7 min · re-review opus · all addressed
