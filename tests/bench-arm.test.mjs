@@ -82,10 +82,11 @@ writeFileSync(join(data, 'arms.json'), JSON.stringify({ smallModel: 'small-m', p
 const task = join(tmp, 'task.json')
 writeFileSync(task, JSON.stringify({ name: 't1', repo, db: null, port: 4999, start: 'true', ready: 'http://127.0.0.1:4999/', oracle: 'true', junit: 'r.xml' }))
 
-// STUB_DONE: the turn (0 = the first prompt, 1 = the first resume) that answers DONE, or never; STUB_PLUGINS: the probe's plugin list
+// STUB_DONE: the turn (0 = the first prompt, 1 = the first resume) that answers DONE, or never; STUB_PLUGINS: the probe's plugin list;
+// STUB_PLANT: a marker file the main turn's planted post-commit hook and fsmonitor would write (it also plants a tag)
 const stub = join(tmp, 'claude-stub')
 writeFileSync(stub, `#!/usr/bin/env bun
-import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 const a = process.argv.slice(2), probe = a[1] === 'Reply OK.'
 const prev = existsSync(process.env.STUB_LOG) ? readFileSync(process.env.STUB_LOG, 'utf8').trim().split('\\n').length - 1 : 0 // main turns so far
 appendFileSync(process.env.STUB_LOG, JSON.stringify({ probe, args: a, cwd: process.cwd(), files: readdirSync(process.cwd()).sort(), env: Object.keys(process.env).filter((k) => /BENCH/.test(k)) }) + '\\n')
@@ -93,8 +94,15 @@ const say = (o) => console.log(JSON.stringify(o))
 say({ type: 'system', subtype: 'init', tools: ['Bash'], slash_commands: [], plugins: JSON.parse(process.env.STUB_PLUGINS ?? '[]') })
 say({ type: 'assistant', message: { id: 'm', model: probe ? 'probe-m' : 'main-m', usage: {}, content: [] } })
 if (!probe) writeFileSync('made.txt', 'turn ' + prev + '\\n')
+const mark = process.env.STUB_PLANT
+if (!probe && prev === 0 && mark) {
+  Bun.spawnSync(['git', 'tag', 'planted'])
+  mkdirSync('.git/hooks', { recursive: true })
+  for (const f of ['.git/hooks/post-commit', '.git/fsmon']) { writeFileSync(f, '#!/bin/sh\\necho ' + f + ' >> ' + mark + '\\n'); chmodSync(f, 0o755) }
+  Bun.spawnSync(['git', 'config', 'core.fsmonitor', process.cwd() + '/.git/fsmon'])
+}
 const done = !probe && String(prev) === process.env.STUB_DONE
-say({ type: 'result', subtype: 'success', result: probe ? 'OK' : done ? ' DONE\\n' : 'working', usage: { input_tokens: probe ? 1 : 10, output_tokens: 2 } })
+say({ type: 'result', subtype: 'success', result: probe ? 'OK' : done ? ' DONE\\n' : 'Which colour should it be?', usage: { input_tokens: probe ? 1 : 10, output_tokens: 2 } })
 `)
 chmodSync(stub, 0o755)
 
@@ -111,21 +119,23 @@ const result = (id) => JSON.parse(readFileSync(join(data, 'results', `${id}.json
 const show = (ref) => Bun.spawnSync(['git', '-C', repo, 'show', ref]).stdout.toString()
 const opt = (args, flag) => args[args.indexOf(flag) + 1]
 
-test('run-arm: DONE on the first resume is zero interventions, and the product is a branch of the task repo', async () => {
-  const r = await cli(run('B', 1), { STUB_DONE: '1' })
+test('run-arm: a question then DONE on the first resume is one intervention, and the product is a branch of the task repo', async () => {
+  mkdirSync(join(data, 'results', 'p1-B-1'), { recursive: true }); writeFileSync(join(data, 'results', 'p1-B-1', '9-stale.jsonl'), '')
+  const marker = join(tmp, 'planted-marker')
+  const r = await cli(run('B', 1), { STUB_DONE: '1', STUB_PLANT: marker })
   expect(r).toMatchObject({ code: 0, stdout: 'p1-B-1 done\n' })
   const [probe, main, resume, ...rest] = calls()
   expect(rest).toEqual([])
   expect(probe.probe).toBe(true)
   expect(probe.args).not.toContain('--session-id')
-  expect(main.args[1]).toBe('INPUT of p1\n')
+  expect(main.args[1]).toBe('INPUT of p1\n\n\nWhen the task is done, reply exactly DONE.')
   expect(main.files).toEqual(['.git', 'a.txt'])
   expect(main.env).toEqual([])
   expect(main.cwd.startsWith(realpathSync(ROOT))).toBe(true)
   const id = opt(main.args, '--session-id')
   expect(opt(resume.args, '--resume')).toBe(id)
   expect(resume.args).not.toContain('--session-id')
-  expect(resume.args[1]).toBe('Continue until the task is done. When it is done, reply exactly DONE.')
+  expect(resume.args[1]).toBe('No more information; decide from the requirement. Continue until the task is done. When it is done, reply exactly DONE.')
   for (const c of [probe, main, resume]) {
     expect(opt(c.args, '--permission-mode')).toBe('bypassPermissions')
     expect(c.args).not.toContain('--model') // B with no cfg.model: the CLI default
@@ -138,16 +148,39 @@ test('run-arm: DONE on the first resume is zero interventions, and the product i
   expect(readFileSync(join(dir, '2-resume-1.jsonl'), 'utf8')).toContain('" DONE\\n"')
   expect(readdirSync(join(data, 'results')).filter((f) => f.endsWith('.json'))).toEqual(['p1-B-1.json'])
   expect(show('bench/p1-B-1:a.txt')).toBe('base\n')
+  expect(git('tag').stdout.toString()).toBe('') // the agent's tag stays out of the copy
+  expect(existsSync(marker)).toBe(false) // neither its post-commit hook nor its fsmonitor ran
   expect(show('bench/p1-B-1~1').split('\n')).toContain('    base ' + git('rev-parse', '--short=7', 'HEAD~1').stdout.toString().trim())
   const res = result('p1-B-1')
-  expect(res).toMatchObject({ task: 'p1', arm: 'B', run: 1, status: 'done', resumes: ['DONE'], interventions: 0, branch: 'bench/p1-B-1',
+  expect(res).toMatchObject({ task: 'p1', arm: 'B', run: 1, status: 'done', resumes: ['other'], interventions: 1, branch: 'bench/p1-B-1', plugins: [],
     usage: { input: 20, output: 4 }, transcripts: dir, probeUsage: { input: 1, output: 2 }, models: ['main-m'], probeModels: ['probe-m'] })
+  expect(res.turns).toEqual([{ turn: 'probe', code: 0, timedOut: false }, { turn: 'main', code: 0, timedOut: false }, { turn: 'resume-1', code: 0, timedOut: false }])
   expect(Date.parse(res.end) >= Date.parse(res.start)).toBe(true)
   expect(existsSync(main.cwd)).toBe(false)
   // the same run again is refused before any call: the results file exists
   const again = await cli(run('B', 1), { STUB_DONE: '1' })
   expect(again.code).toBe(2)
   expect(calls()).toEqual([])
+})
+
+test('run-arm: DONE on the main turn is zero interventions and no resume', async () => {
+  const r = await cli(run('B', 5), { STUB_DONE: '0' })
+  expect(r).toMatchObject({ code: 0, stdout: 'p1-B-5 done\n' })
+  expect(calls().length).toBe(2)
+  expect(result('p1-B-5')).toMatchObject({ status: 'done', resumes: [], interventions: 0 })
+})
+
+test('run-arm records each plugin dir with its name, commit and whether it is dirty', async () => {
+  const hp = join(tmp, 'hp-repo'), plain = join(tmp, 'plain')
+  mkdirSync(join(hp, '.claude-plugin'), { recursive: true }); mkdirSync(plain)
+  writeFileSync(join(hp, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'hp' }))
+  const hg = (...a) => Bun.spawnSync(['git', '-C', hp, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
+  hg('init', '-q'); hg('add', '.'); hg('commit', '-qm', 'p'); writeFileSync(join(hp, 'new.md'), 'x')
+  writeFileSync(join(data, 'arms.json'), JSON.stringify({ smallModel: 'small-m', plugins: { H: [hp, plain], W: [] }, turnTimeoutSec: 20 }))
+  const r = await cli(run('H', 1), { STUB_DONE: '0', STUB_PLUGINS: JSON.stringify([{ name: 'hp', path: hp }, { name: 'plain', path: plain }]) })
+  expect(r).toMatchObject({ code: 0, stdout: 'p1-H-1 done\n' })
+  expect(result('p1-H-1').plugins).toEqual([{ dir: hp, name: 'hp', commit: hg('rev-parse', 'HEAD'), dirty: true }, { dir: plain, name: 'plain', commit: null, dirty: false }])
+  writeFileSync(join(data, 'arms.json'), JSON.stringify({ smallModel: 'small-m', plugins: { H: [], W: [] }, turnTimeoutSec: 20 }))
 })
 
 test('run-arm: a run that never says DONE is abandoned after 5 resumes, 5 + 3 interventions; B- runs the small model with its prompt', async () => {
@@ -184,6 +217,8 @@ test('run-arm refuses a task with a database, an unknown arm, a missing plugin d
   writeFileSync(join(data, 'arms.json'), JSON.stringify({ smallModel: 'small-m', plugins: { H: [], W: [] }, turnTimeoutSec: 20 }))
   git('branch', 'bench/p1-W-3', 'HEAD')
   await err(run('W', 3), 'bench/p1-W-3')
+  mkdirSync(join(data, 'p..1')); writeFileSync(join(data, 'p..1/input.md'), 'x\n')
+  await err([task, 'B', '3', '--input', join(data, 'p..1/input.md'), '--at', 'HEAD~1'], 'not a valid git ref')
 })
 
 test('run-arm kills a turn that outlives turnTimeoutSec and abandons the run', async () => {
@@ -196,5 +231,6 @@ test('run-arm kills a turn that outlives turnTimeoutSec and abandons the run', a
   expect(r).toMatchObject({ code: 0, stdout: 'p1-W-4 abandoned\n' })
   expect(Date.now() - t0).toBeLessThan(15000)
   expect(result('p1-W-4')).toMatchObject({ status: 'abandoned', resumes: [], interventions: 3, reason: 'timeout' })
+  expect(result('p1-W-4').turns.at(-1)).toEqual({ turn: 'main', code: null, timedOut: true })
   expect(show('bench/p1-W-4:a.txt')).toBe('base\n')
 })

@@ -16,7 +16,7 @@ const NEEDS = { review: ['task', 'base', 'end'], audit: ['task', 'base', 'end'],
 const strings = (v) => v === undefined || (Array.isArray(v) && v.every((s) => typeof s === 'string'))
 
 // the agent must not find the data folder (results, other bugs) or the bench's own variables
-const agentEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('BENCH_') && k !== 'HSTACK_BENCH_MACHINE'))
+export const agentEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('BENCH_') && k !== 'HSTACK_BENCH_MACHINE'))
 
 // One headless claude call (binary from BENCH_CLAUDE); its process group is killed after timeoutSec and after it exits.
 export async function runClaude(opts, cwd, { timeoutSec, quiet = false }) {
