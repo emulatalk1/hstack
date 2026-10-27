@@ -403,3 +403,20 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
   - p8c: 40/16, PASS, 0 fix; 2/19693/649/39499, opus-5-5
   - p8d: 62/13, PASS, 0 fix; 2/17946/649/45176, opus-5-5
   - p8e: 41/11, PASS, 0 fix; 2/15818/649/34060, opus-5-5
+- Task 4 (interface sheets): 16/16 sheets written by sealed runs (opus 5.5, tools Read, Grep, Glob, run in an export of the task's end commit), prompt = the brief `<data>/briefs/interface.md` + `## Input` + the task's input. Every sheet passes `bench/input-check.mjs` and the shape check (title `# Interface sheet`, `##` sections, every bullet `- <kind>: "<name>"`). p8b check: "Lọc bất động sản" and "Biệt thự" are on the sheet, "Tên địa điểm" is not (git at 1846450: hits, hits, none). In-folder control: for p8b, p1 and p6b, 5 sheet names each that are absent from the input hit `src/` at the end commit. Across all sheets, 41 of 1457 unique names (counted per task) are not found verbatim at the end commit (templates with `<n>`, composed strings, framework labels, values the input states). Fix runs were sealed with no tools and changed only the named lines. Per task: names (bullets), input-check, fix runs, summed usage (input/output/cacheRead/cacheWrite, models):
+  - p1: 80, PASS, 0 fix; 8/2154/40434/14509, opus-5-5
+  - p2: 144, PASS after 1 fix (opening sentence before the title; "(import collection)" in a heading); 14/7004/99718/32022, opus-5-5
+  - p3: 97, PASS, 0 fix; 12/3269/100792/27198, opus-5-5
+  - p4: 150, PASS, 0 fix; 12/4384/113199/30867, opus-5-5
+  - p5: 97, PASS, 0 fix; 14/3115/107258/21116, opus-5-5
+  - p6a: 165, PASS, 0 fix; 14/4651/152648/32938, opus-5-5
+  - p6b: 162, PASS, 0 fix; 14/4459/127956/25597, opus-5-5
+  - p6c: 94, PASS after 1 fix ("(property list and import form)" in a heading); 16/5312/138786/34605, opus-5-5
+  - p7b: 45, PASS, 0 fix; 12/2070/69615/15958, opus-5-5
+  - p7c: 58, PASS after 1 fix (opening sentence before the title); 14/3877/83422/21707, opus-5-5
+  - p8a: 72, PASS, 0 fix; 16/3760/160020/28184, opus-5-5
+  - p8b: 137, PASS, 0 fix, p8b check PASS; 22/4667/249858/33001, opus-5-5
+  - p8b1: 97, PASS, 0 fix; 10/2728/53503/15825, opus-5-5
+  - p8c: 75, PASS, 0 fix; 14/3108/126842/27137, opus-5-5
+  - p8d: 122, PASS, 0 fix; 22/4978/305736/44513, opus-5-5
+  - p8e: 68, PASS, 0 fix; 12/2371/78733/19507, opus-5-5
