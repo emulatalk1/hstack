@@ -78,3 +78,31 @@ test('prints no description, quote or finding even when the files hold them', ()
   expect(md).toContain('11/22/33/44') // layer + judge usage summed
   expect(md).toContain('claude-y,other-value') // a model name outside claude-<a-z0-9-> is not printed
 })
+
+test('usage sums an errored first run too while the verdict is the rerun\'s', () => {
+  const a = fixture([{ id: 'ho-01' }], {
+    'ho-01-review.error1.json': record('ho-01', 'review', 'error'), 'ho-01-review.json': record('ho-01', 'review', 'missed'),
+  })
+  const md = replaySummary([a.res, '--set', `ho=${a.folder}`])
+  expect(row(md, 'ho', 'review')).toEqual(['1', '0', '1', '0', '0.0%'])
+  expect(md).toContain('| review | 2 | 22/44/66/88 | claude-x,claude-y |')
+})
+
+test('a severity that is an Object.prototype name is left out, and the unweighted bugs are counted', () => {
+  const a = fixture([{ id: 'ho-01', severity: 'high' }, { id: 'ho-02', severity: 'constructor' }, { id: 'ho-03' }], {
+    'ho-01-unit.out': 'ho-01 caught\n', 'ho-02-unit.out': 'ho-02 missed\n', 'ho-03-unit.out': 'ho-03 missed\n',
+  })
+  const md = replaySummary([a.res, '--set', `ho=${a.folder}`])
+  expect(md).toContain('| unit | 3 | 3 | 100.0% |')
+  expect(md).toContain('unweighted bugs (no severity): 2')
+})
+
+test('a models field that is not an array does not throw and prints as other-value', () => {
+  const a = fixture([{ id: 'ho-01' }, { id: 'ho-02' }], {
+    'ho-01-review.json': record('ho-01', 'review', 'caught', { models: { layer: 'SECRET-STR', judge: 7 } }),
+    'ho-02-review.json': record('ho-02', 'review', 'caught', { models: 'SECRET-TOP' }),
+  })
+  const md = replaySummary([a.res, '--set', `ho=${a.folder}`])
+  expect(md).not.toContain('SECRET')
+  expect(md).toContain('| review | 2 | 22/44/66/88 | other-value |')
+})

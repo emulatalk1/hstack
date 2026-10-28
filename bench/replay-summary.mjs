@@ -28,21 +28,20 @@ function readBugs(folder) {
   return { bugs, invalid }
 }
 
-// results/ -> Map "<id>\0<layer>" -> { verdict, usage?, models? }; a good file wins over an .error1 one
+// results/ -> Map "<id>\0<layer>" -> { verdict, runs: [{ usage, models }] }; the verdict is the good file's over an .error1 one, the runs are all json files (an errored run spent tokens too)
 function readResults(dir) {
   const got = new Map()
   for (const n of readdirSync(dir).sort()) {
     const m = FILE.exec(n)
     if (!m || EXT[m[2]] !== m[4]) continue
     const [, id, layer, err, ext] = m, key = `${id}\0${layer}`
-    if (err) { if (!got.has(key)) got.set(key, { verdict: 'error' }); continue }
-    if (ext === 'out') {
+    const rec = got.get(key) ?? { verdict: 'error', runs: [] }
+    got.set(key, rec)
+    if (ext === 'json') { const r = readJson(join(dir, n)); rec.runs.push({ usage: r?.usage, models: r?.models }); if (!err) rec.verdict = verdictOf(r?.verdict) }
+    else if (!err) {
       const last = readFileSync(join(dir, n), 'utf8').split('\n').map((l) => l.trim()).filter(Boolean).at(-1)
       const [who, v] = last?.split(' ') ?? []
-      got.set(key, { verdict: who === id && last.split(' ').length === 2 ? verdictOf(v) : 'error' })
-    } else {
-      const r = readJson(join(dir, n))
-      got.set(key, { verdict: verdictOf(r?.verdict), usage: r?.usage, models: r?.models })
+      rec.verdict = who === id && last.split(' ').length === 2 ? verdictOf(v) : 'error'
     }
   }
   return got
@@ -67,10 +66,10 @@ function summarize(results, name, folder) {
     const [c, m, e] = count(l)
     out.push(`| ${l} | ${c + m + e} | ${c} | ${m} | ${e} | ${rate(c, m)} |`)
   }
-  if (verdicts.some((b) => WEIGHT[b.severity])) { // error runs and bugs without a severity are left out
-    out.push('', 'Severity-weighted catch rate (high 3, medium 2, low 1; error runs left out):', '', '| layer | weighted caught | weighted caught + missed | rate |', '|---|---|---|---|')
+  if (verdicts.some((b) => Object.hasOwn(WEIGHT, b.severity))) { // error runs and bugs without a severity are left out
+    out.push('', 'Severity-weighted catch rate (high 3, medium 2, low 1; error runs left out):', '', `unweighted bugs (no severity): ${verdicts.filter((b) => !Object.hasOwn(WEIGHT, b.severity)).length}`, '', '| layer | weighted caught | weighted caught + missed | rate |', '|---|---|---|---|')
     for (const l of rows) {
-      const w = (k) => verdicts.filter((b) => b.v[l] === k).reduce((s, b) => s + (WEIGHT[b.severity] ?? 0), 0)
+      const w = (k) => verdicts.filter((b) => b.v[l] === k).reduce((s, b) => s + (Object.hasOwn(WEIGHT, b.severity) ? WEIGHT[b.severity] : 0), 0)
       out.push(`| ${l} | ${w('caught')} | ${w('caught') + w('missed')} | ${rate(w('caught'), w('missed'))} |`)
     }
   }
@@ -78,12 +77,14 @@ function summarize(results, name, folder) {
     const sum = Object.fromEntries(USAGE_KEYS.map((k) => [k, 0])), models = new Set()
     let n = 0
     for (const b of bugs) {
-      const r = results.get(`${b.id}\0${l}`)
-      if (!r?.usage) continue
-      n++
-      for (const part of ['layer', 'judge']) {
-        for (const k of USAGE_KEYS) sum[k] += Number.isFinite(r.usage[part]?.[k]) ? r.usage[part][k] : 0
-        for (const x of r.models?.[part] ?? []) models.add(typeof x === 'string' && MODEL.test(x) ? x : 'other-value')
+      for (const r of results.get(`${b.id}\0${l}`)?.runs ?? []) {
+        if (!r.usage) continue
+        n++
+        for (const part of ['layer', 'judge']) {
+          for (const k of USAGE_KEYS) sum[k] += Number.isFinite(r.usage[part]?.[k]) ? r.usage[part][k] : 0
+          const ms = r.models?.[part]
+          if (ms !== undefined && ms !== null) for (const x of Array.isArray(ms) ? ms : [ms]) models.add(typeof x === 'string' && MODEL.test(x) ? x : 'other-value')
+        }
       }
     }
     return n ? `| ${l} | ${n} | ${USAGE_KEYS.map((k) => sum[k]).join('/')} | ${[...models].sort().join(',') || 'none'} |` : undefined
