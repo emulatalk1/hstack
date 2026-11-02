@@ -8,11 +8,12 @@ import { resolveCommit } from './grade.mjs'
 import { loadTask } from './lib/task.mjs'
 import { readBug, reverseApply } from './replay.mjs'
 
-const USAGE = 'usage: bun bench/bugs.mjs <task.json> <folder> [--sealed] [--usable <unit|int|e2e|evaluator|review|audit> | --fix-tally <sha,sha,...>]'
+const USAGE = 'usage: bun bench/bugs.mjs <task.json> <folder> [--sealed] [--usable <unit|int|e2e|evaluator|review|audit> | --fix-tally <sha,sha,...> | --at-tally]'
 const TESTS = [null, 'no owner', 'fix in end']
 const USABLE = { unit: TESTS, int: TESTS, e2e: TESTS, evaluator: [null, 'fix in end'], review: [null], audit: [null] }
 // sealed: a string the bug file's writer chose is printed only in one of these shapes
 const SEALED_ID = /^ho-\d+$/, SEALED_MODEL = /^claude-[a-z0-9-]+$/
+const AT = '69ebe27' // the base every bug file names (plan, Global Constraints)
 const SEALED_SETS = { source: ['catalog', 'extension'], kind: ['UI', 'logic', 'validation', 'data', 'other'], severity: ['high', 'medium', 'low'] }
 
 // exit code of a git command that answers yes (0) or no (1)
@@ -53,7 +54,8 @@ export async function bugs(args, { root = ROOT } = {}) {
   const pos = args.filter((a) => a !== '--sealed')
   const u = pos.indexOf('--usable'), layer = u >= 0 ? pos.splice(u, 2)[1] : undefined
   const f = pos.indexOf('--fix-tally'), shas = f >= 0 ? pos.splice(f, 2)[1]?.split(',') : undefined
-  if (pos.length !== 2 || (u >= 0 && !Object.hasOwn(USABLE, layer)) || (u >= 0 && f >= 0) || (f >= 0 && !shas)) throw new Error(USAGE)
+  const a = pos.indexOf('--at-tally'); if (a >= 0) pos.splice(a, 1)
+  if (pos.length !== 2 || (u >= 0 && !Object.hasOwn(USABLE, layer)) || [u, f, a].filter((i) => i >= 0).length > 1 || (f >= 0 && !shas)) throw new Error(USAGE)
   for (const sha of shas ?? []) if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Error(`--fix-tally value ${sha} must match ^[0-9a-f]{7,40}$`)
   const [taskPath, folder] = pos
   // done.json and any <name>-done.json (a sealed agent's progress note) are not bug files
@@ -62,6 +64,13 @@ export async function bugs(args, { root = ROOT } = {}) {
   if (shas) { // sealed-safe: prints only the listed shas and their counts; no git, no write
     const fixes = await Promise.all(names.map((n) => Bun.file(join(folder, n)).json().then((b) => b?.fix, () => undefined)))
     for (const sha of shas) console.log(`${sha} ${fixes.filter((x) => typeof x === 'string' && x.startsWith(sha)).length}`)
+    return 0
+  }
+
+  if (a >= 0) { // sealed-safe: counts the bug files at the expected base, every other at (or none) as other; no git, no write
+    const ats = await Promise.all(names.map((n) => Bun.file(join(folder, n)).json().then((b) => b?.at, () => undefined)))
+    const n = ats.filter((x) => x === AT).length
+    console.log(`at: ${AT} ${n}, other ${ats.length - n}`)
     return 0
   }
 

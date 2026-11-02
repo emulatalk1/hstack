@@ -271,3 +271,19 @@ test('a <name>-done.json prints only its name (when short and plain), considered
   expect(r.stdout).not.toContain('secret')
   expect(r.stdout).not.toContain('Secret')
 })
+
+test('--at-tally counts the bug files at 69ebe27 and every other at as other, prints no other value, reads no git and writes nothing', async () => {
+  const dir = folder([{ id: 'ho-01', fix: fA, at: '69ebe27' }, { id: 'ho-02', fix: fA, at: 'canaryatvalue' }])
+  const before = Object.fromEntries(readdirSync(dir).map((n) => [n, readFileSync(join(dir, n), 'utf8')]))
+  rmSync(sub, { recursive: true, force: true })
+  const r = await cli([task, dir, '--sealed', '--at-tally'])
+  expect(r).toEqual({ stdout: 'at: 69ebe27 1, other 1\n', stderr: '', code: 0 })
+  expect(r.stdout + r.stderr).not.toContain('canary')
+  expect(Object.fromEntries(readdirSync(dir).map((n) => [n, readFileSync(join(dir, n), 'utf8')]))).toEqual(before)
+  expect(existsSync(sub)).toBe(false)
+  // a missing at and a file that does not parse count as other too
+  writeFileSync(join(dir, 'ho-03.json'), JSON.stringify({ id: 'ho-03', fix: fA }))
+  writeFileSync(join(dir, 'ho-04.json'), '{ canary-token')
+  expect((await cli([task, dir, '--at-tally'])).stdout).toBe('at: 69ebe27 1, other 3\n')
+  for (const other of ['--usable', '--fix-tally']) expect((await cli([task, dir, '--at-tally', other, other === '--usable' ? 'unit' : fA])).code).toBe(2)
+})
