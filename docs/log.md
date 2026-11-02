@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-02
+* **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2) the rulings for step 4 before any enumeration: the stacks (Django or Rails, Electron, Rust), the repo universe and snapshot window, the sort key with its test vectors, the walk order, the base and end commits, and the user's decisions of 2026-11-02.
 * **Creation**: Added the [external task selection plan](/plans/2026-11-02-bench-external.md) (draft), step 4 of the pre-registration: the rulings section 4.2 leaves open, one sorted candidate list committed before any check, and a walk in sort order that checks each task in a container.
 
 * **Update**: Added "Corrections after the final review" to `progress/step3-lock.md`, with no locked line changed: the three kept `setup failed` errors are most likely caused by the bugs themselves, not the harness (not diagnosed); every held-out bug file is at 69ebe27 (`bench/bugs.mjs --at-tally`, new and read-only); ho-04's unit rerun was cut by hand; the judge's caught path was probed before the dev review's 0/18; and the SHA-256 of the owner tables, the dev bug files and the replay scripts. The [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) now says a fix-tally count tells whether a listed sha is a held-out fix, so it runs only on the registered list.
