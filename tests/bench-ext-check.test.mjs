@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { issueAsOf } from '../bench/ext.mjs'
+import { issueAsOf, parseRecipe } from '../bench/ext.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // A local fixture repo stands in for GitHub, a fake gh answers the PR and issue queries, and a fixed recipe (or a fake
@@ -22,13 +22,16 @@ git('init', '-q')
 writeFileSync(join(fx, 'tests/zebra_ok.sh'), 'exit 0\n')
 writeFileSync(join(fx, 'tests/zebra_needs.sh'), 'test -f src/feature.txt\n')
 writeFileSync(join(fx, 'tests/zebra_old.sh'), 'exit 1\n')
+writeFileSync(join(fx, 'tests/zebra_flip.sh'), 'exit 1\n') // fixed by the PR's test change alone: p2p only when the base runs the end's version
 writeFileSync(join(fx, 'src/base.txt'), 'base\n')
+writeFileSync(join(fx, '.dockerignore'), 'tests/\n') // the build must not apply it, or no test is in the image
 git('add', '.'); git('commit', '-qm', 'base')
 const c0 = git('rev-parse', 'HEAD')
 // PR 1: adds the file the check needs, touches both checks, deletes one
 writeFileSync(join(fx, 'src/feature.txt'), 'feature\n')
 writeFileSync(join(fx, 'tests/zebra_needs.sh'), '# needs the feature\ntest -f src/feature.txt\n')
 writeFileSync(join(fx, 'tests/zebra_ok.sh'), '# always\nexit 0\n')
+writeFileSync(join(fx, 'tests/zebra_flip.sh'), 'exit 0\n')
 rmSync(join(fx, 'tests/zebra_old.sh'))
 git('add', '-A'); git('commit', '-qm', 'one')
 const c1 = git('rev-parse', 'HEAD')
@@ -39,13 +42,17 @@ git('add', '-A'); git('commit', '-qm', 'two')
 const c2 = git('rev-parse', 'HEAD')
 
 const platform = process.arch === 'arm64' ? 'linux/arm64' : 'linux/amd64'
+// one case per file, and nothing_old, which fails while the file PR 1 deletes is still there (so deletions must apply)
 const junitTest = [
   'echo "<testsuite>" > /out/junit.xml',
+  'if [ -e tests/zebra_old.sh ]; then echo "<testcase classname=\\"fx\\" name=\\"nothing_old\\"><failure/></testcase>"; else echo "<testcase classname=\\"fx\\" name=\\"nothing_old\\"/>"; fi >> /out/junit.xml',
   'for f in "$@"; do n=$(basename "$f" .sh); if sh "$f"; then echo "<testcase classname=\\"fx\\" name=\\"$n\\"/>"; else echo "<testcase classname=\\"fx\\" name=\\"$n\\"><failure/></testcase>"; fi; done >> /out/junit.xml',
   'echo "</testsuite>" >> /out/junit.xml',
 ].join('\n') + '\n'
 const recipe = { platform, dockerfile: 'FROM alpine:3.22\nCOPY . /work\nWORKDIR /work\n', test: junitTest, probe: ['tests/zebra_ok.sh'] }
 const badRecipe = { ...recipe, probe: ['tests/zebra_needs.sh'] } // fails at the base: no passing case
+const netRecipe = { ...recipe, dockerfile: recipe.dockerfile + 'RUN echo "fetch: dial tcp 10.0.0.1:443: connect: refused" && exit 1\n' }
+const killedRecipe = { ...recipe, test: '[ $# -gt 1 ] && exit 137\n' + junitTest } // the probe runs, the base run is killed
 
 const cfg = {
   seed: 'hstack-bench-2026-10-27', window: { createdFrom: '2026-07-01T00:00:00Z', mergedBefore: '2026-11-01T00:00:00Z' },
@@ -53,7 +60,7 @@ const cfg = {
   groups: [{ id: 's1', languages: ['Lang1'], markers: [], testPaths: ['(^|/)tests/'] }],
 }
 const prs = {
-  1: { end: c1, files: ['src/feature.txt', 'tests/zebra_needs.sh', 'tests/zebra_ok.sh', 'tests/zebra_old.sh'], issue: 11 },
+  1: { end: c1, files: ['src/feature.txt', 'tests/zebra_flip.sh', 'tests/zebra_needs.sh', 'tests/zebra_ok.sh', 'tests/zebra_old.sh'], issue: 11 },
   2: { end: c2, files: ['src/other.txt', 'tests/zebra_ok.sh'], issue: 12 },
 }
 const prAnswer = (p) => ({ data: { repository: { licenseInfo: { spdxId: 'MIT' }, defaultBranchRef: { name: 'main' }, pullRequest: {
@@ -70,11 +77,13 @@ const gh = async (argv) => {
   const n = +argv.find((a) => a.startsWith('n=')).slice(2), q = argv.find((a) => a.startsWith('query='))
   return JSON.stringify(q.includes('pullRequest(') ? c.pr[n] : c.issue)
 }
-process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent: async () => c.reply }))
+let i = 0
+const recipeAgent = async () => (Array.isArray(c.reply) ? c.reply[i++] ?? null : c.reply)
+process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent }))
 `)
 
 // a data folder with its own repo owner, so container and image names never meet those of another test or run
-function setup({ withRecipe = true } = {}) {
+function setup({ withRecipe = true, use = recipe } = {}) {
   const owner = `fx${rand()}`, data = join(tmp, owner), ext = join(data, 'ext'), key = `${owner}__app`
   mkdirSync(join(ext, 'briefs'), { recursive: true })
   writeFileSync(join(data, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
@@ -85,7 +94,7 @@ function setup({ withRecipe = true } = {}) {
   writeFileSync(join(ext, 'candidates-1.tsv'), [head, ...rows].map((l) => l.join('\t')).join('\n') + '\n')
   if (withRecipe) {
     mkdirSync(join(ext, 'recipes', key), { recursive: true })
-    writeFileSync(join(ext, 'recipes', key, 'recipe.json'), JSON.stringify(recipe))
+    writeFileSync(join(ext, 'recipes', key, 'recipe.json'), JSON.stringify(use))
   }
   return { owner, data, ext, key, slug: (n) => `${key}__${n}` }
 }
@@ -105,13 +114,17 @@ const accepted = () => (first ??= (async () => { const s = setup(); return { s, 
 
 dtest('finds one fail-to-pass test in the fixture and writes meta.json (needs BENCH_EXT_DOCKER=1)', async () => {
   const { s, r } = await accepted()
-  expect(r.stdout).toBe(`${s.slug(1)} ok f2p=1 p2p=1\n`)
+  expect(r.stdout).toBe(`${s.slug(1)} ok f2p=1 p2p=3\n`)
   const meta = json(join(s.ext, 'tasks', s.slug(1), 'meta.json'))
   expect(meta).toMatchObject({ id: `${s.owner}/app#1`, slug: s.slug(1), stack: 's1', tier: 1, rank: 1, url: `https://github.com/${s.owner}/app/pull/1`, defaultBranch: 'main',
     pr: 1, prCreated: '2026-08-10T00:00:00Z', mergedAt: '2026-08-12T00:00:00Z', issue: 11, issueCreated: '2026-08-01T00:00:00Z', end: c1, base: c0, method: 'single',
-    licence: 'MIT', stars: 1500, f2p: 1, p2p: 1, editHistory: 'none', platform, recipeRounds: 0 })
+    licence: 'MIT', stars: 1500, f2p: 1, p2p: 3, editHistory: 'none', platform, recipeRounds: 0 })
   expect(meta.images).toEqual([`bench-ext/${s.slug(1)}:${c0.slice(0, 7)}`, `bench-ext/${s.slug(1)}:${c1.slice(0, 7)}`])
-  expect(json(join(s.ext, 'sealed', s.slug(1), 'f2p.json'))).toEqual({ f2p: ['fx::zebra_needs'], p2p: ['fx::zebra_ok'] })
+  // zebra_flip passes at the base only in the end's version; nothing_old only once the deletion is applied
+  expect(json(join(s.ext, 'sealed', s.slug(1), 'f2p.json'))).toEqual({ f2p: ['fx::zebra_needs'], p2p: ['fx::nothing_old', 'fx::zebra_flip', 'fx::zebra_ok'] })
+  expect(meta.runs).toEqual([['probe-reuse-1', 2], ['base-1', 4], ['end-1-1', 4], ['end-1-2', 4]].map(([label, cases]) => ({ label, timedOut: false, exitCode: 0, cases })))
+  // the commit is pinned by a ref, so a later gc keeps it
+  expect(Bun.spawnSync(['git', '-C', join(s.ext, 'repos', s.key), 'rev-parse', `refs/ext/${c1}`]).stdout.toString().trim()).toBe(c1)
   expect(json(join(s.ext, 'tasks', s.slug(1), 'issue.json'))).toEqual({ title: 'Issue title', body: 'Issue body', asOf: '2026-08-10T00:00:00Z', editHistory: 'none' })
   expect(walkRows(s)).toEqual([['s1', '1', '1', `${s.owner}/app#1`, 'ok']])
   expect(existsSync(join(s.ext, 'tasks', s.slug(1), 'check.err'))).toBe(false)
@@ -122,7 +135,7 @@ dtest('prints only the verdict and counts (needs BENCH_EXT_DOCKER=1)', async () 
   const lines = r.stdout.split('\n').filter(Boolean)
   expect(lines.length).toBe(1)
   expect(lines[0]).toMatch(/^\S+ (ok f2p=\d+ p2p=\d+|out [a-z0-9 ]+)$/)
-  expect(r.stdout).not.toMatch(/zebra|tests\/|feature/)
+  expect(r.stdout).not.toMatch(/zebra|nothing_old|tests\/|feature/)
   expect(r.stderr).toBe('')
 }, 300000)
 
@@ -137,7 +150,7 @@ dtest('--remove-out removes only the names check recorded for an out candidate (
   if (!exists('container', 'bench-ext-other')) expect(docker('create', '--name', 'bench-ext-other', 'alpine:3.22', 'true').exitCode).toBe(0)
   const s = setup()
   const r = await run(s, ['walk', 's1', '--remove-out'])
-  expect(r.stdout).toBe(`${s.slug(1)} ok f2p=1 p2p=1\n${s.slug(2)} out no fail-to-pass test\ns1 tier 1: accepted 1, checked 2, list end yes\n`)
+  expect(r.stdout).toBe(`${s.slug(1)} ok f2p=1 p2p=3\n${s.slug(2)} out no fail-to-pass test\ns1 tier 1: accepted 1, checked 2, list end yes\n`)
   const out = json(join(s.ext, 'tasks', s.slug(2), 'meta.json')), ok = json(join(s.ext, 'tasks', s.slug(1), 'meta.json'))
   expect(out.containers.length).toBe(4)
   const removed = readFileSync(join(s.ext, 'removed.txt'), 'utf8').trim().split('\n')
@@ -168,6 +181,51 @@ dtest('out with recipe failed when the probe has no passing case (needs BENCH_EX
   expect(walkRows(s)).toEqual([['s1', '1', '1', `${s.owner}/app#1`, 'recipe failed']])
 }, 600000)
 
+dtest('a build that fails twice on a network signature is error, and check.err names only the signature (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = setup({ use: netRecipe })
+  const r = await run(s, ['check', 's1', '1'])
+  expect(r.stdout).toBe(`${s.slug(1)} error build\n`)
+  expect(readFileSync(join(s.ext, 'tasks', s.slug(1), 'check.err'), 'utf8')).toBe('build: dial tcp\n')
+  expect(json(join(s.ext, 'tasks', s.slug(1), 'meta.json')).images).toEqual([])
+}, 300000)
+
+dtest('a run killed from outside our limit is error, not out (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = setup({ use: killedRecipe })
+  const r = await run(s, ['check', 's1', '1'])
+  expect(r.stdout).toBe(`${s.slug(1)} error run\n`)
+  expect(readFileSync(join(s.ext, 'tasks', s.slug(1), 'check.err'), 'utf8')).toMatch(/^run: container \S+-base-1 was killed \(exit 137, OOMKilled false\)\n$/)
+  expect(json(join(s.ext, 'tasks', s.slug(1), 'meta.json')).runs.map((x) => x.label)).toEqual(['probe-reuse-1']) // the killed run records no cases
+}, 300000)
+
+dtest('a reply that is not a recipe spends a round, and the next round is told why (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = setup({ withRecipe: false })
+  const r = await run(s, ['check', 's1', '1'], { reply: ['no recipe here', JSON.stringify(recipe)] })
+  expect(r.stdout).toBe(`${s.slug(1)} ok f2p=1 p2p=3\n`)
+  expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tbad reply\n2\t${s.slug(1)}\tpass\n`)
+  expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds', '2.prompt.md'), 'utf8')).toStartWith('RECIPE BRIEF\n\nThe previous reply was not a valid recipe: ')
+  expect(json(join(s.ext, 'recipes', s.key, 'recipe.json'))).toEqual(recipe)
+}, 300000)
+
+test('three replies that are not recipes are out with recipe failed', async () => {
+  const s = setup({ withRecipe: false })
+  const r = await run(s, ['check', 's1', '1'], { reply: ['nope', '{"platform": "linux/arm64"}', JSON.stringify({ ...recipe, dockerfile: 'FROM alpine:3.22\n' })] })
+  expect(r.stdout).toBe(`${s.slug(1)} out recipe failed\n`)
+  expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8').trim().split('\n').map((l) => l.split('\t')[2])).toEqual(['bad reply', 'bad reply', 'bad reply'])
+  expect(existsSync(join(s.ext, 'tasks', s.slug(1), 'check.err'))).toBe(false)
+}, 60000)
+
+test('a recipe must copy the repo to /work and may not ask for host network, insecure mode or secrets', () => {
+  const ok = { platform: 'linux/arm64', dockerfile: 'FROM alpine:3.22\nCOPY . /work\nWORKDIR /work\nRUN true\n', test: 'true', probe: ['a'] }
+  expect(parseRecipe('```json\n' + JSON.stringify(ok) + '\n```')).toEqual(ok)
+  const bad = (dockerfile) => () => parseRecipe(JSON.stringify({ ...ok, dockerfile }))
+  expect(bad('FROM alpine:3.22\nWORKDIR /work\n')).toThrow('COPY . /work')
+  expect(bad('FROM alpine:3.22\nCOPY . /work\n')).toThrow('WORKDIR /work')
+  for (const run of ['RUN --network=host true', 'RUN --security=insecure true', 'RUN --mount=type=ssh true', 'RUN --mount=target=/x,type=secret,id=a true'])
+    expect(bad(ok.dockerfile + run + '\n')).toThrow('may not use')
+  expect(() => parseRecipe(JSON.stringify({ ...ok, platform: 'linux/s390x' }))).toThrow('the recipe is not')
+  expect(() => parseRecipe(JSON.stringify({ ...ok, probe: [] }))).toThrow('the recipe is not')
+})
+
 test('a docker daemon failure is error, not out', async () => {
   const s = setup()
   const r = await run(s, ['check', 's1', '1'], { env: { DOCKER_HOST: `unix:///nonexistent-${rand()}.sock` } })
@@ -197,6 +255,9 @@ test('the issue as it stood when the PR opened', () => {
   expect(issueAsOf(issue({ lastEditedAt: '2026-08-20T00:00:00Z', userContentEdits: { nodes: [{ editedAt: '2026-08-20T00:00:00Z', diff: 'body now' }] } }), at))
     .toEqual({ title: 'now', body: 'body now', editHistory: 'unverified' })
   expect(issueAsOf(issue({ lastEditedAt: '2026-08-20T00:00:00Z' }), at).editHistory).toBe('unverified')
+  // the version in force has no text: an older version is not it
+  expect(issueAsOf(issue({ ...edits, userContentEdits: { nodes: [{ editedAt: '2026-08-20T00:00:00Z', diff: 'body now' }, { editedAt: '2026-08-05T00:00:00Z', diff: null }, { editedAt: '2026-08-01T00:00:00Z', diff: 'v0' }] } }), at))
+    .toEqual({ title: 'now', body: 'body now', editHistory: 'unverified' })
   // renames after the PR are undone; one before stays
   const renames = { timelineItems: { nodes: [{ createdAt: '2026-08-02T00:00:00Z', previousTitle: 'first', currentTitle: 'second' },
     { createdAt: '2026-08-15T00:00:00Z', previousTitle: 'second', currentTitle: 'third' }, { createdAt: '2026-08-16T00:00:00Z', previousTitle: 'third', currentTitle: 'now' }] } }

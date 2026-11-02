@@ -281,28 +281,46 @@ export function issueAsOf(issue, asOf) {
   const renames = (issue.timelineItems?.nodes ?? []).filter((e) => e?.createdAt && later(e.createdAt, asOf)).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
   const title = renames.length ? renames[0].previousTitle : issue.title
   if (!(issue.lastEditedAt && later(issue.lastEditedAt, asOf)) && !edits.some((e) => later(e.editedAt, asOf))) return { title, body: issue.body, editHistory: 'none' }
-  const v = edits.find((e) => !later(e.editedAt, asOf) && typeof e.diff === 'string')
-  return v ? { title, body: v.diff, editHistory: 'recovered' } : { title, body: issue.body, editHistory: 'unverified' }
+  const v = edits.find((e) => !later(e.editedAt, asOf)) // the version in force at asOf; an older one would be the wrong text
+  return typeof v?.diff === 'string' ? { title, body: v.diff, editHistory: 'recovered' } : { title, body: issue.body, editHistory: 'unverified' }
 }
 
 // the reply is data: its shape is checked before any field reaches docker
-function parseRecipe(text) {
+export function parseRecipe(text) {
   const r = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
   const probe = Array.isArray(r?.probe) && r.probe.length >= 1 && r.probe.length <= 3 && r.probe.every((p) => typeof p === 'string' && p)
   if (!PLATFORMS.includes(r?.platform) || typeof r.dockerfile !== 'string' || !r.dockerfile || typeof r.test !== 'string' || !probe) throw new Error('the recipe is not { platform, dockerfile, test, probe: [1 to 3 paths] }')
+  if (!/^\s*COPY\s+\.\s+\/work\/?\s*$/im.test(r.dockerfile) || !/^\s*WORKDIR\s+\/work\/?\s*$/im.test(r.dockerfile)) throw new Error('the dockerfile must have COPY . /work and WORKDIR /work')
+  if (/--network[= ]+host|--security[= ]+insecure|--mount[= ][^\n]*type=(ssh|secret)/i.test(r.dockerfile)) throw new Error('the dockerfile may not use --network=host, --security=insecure or an ssh or secret mount')
   return { platform: r.platform, dockerfile: r.dockerfile, test: r.test, probe: r.probe }
 }
-const retryText = (f) => `\n\nA previous recipe failed. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n\nThe last 200 lines of its ${f.what} log:\n\n\`\`\`\n${readFileSync(f.log, 'utf8').split('\n').slice(-200).join('\n')}\n\`\`\`\n`
+// a build that fails twice with one of these in its log tail is the network's failure, not the repo's
+const NET = Object.entries({ 'failed to resolve source metadata': /failed to resolve source metadata/i, toomanyrequests: /toomanyrequests/i, 'dial tcp': /dial tcp/i,
+  'no such host': /no such host/i, 'Temporary failure in name resolution': /temporary failure in name resolution/i, 'Could not resolve host': /could not resolve host/i,
+  'i/o timeout': /i\/o timeout/i, 'TLS handshake timeout': /tls handshake timeout/i, 'connection reset': /connection reset/i, ECONNRESET: /ECONNRESET/, ETIMEDOUT: /ETIMEDOUT/,
+  'HTTP 503': /HTTP[^\n]{0,12}\b503\b|503 Service Unavailable/i, 'HTTP 502': /HTTP[^\n]{0,12}\b502\b|502 Bad Gateway/i })
+const tail = (file) => readFileSync(file, 'utf8').split('\n').slice(-200).join('\n')
+const retryText = (f) => f.what === 'reply' ? `\nThe previous reply was not a valid recipe: ${f.message}\n` : `\nA previous recipe failed. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n\nThe last 200 lines of its ${f.what} log:\n\n\`\`\`\n${tail(f.log)}\n\`\`\`\n`
 
-async function sp(argv) {
-  const p = Bun.spawn(argv, { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
+// every external call has a limit: its process group is killed after timeoutSec and code is 'timeout'
+async function sp(argv, timeoutSec = 300) {
+  const p = Bun.spawn(argv, { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', detached: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
+  let timedOut = false
+  const timer = setTimeout(() => { timedOut = true; try { process.kill(-p.pid, 'SIGKILL') } catch {} }, timeoutSec * 1000)
   const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited])
-  return { out, err, code }
+  clearTimeout(timer)
+  return { out, err, code: timedOut ? 'timeout' : code }
 }
-const must = async (argv, what) => {
-  const r = await sp(argv)
-  if (r.code) throw new Error(`${what} failed (exit ${r.code}): ${r.err.trim().slice(-500)}`)
+// quiet: the message has the exit code only (the stderr of a sealed-phase call can name the PR's test files)
+const must = async (argv, what, { timeoutSec = 300, quiet = false } = {}) => {
+  const r = await sp(argv, timeoutSec)
+  if (r.code === 'timeout') throw new Error(`${what} timed out after ${timeoutSec} s`)
+  if (r.code) throw new Error(`${what} failed (exit ${r.code})${quiet ? '' : `: ${r.err.trim().slice(-500)}`}`)
   return r.out
+}
+const limit = (promise, sec, what) => {
+  let t
+  return Promise.race([promise, new Promise((_, no) => { t = setTimeout(() => no(new Error(`${what} timed out after ${sec} s`)), sec * 1000) })]).finally(() => clearTimeout(t))
 }
 const dataOf = (data) => {
   const d = data ?? (process.env.HSTACK_BENCH_MACHINE && dirname(process.env.HSTACK_BENCH_MACHINE))
@@ -321,7 +339,7 @@ const appendWalk = (ext, row, result) => {
 
 // the default recipe agent: a sealed agent with read tools on the files of the base; null when it gives no reply
 async function sealedRecipe({ env, label, at, prompt, out }) {
-  const r = await sp([process.execPath, join(import.meta.dir, 'sealed-agent.mjs'), env, label, '--at', at, '--tools', 'Read,Glob,Grep', '--prompt', prompt, '--out', out])
+  const r = await sp([process.execPath, join(import.meta.dir, 'sealed-agent.mjs'), env, label, '--at', at, '--tools', 'Read,Glob,Grep', '--prompt', prompt, '--out', out], 4000) // the agent's own limit is 3600 s
   return r.code === 0 && existsSync(out) ? readFileSync(out, 'utf8') : null
 }
 
@@ -338,35 +356,48 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
   const meta = { id: row.id, slug, stack: row.stack, tier: Number(row.tier), rank: Number(row.rank), url: `https://github.com/${row.repo}/pull/${n}`, defaultBranch: null,
     pr: n, prCreated: null, mergedAt: null, issue: Number(row.issue), issueCreated: null, end: null, base: null, method: null, licence: null, stars: Number(row.stars),
     f2p: null, p2p: null, editHistory: null, platform: null, images: prev.images ?? [], recipeRounds: 0, minutes: null,
-    attempt: (prev.attempt ?? 0) + 1, containers: prev.containers ?? [], imageIds: prev.imageIds ?? [] }
+    attempt: (prev.attempt ?? 0) + 1, containers: prev.containers ?? [], imageIds: prev.imageIds ?? [], runs: prev.runs ?? [] }
   const save = () => writeFileSync(metaFile, JSON.stringify(meta, null, 2) + '\n')
   const task = { name: key, repo: repoDir, db: null, port: 1024, start: 'true', ready: 'http://localhost:1', oracle: 'true', junit: 'junit.xml', timeoutSec: 3600 }
   const envFile = join(ext, 'env', `${key}.json`)
-  const git = (...a) => must(['git', '--literal-pathspecs', '-C', repoDir, ...a], `git ${a[0]}`)
+  const git = (a, o) => must(['git', '--literal-pathspecs', '-C', repoDir, ...a], `git ${a[0]}`, o)
   let stage = 'fetch', seq = 0, end
   const scratch = (what, commit, fn) => withExport(task, commit, `${what}-${slug}-${process.pid}-${seq++}`, fn)
   const gql = async (query, vars) => {
-    const body = JSON.parse(await gh(['api', 'graphql', '-f', `query=${query}`, ...Object.entries(vars).flatMap(([k, v]) => [typeof v === 'number' ? '-F' : '-f', `${k}=${v}`])]))
+    const argv = ['api', 'graphql', '-f', `query=${query}`, ...Object.entries(vars).flatMap(([k, v]) => [typeof v === 'number' ? '-F' : '-f', `${k}=${v}`])]
+    const body = JSON.parse(await limit(gh(argv), 300, 'gh graphql'))
     if (!body?.data?.repository) throw new Error(`gh graphql: ${JSON.stringify(body?.errors ?? body).slice(0, 300)}`)
     return body.data.repository
   }
   const daemon = async () => {
     const r = await sp(['docker', 'version', '--format', '{{.Server.Version}}'])
-    if (r.code) throw new Error(`docker daemon: ${r.err.trim().slice(-300)}`)
+    if (r.code) throw new Error(`docker daemon: ${r.code === 'timeout' ? 'no answer in 300 s' : r.err.trim().slice(-300)}`)
   }
-  // the image of commit with the recipe: false when the build fails (the repo's failure), a throw when the daemon does
+  // the image of commit with the recipe: false when the build fails (the repo's failure), a throw when the daemon or the
+  // network does
   const build = (recipe, commit, tag, log) => {
     stage = 'build'
     return scratch('ctx', commit, async (dir) => {
       writeFileSync(join(dir, '.bench.Dockerfile'), recipe.dockerfile)
+      writeFileSync(join(dir, '.bench.Dockerfile.dockerignore'), '') // BuildKit reads it instead of the repo's .dockerignore
       writeFileSync(join(dir, '.bench-test.sh'), recipe.test)
-      const iid = `${log}.iid`, fd = openSync(log, 'w')
-      rmSync(iid, { force: true })
-      let code
-      try {
-        ({ code } = await runGroup(['docker', 'build', '--progress=plain', '--platform', recipe.platform, '-f', join(dir, '.bench.Dockerfile'), '--iidfile', iid, '-t', tag, dir], { timeoutSec: 2700, stdout: fd, stderr: fd }))
-      } finally { closeSync(fd) }
-      if (code !== 0) { await daemon(); return false }
+      const iid = `${log}.iid`
+      const once = async (flag) => {
+        rmSync(iid, { force: true })
+        const fd = openSync(log, flag)
+        try {
+          return (await runGroup(['docker', 'build', '--progress=plain', '--platform', recipe.platform, '-f', join(dir, '.bench.Dockerfile'), '--iidfile', iid, '-t', tag, dir], { timeoutSec: 2700, stdout: fd, stderr: fd })).code
+        } finally { closeSync(fd) }
+      }
+      let code = await once('w')
+      // once more from the BuildKit cache: a network blip passes then, the repo's own failure fails again
+      if (code !== 0 && code !== 'timeout') { await daemon(); code = await once('a') }
+      if (code !== 0) {
+        await daemon()
+        const sig = NET.find(([, re]) => re.test(tail(log)))?.[0]
+        if (sig) throw new Error(sig) // the signature's name only: the log is the repo's output
+        return false
+      }
       const id = readFileSync(iid, 'utf8').trim()
       if (!meta.images.includes(tag)) meta.images.push(tag)
       if (!meta.imageIds.includes(id)) meta.imageIds.push(id)
@@ -375,42 +406,48 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     })
   }
   const archive = async (paths, dir) => {
-    const a = Bun.spawn(['git', '--literal-pathspecs', '-C', repoDir, 'archive', end, '--', ...paths], { stdout: 'pipe', stderr: 'ignore' })
-    const t = Bun.spawn(['tar', '-x', '-C', dir], { stdin: a.stdout, stderr: 'ignore' })
-    const [ac, tc] = [await a.exited, await t.exited]
-    if (ac || tc) throw new Error(`git archive of the PR's test files failed (exit ${ac}, ${tc})`) // its stderr would name them
+    const tar = join(dir, '.bench-tests.tar')
+    await git(['archive', '-o', tar, end, '--', ...paths], { quiet: true })
+    await must(['tar', '-x', '-f', tar, '-C', dir], 'tar -x', { quiet: true })
+    rmSync(tar)
   }
   // one run in a new container of image with no network: the scripts (and, with copy, the PR's test files from end) go in
   // by docker cp, its command names no file, and its JUnit comes out by docker cp; [] when it wrote none
   const runIn = async (recipe, image, label, files, { del = [], copy = false, log, xml }) => {
     stage = 'run'
     const c = `bench-ext-${slug}-${label}`
-    const made = await sp(['docker', 'create', '--network', 'none', '--platform', recipe.platform, '--name', c, image, 'sh', '/work/.bench-run.sh'])
-    if (made.code) throw new Error(`docker create ${c} failed: ${made.err.trim().slice(-300)}`)
+    await must(['docker', 'create', '--network', 'none', '--platform', recipe.platform, '--name', c, image, 'sh', '/work/.bench-run.sh'], `docker create ${c}`)
     meta.containers.push(c)
     save()
     stage = 'cp'
     await scratch('in', null, async (dir) => {
       if (copy) await archive(files, dir)
       writeFileSync(join(dir, '.bench-test.sh'), recipe.test) // also here: a repo's .dockerignore may have kept it out of the image
-      writeFileSync(join(dir, '.bench-run.sh'), ['cd /work', 'mkdir -p /out', ...del.map((f) => `rm -f -- ${word(f)}`), `exec sh /work/.bench-test.sh ${files.map(word).join(' ')}`, ''].join('\n'))
-      const r = await sp(['docker', 'cp', `${dir}/.`, `${c}:/work`])
-      if (r.code) throw new Error(`docker cp into ${c} failed: ${r.err.trim().slice(-300)}`)
+      writeFileSync(join(dir, '.bench-run.sh'), ['rm -f /out/junit.xml', 'cd /work', 'mkdir -p /out', ...del.map((f) => `rm -f -- ${word(f)}`), `exec sh /work/.bench-test.sh ${files.map(word).join(' ')}`, ''].join('\n'))
+      await must(['docker', 'cp', `${dir}/.`, `${c}:/work`], `docker cp into ${c}`, { quiet: true })
     })
     stage = 'run'
     const fd = openSync(log, 'w')
     let code
     try { ({ code } = await runGroup(['docker', 'start', '-a', c], { timeoutSec: 1800, stdout: fd, stderr: fd })) } finally { closeSync(fd) }
-    if (code === 'timeout') await sp(['docker', 'kill', c]) // this check created it
-    const st = await sp(['docker', 'inspect', '-f', '{{.State.Status}}', c])
-    if (st.code || st.out.trim() !== 'exited') throw new Error(`container ${c} did not run to its end: ${(st.err || st.out).trim().slice(-300)}`)
+    const timedOut = code === 'timeout'
+    if (timedOut) await sp(['docker', 'kill', c]) // this check created it
+    const st = await sp(['docker', 'inspect', '-f', '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}', c])
+    if (st.code) { await daemon(); throw new Error(`docker inspect ${c} failed (exit ${st.code})`) }
+    const [status, exitCode, oom] = st.out.trim().split(' ')
+    if (status !== 'exited') throw new Error(`container ${c} is ${status}, not exited`)
+    // killed from outside (our own limit aside) or out of memory: the machine's failure. Our limit is a finished run.
+    if (!timedOut && (oom === 'true' || exitCode === '137' || exitCode === '143')) throw new Error(`container ${c} was killed (exit ${exitCode}, OOMKilled ${oom})`)
     stage = 'cp'
     rmSync(xml, { force: true })
     const got = await sp(['docker', 'cp', `${c}:/out/junit.xml`, xml])
     // no JUnit after a finished run is the repo's (ruling 10: at the base every case is then missing)
-    if (got.code && /could not find the file/i.test(got.err)) return []
-    if (got.code) throw new Error(`docker cp out of ${c} failed: ${got.err.trim().slice(-300)}`)
-    return readJunit(readFileSync(xml, 'utf8'))
+    const missing = got.code && got.code !== 'timeout' && /could not find the file/i.test(got.err)
+    if (got.code && !missing) throw new Error(`docker cp out of ${c} failed: ${got.code === 'timeout' ? 'no answer in 300 s' : got.err.trim().slice(-300)}`)
+    const cases = missing ? [] : readJunit(readFileSync(xml, 'utf8'))
+    meta.runs.push({ label, timedOut, exitCode: Number(exitCode), cases: cases.length })
+    save()
+    return cases
   }
 
   const verdict = async () => {
@@ -422,13 +459,16 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     const prFiles = (pr.files?.nodes ?? []).map((f) => f.path)
     Object.assign(meta, { defaultBranch: repo.defaultBranchRef?.name ?? null, licence: repo.licenseInfo?.spdxId ?? null, prCreated: pr.createdAt, mergedAt: pr.mergedAt, end })
     stage = 'clone'
-    if (!existsSync(join(repoDir, 'HEAD'))) { mkdirSync(repoDir, { recursive: true }); await git('init', '-q', '--bare') }
-    if ((await sp(['git', '-C', repoDir, 'config', '--get', 'remote.origin.url'])).code) await git('remote', 'add', 'origin', remote(row.repo))
+    if (!existsSync(join(repoDir, 'HEAD'))) { mkdirSync(repoDir, { recursive: true }); await git(['init', '-q', '--bare']) }
+    const url = await sp(['git', '-C', repoDir, 'config', '--get', 'remote.origin.url'])
+    if (url.code === 'timeout') throw new Error('git config timed out after 300 s')
+    if (url.code) await git(['remote', 'add', 'origin', remote(row.repo)])
     stage = 'fetch'
-    await git('fetch', '-q', '--depth', '2', 'origin', end)
+    // into a ref, so a later gc keeps the commit; a transfer slower than 1 kB/s for 5 minutes is given up
+    await must(['git', '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=300', '-C', repoDir, 'fetch', '-q', '--depth', '2', 'origin', `${end}:refs/ext/${end}`], 'git fetch', { timeoutSec: 1800 })
     stage = 'base'
-    const parents = (await git('rev-list', '--parents', '-n', '1', end)).trim().split(/\s+/).slice(1)
-    const diffFiles = (await git('diff', '-z', '--name-only', `${end}^1`, end)).split('\0').filter(Boolean)
+    const parents = (await git(['rev-list', '--parents', '-n', '1', end])).trim().split(/\s+/).slice(1)
+    const diffFiles = (await git(['diff', '-z', '--name-only', `${end}^1`, end])).split('\0').filter(Boolean)
     const b = baseOf({ parents, commits: pr.commits?.totalCount, prFiles, diffFiles })
     Object.assign(meta, { base: b.base ?? null, method: b.method ?? null })
     save()
@@ -465,13 +505,17 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       stage = 'recipe-agent'
       const k = 1 + Math.max(0, ...readdirSync(rounds).map((f) => Number(/^(\d+)\./.exec(f)?.[1] ?? 0)))
       const prompt = join(rounds, `${k}.prompt.md`), out = join(rounds, `${k}.reply.md`)
-      writeFileSync(prompt, readFileSync(join(ext, 'briefs', 'recipe.md'), 'utf8') + (failed ? retryText(failed) : ''))
+      writeFileSync(prompt, readFileSync(join(ext, 'briefs', 'recipe.md'), 'utf8').trimEnd() + '\n' + (failed ? retryText(failed) : ''))
       const reply = await recipeAgent({ env: envFile, label: `recipe-${slug}-${k}`, at: b.base, prompt, out })
       if (reply == null) throw new Error(`recipe round ${k}: no reply`) // a tool failure: the round is not spent
       if (!existsSync(out)) writeFileSync(out, reply)
       meta.recipeRounds++
       let r
-      try { r = parseRecipe(reply) } catch (e) { appendFileSync(roundsTsv, `${k}\t${slug}\tbad reply\n`); throw new Error(`recipe round ${k}: ${e.message}`) }
+      try { r = parseRecipe(reply) } catch (e) { // a spent round: the next one is told why
+        failed = { what: 'reply', message: e.message }
+        appendFileSync(roundsTsv, `${k}\t${slug}\tbad reply\n`)
+        continue
+      }
       failed = await attempt(r, String(k), String(k))
       appendFileSync(roundsTsv, `${k}\t${slug}\t${failed ? `${failed.what} failed` : 'pass'}\n`)
       if (!failed) { recipe = r; writeFileSync(saved, JSON.stringify(r, null, 2) + '\n') }
@@ -483,7 +527,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     stage = 'base'
     // the test files: the PR's files matching the stack's test paths that exist at end; the others the PR deleted
     const tests = prFiles.filter((f) => group.testPaths.some((p) => new RegExp(p).test(f)))
-    const atEnd = new Set(tests.length ? (await git('ls-tree', '-r', '-z', '--name-only', end, '--', ...tests)).split('\0').filter(Boolean) : [])
+    const atEnd = new Set(tests.length ? (await git(['ls-tree', '-r', '-z', '--name-only', end, '--', ...tests], { quiet: true })).split('\0').filter(Boolean) : [])
     const files = tests.filter((f) => atEnd.has(f)), del = tests.filter((f) => !atEnd.has(f))
     const endTag = `bench-ext/${slug}:${end.slice(0, 7)}`
     if (!(await build(recipe, end, endTag, join(logs, 'end.build.log')))) return 'end build failed'
