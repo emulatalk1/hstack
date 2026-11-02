@@ -19,7 +19,7 @@ export function ghFailure(out, err) {
   if (body?.data && types.length && types.every((t) => t === 'NOT_FOUND')) return 'partial'
   if (/secondary rate limit|abuse detection|HTTP 429/i.test(err)) return 'secondary'
   if (types.includes('RATE_LIMITED') || (/rate limit/i.test(err) && /HTTP 403/.test(err))) return 'primary'
-  if (/HTTP 50[234]/.test(err)) return 'transient'
+  if (/HTTP 50[234]|unexpected end of JSON input|EOF|connection reset|timeout/i.test(err)) return 'transient'
   return 'error'
 }
 
@@ -48,7 +48,7 @@ export async function realGh(argv) {
     const kind = ghFailure(out, err)
     if (kind === 'partial') return out
     // stderr only: stdout may hold a partial answer with PR fields
-    if (kind === 'error' || i >= 10 || (kind === 'transient' && ++transient > 2)) throw new Error(`gh ${name(argv)}: ${err.trim().slice(0, 300)}`)
+    if (kind === 'error' || i >= 10 || (kind === 'transient' && ++transient > 2)) throw Object.assign(new Error(`gh ${name(argv)}: ${err.trim().slice(0, 300)}`), { kind })
     const wait = kind === 'primary' ? await resetWait(argv) : kind === 'secondary' ? 60000 : 15000
     console.error(`${new Date().toISOString()} ${kind} failure on ${name(argv)}, waiting ${Math.round(wait / 1000)} s (${i + 1}/10)`)
     await Bun.sleep(wait)
@@ -64,10 +64,11 @@ const day = (d, end) => new Date(d * DAY).toISOString().slice(0, 10) + (end ? 'T
 
 const repoOf = (r, language) => ({ nameWithOwner: r.full_name, licence: r.license?.spdx_id ?? null, isFork: r.fork, isArchived: r.archived, isMirror: !!r.mirror_url,
   createdAt: r.created_at, pushedAt: r.pushed_at, defaultBranch: r.default_branch, stars: r.stargazers_count, language })
+// a field GitHub left null keeps its total (an unknown total is Infinity), so the PR falls out with a reason, never silently
 const prOf = (n) => ({ number: n.number, createdAt: n.createdAt, mergedAt: n.mergedAt, author: { type: n.author?.__typename }, baseRefName: n.baseRefName,
-  changedFiles: n.changedFiles, files: n.files.nodes.map((f) => f.path), filesTotal: n.files.totalCount,
-  closing: n.closingIssuesReferences.nodes.map((i) => ({ repo: i.repository.nameWithOwner, number: i.number, createdAt: i.createdAt })),
-  closingTotal: n.closingIssuesReferences.totalCount, commits: n.commits.totalCount, mergeCommit: n.mergeCommit?.oid })
+  changedFiles: n.changedFiles, files: (n.files?.nodes ?? []).map((f) => f?.path).filter(Boolean), filesTotal: n.files?.totalCount ?? Infinity,
+  closing: (n.closingIssuesReferences?.nodes ?? []).map((i) => ({ repo: i?.repository?.nameWithOwner ?? '', number: i?.number, createdAt: i?.createdAt })),
+  closingTotal: n.closingIssuesReferences?.totalCount ?? Infinity, commits: n.commits?.totalCount, mergeCommit: n.mergeCommit?.oid })
 const treeOf = (obj) => {
   const es = obj?.entries ?? []
   return { root: es.map((e) => e.name), dirs: Object.fromEntries(es.filter((e) => e.type === 'tree').map((e) => [e.name, (e.object?.entries ?? []).map((c) => c.name)])) }
@@ -95,7 +96,10 @@ export async function list(args, { gh = realGh, data = process.env.HSTACK_BENCH_
       renameSync(tmp, file)
       stat.fresh++
     }
-    return { file, fresh, body: JSON.parse(readFileSync(file, 'utf8')) }
+    try { return { file, fresh, body: JSON.parse(readFileSync(file, 'utf8')) } } catch (e) {
+      rmSync(file) // a saved answer that does not parse is not kept: a restart asks again
+      throw new Error(`${name(argv)}: the answer does not parse (${e.message})`)
+    }
   }
   const gql = async (query, vars = {}) => {
     const argv = ['api', 'graphql', '-f', `query=${query}`, ...Object.entries(vars).flatMap(([k, v]) => ['-f', `${k}=${v}`])]
@@ -142,6 +146,7 @@ export async function list(args, { gh = realGh, data = process.env.HSTACK_BENCH_
   async function searchRepos(language) {
     const repos = new Map(), todo = [...slices]
     while (todo.length) {
+      const got = new Set()
       const [a, b] = todo.shift()
       const q = `language:${language} stars:${b === Infinity ? `>=${a}` : `${a}..${b}`} pushed:>=${cfg.repo.pushedFrom} created:<${cfg.repo.createdBefore} archived:false fork:false`
       for (let page = 1; page <= 10; page++) {
@@ -152,8 +157,14 @@ export async function list(args, { gh = realGh, data = process.env.HSTACK_BENCH_
           todo.unshift([a, m], [m + 1, b])
           break
         }
-        for (const r of j.items) if (!repos.has(r.full_name)) repos.set(r.full_name, repoOf(r, language))
-        if (page * 100 >= j.total_count) break
+        for (const r of j.items) { got.add(r.full_name); if (!repos.has(r.full_name)) repos.set(r.full_name, repoOf(r, language)) }
+        if (page * 100 >= j.total_count) {
+          // the universe moves while it is read: a small shortfall is expected, and it is counted
+          const short = Math.max(0, j.total_count - got.size)
+          if (short) log(`${cur.id} ${language} stars ${a}..${b}: total ${j.total_count}, collected ${got.size}`)
+          cur.shortfall += short
+          break
+        }
       }
     }
     return [...repos.values()]
@@ -165,16 +176,28 @@ export async function list(args, { gh = realGh, data = process.env.HSTACK_BENCH_
     while (todo.length) {
       const [a, b] = todo.shift()
       const q = `repo:${repo.nameWithOwner} is:pr is:merged created:${day(a)}..${day(b, true)} merged:<${cfg.window.mergedBefore} linked:issue`
-      for (let after = null, page = 1; ; page++) {
-        const s = (await gql(PRS, after ? { q, after } : { q })).search
+      const got = new Set()
+      for (let after = null, page = 1, first = 100; ; page++) {
+        let s
+        // a page that keeps failing (too heavy) is asked again with fewer PRs; 100 keeps the query text, so saved answers match
+        try { s = (await gql(PRS.replace('first: 100, after', `first: ${first}, after`), after ? { q, after } : { q })).search } catch (e) {
+          if (e.kind !== 'transient' || first <= 6) throw e
+          first = Math.floor(first / 2)
+          log(`${cur.id} PR page refused (${e.message.slice(0, 120)}), first now ${first}`)
+          page--
+          continue
+        }
         if (page === 1 && s.issueCount >= 1000) { // same cap: halve the created range
           if (a === b) throw new Error(`${q}: a one-day range still reaches the search cap`)
           const m = a + Math.floor((b - a) / 2)
           todo.unshift([a, m], [m + 1, b])
           break
         }
-        for (const n of s.nodes) prs.set(n.number, n)
-        if (!s.pageInfo.hasNextPage) break
+        for (const n of s.nodes) if (n) { got.add(n.number); prs.set(n.number, n) }
+        if (!s.pageInfo.hasNextPage) {
+          if (got.size < s.issueCount) throw new Error(`${q}: ${got.size} PRs collected, issueCount ${s.issueCount}`) // the window is closed: nothing may be missing
+          break
+        }
         after = s.pageInfo.endCursor
       }
     }
@@ -183,14 +206,14 @@ export async function list(args, { gh = realGh, data = process.env.HSTACK_BENCH_
 
   const counts = {}, repoRows = [], rows = []
   for (const g of cfg.groups) {
-    cur = counts[g.id] = { repos: 0, markers: 0, prs: 0, ok: 0, reasons: {}, points: 0 }
+    cur = counts[g.id] = { repos: 0, markers: 0, prs: 0, ok: 0, reasons: {}, points: 0, shortfall: 0 }
     Object.defineProperty(cur, 'id', { value: g.id }) // for the log, kept out of the printed counts
     for (const language of g.languages) {
       const repos = await searchRepos(language), live = repos.filter((r) => !repoOut(r, cfg))
       cur.repos += repos.length
       log(`${g.id} ${language}: ${repos.length} repos, ${live.length} pass the repo rules`)
-      const trees = new Map(), texts = new Map()
-      await batches(live, (r) => `${repoArg(r)} { ${TREE} }`, (r, d) => trees.set(r, treeOf(d?.object)))
+      const trees = new Map(), texts = new Map(), unreachable = new Set()
+      await batches(live, (r) => `${repoArg(r)} { ${TREE} }`, (r, d) => { if (!d) unreachable.add(r); trees.set(r, treeOf(d?.object)) })
       const conds = g.markers.flat().filter((c) => c.text !== undefined && !c.absent)
       const need = (tree) => [...new Set(conds.flatMap((c) => (c.path.includes('/') || c.root
         ? (exists(tree, c.path) ? [c.path] : [])
@@ -201,7 +224,7 @@ export async function list(args, { gh = realGh, data = process.env.HSTACK_BENCH_
       for (const r of repos) {
         const out = repoOut(r, cfg)
         r.stack = out ? null : stackOf(trees.get(r), texts.get(r) ?? {}, cfg.groups, language)
-        repoRows.push([language, r.nameWithOwner, r.stars, r.stack ?? 'none', out ?? 'ok'])
+        repoRows.push([language, r.nameWithOwner, r.stars, r.stack ?? 'none', out ?? (unreachable.has(r) ? 'unreachable' : 'ok')])
       }
       const stacked = repos.filter((r) => r.stack)
       cur.markers += stacked.length
@@ -238,7 +261,7 @@ if (import.meta.main) {
     if (cmd !== 'list') throw new Error(USAGE)
     const counts = await list(rest)
     for (const [s, c] of Object.entries(counts)) {
-      console.log(`${s}: repos searched ${c.repos}, repos with markers ${c.markers}, PRs read ${c.prs}, ok ${c.ok}, GraphQL points ${c.points}`)
+      console.log(`${s}: repos searched ${c.repos}, repos with markers ${c.markers}, PRs read ${c.prs}, ok ${c.ok}, GraphQL points ${c.points}, slice shortfall ${c.shortfall}`)
       for (const [r, n] of Object.entries(c.reasons)) console.log(`${s}:   ${r} ${n}`)
     }
   } catch (e) { console.error(e.message); process.exit(2) }
