@@ -2,10 +2,11 @@
 type: plan
 title: "Held-out set and layer replay plan"
 description: "Prereg step 3: sweep the framework identifiers out of the 16 inputs, extend the held-out set by a sealed agent, replay the existing layers (test layers and the evaluator on held-out, review and audit on dev plus held-out, each bug given to the task that introduced it), and lock the result."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.310, at: "2026-10-28T00:10:00+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.310, at: "2026-10-28T00:40:00+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-02T20:48:08+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
