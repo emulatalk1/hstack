@@ -1,7 +1,7 @@
 import { test, expect, afterAll } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { clean } from '../bench/env.mjs'
 import { ROOT, releaseRoot } from './bench-root.mjs'
 
@@ -117,4 +117,25 @@ test('no result event or a non-zero exit: exit 1, a run record with the code, no
     expect(existsSync(o)).toBe(false)
     expect(rec(o)).toMatchObject({ code, version: '9.9.9', usage: { input: 7 } })
   }
+})
+
+test('passes --settings as an absolute path and records it', async () => {
+  const s = join(tmp, 'settings.json')
+  writeFileSync(s, '{}')
+  const o = out()
+  expect((await run(base(o, '--settings', relative(process.cwd(), s)))).code).toBe(0)
+  const [c] = calls()
+  expect(c.args.slice(c.args.indexOf('--settings'), c.args.indexOf('--settings') + 2)).toEqual(['--settings', s])
+  expect(rec(o).settings).toBe(s)
+  const o2 = out()
+  expect((await run(base(o2))).code).toBe(0)
+  expect(calls()[0].args).not.toContain('--settings')
+  expect(rec(o2).settings).toBeNull()
+})
+
+test('refuses a missing settings file, naming it', async () => {
+  const o = out(), s = join(tmp, 'no-settings.json')
+  expect(await run(base(o, '--settings', s))).toMatchObject({ code: 2, stderr: expect.stringContaining(s) })
+  expect(calls()).toEqual([])
+  expect(existsSync(o) || existsSync(`${o}.run.json`)).toBe(false)
 })
