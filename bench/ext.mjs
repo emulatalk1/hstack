@@ -38,16 +38,17 @@ async function resetWait(argv) {
 }
 
 let lastSearch = 0
-// the default gh: REST searches 2.1 s apart (30 a minute); a rate limit or a 5xx waits and retries, up to 10 times
+// the default gh: REST searches 2.1 s apart (30 a minute); a rate limit waits and retries up to 10 times, a 5xx twice
+// (a GraphQL batch that times out comes back 5xx, and the caller halves it)
 export async function realGh(argv) {
-  for (let i = 0; ; i++) {
+  for (let i = 0, transient = 0; ; i++) {
     if (argv.includes('search/repositories')) { await Bun.sleep(Math.max(0, lastSearch + 2100 - Date.now())); lastSearch = Date.now() }
     const { out, err, code } = await spawnGh(argv)
     if (code === 0) return out
     const kind = ghFailure(out, err)
     if (kind === 'partial') return out
     // stderr only: stdout may hold a partial answer with PR fields
-    if (kind === 'error' || i >= 10) throw new Error(`gh ${name(argv)}: ${err.trim().slice(0, 300)}`)
+    if (kind === 'error' || i >= 10 || (kind === 'transient' && ++transient > 2)) throw new Error(`gh ${name(argv)}: ${err.trim().slice(0, 300)}`)
     const wait = kind === 'primary' ? await resetWait(argv) : kind === 'secondary' ? 60000 : 15000
     console.error(`${new Date().toISOString()} ${kind} failure on ${name(argv)}, waiting ${Math.round(wait / 1000)} s (${i + 1}/10)`)
     await Bun.sleep(wait)
