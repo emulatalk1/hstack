@@ -302,7 +302,7 @@ const NET = Object.entries({ 'failed to resolve source metadata': /failed to res
 // the network signature in a failed build's log tail, or null. A tag or image that does not exist says `failed to resolve
 // source metadata ... not found` too: that is the recipe's failure (a spent round the agent is told of), never the network's
 export function netFailure(text) {
-  if (/not found|pull access denied|manifest unknown/i.test(text)) return null
+  if (/failed to resolve source metadata[^\n]*(not found|pull access denied|manifest unknown)/i.test(text)) return null // on that line only
   return NET.find(([, re]) => re.test(text))?.[0] ?? null
 }
 const tail = (file) => readFileSync(file, 'utf8').split('\n').slice(-200).join('\n')

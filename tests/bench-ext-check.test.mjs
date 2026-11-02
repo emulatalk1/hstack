@@ -234,6 +234,8 @@ test('a missing image tag is the recipe\'s failure, the network\'s signatures ar
   expect(netFailure('npm ERR! network request failed, reason: getaddrinfo ENOTFOUND\nconnect ETIMEDOUT 1.2.3.4:443')).toBe('ETIMEDOUT')
   expect(netFailure('toomanyrequests: You have reached your pull rate limit')).toBe('toomanyrequests')
   expect(netFailure('error: test failed, exit 1')).toBe(null)
+  // a `not found` on another line does not hide the network's failure
+  expect(netFailure('sh: 1: foo: not found\nERROR: fetch https://x.example/a: dial tcp 10.0.0.1:443: connect: connection refused')).toBe('dial tcp')
 })
 
 dtest('a FROM tag that does not exist is a spent round, told to the next one (needs BENCH_EXT_DOCKER=1)', async () => {
