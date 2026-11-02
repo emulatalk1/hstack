@@ -645,3 +645,146 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     - Nothing listens on :3000.
     - `/tmp/hstack-bench` is absent (it was empty before `clean`).
     - The copy's `git status --short` is empty, and its worktree list holds only the main checkout (8730783, `hstack-tools`).
+
+### SDD usage by task (implementer and reviewer subagents; total tokens / wall clock as reported)
+
+- Task 1 (sweep): implementer opus 162.4k total/~20 min (3 resumes, one rate-limit stop); review opus 104.6k/4.7 min; re-review sonnet; sealed fix runs 60/105954/19470/239361.
+- Task 2 (pre-run checks): implementer sonnet 70.3k/1.8 min; review sonnet.
+- Task 3 (bugs.mjs, ownership): implementer opus 171.1k total/~23 min; review opus 96.4k/5.5 min; re-review sonnet.
+- Task 4 (extension agent, second labeller): implementer opus 167.4k total/~60 min (incl. 24 + 7 min sealed runs); review opus 85.1k/2.8 min; re-review sonnet; sealed runs 530/178928/54682966/719089.
+- Task 5 (replay runs): part 1 implementer opus 118.4k/21.7 min; part 2 implementer opus ~178k total over 3 rounds; review sonnet 100.7k/2.7 min; re-review sonnet 58.8k/1.1 min. The replay runs' own agent usage is in "Step 3 replay runs" above.
+- Task 6 (summary, lock): part 1 implementer sonnet 78.1k total/~5.5 min, review sonnet 70.2k/1.5 min, re-review sonnet; part 2 implementer sonnet 97.4k/2.9 min, review sonnet 72.8k/1.6 min.
+
+### SDD ledger copy (taken before the final review; SDD deletes the original)
+
+    # SDD ledger — plan: docs/plans/2026-10-27-bench-replay.md
+
+    Spec: docs/plans/2026-10-27-benchmark-prereg.md (stable) + bench/README.md and the progress.md ledgers. Branch worktree-bridge-cse_01LckcHdPjiRPz5DvPEJXEaJ, start 90bb1b0 (merge-base with main c80419f).
+    Data: /Users/hbchuc/Documents/programing/vibe-code/hstack/.evidence/bench (main checkout; absent from this worktree). Sealed folder <data>/heldout/.
+
+    ## Pre-flight scan
+
+    | Rows | Produces vs consumes | Found |
+    |---|---|---|
+    | T1 self | rule tests (6 config hits, 2 module, 2 names; 13 negatives) vs rule shapes in Step 3 | clean; MIME exception named in Step 3 matches the negatives |
+    | T1↔T5 | swept inputs consumed by review/evaluator runs | clean: T5 runs after T1 |
+    | T1↔T4 | none shared (extension reads no input) | clean |
+    | T2 self | judge probe writes results/ then moves the record | clean: Step 4 ends with results empty |
+    | T2↔T5 | pgsnap.sh interface (out file, sorted datname) vs batch.sh snapshots | clean |
+    | T3 self | bugs.mjs check mode writes out; --usable read-only; tests list both | clean |
+    | T3↔T4 | bug file shape {id,fix,at,patch,description,hunks,kind,severity,source,dropped} and done.json exclusion; sealed `finished` line | clean |
+    | T3↔T5 | --usable <layer> paths; agent-replay needs task/base/end/fix (review, audit), task/at/patch (evaluator) — written by T3 check mode for owned bugs only | clean: unowned bugs never usable for agent layers |
+    | T4 self | --out and agent writes inside <sealed>; folder must exist for additionalDirectories | GAP: who creates <sealed>, <sealed>/logs and the probe dir |
+    | T4↔T5 | sealed stderr to <sealed>/logs | clean once the folder exists |
+    | T5↔T6 | .out last line / .json verdict / .error1.* vs summary rules | clean |
+    | Global | data writes are absolute paths into the main checkout's .evidence | RISK: implementers must not create .evidence in the worktree |
+    | Global | reviewers of T4/T5/T6 must not open <sealed> | RISK: say so in each review dispatch |
+
+    ## Rulings
+    - Ruling: the T4 implementer creates <sealed>/ and <sealed>/logs/ empty (mkdir only) before the probe, and the probe dir <data>/replay-dev/extension-probe/ — the plan names the folders but not who makes them; mkdir reads nothing — cost if wrong: none.
+    - Ruling: implementers write data only under /Users/hbchuc/Documents/programing/vibe-code/hstack/.evidence/bench (absolute), scratch under /tmp/hstack-bench or the SDD workspace — as in the previous build — cost if wrong: none.
+
+    ## Tasks
+    Task 1: dispatched (opus), BASE 90bb1b0
+    Task 1: implementer agent ad8e6f31db4d55c1b running
+    Task 1: implementer opus 106.9k/12.6 min, commit 1988693 (Steps 1-4); NEEDS_CONTEXT at Step 5 (sweep names the kept list does not decide)
+    - Ruling: package names (payload, zod, sharp, @axe-core/playwright) stay out of the class — they name the stack the repo already has (the builder reads package.json), not how to configure it; bare `payload` would also hit the kept `pnpm payload …` commands — cost if wrong: an input says which library to use.
+    - Ruling: Tailwind class names (`md`, `lg`, `sm`, `font-bold`) are in the class (a framework's own names in code, not a measured CSS property); the fix rewrites them as the behaviour (a width breakpoint in px, bold text); the rule matches them only as a whole backticked span, so prose words are not hit — cost if wrong: an input loses a short name a check never uses (checks read computed CSS).
+    - Ruling: Payload admin CSS variables, axe tags and prose concepts (server components, client component, Local API) stay out of the class (CSS a check reads; how a page is measured; plain-language concepts) — cost if wrong: an input keeps a few framework words.
+    - Ruling: add providers, graphics, admin.group, meta.icons, redirect(), next build to the class as proposed; trang/[n] kept.
+    - Ruling: hit lines = the rule hits on all 16 once the list is final (the plan's Step 5 order); sweep replies only feed the list — the sweep was inconsistent across tasks and the rules are the mechanical record — cost if wrong: a name no rule matches and the sweep found only once is still added to the list, so nothing is lost.
+    Task 1: DONE_WITH_CONCERNS, commits 1988693 619fa27 c0d320c; 9/16 inputs rewritten (p8c 3 fix runs); sealed usage 54/90284/17523/216449; review dispatched (opus)
+    Task 1: implementer total 149.2k (resumed twice, one rate-limit stop)
+    Task 1: review 1 (opus): Needs fixes — I1 p3:27 invents direct /api/media loading (optimizer was on at p3); I2 p8e:21 drops kept "no Tailwind" and adds "scripts turned off"; spec 3 bookkeeping (p7c --experimental-build-mode, kept: payload in p8b/p8e logs); minors ride along: p3:26 600 s wording (same p3 run), p5:11 invented sample UUID (one p5 run), providers/graphics/next build only as backticked spans
+    - Ruling: p8c:27's added consequence stays (p8c at its 3-run limit; the consequence restates what the rewritten setting does, no check depends on it) — cost if wrong: one sentence of extra behaviour in p8c's requirement bucket.
+    - Ruling: --experimental-build-mode compile is a framework CLI flag of `next build` (in the class); record it in p7c's log as covered by the next build hit, and add it to the list — cost if wrong: none.
+    Task 1: minor (deferred): p8a:23/p8c:23 add "tablet"/"desktop" names; MIME exception misses multipart/ and font/ (no input affected); p8d:28 keeps Next config settings as prose (prose-concept ruling)
+    Task 1 cost: review 1 opus 104.6k/4.7 min; fix round 1 sent to implementer
+    Task 1: fix round 1 implementer done (162.4k total), commits 4b849f6 e4b5a50; 30 sealed runs 60/105954/19470/239361; re-review dispatched (sonnet)
+    Task 1: fix round 1/5 (re-review sonnet): 6 addressed, 0 open; commits c0d320c..e4b5a50; controller checked copy status clean
+    Task 1: complete (commits 90bb1b0..e4b5a50, review clean)
+    Task 1 cost: implementer opus 162.4k total/~20 min (3 resumes); review opus 104.6k/4.7 min + re-review sonnet; sealed runs 60/105954/19470/239361
+    Task 2: dispatched (sonnet), BASE e4b5a50
+    Task 2: implementer sonnet, commit 4ca725a, DONE; judge probe caught (real CLI); results/ empty; review dispatched (sonnet)
+    Task 2: review sonnet: Approved, no Critical/Important
+    - Ruling: implementer and reviewer tokens/minutes of every task are recorded in this ledger and reach progress/progress.md with the ledger copy before the final review, plus a per-task summary bullet there (as both earlier builds did) — implementers cannot see their own usage — cost if wrong: none.
+    Task 2: minor (deferred): pgsnap snapshot files mode 0600 (mktemp); record timestamps in UTC
+    Task 2: complete (commits e4b5a50..4ca725a, review clean)
+    Task 2 cost: implementer sonnet 70.3k/1.8 min; review sonnet
+    Task 3: dispatched (opus), BASE 4ca725a
+    Task 3: implementer opus, commits 3061eb1 8c3b141 2fff012 5023189, DONE; 20/20 owners as table, usable review 18, evaluator 19, test layers 20; review dispatched (opus)
+    Task 3: implementer opus 157.4k/19.5 min
+    Task 3: review 1 (opus): Approved, spec ✅; 1 Important (not a spec defect): sealed mode prints writer-chosen strings unchecked (id, file name, kind/source/severity, finished)
+    - Ruling: fix the Important in bugs.mjs before Task 4 (a shape check in sealed mode: id and file name ^ho-\d+, source ∈ {catalog, extension}, kind ∈ {UI, logic, validation, data, other}, severity ∈ {high, medium, low}, finished boolean; anything else prints as `<n> invalid` / not at all) — the tool is the only window into the sealed folder, a brief rule alone trusts the agent — cost if wrong: none.
+    - Ruling: ride along minors 2 (sealed test with a well-formed file whose fix is unknown and whose at is bad), 3 (atomic write: temp + rename), 7 (prereg §8.2 names the dropped and merge-commit exclusions) — cost if wrong: none.
+    Task 3: minor (deferred): leftover check-<id> worktree after a hard kill reads `invalid` (README line: run env.mjs clean); readRows takes non-numeric task_lines/old_lines; bad.patch fixture is not a patch
+    Task 3 cost: review opus 96.4k/5.5 min; fix round 1 sent
+    Task 3: fix round 1 implementer done (171.1k total), commits 21f6a8f 9210e35 (also: sealed model names shape-checked); re-review dispatched (sonnet)
+    Task 3: fix round 1/5 (re-review sonnet): 4 addressed, 0 open; commits 5023189..9210e35
+    Task 3: minor (deferred): dev mode prints null/invalid for absent kind or finished (cosmetic); a tmp file stays if rename throws (ignored by the scan)
+    Task 3: complete (commits 4ca725a..9210e35, review clean)
+    Task 3 cost: implementer opus 171.1k total/~23 min; review opus 96.4k/5.5 min + re-review sonnet
+    Task 4: dispatched (opus), BASE 9210e35
+    Task 4: implementer opus, commits 97828b2 1e60209, DONE; probe 6/6 as expected; 1 extension run 24 min, finished true; 98 bugs (catalog 10, extension 88; 63 low, 45 UI), all patches apply; usage 376/139175/44001861/449017
+    Task 4: implementer opus 106.2k/35.7 min
+    - Ruling: harden the held-out set before any run, as a Task 4 fix round with one prereg §8.2 note: (1) bugs.mjs --sealed --fix-tally <sha7,...> prints a count per listed sha only, run on the 6 catalog held-out shas, the 11 dev shas and 730509b (expected 29f4daf 1, 36d089b 1, 400f58a 1, 5b6646d 3, 89583d2 3, b5b3cec 1, every other 0); these shas are public in the prereg; (2) a second sealed labeller over the 88 extension bugs only, same --at/--settings, which sets "dropped": "label2: <reason>" when it judges a requirement change or no same-commit test checking the hunk; drop on disagreement (no human may settle before the lock); N and the agreement rate go in the lock — one 24-minute pass judging 88 hunks is the only unchecked agent judgement the lock would freeze — cost if wrong: some real held-out bugs dropped (conservative), one more sealed run.
+    - Ruling: keep "every layer on every usable held-out bug" (pre-registered in §8.2); about 80 h of sequential test and evaluator runs for ~98 bugs; tell the user now, no second port/db lane — cost if wrong: wall clock only.
+    Task 4: review dispatched (opus)
+    Task 4: review 1 (opus): Approved, spec ✅; 1 Important (plan-mandated allow rules): prefix Bash rules admit writes (git --output, git grep -O, git apply --check --apply --unsafe-paths, maybe > redirects); not exercised by evidence (copy, harness, replay.md, /tmp clean)
+    - Ruling: the fix round (a) records the gap as a known limit in progress.md, (b) scans for stray writes of the extension run window (paths only, outside <sealed>, ~/.claude and ~/Library: find ~ /tmp -newermt <start> ! -newermt <end>), (c) runs the second labeller with Bash narrowed to `git -C <copy> show:*` plus the CLI's sandbox in its settings file, proven first by a probe that tries `--output=` and a `>` redirect to /tmp and must leave no file; if the sandbox cannot be made to hold, deny rules plus the same probe; if a write still lands, stop — cost if wrong: one more probe run.
+    Task 4: minor (deferred): a failed check can leave a stray ho-NN.patch with no JSON (bugs.mjs ignores it); sealed-agent accepts a directory as --settings; seen:true unverifiable
+    Task 4 cost: review opus 85.1k/2.8 min; fix round 1 sent (known limit, stray-write scan, --fix-tally, label2 with sandbox probe, prereg note)
+    Task 4: fix round 1 implementer done, commits 75dd864 4915b37 7e1cbff; label2 (sandboxed) dropped 21 of 88 (agreement 76.1%); fix-tally as expected; usable unit/int/e2e 77, evaluator 75, review/audit 47; re-review dispatched (sonnet)
+    Task 4: fix round 1/5 (re-review sonnet): 6 addressed, 0 open; commits 1e60209..7e1cbff
+    Task 4: minor (deferred): done-file name (16 chars a-z0-9) and considered are writer-chosen in sealed output; a check after the drops writes task null into the 21 dropped files
+    Task 4: complete (commits 9210e35..7e1cbff, review clean)
+    Task 4 cost: implementer opus 167.4k total/~60 min (incl. 24 + 7 min sealed runs); review opus 85.1k/2.8 min + re-review sonnet; sealed runs 530/178928/54682966/719089
+    - Ruling: Task 5 runs as two detached lanes under caffeinate (lane A sequential: unit, int, e2e, evaluator on held-out; lane B sequential: review and audit on dev then held-out), at most 2 claude processes at once — simpler than 4 and lane B (~130 runs x ~5 min) ends long before lane A — cost if wrong: none.
+    - Ruling: after any error the lane runs a health probe (one tiny claude -p); while it fails (session or weekly limit), it waits 10 min and probes again; only then the one rerun — a usage limit is not a layer outcome and would otherwise turn a stretch of runs into errors — cost if wrong: a lane waits instead of recording an error.
+    - Ruling: Task 5 is split across two dispatches of one implementer: (1) write batch.sh and the driver, start the lanes, confirm the first runs leave verdicts; (2) after the lanes end, Steps 5-7 — a subagent cannot wait ~65 h; the controller waits — cost if wrong: none.
+    Task 5: dispatched (opus), BASE 7e1cbff
+    Task 5: part 1 implementer opus 118.4k/21.7 min, DONE_WITH_CONCERNS; lanes started under caffeinate (A pid 84953, B pid 84956; logs <data>/replay-dev/step3/); restarted once at 03:43:57 (batch.sh made restart-safe with tries/ markers; no verdict deleted); unit baseline 479 cases, 0 failing
+    - Ruling: batch.sh's stop on a failed snapshot check writes a STOP file that the other lane honours before its next run, instead of killing it — killing would orphan the app and claude process groups; the intent (no further runs after a database change) holds — cost if wrong: one more run in the other lane.
+    - Ruling: ho-03 and ho-04 unit errors (exit 2, no stdout, about 20 s) stay errors; part 2 classifies every error by a sealed-safe script that maps its .err file to one fixed category from our own tools' message prefixes (patch check, setup failed, no junit, timeout, other) and prints only `<id> <layer> <category>` — nobody may read sealed stderr, but an unexplained error class must be named — cost if wrong: one small script.
+    - Controller check: all-missed so far is plausible (6 dev review records each ~10 KB of findings; spot-checked 090f6f2-03 and 24c426f-13: findings never mention the defect; judge right).
+    Task 5: lanes running; controller waits
+    Task 5: 05:53 check: lane A in int (unit done), lane B in held-out review; errors so far unit ho-03 ho-04, int ho-04 ho-15 (kept); next check scheduled 07:54
+    - Ruling: Task 6 Steps 1-3 (replay-summary.mjs and tests) are built now while lane A runs; Steps 4-5 (lock) wait for Task 5 part 2 — the script needs no results and touches no Task 5 file; no implementer is active (lanes are processes) — cost if wrong: none.
+    Task 6: part 1 dispatched (sonnet), BASE 7e1cbff
+    Task 6: part 1 implementer sonnet, commit e9dedf9, DONE; review dispatched (sonnet)
+    Task 6: part 1 implementer sonnet 72.6k/3.3 min; review sonnet: Approved, no Critical/Important; ⚠️ dev review 0/18 vs 17/20 "by the record"; dev test layers not in results/
+    - Ruling: the usage minor (errored first runs' tokens dropped) conflicts with the global constraint "summed usage of every agent-replay run" — treated as Important, fix round 1 with ride-alongs (Object.hasOwn on WEIGHT, Array.isArray on models, count of bugs without severity in a severity set, a test for the .error1.json + .json winner) — cost if wrong: none.
+    - Ruling (⚠️1): 17/20 is the attribution.md record (prereg §8.2: "review 17/20 by the record", never a replay); the lock prints the step 3 replay next to it with that label, no reconciliation — cost if wrong: none.
+    - Ruling (⚠️2): dev test layers and the evaluator are not replayed in step 3 (their dev results stand, prereg §12 step 3); the dev set's summary covers review and audit only, and the lock quotes the standing dev numbers from §8.2 — cost if wrong: none.
+    Task 6: minor (deferred): SHOWN_ID accepts sha7-N ids in any set (bugs.mjs already enforces ho-N in the sealed folder); record id/layer not checked against the file name
+    Task 6: part 1 fix round 1 implementer done, commit ff508ea; re-review dispatched (haiku)
+    Task 6: part 1 fix round 1/5 (re-review sonnet): 4 addressed, 0 open; commits e9dedf9..ff508ea
+    Task 6: part 1 complete (Steps 1-3; commits 7e1cbff..ff508ea); Steps 4-5 wait for Task 5 part 2
+    Task 6 cost so far: implementer sonnet 78.1k total/~5.5 min; review sonnet 70.2k/1.5 min + re-review sonnet
+    Task 5: 07:54 check: lane A int ho-46, lane B audit held-out ho-28; no STOP, no limit waits; next check 11:56
+    - Ruling (user, 2026-10-28 08:28): lane checks every 12 h (next 20:28 local); the user compacts the session first — cost if wrong: a finished lane waits up to 12 h.
+    Ruling (user, 2026-10-29 05:07): pause before the evaluator batch to save quota — batch.sh gained a PAUSE guard (a batch not yet started writes STOP and exits 0; the running e2e batch is unaffected because sh parsed it at start); <data>/replay-dev/step3/PAUSE set — resume: rm PAUSE, then sh env/real-estate/step3.sh A (restart-safe, done runs skipped) — if wrong: lane A ends 'stopped' and the evaluator waits for a manual restart
+    Status (2026-10-29 11:52): lane A stopped at the PAUSE guard after e2e (e2e 77/77: caught 7, missed 67, errors kept 3); lane B done; no scheduled checks remain (user deleted the last one) — on resume: rm <data>/replay-dev/step3/PAUSE, sh <data>/env/real-estate/step3.sh A (runs only the evaluator), then Task 5 part 2
+    Status (2026-11-01 19:27): user said continue — PAUSE removed, lane A restarted (pid 37872); unit/int/e2e skipped as done, evaluator batch started on 75 held-out bugs; checks every 12 h
+    Status (2026-11-02 19:34): lane A done 17:39:56 (evaluator 75: caught 9, missed 63, kept ho-03 ho-04 ho-15; ho-02 first-run error cleared by rerun); lane B done 2026-10-28 10:35; no STOP
+    - Ruling: Task 5 part 2 goes to a fresh opus implementer, not a resume — the part-1 agent id was not ledgered and its context is days old; the brief, part-1 report and this ledger carry everything — cost if wrong: one re-read of the brief.
+    Task 5: part 2 dispatched (opus), BASE ff508ea
+    Task 5: part 2 implementer opus 155.6k/13.2 min, DONE_WITH_CONCERNS, commit f88cbd8; counts match; errors: ho-03 ho-04 ho-15 setup failed on unit/int/e2e/evaluator (kept), evaluator first tries ho-02 ho-23 ho-50 timeout (cleared); clean check passed
+    - Ruling (concern 2): ho-03, ho-04, ho-15 stay kept errors on all four lane-A layers, out of every rate's denominator and reported by count with their category; nobody reads their sealed logs — the sealing rule outranks a diagnosis, and "setup failed" is a harness/environment outcome, not a layer outcome — cost if wrong: 3 of 77 held-out bugs carry no test-layer or evaluator verdict.
+    - Ruling (concern 1): Task 6's lock states usable/verdicts/kept errors per layer from bugs.mjs --usable and tries/ markers next to replay-summary's counts, rather than changing replay-summary now — the summary counts records by design; the lock is where gaps are explained — cost if wrong: the summary's "error 0" for the evaluator reads wrong without the lock's line beside it.
+    Task 5: part 2 review dispatched (sonnet)
+    Task 5: part 2 review sonnet 100.7k/2.7 min: Spec ✅ Quality ✅, 5 Minor
+    - Ruling (minor 1): the `first|kept` 4th word is an accepted extension of the classifier ruling — fixed words only, and it says which try a category belongs to — cost if wrong: none.
+    - Ruling (minor 2, taken as a fix): `setup failed` splits into `setup failed` (setup.sh command / start exited / app not ready) and `checkout failed` (worktree add, archive|tar, dir exists, port busy), so the ho-03/04/15 ruling rests on a label that names the stage — cost if wrong: one rerun of the classifier, a progress.md edit.
+    Task 5: part 2 fix round 1 (resume implementer): minors 2, 3, 4, 5
+    Task 5: part 2 fix round 1 commit 004a3bc (split setup/checkout; dead-pattern note; ho-04 footnote; tests); fix round 2 commit b81166e (app not ready back in timeout — my round-1 instruction misfiled it); counts: setup failed 12 first + 12 kept, timeout 3 first cleared, checkout failed 0
+    Task 5: minor (deferred to final wave): progress.md says "in the order checked" but lists categories out of the script's check order
+    Task 5: re-review dispatched (sonnet), f88cbd8..b81166e
+    Task 5: re-review sonnet 58.8k/1.1 min: 5 addressed, 0 open, 0 regressed (wording minor already deferred)
+    Task 5: complete (part 1 data; part 2 commits ff508ea..b81166e); usage: part 2 implementer opus ~178k total (3 rounds), review sonnet 100.7k, re-review sonnet 58.8k
+    Task 6: part 2 (Steps 4-5, lock) starting, BASE b81166e
+    Task 6: part 2 implementer sonnet 97.4k/2.9 min, DONE_WITH_CONCERNS, commit 94e1e1c (lock + docs/log.md); concerns: per-bug held-out verdict table (opaque ids, verdict words) included as replay-summary prints it; standing dev numbers quoted, not recomputed
+    Task 6: part 2 review dispatched (sonnet)
+    Task 6: part 2 review sonnet 72.8k/1.6 min: Spec ✅ Quality ✅; all 698 hash lines pass shasum -c; 1 Minor
+    - Ruling (minor): the six prereg fix shas stay in the lock — they are already public in prereg §8.2 with the same counts, and the lock ties none to an ho id — cost if wrong: none.
+    Task 6: complete (commits 7e1cbff..ff508ea, b81166e..94e1e1c); usage part 2: implementer sonnet 97.4k, review sonnet 72.8k
