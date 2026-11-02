@@ -1,5 +1,9 @@
 # Update Log
 
+## 2026-11-02
+
+* **Update**: Locked the step 3 replay of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) in `progress/step3-lock.md`: the summary for the dev and held-out sets, the standing dev results beside the dev replay of review and audit, the second labeller's 21 drops (agreement 76.1%), the three kept `setup failed` errors, and the SHA-256 of the held-out files, the results, the 16 inputs and sheets and the briefs. From that commit the held-out commits may be opened as oracle sources.
+
 ## 2026-10-28
 
 * **Creation**: Added the [held-out set and layer replay plan](/plans/2026-10-27-bench-replay.md) (draft), step 3 of the pre-registration. Review and audit run on 18 of the 20 dev bugs: ownership by the blame tables gives no usable task to two.
