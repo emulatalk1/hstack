@@ -24,7 +24,7 @@ export function ghFailure(out, err) {
   if (body?.data && types.length && types.every((t) => t === 'NOT_FOUND')) return 'partial'
   if (/secondary rate limit|abuse detection|HTTP 429/i.test(err)) return 'secondary'
   if (types.includes('RATE_LIMITED') || (/rate limit/i.test(err) && /HTTP 403/.test(err))) return 'primary'
-  if (/HTTP 50[234]|unexpected end of JSON input|EOF|connection reset|timeout/i.test(err)) return 'transient'
+  if (/HTTP 50[234]|unexpected end of JSON input|EOF|connection reset|timeout|timed out/i.test(err)) return 'transient'
   return 'error'
 }
 

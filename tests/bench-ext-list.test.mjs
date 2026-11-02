@@ -163,6 +163,7 @@ test('counts a slice shortfall and refuses a PR range that collects fewer than i
 
 test('a transient error is transient, and a PR page that keeps failing is asked with fewer PRs', async () => {
   for (const err of ['gh: unexpected end of JSON input', 'gh: unexpected EOF', 'gh: read: connection reset by peer', 'gh: i/o Timeout']) expect(ghFailure('', err)).toBe('transient')
+  expect(ghFailure('', 'Post "https://api.github.com/graphql": read tcp 10.0.0.2:50845->140.82.112.6:443: read: operation timed out')).toBe('transient')
   const transient = Object.assign(new Error('gh: HTTP 502'), { kind: 'transient' })
   const f = fake({ fail: (a) => (flag(a, 'q')?.startsWith('repo:') && /first: (100|50),/.test(flag(a, 'query')) ? transient : false) })
   const { ext } = await run(f)
