@@ -7,7 +7,7 @@ const groups = [
     testPaths: ['(^|/)tests?/', '(^|/)test_[^/]*\\.py$', '(^|/)spec/'] },
   { id: 's2', languages: ['TypeScript'], markers: [[{ path: 'package.json', text: '"electron"\\s*:' }, { path: 'forge.config.js' }]],
     testPaths: ['(^|/)(tests?|__tests__)/', '\\.(spec|test)\\.[cm]?[jt]sx?$', '(^|/)(vitest|jest)\\.config\\.[cm]?[jt]s$'] },
-  { id: 's3', languages: ['Rust'], markers: [[{ path: 'Cargo.toml' }, { path: 'src-tauri', absent: true }]], testPaths: ['(^|/)tests/'] },
+  { id: 's3', languages: ['Rust'], markers: [[{ path: 'Cargo.toml', root: true }, { path: 'src-tauri', absent: true }]], testPaths: ['(^|/)tests/'] },
 ]
 
 test('sortKey matches the registered vectors', () => {
@@ -34,6 +34,12 @@ test('stackOf needs the electron dependency and a packaging config in the same f
 
 test('stackOf returns null for a language of no group', () => {
   expect(stackOf({ root: ['manage.py'], dirs: {} }, { 'manage.py': 'DJANGO_SETTINGS_MODULE' }, groups, 'Go')).toBeNull()
+})
+
+test('a root-only cond does not match one folder down', () => {
+  const g = [{ id: 'r', languages: ['Rust'], markers: [[{ path: 'Cargo.toml', root: true }]], testPaths: [] }]
+  expect(stackOf({ root: ['Cargo.toml'], dirs: {} }, {}, g, 'Rust')).toBe('r')
+  expect(stackOf({ root: ['crates'], dirs: { crates: ['Cargo.toml'] } }, {}, g, 'Rust')).toBeNull()
 })
 
 test('a Rust repo with src-tauri is in no group', () => {

@@ -24,15 +24,16 @@ const attr = (attrs, key) => {
 export function readJunit(xml) {
   return [...xml.matchAll(CASE)].map(([, attrs, body = '']) => {
     const name = attr(attrs, 'name')
+    const classname = attr(attrs, 'classname')
     // their text may contain look-alike tags; a self-closing one has no text and must not swallow a later <failure>
     body = body.replace(/<system-(?:out|err)\b(?:[^>]*\/>|[\s\S]*?<\/system-(?:out|err)>)/g, '')
     const f = FAIL.exec(body)
     if (f) {
       // Playwright puts "file:line title" in the attribute and the real error in the text.
       const message = [attr(f[1], 'message'), text(f[2] ?? '')].map((s) => s.trim()).filter(Boolean).join('\n')
-      return { name, status: 'fail', message }
+      return { name, classname, status: 'fail', message }
     }
-    return { name, status: /<skipped\b/.test(body) ? 'skip' : 'pass', message: '' }
+    return { name, classname, status: /<skipped\b/.test(body) ? 'skip' : 'pass', message: '' }
   })
 }
 

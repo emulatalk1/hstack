@@ -807,4 +807,4 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
 
 ## 2026-11-02 — external task selection plan (docs/plans/2026-11-02-bench-external.md), draft
 
-- Task 1 (rulings and stack data): the rulings were committed in prereg 4.2 (cafa710) before any enumeration; `bench/ext.mjs list` has not run. `<data>/ext/groups.json` SHA-256 `8cd47883917fa4a11404ead22fd55e265e0f93c4de084894af2423782dcb20f5`.
+- Task 1 (rulings and stack data): the rulings were committed in prereg 4.2 (cafa710) before any enumeration; `bench/ext.mjs list` has not run. `<data>/ext/groups.json` SHA-256 `fcbc35b8a29ea8ad43b47c13f45f512debaaa7c78ca94f8532af6a76b1572aa8`.

@@ -9,10 +9,10 @@ const exists = (tree, path) => {
   return i < 0 ? tree.root.includes(path) : !!tree.dirs[path.slice(0, i)]?.includes(path.slice(i + 1))
 }
 
-// a cond holds in folder d ('' = root); a path with a slash is looked up from the root only
-function holds(tree, texts, d, { path, text, absent }) {
+// a cond holds in folder d ('' = root); a path with a slash, or a cond marked `root`, matches in the root only
+function holds(tree, texts, d, { path, text, absent, root }) {
   if (absent) return !exists(tree, path) // an exclusion is read from the root whatever folder the group matched in
-  if (path.includes('/') && d) return false
+  if ((path.includes('/') || root) && d) return false
   const full = d ? `${d}/${path}` : path
   const here = d ? tree.dirs[d].includes(path) : exists(tree, path)
   if (!here) return false
@@ -59,11 +59,11 @@ export function baseOf({ parents, commits, prFiles, diffFiles }) {
   return same ? { base: parents[0], method: 'squash' } : { out: 'rebase merge of several commits' }
 }
 
-// readJunit cases; the id is classname::name when the case carries a classname, else the name
+// readJunit cases; the id is classname::name
 const passing = (cases) => {
   const m = new Map()
   for (const c of cases) {
-    const id = c.classname != null ? `${c.classname}::${c.name}` : c.name
+    const id = `${c.classname}::${c.name}`
     m.set(id, (m.get(id) ?? true) && c.status === 'pass')
   }
   return new Set([...m].filter(([, p]) => p).map(([id]) => id))
