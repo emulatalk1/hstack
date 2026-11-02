@@ -69,10 +69,15 @@ const passing = (cases) => {
   return new Set([...m].filter(([, p]) => p).map(([id]) => id))
 }
 
+// ids that failed or errored (a skipped case is neither a failure nor a pass)
+const failing = (cases) => new Set(cases.filter((c) => c.status === 'fail' || c.status === 'error').map((c) => `${c.classname}::${c.name}`))
+
 export function failToPass(base, end1, end2) {
   const [b, e1, e2] = [base, end1, end2].map(passing)
+  const bf = failing(base)
   const both = [...e1].filter((id) => e2.has(id))
-  return { f2p: both.filter((id) => !b.has(id)), p2p: both.filter((id) => b.has(id)), endPass: both.length }
+  const missing = (id) => !base.some((c) => `${c.classname}::${c.name}` === id)
+  return { f2p: both.filter((id) => bf.has(id) || missing(id)), p2p: both.filter((id) => b.has(id)), endPass: both.length }
 }
 
 export function nextToCheck(rows, walked, cfg) {
@@ -95,5 +100,6 @@ export function nextToCheck(rows, walked, cfg) {
 export function coldSetup(sample) {
   const best = new Map()
   for (const { repo, rank } of sample) best.set(repo, Math.min(best.get(repo) ?? Infinity, rank))
+  if (!best.size) return null
   return [...best].reduce((a, b) => (b[1] > a[1] ? b : a))[0]
 }

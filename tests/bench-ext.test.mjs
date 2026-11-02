@@ -64,6 +64,7 @@ test('staticOut accepts a clean PR and reports the first reason in registered or
   expect(out({}, { nameWithOwner: 'me/mine' })).toBe('used in hstack')
   expect(out({ baseRefName: 'dev' })).toBe('not default branch')
   expect(out({ mergedAt: '2026-11-02T00:00:00Z' })).toBe('window')
+  expect(out({ createdAt: '2026-06-30T00:00:00Z' })).toBe('window')
   expect(out({ closing: [{ repo: 'x/y', number: 4, createdAt: '2026-08-01T00:00:00Z' }] })).toBe('issue in another repo')
   expect(out({ closing: [{ repo: 'a/b', number: 4, createdAt: '2026-06-01T00:00:00Z' }] })).toBe('issue before window')
   expect(out({ files: ['src/a.py'] })).toBe('no test file')
@@ -116,6 +117,11 @@ test('a case missing at base counts as fail-to-pass', () => {
   expect(r).toEqual({ f2p: ['k::a'], p2p: ['k::b'], endPass: 2 })
 })
 
+test('a case skipped at the base is not fail-to-pass', () => {
+  const r = failToPass([c('k::a', 'skip'), c('k::b', 'pass')], [c('k::a', 'pass'), c('k::b', 'pass')], [c('k::a', 'pass'), c('k::b', 'pass')])
+  expect(r).toEqual({ f2p: [], p2p: ['k::b'], endPass: 2 })
+})
+
 const row = (id, repo, rank) => ({ id, repo, rank, static: 'ok' })
 const rows = [row('r1#1', 'r1', 1), row('r1#2', 'r1', 2), row('r1#3', 'r1', 3), row('r2#1', 'r2', 4), row('r3#1', 'r3', 5), row('r4#1', 'r4', 6),
   row('r5#1', 'r5', 7), row('r6#1', 'r6', 8), row('r7#1', 'r7', 9), row('r8#1', 'r8', 10), row('r9#1', 'r9', 11)]
@@ -148,4 +154,5 @@ test('an error row is returned again', () => {
 test('coldSetup picks the repo whose best rank is lowest', () => {
   const s = [{ repo: 'a', rank: 1 }, { repo: 'b', rank: 2 }, { repo: 'a', rank: 3 }, { repo: 'c', rank: 9 }, { repo: 'b', rank: 10 }]
   expect(coldSetup(s)).toBe('c')
+  expect(coldSetup([])).toBeNull()
 })
