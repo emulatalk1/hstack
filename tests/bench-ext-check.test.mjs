@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { issueAsOf, parseRecipe } from '../bench/ext.mjs'
+import { issueAsOf, netFailure, parseRecipe } from '../bench/ext.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // A local fixture repo stands in for GitHub, a fake gh answers the PR and issue queries, and a fixed recipe (or a fake
@@ -225,6 +225,25 @@ test('a recipe must copy the repo to /work and may not ask for host network, ins
   expect(() => parseRecipe(JSON.stringify({ ...ok, platform: 'linux/s390x' }))).toThrow('the recipe is not')
   expect(() => parseRecipe(JSON.stringify({ ...ok, probe: [] }))).toThrow('the recipe is not')
 })
+
+test('a missing image tag is the recipe\'s failure, the network\'s signatures are not', () => {
+  expect(netFailure('#2 ERROR: failed to resolve source metadata for docker.io/library/python:9.9: docker.io/library/python:9.9: not found')).toBe(null)
+  expect(netFailure('ERROR: failed to resolve source metadata for docker.io/x/y:1: pull access denied, repository does not exist')).toBe(null)
+  expect(netFailure('failed to resolve source metadata for docker.io/library/a:1: manifest unknown')).toBe(null)
+  expect(netFailure('ERROR: failed to resolve source metadata for docker.io/library/alpine:3.22: dial tcp: lookup registry-1.docker.io: no such host')).toBe('failed to resolve source metadata')
+  expect(netFailure('npm ERR! network request failed, reason: getaddrinfo ENOTFOUND\nconnect ETIMEDOUT 1.2.3.4:443')).toBe('ETIMEDOUT')
+  expect(netFailure('toomanyrequests: You have reached your pull rate limit')).toBe('toomanyrequests')
+  expect(netFailure('error: test failed, exit 1')).toBe(null)
+})
+
+dtest('a FROM tag that does not exist is a spent round, told to the next one (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = setup({ withRecipe: false })
+  const badTag = { ...recipe, dockerfile: recipe.dockerfile.replace('alpine:3.22', 'alpine:9.9.9-no-such-tag') }
+  const r = await run(s, ['check', 's1', '1'], { reply: [JSON.stringify(badTag), JSON.stringify(recipe)] })
+  expect(r.stdout).toBe(`${s.slug(1)} ok f2p=1 p2p=3\n`)
+  expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tbuild failed\n2\t${s.slug(1)}\tpass\n`)
+  expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds', '2.prompt.md'), 'utf8')).toContain('The last 200 lines of its build log')
+}, 300000)
 
 test('a docker daemon failure is error, not out', async () => {
   const s = setup()

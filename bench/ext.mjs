@@ -299,6 +299,12 @@ const NET = Object.entries({ 'failed to resolve source metadata': /failed to res
   'no such host': /no such host/i, 'Temporary failure in name resolution': /temporary failure in name resolution/i, 'Could not resolve host': /could not resolve host/i,
   'i/o timeout': /i\/o timeout/i, 'TLS handshake timeout': /tls handshake timeout/i, 'connection reset': /connection reset/i, ECONNRESET: /ECONNRESET/, ETIMEDOUT: /ETIMEDOUT/,
   'HTTP 503': /HTTP[^\n]{0,12}\b503\b|503 Service Unavailable/i, 'HTTP 502': /HTTP[^\n]{0,12}\b502\b|502 Bad Gateway/i })
+// the network signature in a failed build's log tail, or null. A tag or image that does not exist says `failed to resolve
+// source metadata ... not found` too: that is the recipe's failure (a spent round the agent is told of), never the network's
+export function netFailure(text) {
+  if (/not found|pull access denied|manifest unknown/i.test(text)) return null
+  return NET.find(([, re]) => re.test(text))?.[0] ?? null
+}
 const tail = (file) => readFileSync(file, 'utf8').split('\n').slice(-200).join('\n')
 const retryText = (f) => f.what === 'reply' ? `\nThe previous reply was not a valid recipe: ${f.message}\n` : `\nA previous recipe failed. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n\nThe last 200 lines of its ${f.what} log:\n\n\`\`\`\n${tail(f.log)}\n\`\`\`\n`
 
@@ -394,7 +400,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       if (code !== 0 && code !== 'timeout') { await daemon(); code = await once('a') }
       if (code !== 0) {
         await daemon()
-        const sig = NET.find(([, re]) => re.test(tail(log)))?.[0]
+        const sig = netFailure(tail(log))
         if (sig) throw new Error(sig) // the signature's name only: the log is the repo's output
         return false
       }
