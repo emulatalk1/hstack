@@ -804,3 +804,7 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
 - Final review and fix wave usage: review opus 195.2k/19.7 min; fix implementer opus 109.3k/9.8 min; re-review sonnet 63.4k/2.6 min.
 
 - Build approved by the user (2026-11-02 20:48); plan marked `stable`. From the lock commit 94e1e1c (with its corrections in 39f391f) the held-out commits may be opened as oracle sources (prereg step 5).
+
+## 2026-11-02 — external task selection plan (docs/plans/2026-11-02-bench-external.md), draft
+
+- Task 1 (rulings and stack data): the rulings were committed in prereg 4.2 (cafa710) before any enumeration; `bench/ext.mjs list` has not run. `<data>/ext/groups.json` SHA-256 `00447b076b14a9d23470036ace0808da31e6ff2a6f683ef4e6b4c8a7a363cb3a`.
