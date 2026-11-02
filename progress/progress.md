@@ -788,3 +788,17 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     Task 6: part 2 review sonnet 72.8k/1.6 min: Spec ✅ Quality ✅; all 698 hash lines pass shasum -c; 1 Minor
     - Ruling (minor): the six prereg fix shas stay in the lock — they are already public in prereg §8.2 with the same counts, and the lock ties none to an ho id — cost if wrong: none.
     Task 6: complete (commits 7e1cbff..ff508ea, b81166e..94e1e1c); usage part 2: implementer sonnet 97.4k, review sonnet 72.8k
+
+### SDD ledger tail after the final review
+
+    Final review opus 195.2k/19.7 min: With fixes — 0 Critical, 2 Important (lock's "harness outcome" label for ho-03/04/15 is unproven and contradicts its own Known limits; --fix-tally called "safe on a sealed folder" though it reveals which listed shas are held-out fixes), 7 Minor; 218 pass; 698/698 hashes OK; summary reproduces byte for byte
+    - Ruling: one fix wave: I1 + Minors 2, 6 as a dated "Corrections after the final review" addendum in the lock (no locked line or hash line edited — the lock commit stays the record); I2 wording in bench/README.md and prereg §8.2; Minor 1 a read-only sealed `at` tally in bugs.mjs with a test, its output recorded in the addendum; Minor 3 progress.md wording; Minor 4 an addendum hash section (tasks/*.tsv, replay-dev/bugs/*, env/real-estate/*.sh) — cost if wrong: one more commit pair.
+    - Ruling: Minor 5 (--usable ignores --sealed) keep deferred — every name printed was ho-NN and it only reaches the sealed logs; Minor 7 (plan status draft) stays until the user approves the build, per the user's rule; deferred-minor dispositions as the reviewer listed — cost if wrong: none.
+    Final fix wave dispatched (opus), BASE d0789f5
+    Final fix wave implementer opus 109.3k/9.8 min, commits 736d837 c6e8c08 39f391f; 219 pass; at tally `at: 69ebe27 98, other 0` (a different at does not explain ho-03/04/15)
+    - Ruling: the implementer's deviation stands — plain `bugs.mjs <sealed> --sealed` is the check mode that WRITES every bug file (my brief wrongly called it read-only); a separate read-only `--at-tally` flag (like --fix-tally) keeps the locked ho-*.json unchanged — cost if wrong: none; never run plain --sealed check mode on <sealed> after the lock.
+    Final re-review dispatched (sonnet), d0789f5..39f391f
+    Final re-review sonnet 63.4k/2.6 min: all addressed, 0 regressed, 0 new; 219 pass; 765/765 lock hashes OK; <sealed> unchanged after --at-tally
+    Final review clean; plan status stays draft until the user approves the build
+
+- Final review and fix wave usage: review opus 195.2k/19.7 min; fix implementer opus 109.3k/9.8 min; re-review sonnet 63.4k/2.6 min.
