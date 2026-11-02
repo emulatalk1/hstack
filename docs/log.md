@@ -2,6 +2,7 @@
 
 ## 2026-11-02
 
+* **Update**: Added "Corrections after the final review" to `progress/step3-lock.md`, with no locked line changed: the three kept `setup failed` errors are most likely caused by the bugs themselves, not the harness (not diagnosed); every held-out bug file is at 69ebe27 (`bench/bugs.mjs --at-tally`, new and read-only); ho-04's unit rerun was cut by hand; the judge's caught path was probed before the dev review's 0/18; and the SHA-256 of the owner tables, the dev bug files and the replay scripts. The [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) now says a fix-tally count tells whether a listed sha is a held-out fix, so it runs only on the registered list.
 * **Update**: Locked the step 3 replay of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) in `progress/step3-lock.md`: the summary for the dev and held-out sets, the standing dev results beside the dev replay of review and audit, the second labeller's 21 drops (agreement 76.1%), the three kept `setup failed` errors, and the SHA-256 of the held-out files, the results, the 16 inputs and sheets and the briefs. From that commit the held-out commits may be opened as oracle sources.
 
 ## 2026-10-28

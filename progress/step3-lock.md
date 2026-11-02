@@ -941,3 +941,92 @@ c43736f8639d892bf0ad739060fc0a2308bb977e61b0fbdff4e32e93b90d028a  briefs/sweep.m
 - The evaluator's shell can still reach the app worktree's `.env` (a `bench_` database); the guard is the empty env and the brief, as before.
 - ho-03, ho-04 and ho-15 carry no test-layer or evaluator verdict (3 of 77); the cause is not diagnosed, since the sealing rule outranks it.
 - The dev replay covers review and audit only (18 of 20 bugs); the dev test layers and the evaluator stand as recorded.
+
+## Corrections after the final review (2026-11-02)
+
+Added after the lock commit (94e1e1c) by the final review's fix wave. No line above was edited and no hash above changed; this section is the correction record.
+
+- **ho-03, ho-04, ho-15.** The sentence "They are a harness outcome (`setup failed` is reached only after the checkout and the reverse apply succeeded), not a layer outcome" (line 25 above) is not established. What the record shows: the failure is deterministic for these three bugs on every layer and every date (each try 20 to 30 s, `setup failed`: the setup.sh command or the app start, after the reverse apply succeeded), while the other 74 bugs passed the same setup. So it is most likely caused by the bug itself (its patch or its `at`), not by the environment. It was not diagnosed before the lock, and their logs stay unread. The ruling's action is unchanged: they are kept errors, out of every denominator.
+- **The `at` of the held-out bug files.** `bun bench/bugs.mjs <data>/env/real-estate.json <sealed> --sealed --at-tally`, with `bench/` at `736d837c2d7d57880e76438f58d6dab70917c759` (`git status --short bench` empty), exit 0, verbatim:
+
+  ```text
+  at: 69ebe27 98, other 0
+  ```
+
+  `--at-tally` is a read-only flag added for this (no git, no write); plain `--sealed` is the check mode, which rewrites the bug files and was not run. The 202 `heldout/` hash lines above passed `shasum -a 256 -c` before and after the run. Every bug file names `69ebe27`, so a different `at` does not explain the three errors.
+- **ho-04, unit.** Its rerun was stopped by hand 2m34s after it started (`replay-dev/step3/laneA.log` lines 9 and 10), and the `tries/ho-04-unit` marker (`2`) was written by hand at the restart. So "both tries threw" in the kept-error definition (line 13 above) does not hold for that one try: the rerun was cut, not seen to throw. `progress/progress.md` (Task 5, "Step 3 replay runs", Errors) already records this.
+- **Dev review 0/18 beside 17/20 by the record.** The judge's `caught` path was exercised once with the real CLI before the runs (Task 2, judge probe: `eb2b016-11 caught`; record in `<data>/replay-dev/judge-probe/`), so the zero is not a pipeline that cannot say caught. The two numbers are not reconciled (ruling ⚠️1).
+
+### Additional inputs (hashed after the final review)
+
+`shasum -a 256`, paths relative to `<data>`, sorted bytewise (`LC_ALL=C`): `tasks/*.tsv` (the owner tables `bench/bugs.mjs` reads), `replay-dev/bugs/*` (the 20 dev bug files and their patches) and `env/real-estate/*.sh` (67 files).
+
+```text
+4ee65d61e2ebd8ba88808cf44df55203bfaa0110c4f7e05467e7238c90bc0143  env/real-estate/batch.sh
+d483261e31f7ccc462d05d36123c557b88db3b969c121922b75a44518a081fc8  env/real-estate/classify-errors.sh
+50288a4f999c81ea9643210c2e0d94c97b68f86325f6905935ea6a822c9659ab  env/real-estate/classify-errors.test.sh
+69cd6d5d4cacd086104eb7f34a3440778290da0f90faf6db34f0f28d7d9f5245  env/real-estate/env.sh
+7a03b1b072d4c0d4aeabe29d6cc5c7f3be2592cc7a7864279b1a5b85a4d52f34  env/real-estate/layer.sh
+85ac0cc5e7c9d531c7a96142f2e04b93ba6f8a4f5114e53f74c910e35579d38f  env/real-estate/oracle.sh
+c4d309087b7ee63a4348a8c0f68b9dc88ee63636fe7e10f884f33e383d0a0683  env/real-estate/pgsnap.sh
+245a4c5d87babd43220ffa397009b4b9812605ba0121b40a411f5a19ee2d6b33  env/real-estate/setup.sh
+ce2ff1c2996cff8e5e83e6a6b369a6a18a93a7988d8820c7d7b16519af397b26  env/real-estate/start.sh
+c6c32e668d0e0f19d04655adc13782d0f337f41a531ce58a6e3aa7164925985b  env/real-estate/step3.sh
+95065edcb432dfd226e3508bf5ea189b80a5e86e68b883063d1e26dcc4a0466f  env/real-estate/teardown.sh
+b97b1d2662afdbbcbdcacec3df830932a916ad1e8e158ac80cd7f79a4a0f6ab9  replay-dev/bugs/0870afc-04.json
+2f9adeb67fe1d9c42ed99ab05c5bf8a14ab253bd92ae30861cc22be5b2e74879  replay-dev/bugs/0870afc-04.patch
+5f2d1a6a23b5ca141d89a3cb18aa07d7661f0df94c8726f55cfd161fe6ae53c5  replay-dev/bugs/090f6f2-03.json
+d77ec530d1a94fd0492eb0a1b3bd82dac9fcd5d01717f2bb0a999606be6debba  replay-dev/bugs/090f6f2-03.patch
+092917a5b7cb8375514a0a1b0d6167e6ed163889bf9fc0dd3bbaaf6080c888b1  replay-dev/bugs/090f6f2-05.json
+8dd443c556ec87be2db11161cff11e37a6282ffb40a8056ec6d786f94af49cde  replay-dev/bugs/090f6f2-05.patch
+9e501947d283c91c7f9489fe99c81660d2f56929c8f0c9488ff584a52af01328  replay-dev/bugs/24c426f-03.json
+1347cc14117e419b7ca37be8d35af45ab5accf9f2ba491f9aa46f5aa38eb1c66  replay-dev/bugs/24c426f-03.patch
+25d2a7b1b6ffb41bc304ed796e818a51cfe9807a8398e5b29111c059fd330c82  replay-dev/bugs/24c426f-04.json
+8df447dd4c3c34c1836b67e5d9914fdbaf54c6f9ce4bdf7617f3a4d8851b2253  replay-dev/bugs/24c426f-04.patch
+46daa863fae59a050fdfc0a6d34f9bb2e59b77dd1f3d1a8862175174a916a98a  replay-dev/bugs/24c426f-13.json
+e290599171f63ae0cc251752f38ffb05031286df1baf89d5dc56c40e393147e2  replay-dev/bugs/24c426f-13.patch
+f39bd57dafede395a9c991700948470f73243ec8a6e85ec8d8f348a80ff7a20e  replay-dev/bugs/24c426f-19.json
+a050dcf7a5523c8251c64042099b18c7024e52311c85e594ffe756299fda93d3  replay-dev/bugs/24c426f-19.patch
+1e176ba2d04d13d32fb287a1d5d1a0257c8d8d4cbf694247a68d64ae86751f90  replay-dev/bugs/4e58ba5-13.json
+bd2bac5912011e582de1a399f51a89fb3e17f57ec6a049c0d80b7694a8aab9cb  replay-dev/bugs/4e58ba5-13.patch
+7a0a927c7d71f5dc843d887068635fd22cf08389165dc9c7964e768b04946956  replay-dev/bugs/4e58ba5-19.json
+4f14347f39f4d040d90782f3609b626fb1840b0ad71fcbb3c0308338211f7403  replay-dev/bugs/4e58ba5-19.patch
+129efa77c603e32d301d352ab7804e29c3603f23918586c1784a064061ea9132  replay-dev/bugs/69ebe27-01.json
+6087d6fcaa8a228733f0995dacc085a922115275ddc3a8da6bcbbb13f07f9825  replay-dev/bugs/69ebe27-01.patch
+9f8c1a5225c7622ab558caba16518aaa27b2cfaa5c9c094d93ba4a0d762e2abc  replay-dev/bugs/6cedf96-05.json
+6f6e8845dab66bea8cfd44048b8ed8c43460bbc04bc4115f481d9af8f8b82932  replay-dev/bugs/6cedf96-05.patch
+49739256358711af334fb33ccde03bb5e159aeec3082706ac8bd6d97bd25f829  replay-dev/bugs/d005fa5-03.json
+3c98a2d15ed5adb9b1cee562dd158f92fc482b8ae51928b05f403a0b87111632  replay-dev/bugs/d005fa5-03.patch
+527c20dd11eddcb82e67fad51a0db19266ab4cb421a1f1f8ea9eb944f466fea6  replay-dev/bugs/d82f2b0-05.json
+d412752199a09e2cdc306b974863c95c2036d23a1a99327afaa0990b83136e7b  replay-dev/bugs/d82f2b0-05.patch
+2485bdc7bc8fe518d4506a167f141977cd5fb4c98e430be926eebc792ee3203f  replay-dev/bugs/d82f2b0-22.json
+7f2bbb45499cadcd24bd7b2dae9ce99424c19836899268aa656f9c8787770a94  replay-dev/bugs/d82f2b0-22.patch
+5387d7fa58488742f5c38ccfab85a468e1a09fc2d18ddaee14ab5c45096b1fdf  replay-dev/bugs/d82f2b0-25.json
+696b6a325a0f36f6cf7d7be4e38acd625f6287ed9eef120525ac60955f592bc8  replay-dev/bugs/d82f2b0-25.patch
+768717c9c5022052bed95400852dcd1d67d68a78121296d6be2682bea5791791  replay-dev/bugs/dd56b84-22.json
+5da545305a989ecd5a8f392e599b8f8b7b8a393917a54a0b117f0087e8cd8a2f  replay-dev/bugs/dd56b84-22.patch
+ad9c45334a0441df91137563a5f121be8700ea7d46974d5e52fd3ca4fa105ce8  replay-dev/bugs/e41d45f-04.json
+48948e25e84a2a576712c93277c79255115ad9d821afe3935d50cb6051dc0720  replay-dev/bugs/e41d45f-04.patch
+b07c6154d2c773943d957918e4e8caf17514ecd82f5f444f50ab83f4ced4b958  replay-dev/bugs/eb2b016-02.json
+792cd461b427bb999cdaf1894bde7ca78e924712464017f6d12578dcdfc3dbe5  replay-dev/bugs/eb2b016-02.patch
+98b7809613e91dce531e50e3350c64b50eb9d17cbba29f35d47fc7898820586e  replay-dev/bugs/eb2b016-11.json
+495ce051b8093518be1d6d370cada762cba489525001533bf8aba4ad5af910e3  replay-dev/bugs/eb2b016-11.patch
+1103912781563020cbbed818fd0c7c91dabe492bb339e5bf7c04e52d6fd4a2dc  replay-dev/bugs/eb2b016-13.json
+a46727e4c89e3a278c0725ac97243834237349d259ac5f552357121f1ae559ac  replay-dev/bugs/eb2b016-13.patch
+12b5ea59df86b6dea5d667d3ff84cb0c071f530c5586f629d630df6270c65411  tasks/p1.tsv
+a3a9f89cd8f7e52496b9c6a751ec17a1b4a765f89cb5b253cbf114704ca1c4f2  tasks/p2.tsv
+cce447e92b19f2d05b64109417050a67de6d74849bf679fdc4576ad0415d21fd  tasks/p3.tsv
+bf0b66f955372a89e302905d2556b386bf9322f48a201ef3f2f67775582ed26f  tasks/p4.tsv
+7fadf13941927ee2443209401420a9bfa133e9b4a41443aaf5de7ea6ead3074f  tasks/p5.tsv
+65b0f50ea5e83f615729987a4f9ce2c35aca3224151bdd246d89c5aea2bb3b90  tasks/p6a.tsv
+a3a89d1e79ed9bcfa5ea9f0d3dddfd3ac7c7b1f3f8aa82fdc9c9ec02b3d6a20c  tasks/p6b.tsv
+9673334d0b4b46e7e1bff5d8eda0bdcd372e8b1eda098d9b07b376f4409d7359  tasks/p6c.tsv
+488dd9459ed372216801e01593e8468cf88f9897098b91d28ba3770b8dbec8e7  tasks/p7b.tsv
+a930b82b6770b9bce718ee4ab2e4aa7359062a2017919b1da43ea70b9b67c0f9  tasks/p7c.tsv
+4419aecd0525ae64328798ad28eae7d0661bc6f0d058f4e9c1a9b1732d563059  tasks/p8a.tsv
+746e2e0ab6c26ace6d948ad5f2fe10142bbedaa7397bfc33d9a499b39f49a1d7  tasks/p8b.tsv
+d47adf33fc78a9c4b6c247fd319255ff0306ab696c1d0249d661f8da8bddd8cc  tasks/p8b1.tsv
+e14f77fc80d2a120603f91f67e3da8386a14053bfe40fff4dce704f479c9438d  tasks/p8c.tsv
+f12f2cdbbe8959c4f07610e170b0d1e92602df1f387516c79beac672aab4c544  tasks/p8d.tsv
+d96631a2e68868e3a5574bdbe0a13d6dee5f82b4bf2bdcadb262a0f937ded132  tasks/p8e.tsv
+```
