@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { sortKey, stackOf, staticOut, baseOf, failToPass, nextToCheck, coldSetup } from '../bench/lib/ext.mjs'
+import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup } from '../bench/lib/ext.mjs'
 
 const SEED = 'hstack-bench-2026-10-27'
 const groups = [
@@ -69,6 +69,14 @@ test('staticOut accepts a clean PR and reports the first reason in registered or
   expect(out({ closing: [{ repo: 'a/b', number: 4, createdAt: '2026-06-01T00:00:00Z' }] })).toBe('issue before window')
   expect(out({ files: ['src/a.py'] })).toBe('no test file')
   expect(out({ author: { type: 'Bot' }, files: ['src/a.py'] })).toBe('bot author')
+})
+
+test('repoOut gives the first repo-level reason and staticOut reports it before any PR reason', () => {
+  expect(repoOut(repo, cfg)).toBeNull()
+  expect(repoOut({ ...repo, licence: 'NOASSERTION', isFork: true }, cfg)).toBe('licence')
+  expect(repoOut({ ...repo, isArchived: true, pushedAt: '2026-01-01T00:00:00Z' }, cfg)).toBe('fork or archived or mirror')
+  expect(repoOut({ ...repo, nameWithOwner: 'ME/MINE' }, cfg)).toBe('used in hstack')
+  expect(out({ author: { type: 'Bot' } }, { pushedAt: '2026-06-01T00:00:00Z' })).toBe('inactive')
 })
 
 test('out when changed files exceed 100', () => {

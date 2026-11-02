@@ -4,7 +4,7 @@ export function sortKey(id, seed) {
 }
 
 // does `path` exist from the root? the listing holds the root and one level of each root folder
-const exists = (tree, path) => {
+export const exists = (tree, path) => {
   const i = path.indexOf('/')
   return i < 0 ? tree.root.includes(path) : !!tree.dirs[path.slice(0, i)]?.includes(path.slice(i + 1))
 }
@@ -29,15 +29,22 @@ export function stackOf(tree, texts, groups, language) {
 const time = (s) => Date.parse(s)
 const matches = (group, f) => group.testPaths.some((p) => new RegExp(p).test(f))
 
-export function staticOut(pr, repo, cfg, group) {
-  const issue = pr.closing[0]
-  const nonTest = (f) => !matches(group, f) && !/\.md$/.test(f) && !/(^|\/)docs\//.test(f)
+// the repo-level reasons, first in registered order; `list` reads markers only for a repo with none
+export function repoOut(repo, cfg) {
   const reasons = [
     ['licence', !cfg.licences.includes(repo.licence)],
     ['fork or archived or mirror', repo.isFork || repo.isArchived || repo.isMirror],
     ['repo too new', time(repo.createdAt) >= time(cfg.repo.createdBefore)],
     ['inactive', time(repo.pushedAt) < time(cfg.repo.pushedFrom)],
     ['used in hstack', cfg.usedInHstack.some((r) => r.toLowerCase() === repo.nameWithOwner.toLowerCase())],
+  ]
+  return reasons.find(([, out]) => out)?.[0] ?? null
+}
+
+export function staticOut(pr, repo, cfg, group) {
+  const issue = pr.closing[0]
+  const nonTest = (f) => !matches(group, f) && !/\.md$/.test(f) && !/(^|\/)docs\//.test(f)
+  const reasons = [
     ['bot author', pr.author?.type === 'Bot'],
     ['not default branch', pr.baseRefName !== repo.defaultBranch],
     ['window', time(pr.createdAt) < time(cfg.window.createdFrom) || time(pr.mergedAt) >= time(cfg.window.mergedBefore)],
@@ -49,7 +56,7 @@ export function staticOut(pr, repo, cfg, group) {
     ['no test file', !pr.files.some((f) => matches(group, f))],
     ['no non-test file', !pr.files.some(nonTest)],
   ]
-  return reasons.find(([, out]) => out)?.[0] ?? null
+  return repoOut(repo, cfg) ?? reasons.find(([, out]) => out)?.[0] ?? null
 }
 
 export function baseOf({ parents, commits, prFiles, diffFiles }) {
