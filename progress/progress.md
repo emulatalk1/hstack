@@ -628,10 +628,16 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     - review, held-out 47: 1h52m13s; 47 runs; 0 reruns; missed 47; 760/608812/13153983/4403097.
     - audit, held-out 47: 3h07m11s; 47 runs; 0 reruns; missed 47; 2428/911124/72917249/4927613.
     - sum of the agent-replay records: 202 records, 9110/4518762/234449166/19106136. The 15 health probes (one short reply each) are not recorded.
-  - Errors. Each was classified by `<data>/env/real-estate/classify-errors.sh`. The script is sealed-safe: it maps each errored try's `.err` log to one fixed category using our own tools' message prefixes, and prints only `<id> <layer> <category> first|kept`. Its self-test `classify-errors.test.sh` passed on synthetic logs (one per category).
-    - `setup failed`: every try of ho-03, ho-04 and ho-15 on unit, int, e2e and the evaluator (24 tries: 12 first, 12 kept).
-    - `timeout`: the first tries of ho-02, ho-23 and ho-50 on the evaluator, which the reruns cleared. Each took about 60 min, the task's `timeoutSec` of 3600 s.
+  - Errors. Each was classified by `<data>/env/real-estate/classify-errors.sh`. The script is sealed-safe: it maps each errored try's `.err` log to one fixed category using our own tools' message prefixes, and prints only `<id> <layer> <category> first|kept`. Its self-test `classify-errors.test.sh` passed on synthetic logs (every category, both tries; extended in fix round 1).
+    - Fix round 1 split the old `setup failed` in two. `setup failed` now covers a setup.sh command failure, `start exited … before ready` and `app not ready at … after <n> s`. The new `checkout failed` covers a worktree add or `git archive | tar` failure, a leftover worktree or folder, and a busy port. `app not ready` moved out of `timeout` into `setup failed`.
+    - Counts by category: `setup failed` 27 (15 first tries, 12 kept). Every other category is 0: `patch check`, `timeout`, `checkout failed`, `no junit`, `other`.
+    - The setup-failed tries:
+      - ho-03, ho-04 and ho-15 on unit, int, e2e and the evaluator: 24 tries, 12 first and 12 kept, each 20 to 30 s.
+      - ho-02, ho-23 and ho-50 on the evaluator: 3 first tries, which the reruns cleared. Each took about 60 min, the task's `timeoutSec` of 3600 s.
+    - `setup failed` is reached only after the checkout and the reverse apply succeeded, so none of these errors is a patch that does not apply.
     - Every error exited 2 with no verdict. agent-replay throws (exit 2) only before its layer call has run, so the records miss no agent usage.
+    - Dead patterns: `layer exited timeout` and `judge exited timeout` are printed only in dev mode (agent-replay.mjs:97). A sealed agent-layer timeout or judge failure leaves a record with verdict `error` and exits 1 with no message, so it would land in `other`. No such run happened, since every error exited 2.
+    - ho-04's unit rerun was cut by the hand stop (laneA.log:9), and its exit code was never logged. Its kept status comes from the `tries/ho-04-unit` marker (`2`) written at the restart; its `.out` is empty.
     - No error on review or audit.
   - Counts (Step 5). Test-layer verdicts, `results/<id>-<layer>.out` without `.error1.`: unit 77, int 77, e2e 77, total 231 = 3 × 77 usable; 9 `.error1.out`. Evaluator: 72 records = 75 usable − 3 kept errors with `tries/` = 2; no `.error1.json`. Review and audit: 65 records each = 18 dev + 47 held-out. Each layer's set of usable ids equals its set of result file names.
   - pg: all 11 `batch end` lines (7 in lane A, including the three skip-only re-runs; 4 in lane B) say `pg_database unchanged outside bench_*`. The restarts overwrote `review-bugs-before.txt` and the unit, int and e2e snapshots (all now from 11-01).
