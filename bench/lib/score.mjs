@@ -43,8 +43,9 @@ export function verdict({ ref, bad, base }) {
   return 'valid'
 }
 
-// spec 7.1: a weak, broken or pre-existing check counts in no score; validations: the parsed validation-*.json files
-const UNSCORED = ['weak', 'broken', 'pre-existing']
+// spec 7.1: a weak, broken or pre-existing check counts in no score, nor one whose validation could not run (error, ruling 10);
+// validations: the parsed validation-*.json files
+const UNSCORED = ['weak', 'broken', 'pre-existing', 'error']
 export function unscored(validations, ids) {
   const out = []
   for (const v of validations) for (const c of v.checks ?? [])

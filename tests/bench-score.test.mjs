@@ -67,6 +67,10 @@ test('with several known-bad versions a check is weak if it passes on any, broke
   expect(verdict({ ref: 'pass', bad: ['fail', 'fail'], base: 'fail' })).toBe('pre-existing')
 })
 
+test('unscored lists a check whose validation recorded error', () => {
+  expect(unscored([{ checks: [{ id: 'a-T1', verdict: 'error', stage: 'port busy' }, { id: 'a-T2', verdict: 'valid' }] }], ['a-T1', 'a-T2'])).toEqual([{ id: 'a-T1', verdict: 'error' }])
+})
+
 test('unscored lists each check of this oracle that a validation found weak, broken or pre-existing, once', () => {
   const v = [{ checks: [{ id: 'a-T1', verdict: 'weak' }, { id: 'a-T2', verdict: 'valid' }, { id: 'a-T3', verdict: 'absent-at-base' }] },
     { checks: [{ id: 'b-T1', verdict: 'pre-existing' }, { id: 'b-T2', verdict: 'broken' }, { id: 'a-T1', verdict: 'broken' }, { id: 'gone-T1', verdict: 'weak' }] }]
