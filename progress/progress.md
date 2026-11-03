@@ -1386,3 +1386,10 @@ Sealed agents (recipe and diagnosis runs) are summed in the Task 5 records above
     bench-ext/fxzbivb3__app__1:31cd0d8
     bench-ext/fxzjc0j2__app__1:1715f83
     bench-ext/fxzjc0j2__app__1:31cd0d8
+
+### SDD ledger tail after the final review
+
+    Task 5: addendum re-reviewed (sonnet): both addressed, sample recomputed equal, no new breakage. Implementer opus 364.9k cumulative (~3 h of turns over the walk). Task 5: complete (commits 911b1bf..fc7e89d, review clean).
+    Final review (opus 187.5k / 13.3 min): Ready to merge with fixes; sample, list order, hashes, sealing, docker safety verified; Important: (1) s2-02's recipe not in the hashed record (recipe.json overwritten by xum#5191); (2) interrupted checks' replies counted but not named; (3) prereg attribution/amendment marks and the user's builder-prune permission missing. One fix wave dispatched incl. minors (walk exit code on 2 errors, check disk pre-check, sample command, recipeSha in meta, rounds.tsv append order, notes, README).
+    Final fix wave e4c2f02 + 8f6b6d2 (implementer opus 402.7k cumulative): all 8 addressed; re-review opus: no new Critical/Important; residual gap: the lock addendum omits the cargo#17562 build interrupted at the 06:38Z ea48116 restart (recorded only in progress.md); minors: the "four replies" sentence should add rocketmq-rust's three moved aside; swc 1/2 were stopped before any build (not "while built"); servo 1's build log ends 05:32Z; check tests without a disk option read the real Docker disk; a comment says groups.json order but code sorts by id; walk-all.sh comment outdated.
+    Final: parked — cargo 06:38Z interruption missing from the lock — Ruling: no second fix wave (SDD); surfaced to the user with a one-line append proposed at approval — cost if wrong: an incomplete event list in the lock; no effect on counts or the sample.
