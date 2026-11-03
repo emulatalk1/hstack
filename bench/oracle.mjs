@@ -8,12 +8,12 @@ import { gitOut, readRows } from './bugs.mjs'
 import { parseRunner, taskOf } from './ext.mjs'
 import { okBashCommands } from './lib/agent.mjs'
 import { check } from './input-check.mjs'
-import { hunkOwners } from './lib/oracle.mjs'
+import { agreement, hunkOwners, mergeLabels, queuePick, usable } from './lib/oracle.mjs'
 import { isTestPath } from './lib/replay.mjs'
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | sheet <external task>'
+const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | sheet <external task> | classify [<task.json>] <task> | split [<task.json>] <task> | queue'
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
@@ -430,7 +430,229 @@ async function sheet(task, agent) {
   return 1
 }
 
-export async function oracle(args, { agent = sealedAgent } = {}) {
+// --- classify, split (ruling 15) and queue (ruling 16). Prints counts only: replies, labels, prompts and checks are sealed ---
+const CLASS = ['traceable', 'not traceable', 'partly']
+const CL_HIDDEN = ['fix_commit', 'origin', 'hunk', 'task'] // never shown to a classifier
+const CL_SCORED = ['valid', 'absent-at-base'] // ruling 13
+const SAMPLE_71 = ['valid', 'absent-at-base'] // the checks the 7.1 read samples from
+const fx = (x) => (typeof x === 'number' ? x.toFixed(2) : 'none')
+
+// a task of tasks.json needs its task file (the validate convention); an external task's is <data>/env/<task>.json
+function clCtx(task, taskFile) {
+  const data = dataDir(), dir = join(data, task), repoTasks = readJson(join(data, 'tasks.json')) ?? {}
+  if (repoTasks[task]) {
+    if (!taskFile) throw new Error(`${task} is a task of tasks.json: give its task file first`)
+    return { data, task, dir, taskFile, ext: false }
+  }
+  if (taskFile) throw new Error(USAGE)
+  taskOf(join(data, 'ext'), task)
+  return { data, task, dir, taskFile: join(data, 'env', `${task}.json`), ext: true }
+}
+
+const clManifest = (c) => readJson(join(c.dir, 'oracle', 'manifest.json'))
+const clVerdict = (c, e) => readJson(join(c.dir, `validation-${String(e.fix_commit).slice(0, 7)}.json`))?.checks?.find((x) => x.id === e.id)?.verdict
+const clScored = (c) => (clManifest(c) ?? []).filter((e) => e.dropped !== true && e.interface !== 'none' && CL_SCORED.includes(clVerdict(c, e)))
+const clFile = (c, e) => e.file ?? readdirSync(join(c.dir, 'oracle')).find((f) => f.startsWith(`${e.id}.`)) ?? null
+
+// the valid labels of a classifier's reply; ok when every id is labelled exactly once and nothing else is
+function classReply(text, ids) {
+  let arr = null
+  try { arr = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)) } catch {}
+  const got = new Map()
+  if (!Array.isArray(arr)) return { got, ok: false }
+  const seen = new Map()
+  for (const e of arr) seen.set(e?.id, (seen.get(e?.id) ?? 0) + 1)
+  for (const e of arr) if (ids.includes(e?.id) && seen.get(e.id) === 1 && CLASS.includes(e.label)) got.set(e.id, e.label)
+  return { got, ok: got.size === ids.length && arr.length === ids.length }
+}
+
+// one rater: a bad reply is run once more (`-2`); the final reply's valid labels go to `<name>-<r>.json`. null: a run
+// whose record exists was made with another prompt
+async function rater(agent, c, name, r, text, prompt, settings, ids) {
+  for (const n of [1, 2]) {
+    const out = join(c.dir, `${name}-${r}${n === 1 ? '' : '-2'}.reply.md`), rec = `${out}.run.json`
+    if (!existsSync(rec)) {
+      await agent([c.taskFile, `${name}-${r}-${c.task}${n === 1 ? '' : '-2'}`, '--prompt', prompt, '--out', out, '--tools', 'Read,Glob,Grep', '--settings', settings])
+      const x = readJson(rec)
+      if (x) writeFileSync(rec, JSON.stringify({ ...x, promptSha: sha256(text) }, null, 2) + '\n')
+    } else if (readJson(rec)?.promptSha !== sha256(text)) return null
+    const res = classReply(existsSync(out) ? readFileSync(out, 'utf8') : '', ids)
+    if (res.ok || n === 2) {
+      writeFileSync(join(c.dir, `${name}-${r}.json`), JSON.stringify(ids.filter((id) => res.got.has(id)).map((id) => ({ id, label: res.got.get(id) })), null, 2) + '\n')
+      return res.got
+    }
+  }
+}
+
+// two raters over `entries` in a folder of the input, the sheet, the stripped manifest and their check files only
+async function classRound(agent, c, name, entries) {
+  const work = join(c.dir, 'work'), dir = join(work, name), ids = entries.map((e) => e.id)
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  for (const f of ['input.md', 'interface.md']) copyFileSync(join(c.dir, f), join(dir, f))
+  writeFileSync(join(dir, 'manifest.json'), JSON.stringify(entries.map((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !CL_HIDDEN.includes(k)))), null, 2) + '\n')
+  for (const f of new Set(entries.map((e) => clFile(c, e)))) cpSync(join(c.dir, 'oracle', f), join(dir, f))
+  const text = `${readFileSync(join(c.data, 'briefs/classify.md'), 'utf8').trimEnd()}\n\n## The folder\n\n\`${dir}\`\n\n## The check ids (${ids.length})\n\n${ids.map((id) => `- \`${id}\``).join('\n')}\n`
+  const prompt = join(work, `${name}.prompt.md`), settings = join(work, `${name}-settings.json`)
+  if (!existsSync(prompt) || readFileSync(prompt, 'utf8') !== text) writeFileSync(prompt, text)
+  writeFileSync(settings, JSON.stringify({ permissions: { additionalDirectories: [dir], allow: [`Read(/${dir}/**)`] } }, null, 2) + '\n')
+  const [l1, l2] = await Promise.all([1, 2].map((r) => rater(agent, c, name, r, text, prompt, settings, ids)))
+  if (!l1 || !l2) return null
+  const m = mergeLabels([...l1].map(([id, label]) => ({ id, label })), [...l2].map(([id, label]) => ({ id, label })))
+  m.disputed.push(...ids.filter((id) => !l1.has(id) && !l2.has(id))) // a check neither rater labelled
+  const both = ids.filter((id) => l1.has(id) && l2.has(id)) // agreement over the checks both raters labelled
+  const stats = both.length ? agreement(both.map((id) => l1.get(id)), both.map((id) => l2.get(id)), CLASS) : null
+  return { ...m, ids, stats }
+}
+
+const writeLabels = (c, add, drop = []) => {
+  const f = join(c.dir, 'labels.json'), old = readJson(f) ?? {}
+  for (const id of drop) delete old[id]
+  writeFileSync(f, JSON.stringify({ ...old, ...add }, null, 2) + '\n')
+}
+const staleClass = (c) => `${c.task} classify refused a run whose prompt differs from the one it ran with`
+
+async function classify(c, agent) {
+  for (const f of ['input.md', 'interface.md', 'oracle/manifest.json']) if (!existsSync(join(c.dir, f))) { console.log(`${c.task} classify refused: no ${f}`); return 1 }
+  const entries = clScored(c)
+  if (!entries.length) { console.log(`${c.task} classify refused: no scored check`); return 1 }
+  if (entries.some((e) => { const f = clFile(c, e); return !f || !existsSync(join(c.dir, 'oracle', f)) })) { console.log(`${c.task} classify refused: a scored check has no file`); return 1 }
+  const r = await classRound(agent, c, 'classify', entries)
+  if (!r) { console.log(staleClass(c)); return 1 }
+  writeLabels(c, r.labels, r.ids)
+  const old = readJson(join(c.dir, 'agreement.json'))
+  writeFileSync(join(c.dir, 'agreement.json'), JSON.stringify({ ...r.stats, usable: r.stats ? usable(r.stats) : false, checks: r.ids.length, partly: r.partly, disputed: r.disputed, ...(old?.split ? { split: old.split } : {}) }, null, 2) + '\n')
+  const v = Object.values(r.labels), s = r.stats ?? {}
+  console.log(`${c.task} classified=${r.ids.length} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length} partly=${r.partly.length} disputed=${r.disputed.length} kappa=${fx(s.kappa)} raw=${fx(s.raw)} ac1=${fx(s.ac1)}`)
+  return 0
+}
+
+// the highest n of `<sha7>-T<n>` over every oracle of the data folder, dropped entries too: a source commit's checks
+// can sit in several tasks' oracles. shortcut: no lock across tasks, so split one task at a time
+function highestOf(data, sha7) {
+  let max = 0
+  for (const d of readdirSync(data)) for (const e of readJson(join(data, d, 'oracle', 'manifest.json')) ?? []) {
+    const m = String(e?.id).match(/^(.+)-T(\d+)$/)
+    if (m && m[1] === sha7) max = Math.max(max, Number(m[2]))
+  }
+  return max
+}
+
+// one sealed splitter for an agreed partly check; the two new entries (judged by the writer rules) or null
+async function splitOne(agent, c, e, manifest) {
+  const sha7 = e.id.slice(0, e.id.lastIndexOf('-T')), work = join(c.dir, 'work', `split-${e.id}`), inDir = join(work, 'in'), outDir = join(work, 'out')
+  const out = join(work, 'split.reply.md'), rec = `${out}.run.json`, prompt = join(work, 'split.prompt.md'), settings = join(work, 'split-settings.json')
+  const file = clFile(c, e), grouped = manifest.some((x) => x.id !== e.id && x.file !== undefined && x.file === e.file)
+  const n = highestOf(c.data, sha7), ids = [`${sha7}-T${n + 1}`, `${sha7}-T${n + 2}`]
+  const runner = c.ext && existsSync(join(c.dir, 'oracle/runner.json')) ? `## The runner\n\n${fence(readFileSync(join(c.dir, 'oracle/runner.json'), 'utf8'), 'json')}\n` : ''
+  const text = [readFileSync(join(c.data, 'briefs/split.md'), 'utf8').trimEnd() + '\n',
+    `## The oracle writer's rules\n\n${fence(readFileSync(join(c.data, c.ext ? 'ext/briefs/oracle.md' : 'briefs/oracle-re.md'), 'utf8'), 'markdown')}`,
+    runner, `## The new check ids\n\n1. \`${ids[0]}\` (traceable)\n2. \`${ids[1]}\` (not traceable)\n`, `## Your folder\n\n\`${work}\`\n`].filter(Boolean).join('\n')
+  if (!existsSync(rec)) {
+    rmSync(work, { recursive: true, force: true })
+    mkdirSync(outDir, { recursive: true })
+    mkdirSync(dirname(join(inDir, file)), { recursive: true })
+    for (const f of ['input.md', 'interface.md']) copyFileSync(join(c.dir, f), join(inDir, f))
+    const shown = Object.fromEntries(Object.entries(e).filter(([k]) => !CL_HIDDEN.includes(k) && (k !== 'file' || grouped)))
+    writeFileSync(join(inDir, 'entry.json'), JSON.stringify(shown, null, 2) + '\n')
+    copyFileSync(join(c.dir, 'oracle', file), join(inDir, file))
+    writeFileSync(prompt, text)
+    writeFileSync(settings, JSON.stringify({ permissions: { additionalDirectories: [work], allow: [`Read(/${work}/**)`, `Edit(/${outDir}/**)`] } }, null, 2) + '\n')
+    await agent([c.taskFile, `split-${c.task}-${e.id.toLowerCase()}`, '--prompt', prompt, '--out', out, '--tools', 'Read,Glob,Grep,Write,Edit', '--settings', settings])
+    const x = readJson(rec)
+    if (x) writeFileSync(rec, JSON.stringify({ ...x, promptSha: sha256(text) }, null, 2) + '\n')
+  } else if (readJson(rec)?.promptSha !== sha256(text)) return { stale: true }
+  const got = readJson(join(outDir, 'manifest.json'))
+  if (!Array.isArray(got) || got.length !== 2 || got.some((x, i) => x?.id !== ids[i])) return null
+  // the writer's fields come from the original; the splitter gives behaviour, severity and a grouped file
+  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(got.map((x) => ({ id: x.id, hunk: e.hunk, origin: e.origin, behaviour: x.behaviour, interface: e.interface, severity: x.severity, ...(grouped ? { file: x.file } : {}) })), null, 2) + '\n')
+  const rules = c.ext ? {} : JSON.parse(readFileSync(join(c.data, 'briefs/oracle-re.json'), 'utf8'))
+  const res = judge(outDir, e.fix_commit, (h) => (h === e.hunk ? e.task : null), c.ext, rules)
+  if (!res || res.entries.some((x) => x.why) || (grouped && res.entries.some((x) => x.file !== normalize(file)))) return null
+  return { entries: res.entries, outDir }
+}
+
+async function split(c, agent, validate) {
+  const agr = readJson(join(c.dir, 'agreement.json'))
+  if (!agr) { console.log(`${c.task} split refused: not classified`); return 1 }
+  const o = join(c.dir, 'oracle'), tally = { split: 0, failed: 0, stale: 0 }
+  for (const id of agr.partly) {
+    const manifest = clManifest(c), e = manifest.find((x) => x.id === id)
+    if (!e || e.dropped === true) continue // split already
+    const s = await splitOne(agent, c, e, manifest)
+    if (s?.stale) { tally.stale++; continue }
+    if (!s) { tally.failed++; writeLabels(c, { [id]: 'requirement' }); continue } // 6.3: not splittable -> requirement
+    for (const f of new Set(s.entries.map((x) => x.file))) { mkdirSync(dirname(join(o, f)), { recursive: true }); copyFileSync(join(s.outDir, f), join(o, f)) }
+    const ids = s.entries.map((x) => x.e.id)
+    writeFileSync(join(o, 'manifest.json'), JSON.stringify([...manifest.map((x) => (x.id === id ? { ...x, dropped: true, split_into: ids } : x)),
+      ...s.entries.map((x) => entryOut(x, e.fix_commit, c.ext))], null, 2) + '\n')
+    writeLabels(c, {}, [id])
+    tally.split++
+  }
+  const made = (clManifest(c) ?? []).filter((x) => x.dropped === true && agr.partly.includes(x.id)).flatMap((x) => x.split_into ?? [])
+  let r = null
+  if (made.length) {
+    if (tally.split) await validate(c.ext ? [c.task] : [c.taskFile, c.task])
+    const fresh = clScored(c).filter((x) => made.includes(x.id))
+    if (fresh.length) {
+      r = await classRound(agent, c, 'classify-split', fresh)
+      if (!r) { console.log(staleClass(c)); return 1 }
+      writeLabels(c, { ...r.labels, ...Object.fromEntries(r.partly.map((id) => [id, 'requirement'])) }, r.ids) // partly again -> requirement
+      writeFileSync(join(c.dir, 'agreement.json'), JSON.stringify({ ...agr, split: { ...r.stats, checks: r.ids.length, partly: r.partly, disputed: r.disputed } }, null, 2) + '\n')
+    }
+  }
+  const v = Object.values(r?.labels ?? {})
+  console.log(`${c.task} split partly=${agr.partly.length} split=${tally.split} failed=${tally.failed} stale=${tally.stale} new=${made.length} classified=${r?.ids.length ?? 0} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length + (r?.partly.length ?? 0)} disputed=${r?.disputed.length ?? 0}`)
+  return tally.stale ? 1 : 0
+}
+
+const tsvOut = (f, head, rows) => writeFileSync(f, [head.join('\t'), ...rows.map((r) => r.join('\t'))].join('\n') + '\n')
+
+// ruling 16: the step 9 queue over the classified tasks of each set; exit 3 when a set's pooled agreement is not usable
+async function queue() {
+  const data = dataDir(), ext = join(data, 'ext'), q = join(data, 'step9')
+  const seed = readJson(join(ext, 'groups.json'))?.seed
+  if (!seed) throw new Error('no seed in ext/groups.json')
+  const sampleFile = join(ext, 'sample.tsv'), [head, ...rows] = existsSync(sampleFile) ? readFileSync(sampleFile, 'utf8').trim().split('\n').map((l) => l.split('\t')) : [[]]
+  const stackOf = new Map(rows.map((r) => [r[head.indexOf('task')], r[head.indexOf('stack')]]))
+  const done = (t) => existsSync(join(data, t, 'agreement.json'))
+  const sets = [['task-repo', Object.keys(readJson(join(data, 'tasks.json')) ?? {}).filter(done)], ['external', [...stackOf.keys()].filter(done)]]
+  const ctx = (t) => ({ data, task: t, dir: join(data, t) })
+  mkdirSync(q, { recursive: true })
+  const src = join(data, 'sources/labels.tsv')
+  const step9 = existsSync(src) ? readFileSync(src, 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')).filter((r) => r[5] === 'step9').map((r) => r.slice(0, 3)) : []
+  tsvOut(join(q, 'labels.tsv'), ['commit', 'task', 'kind'], step9)
+  const disputed = sets.flatMap(([, ts]) => ts.flatMap((t) => { const a = readJson(join(data, t, 'agreement.json')); return [...a.disputed, ...(a.split?.disputed ?? [])].map((id) => [t, id]) }))
+  tsvOut(join(q, 'classify.tsv'), ['task', 'id'], disputed)
+  const pick = (name, ids, n) => { const owner = new Map(ids.map(([t, id]) => [id, t])); return queuePick([...owner.keys()], n, seed).map((id) => [name, owner.get(id), id]) }
+  const groups = [['task-repo', sets[0][1]], ...[...new Set(sets[1][1].map((t) => stackOf.get(t)))].sort().map((s) => [s, sets[1][1].filter((t) => stackOf.get(t) === s)])]
+  const s71 = groups.flatMap(([g, ts]) => pick(g, ts.flatMap((t) => (clManifest(ctx(t)) ?? []).filter((e) => e.dropped !== true && e.interface !== 'none' && SAMPLE_71.includes(clVerdict(ctx(t), e))).map((e) => [t, e.id])), 10))
+  tsvOut(join(q, 'sample-7.1.tsv'), ['set', 'task', 'id'], s71)
+  const s72 = sets.flatMap(([g, ts]) => pick(g, ts.flatMap((t) => Object.keys(readJson(join(data, t, 'labels.json')) ?? {}).map((id) => [t, id])), 20))
+  tsvOut(join(q, 'sample-7.2.tsv'), ['set', 'task', 'id'], s72)
+  const inputs = sets.flatMap(([g, ts]) => queuePick(ts, 2, seed).map((t) => [g, t]))
+  tsvOut(join(q, 'inputs.tsv'), ['set', 'task'], inputs)
+  console.log(`queue: labels ${step9.length}, classify ${disputed.length}, sample-7.1 ${s71.length}, sample-7.2 ${s72.length}, inputs ${inputs.length}`)
+  const stop = []
+  for (const [g, ts] of sets) {
+    const a = [], b = []
+    for (const t of ts) { // pooled over the main rounds: the checks both raters labelled
+      const l2 = new Map((readJson(join(data, t, 'classify-2.json')) ?? []).map((x) => [x.id, x.label]))
+      for (const x of readJson(join(data, t, 'classify-1.json')) ?? []) if (l2.has(x.id)) { a.push(x.label); b.push(l2.get(x.id)) }
+    }
+    if (!a.length) { console.log(`${g}: tasks ${ts.length}, checks 0`); continue }
+    const s = agreement(a, b, CLASS), ok = usable(s)
+    console.log(`${g}: tasks ${ts.length}, checks ${s.n}, kappa=${fx(s.kappa)} raw=${fx(s.raw)} ac1=${fx(s.ac1)} usable ${ok ? 'yes' : 'no'}`)
+    if (!ok) stop.push(g)
+  }
+  for (const g of stop) console.log(`stop: ${g} not usable`)
+  return stop.length ? 3 : 0
+}
+
+const validateCmd = (inj) => (a) => oracle(['validate', ...a], inj)
+
+export async function oracle(args, inj = {}) {
+  const { agent = sealedAgent, validate = validateCmd(inj) } = inj
   if (!process.env.HSTACK_BENCH_MACHINE) throw new Error('set HSTACK_BENCH_MACHINE to the machine file (for example .evidence/bench/machine.json)')
   const [cmd, taskPath, ...rest] = args
   if (cmd === 'pairs' && taskPath && (rest.length === 0 || (rest.length === 2 && rest[0] === '--drop'))) return pairs(taskPath, rest.length ? rest[1].split(',') : [])
@@ -438,6 +660,11 @@ export async function oracle(args, { agent = sealedAgent } = {}) {
   if (cmd === 'labels' && args.length === 1) return labels()
   if (cmd === 'write' && taskPath && rest.length <= 1) return rest.length ? writeSource(taskPath, rest[0], agent) : writeTask(taskPath, agent)
   if (cmd === 'sheet' && taskPath && rest.length === 0) return sheet(taskPath, agent)
+  if ((cmd === 'classify' || cmd === 'split') && taskPath && rest.length <= 1) {
+    const c = rest.length ? clCtx(rest[0], taskPath) : clCtx(taskPath)
+    return cmd === 'classify' ? classify(c, agent) : split(c, agent, validate)
+  }
+  if (cmd === 'queue' && args.length === 1) return queue()
   throw new Error(USAGE)
 }
 
