@@ -967,3 +967,54 @@ a1baaaa18b42901619e4fec86163bb3b8381b2fa78b748c171a14b0e291bca31  ext/sealed/swc
 - `bench/` at `89d9e8a7e521cc8e64a258dd44470d50b34d3bec`; `git status --short bench` empty.
 - Docker left: 262 `bench-ext-*` containers and 132 `bench-ext/*` images, all from the gated test runs (`bench-ext-fx*`, `bench-ext-other`, `bench-ext/probe:net`). No candidate's container or image is left.
 - `removed.txt`: 250 lines.
+
+
+### Addendum, 2026-11-03: every out that meets the feedback trigger
+
+The review found that the recheck pass above covered only the two candidates a diagnosis blamed on the recipe. A generic fix must apply to every candidate it covers (the stop rule, ruling 8, content independence), so the same pass was extended with no new fix. The feedback-round sentence in prereg ruling 10 now says the trigger, not a diagnosis, decides which candidates are rechecked.
+
+- Trigger scan: for every out row in all stacks, `needsFeedback` was applied to the last attempt's `base-<a>`, `end-<a>-1` and `end-<a>-2` runs from `meta.json` (counts and exit codes only). Only s3 rank 10, apache/iggy#4018, meets it and has not had its feedback round. swc#12010 meets it but its feedback round already ran. eventyay#4509 ran cases. Every other out had no runs (rebase merge, recipe failed) or ran cases (servo#47685), and datafusion#24211 was out of memory.
+- Recheck: `recheck: feedback round` for iggy#4018, then `ext check ... s3 10 --tier 1` through `<data>/ext/recheck.sh`, between equal `pgsnap` snapshots, followed by the walk's removal step.
+  - Before the build the disk estimate was 7.95 GB free, under the 15 GB floor. I stopped the first attempt in its build and ran `docker builder prune -f` once, which freed 21 GB (logged in `logs/recheck.out`). The recheck then started again at code 00a3113.
+- Verdict: apache/iggy#4018 `out PR tests do not pass at end`. The feedback round passed (probe 29 cases), and the runs again exited 94 with 0 cases.
+- Sample delta: none. `progress/step4/sample.tsv` is unchanged (a200de5b…) and the s3 cold-setup repo stays `pola-rs/polars`.
+- `sampleOf` now takes the first `perStack` accepted rows by tier, then rank, with at most `perRepo` per repo (commit 00a3113, always-run test). It gives the same sample.
+- Run totals now:
+  - `check` ran 58 times over 36 candidates.
+  - Recipe agent: 52 runs, usage input 899 / output 469967 / cacheRead 12850378 / cacheWrite 2035862.
+  - Sealed diagnoses: 11 runs, usage 150 / 30930 / 6307692 / 1783155.
+  - `removed.txt`: 262 lines.
+  - Docker: 262 containers and 132 images, all fixtures or `probe:net`; nothing of a candidate is left.
+  - `bench/` at `00a311399d1e7987e45c061f1980750e59fb86af`, with `git status --short bench` empty.
+- Reported to the user on 2026-11-03:
+  - The two `out of memory` outs, apache/datafusion#24211 and swc-project/swc#12010, were reported to the user on 2026-11-03.
+  - The known limit eventyay#4509 (`cause: recipe` with cases run, which the feedback round does not cover) was reported to the user on 2026-11-03.
+
+Hashes (changed or new since the superseding list, plus the re-saved `pr.json` of every rechecked candidate; paths relative to `<data>` unless under `progress/`; `raw/` still matches `raw.sha256`):
+
+```
+9ececf47186150e3cdfcfbf91e2dce925e5442a221d6091f359e4c3b80f0fc9d  progress/step4/walk.tsv
+a200de5b1785dcec02c45ebdafe867f030847a10d3e07c54fb684555a83e76d1  progress/step4/sample.tsv
+9cf6c0cf5e68e29f96231a2b5ac5c41afddcd3446f6f9d426e91ecb784c96b37  ext/sealed/swc-project__swc__12010/pr.json
+e6e7bae09ebe27de1bb34e531e29e5cfab32efce49a69236a845aa1ddc847acd  ext/sealed/chakra-ui__panda__3925/pr.json
+94410629314c3d66c7b4fc03de860b169536fdeac9a024a5dbc13b8cd647d6f5  ext/sealed/apache__iggy__4018/pr.json
+9ececf47186150e3cdfcfbf91e2dce925e5442a221d6091f359e4c3b80f0fc9d  ext/walk.tsv
+5f2e72e695ae2962803a2b883f2e4fef24cf072bc18cbd9b99fc8a511eab64a0  ext/recipes/apache__iggy/recipe.json
+b758d14d26a4d66455519e440da78e29e46294f9f63728b00b9ac8530d228459  ext/tasks/apache__iggy__4018/meta.json
+ee9f665693726fdffdb59a81da5dac3d2dec8bac43019e9b3ac47a13e5df3150  ext/sealed/apache__iggy__4018/logs/base-4.log
+1275f33805f4329533b06cce9d1455de267a26d10da56feb1471bf8585dad2e3  ext/sealed/apache__iggy__4018/logs/base-4.xml
+551e2f274a5faf4bbddeaeaf7afead02a7178692077abb9140e8349c8dbbee06  ext/sealed/apache__iggy__4018/logs/base-4f.log
+eb495adffc03e3ed6091d9c2196325c3d7f9a04923da38dc86c6222a9842db0a  ext/sealed/apache__iggy__4018/logs/base-4f.xml
+ee9f665693726fdffdb59a81da5dac3d2dec8bac43019e9b3ac47a13e5df3150  ext/sealed/apache__iggy__4018/logs/end-4-1.log
+1275f33805f4329533b06cce9d1455de267a26d10da56feb1471bf8585dad2e3  ext/sealed/apache__iggy__4018/logs/end-4-1.xml
+ee9f665693726fdffdb59a81da5dac3d2dec8bac43019e9b3ac47a13e5df3150  ext/sealed/apache__iggy__4018/logs/end-4-2.log
+1275f33805f4329533b06cce9d1455de267a26d10da56feb1471bf8585dad2e3  ext/sealed/apache__iggy__4018/logs/end-4-2.xml
+ab5f5cb4db35a6ca5a9c5300cf013a353111a7f66101c149828d57a8f9ced31f  ext/sealed/apache__iggy__4018/logs/end-4f-1.log
+eb495adffc03e3ed6091d9c2196325c3d7f9a04923da38dc86c6222a9842db0a  ext/sealed/apache__iggy__4018/logs/end-4f-1.xml
+5beb5e9908a09551c847baddac13c445bd0ec71f22b73a22658b562b7b9ae703  ext/sealed/apache__iggy__4018/logs/end-4f-2.log
+eb495adffc03e3ed6091d9c2196325c3d7f9a04923da38dc86c6222a9842db0a  ext/sealed/apache__iggy__4018/logs/end-4f-2.xml
+347259b3084c76accb7fa1ee80417be85a846cf247b068d2f335e0d21ab18aaa  ext/sealed/apache__iggy__4018/logs/end.build.log
+f62a6a6d600627213971c0dd916111418bfd3b973bd7c14764be1dca140f1ee0  ext/sealed/apache__iggy__4018/logs/end.build.log.iid
+7047fc00d700f588c43c655459d399910cb496319b59817d577c568131679b7f  ext/sealed/apache__iggy__4018/logs/endf.build.log
+1fbb11f0a946f6d5705f822553b8e98e4a2803497eeac466813878d19d9bd115  ext/sealed/apache__iggy__4018/logs/endf.build.log.iid
+```

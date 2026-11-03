@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-03
+* **Update**: Added to the superseding step 4 lock in `progress/step4-lock.md` an addendum: every out meeting the feedback trigger was rechecked (only apache/iggy#4018, out again), and the sample is unchanged.
 * **Update**: Amended the feedback-round sentence of ruling 10 in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2): every candidate whose runs meet the trigger is rechecked, not only the two diagnosed.
 * **Update**: Superseded the step 4 lock in `progress/step4-lock.md` after rechecking two outs the recipe caused: chakra-ui/panda#3925 entered s3, the-open-engine/zeroshot#944 left, and the s3 cold-setup repo is now pola-rs/polars; `progress/step4/sample.tsv` and `walk.tsv` regenerated, with new hashes.
 * **Update**: Added to ruling 10 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2) the feedback round for three zero-case runs that exit with an error, the recheck of the two outs the recipe caused, and the stop rule for rechecks.
