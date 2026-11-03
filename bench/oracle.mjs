@@ -366,7 +366,8 @@ const SHEET_KINDS = ['field label', 'option text', 'form accessible name', 'butt
   'menu item', 'keyboard shortcut', 'setting label', 'window title', 'command', 'subcommand', 'flag', 'environment variable', 'config key', 'public API name', 'output field']
 const BULLET = new RegExp(`^- (${SHEET_KINDS.join('|')}): "(.+)"$`)
 
-// a reply as a sheet, from its title on: a line input-check flags (a `##` heading takes its section with it), a bullet
+// a reply as a sheet, from its title on: a `##` heading input-check flags becomes `## Unnamed section <its position>`
+// (its bullets judged as any); a line input-check flags, a bullet
 // that is not `- <kind>: "<name>"` and any other text line are `deleted`; a name `found` misses is `notfound`; a section
 // left with no bullet is dropped. null when no title or no name is left
 async function toSheet(reply, found) {
@@ -374,12 +375,13 @@ async function toSheet(reply, found) {
   if (at < 0) return null
   const body = lines.slice(at + 1).map((l) => l.trimEnd()), flagged = new Set(check(body.join('\n')).map((h) => h.line - 1))
   const sections = []
-  let cur = null, deleted = 0, notfound = 0
+  let cur = null, heads = 0, deleted = 0, notfound = 0
   for (const [i, l] of body.entries()) {
     if (!l.trim()) continue
     if (l.startsWith('## ')) {
-      cur = flagged.has(i) ? null : { head: l, bullets: [] }
-      if (cur) sections.push(cur); else deleted++
+      cur = { head: flagged.has(i) ? `## Unnamed section ${heads + 1}` : l, bullets: [] }
+      sections.push(cur)
+      heads++
       continue
     }
     const m = cur && !flagged.has(i) && BULLET.exec(l)

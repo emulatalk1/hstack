@@ -513,12 +513,13 @@ test('sheet deletes flagged lines and then passes input-check', async () => {
   const ext = sheetSetup(), calls = []
   const r = await quiet(() => oracle(['sheet', 's9-01'], { agent: replier([SHEET_REPLY], calls) }))
   expect(r.code).toBe(0)
-  // deleted: a flagged bullet, a bad kind, prose, a flagged heading and its bullet, a nested bullet; notfound: spec, one, the two absent
-  expect(r.out).toBe('s9-01 sheet names=2 deleted=6 notfound=4 input-check=PASS')
+  // deleted: a flagged bullet, a bad kind, prose, a nested bullet; notfound: spec, one, the two absent
+  expect(r.out).toBe('s9-01 sheet names=3 deleted=4 notfound=4 input-check=PASS')
   const sheet = readFileSync(join(data, 's9-01/interface.md'), 'utf8')
   expect(check(sheet)).toEqual([])
-  // the preamble is dropped, and so is the section every name of which was not found
-  expect(sheet).toBe('# Interface sheet\n\n## /SENTINEL-PAGE\n- button text: "A7"\n\n## SENTINEL-CMD\n- flag: "A3"\n')
+  // the preamble is dropped, a flagged heading is renamed by its position and keeps its bullet, and the section every
+  // name of which was not found is dropped
+  expect(sheet).toBe('# Interface sheet\n\n## /SENTINEL-PAGE\n- button text: "A7"\n\n## Unnamed section 2\n- heading: "A3"\n\n## SENTINEL-CMD\n- flag: "A3"\n')
   const a = calls[0], arg = (k) => a[a.indexOf(k) + 1]
   expect(a[0]).toBe(join(ext, 'env/own__rp.json'))
   expect(arg('--at')).toBe(k3Full)
