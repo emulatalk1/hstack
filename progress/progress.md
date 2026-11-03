@@ -1128,3 +1128,11 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     bench-ext/fxw8vqhv__app__1:e6de91d
     bench-ext/fxwf86ui__app__1:10c80c9
     bench-ext/fxwf86ui__app__1:3f19634
+- Sealed diagnoses after the walk (diag3; settings and prompts `<data>/ext/briefs/diag3/`; replies `sealed/<slug>/diag3.reply.md`):
+    s3 rank 3 swc#12010: cause recipe; 5 args, 1 with a probe extension, some runnable; ran nothing, usage error.
+    s3 rank 6 panda#3925: cause recipe; 2 args, all runnable; ran nothing, usage error.
+    s3 rank 10 iggy#4018: cause repo; 1 arg, none runnable; owning tests run; crashed before run, usage error.
+    s1 rank 7 eventyay#4509: cause recipe, but the runs ran 6 cases (exit 1), so the feedback round does not apply to its signature; not rechecked (stop rule).
+    usage of the four: input 80 / output 20430 / cacheRead 4676960 / cacheWrite 977256 (claude-opus-5-5).
+- Rechecks: appended `recheck: feedback round` for s3 ranks 3 (swc#12010) and 6 (panda#3925). `<data>/ext/recheck.sh s3 3 6` runs `ext check` per rank between `pgsnap` snapshots and then the walk's removal step. It ran detached (PID 31429, code 89d9e8a, start 2026-11-03T13:11:45Z); logs `<data>/ext/logs/recheck.out`, `recheck-s3.{out,err}`.
+- Rechecks done (2026-11-03T13:59:51Z): swc#12010 `out of memory` (feedback round passed, then the base run was OOMKilled; to be reported to the user); panda#3925 `ok f2p=1 p2p=111` (feedback round passed). s3 now has 9 accepted. The sample is the first 8 by rank (`sampleOf`): panda#3925 entered, zeroshot#944 left and stays `ok` beyond the 8th row. The s3 cold-setup repo is now pola-rs/polars. Superseding lock section in `progress/step4-lock.md`; `progress/step4/{walk,sample}.tsv` regenerated.

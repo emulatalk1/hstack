@@ -837,3 +837,133 @@ bench-ext/probe:net
 
 - The three s3 `PR tests do not pass at end` outs (swc#12010, panda#3925, iggy#4018) gave 0 JUnit cases in every run, the same pattern as vite-plus before the owning-tests rule. swc and panda were checked under the current brief. They were not diagnosed, so whether the repo or the recipe interface caused them is not known.
 - During the "used in hstack" check, one first `rg` run over `<data>` used an `--glob '!ext/**'` that did not apply to an absolute path, so it also searched `ext/` (`raw/` and `sealed/` included) for the 19 repo names. It printed matching file names only, never content. Those results were discarded and the check was rerun with explicit paths.
+
+
+## Superseding lock, 2026-11-03
+
+This section supersedes the sample, the s3 walk summary and the hashes listed below it. Everything above that it does not name still holds.
+
+### Reason
+
+Three s3 candidates were out `PR tests do not pass at end` with 0 JUnit cases in every run. A structured sealed diagnosis (diag3, the same setup as vite-plus's) blamed the recipe for two of them (`cause: recipe`, `firstErrorKind: usage`, the script ran nothing) and the repo for the third. On the readable side, the probe and the PR's runs invoke `.bench-test.sh` the same way, each path one single-quoted word (always-run test with `[`, `]`, `@`, `$`, `(`, `)`, a space, `'`, `"`, a leading `-` and a newline), so there is no quoting gap. The registered instrument fix is the feedback round (prereg ruling 10, dated 2026-11-03), followed by one recheck pass and one re-lock. The dated stop rule is: a recheck happens only when a diagnosed failure class has a generic instrument fix that applies to every candidate; `recipe failed` outs are not reopened; findings after this pass are known limits.
+
+Diagnoses by candidate (replies `sealed/<slug>/diag3.reply.md`; usage of the four: input 80, output 20430, cacheRead 4676960, cacheWrite 977256):
+
+- s3 rank 3, swc-project/swc#12010: `{"linesRead":{"base-5.log":129,"end-5-1.log":129,"end-5-2.log":129,"base-4.log":129,"end-4-1.log":129,"end-4-2.log":129,"end.build.log":892,"end.build.log.iid":1,"base-5.xml":2,"end-5-1.xml":2,"end-5-2.xml":2,"base-4.xml":2,"end-4-1.xml":2,"end-4-2.xml":2,"5.probe.log":829,"reuse-swc-project__swc__12010-5.probe.log":429,"3.build.log":544,"4.build.log":342,"5.build.log":1660,"reuse-swc-project__swc__12010-5.build.log":1697},"argsTotal":5,"argsWithProbeExtensions":1,"argsRunnable":"some","scriptStage":"ran-nothing","firstErrorKind":"usage","ownsTestsRule":"not-applicable","cause":"recipe"}`
+- s3 rank 6, chakra-ui/panda#3925: `{"linesRead":{"base-1.log":15,"base-2.log":15,"end-1-1.log":15,"end-1-2.log":15,"end-2-1.log":15,"end-2-2.log":15,"end.build.log":787,"2.probe.log":183,"reuse-chakra-ui__panda__3925-2.probe.log":183,"1.build.log":908,"2.build.log":1417,"reuse-chakra-ui__panda__3925-2.build.log":1507},"argsTotal":2,"argsWithProbeExtensions":2,"argsRunnable":"all","scriptStage":"ran-nothing","firstErrorKind":"usage","ownsTestsRule":"not-applicable","cause":"recipe"}`
+- s3 rank 10, apache/iggy#4018: `{"linesRead":{"base-2.log":11,"end-2-1.log":11,"end-2-2.log":11,"base-2.xml":3,"end-2-1.xml":3,"end-2-2.xml":3,"end.build.log":1916,"end.build.log.iid":1,"1.build.log":3652,"2.build.log":1913,"reuse-apache__iggy__4018-2.build.log":2460,"2.probe.log":30,"reuse-apache__iggy__4018-2.probe.log":30},"argsTotal":1,"argsWithProbeExtensions":0,"argsRunnable":"0","scriptStage":"crash-before-run","firstErrorKind":"usage","ownsTestsRule":"followed","cause":"repo"}`
+- s1 rank 7, fossasia/eventyay#4509: `{"linesRead":{"base-1.log":953,"end-1-1.log":953,"end-1-2.log":953,"base-1.xml":887,"end-1-1.xml":887,"end-1-2.xml":887,"end.build.log":405,"end.build.log.iid":1,"1.probe.log":181,"reuse-fossasia__eventyay__4509-1.probe.log":191,"1.build.log":1371,"reuse-fossasia__eventyay__4509-1.build.log":411},"argsTotal":1,"argsWithProbeExtensions":1,"argsRunnable":"all","scriptStage":"other","firstErrorKind":"other","ownsTestsRule":"not-applicable","cause":"recipe"}`
+
+eventyay#4509 is `cause: recipe`, but its runs ran 6 cases each, so the feedback round's signature (no case and an error in all three runs) does not apply to it. It was not rechecked (stop rule), and its out is a known limit. iggy#4018 stays out (`cause: repo`).
+
+### Fix and rechecks
+
+- Fix commit `89d9e8a7e521cc8e64a258dd44470d50b34d3bec`:
+  - `needsFeedback` and the feedback round in `check`: one round even at a spent budget, its prompt the brief plus only the fixed sentence; the runs are made again with the recipe that passes it.
+  - `sampleOf`: a stack's first 8 accepted rows by rank.
+  - Always-run tests for quoting, `needsFeedback` and `sampleOf` (more than 8 accepted). A gated fixture test checks the feedback round.
+  - `bun test ./tests`: 273 pass, 12 skip, 0 fail. Gated file: 28 pass.
+- `recheck: feedback round` rows for s3 ranks 3 and 6. Both rechecks ran with `ext check ... s3 <rank> --tier 1` (`<data>/ext/recheck.sh`), between equal `pgsnap` snapshots, each followed by the walk's removal step:
+  - swc-project/swc#12010: `out of memory`. The feedback round passed (probe 254 cases), then the base run was OOMKilled. Under the user's decision of 2026-11-03 this out is reported to the user.
+  - chakra-ui/panda#3925: `ok f2p=1 p2p=111`. The feedback round passed (probe 72 cases); base 111 cases, end 112 and 112. Image digests are in `meta.json`, and the images were removed.
+
+### s3 walk summary (replaces the s3 row above)
+
+| stack | ok rows listed | last checked rank | checked (verdict) | ok | outs by reason | repo cap | not checked | repos in sample (max per repo) |
+|---|---|---|---|---|---|---|---|---|
+| s3 | 7063 | 16 | 16 | 9 (8 in the sample) | out of memory 2, recipe failed 2, PR tests do not pass at end 1, no fail-to-pass test 1, rebase merge of several commits 1 | 0 | 7047 | 7 (2) |
+
+s1 and s2 are unchanged. The sample is `sampleOf`, the first 8 accepted rows by rank per stack. the-open-engine/zeroshot#944 (rank 16) stays `ok` in `walk.tsv` but is past the 8th accepted s3 row. It is the first s3 row a later need takes (ruling 14).
+
+### Sample (replaces the table above)
+
+| task | id | rank | method | f2p | edit history | platform | cold setup |
+|---|---|---|---|---|---|---|---|
+| s1-01 | django-commons/django-debug-toolbar#2502 | 1 | squash | 2 | none | linux/arm64 | no |
+| s1-02 | fossasia/eventyay#4689 | 2 | squash | 1 | none | linux/arm64 | no |
+| s1-03 | openfoodfoundation/openfoodnetwork#14719 | 3 | merge | 24 | none | linux/arm64 | no |
+| s1-04 | Open-Source-Legal/OpenContracts#2124 | 5 | merge | 23 | none | linux/arm64 | no |
+| s1-05 | netbox-community/netbox#23175 | 6 | squash | 2 | none | linux/arm64 | no |
+| s1-06 | paperless-ngx/paperless-ngx#13486 | 8 | single | 23 | none | linux/arm64 | yes |
+| s1-07 | netbox-community/netbox#23277 | 9 | single | 3 | none | linux/arm64 | no |
+| s1-08 | Open-Source-Legal/OpenContracts#2371 | 11 | merge | 5 | none | linux/arm64 | no |
+| s2-01 | RunMaestro/Maestro#1783 | 1 | single | 8 | none | linux/arm64 | no |
+| s2-02 | coder/xum#7059 | 2 | squash | 66 | none | linux/arm64 | no |
+| s2-03 | CherryHQ/cherry-studio#19874 | 4 | squash | 1 | none | linux/arm64 | no |
+| s2-04 | coder/xum#5191 | 5 | squash | 32 | none | linux/arm64 | no |
+| s2-05 | CherryHQ/cherry-studio#18688 | 6 | single | 1 | none | linux/arm64 | no |
+| s2-06 | OpenWhispr/openwhispr#2643 | 11 | squash | 21 | none | linux/arm64 | no |
+| s2-07 | IsmaelMartinez/teams-for-linux#2778 | 12 | squash | 13 | none | linux/arm64 | no |
+| s2-08 | super-productivity/super-productivity#11313 | 13 | single | 2 | none | linux/arm64 | yes |
+| s3-01 | voidzero-dev/vite-plus#2667 | 2 | squash | 2 | none | linux/arm64 | no |
+| s3-02 | tokio-rs/toasty#1238 | 4 | single | 5 | none | linux/arm64 | no |
+| s3-03 | rust-lang/cargo#17562 | 5 | merge | 5 | none | linux/arm64 | no |
+| s3-04 | chakra-ui/panda#3925 | 6 | squash | 1 | none | linux/arm64 | no |
+| s3-05 | lancedb/lancedb#4486 | 8 | squash | 21 | none | linux/arm64 | no |
+| s3-06 | nautechsystems/nautilus_trader#4813 | 9 | single | 63 | none | linux/arm64 | no |
+| s3-07 | pola-rs/polars#30060 | 11 | squash | 3 | none | linux/arm64 | yes |
+| s3-08 | pola-rs/polars#29923 | 14 | single | 3 | none | linux/arm64 | yes |
+
+Cold-setup repos: s1 `paperless-ngx/paperless-ngx`, s2 `super-productivity/super-productivity` (both unchanged), s3 **`pola-rs/polars`** (was `the-open-engine/zeroshot`).
+
+Delta: chakra-ui/panda#3925 entered s3, as s3-04. the-open-engine/zeroshot#944 left. The s3 task ids after s3-03 shift by one: lancedb#4486 s3-05, nautilus_trader#4813 s3-06, polars#30060 s3-07, polars#29923 s3-08. s1 and s2 are unchanged.
+
+### Checks for the new sample
+
+8 `ok` per stack in the sample; at most 2 per repo; 6, 6 and 7 repos; no rank gap. For `chakra-ui/panda`, the same `rg` as above found only `progress/step4/{candidates-1,repos-1,walk}.tsv` in this repo and nothing in `<data>` outside `ext/` and `heldout/`. All 27 clones are bare.
+
+### Hashes (changed and new files; paths relative to `<data>` unless under `progress/`)
+
+`raw/` still matches `raw.sha256`. `groups.json`, `candidates-1.tsv`, `repos-1.tsv`, `raw.sha256`, every `issue.json` and every hash above not listed here are unchanged.
+
+```
+a200de5b1785dcec02c45ebdafe867f030847a10d3e07c54fb684555a83e76d1  progress/step4/sample.tsv
+0b343c4be1bc5250d50c7ad9b773de1ce7f41271502e35b61ec4d8d3fa68fc24  progress/step4/walk.tsv
+0b343c4be1bc5250d50c7ad9b773de1ce7f41271502e35b61ec4d8d3fa68fc24  ext/walk.tsv
+90cbaa9cd8e917d14439872d1e7911f58cf961ed0c4f77b482d770bb90f9c60d  ext/recipes/chakra-ui__panda/recipe.json
+44c2ced3fd65c1cea27bde3762e6f971e78ad9380e820b4f95bbfb97cd6c4467  ext/recipes/swc-project__swc/recipe.json
+ad474a13d12a6ceb02ca3624117d4abb11d1baa5ef54a21f542867c0b92571af  ext/tasks/chakra-ui__panda__3925/meta.json
+3f76e4ac7b18e9613b0f84fd6d8327d4b1d8c9a06f0e18fa40abc9a6d94c4f0f  ext/tasks/swc-project__swc__12010/meta.json
+c75cce0e89a474596c425753e4f7d47119b4104eadcbaeced355270b3046974e  ext/sealed/apache__iggy__4018/diag3.reply.md
+93917ea8b5d75c43ee06eefc8a63b28450aee4f278e0ee941cf1b59427473f2f  ext/sealed/apache__iggy__4018/diag3.reply.md.run.json
+9c335d92568c099583ae9432b259f71c7bb9ba5aee5abea5e2c012c296062136  ext/sealed/chakra-ui__panda__3925/diag3.reply.md
+9f2763e4ec853c748fa61e90567033ef3dafb05f7c882d9a94f26be9b1d872a8  ext/sealed/chakra-ui__panda__3925/diag3.reply.md.run.json
+67a358bed62a2f34d30f196e8e74f29634ede24aeecb66f69fd7de0c3fbcc636  ext/sealed/chakra-ui__panda__3925/f2p.json
+91c46e6fe58d4ea76703c57d1928912f4267ff93cda23030a783c5538e6e0b1c  ext/sealed/chakra-ui__panda__3925/logs/base-3.log
+522eca4d6d792dba94a9e3fa0b6e55ee30f51da744eeb379062676fff606912d  ext/sealed/chakra-ui__panda__3925/logs/base-3.xml
+0fa3555a721fa87ee8baf01f8bcfb1a2d827975a69c6d2fca9e093de38c41496  ext/sealed/chakra-ui__panda__3925/logs/base-3f.log
+bb72a026a7f9140ddd399e9a05683f9e3a5c5e24bbf5d794a9363a3bf5666e52  ext/sealed/chakra-ui__panda__3925/logs/base-3f.xml
+91c46e6fe58d4ea76703c57d1928912f4267ff93cda23030a783c5538e6e0b1c  ext/sealed/chakra-ui__panda__3925/logs/end-3-1.log
+522eca4d6d792dba94a9e3fa0b6e55ee30f51da744eeb379062676fff606912d  ext/sealed/chakra-ui__panda__3925/logs/end-3-1.xml
+91c46e6fe58d4ea76703c57d1928912f4267ff93cda23030a783c5538e6e0b1c  ext/sealed/chakra-ui__panda__3925/logs/end-3-2.log
+522eca4d6d792dba94a9e3fa0b6e55ee30f51da744eeb379062676fff606912d  ext/sealed/chakra-ui__panda__3925/logs/end-3-2.xml
+1b80bc619e2fce29aa54a545dcd956eb39552bea8990b93a210a041baa5e9eb0  ext/sealed/chakra-ui__panda__3925/logs/end-3f-1.log
+7ce9aa2ed7729994c6cabc235c21c4c3044674edf7341a2798afe4b5f79f045c  ext/sealed/chakra-ui__panda__3925/logs/end-3f-1.xml
+3373e3d23460439328444cce5503e3cdc21b185378f2be8a6966377558dac778  ext/sealed/chakra-ui__panda__3925/logs/end-3f-2.log
+24a31fd475d8777d7192b4ec21bfb70053e99df0409b16e86d9e4f7cad531496  ext/sealed/chakra-ui__panda__3925/logs/end-3f-2.xml
+5fd3873fb46d375c18f2aaa486b7801b4f6a1c4cf629d1191ef6cc2c00bf1304  ext/sealed/chakra-ui__panda__3925/logs/end.build.log
+de7fa1da48bb1cbb7636839ec0d78ff56cd4144aa001846007ab4a99b84b0730  ext/sealed/chakra-ui__panda__3925/logs/end.build.log.iid
+b51f1609993547c6eb04895f6045478ca29b48c8f6131333f85dd33201186741  ext/sealed/chakra-ui__panda__3925/logs/endf.build.log
+41bc2290c30d9e0b958a3b5f490eb4eb50f474b39995096243cb9530f33256a3  ext/sealed/chakra-ui__panda__3925/logs/endf.build.log.iid
+c4465faac16627b5b612192e2d0d95e08aa838c0c68ad5a4ded815a4cdb268c4  ext/sealed/fossasia__eventyay__4509/diag3.reply.md
+fd5bfba6f4155290950e8c7cbb27e7a6a2878972ab36f78eca252fd06e479e28  ext/sealed/fossasia__eventyay__4509/diag3.reply.md.run.json
+092fce73fedfa47743e704b909e613a1fd2144bbf7bb396dd9c0bc8f4fcaea2f  ext/sealed/swc-project__swc__12010/diag3.reply.md
+ccef85e270e7edac7c886a87c695c60931a0897450745580f9f5096d23d774a7  ext/sealed/swc-project__swc__12010/diag3.reply.md.run.json
+e225c41c16d5cffed70b50d708ab9c508dd8d2ef3a371c1a0f102c50c1ce7c89  ext/sealed/swc-project__swc__12010/logs/base-6.log
+50b79c976aa0f8e8e6cae59da9d777ac4213b6c5c28a661f31eee886d16c665d  ext/sealed/swc-project__swc__12010/logs/base-6.xml
+7a18caba9e0df1b41a4eed4c83c4cebcf8df27974de8373faf0cbbd617482b40  ext/sealed/swc-project__swc__12010/logs/base-6f.log
+9775a11af086b7275c81e8c07b0a85da01ccd8750d8d0141399934cb76bb0838  ext/sealed/swc-project__swc__12010/logs/end-6-1.log
+50b79c976aa0f8e8e6cae59da9d777ac4213b6c5c28a661f31eee886d16c665d  ext/sealed/swc-project__swc__12010/logs/end-6-1.xml
+53ab06f07a82216f2d34961464fa416aa9d69f8e35167d05817aaba22e42f3f5  ext/sealed/swc-project__swc__12010/logs/end-6-2.log
+50b79c976aa0f8e8e6cae59da9d777ac4213b6c5c28a661f31eee886d16c665d  ext/sealed/swc-project__swc__12010/logs/end-6-2.xml
+a1baaaa18b42901619e4fec86163bb3b8381b2fa78b748c171a14b0e291bca31  ext/sealed/swc-project__swc__12010/logs/end.build.log
+5a18aabae80656d28b4f83e13bb0d2ccd2c593546b58559c70da18785525d82e  ext/sealed/swc-project__swc__12010/logs/end.build.log.iid
+1c1960b48614c3474c528daba645dff51ff589b97833d5d95bbe7a2a9641bd69  ext/sealed/swc-project__swc__12010/logs/endf.build.log
+035da8044b1c4cb2df697111126d4b1824b8af0f52041db38f51a99b01371ac6  ext/sealed/swc-project__swc__12010/logs/endf.build.log.iid
+```
+
+### Tools and Docker
+
+- `bench/` at `89d9e8a7e521cc8e64a258dd44470d50b34d3bec`; `git status --short bench` empty.
+- Docker left: 262 `bench-ext-*` containers and 132 `bench-ext/*` images, all from the gated test runs (`bench-ext-fx*`, `bench-ext-other`, `bench-ext/probe:net`). No candidate's container or image is left.
+- `removed.txt`: 250 lines.

@@ -61,3 +61,7 @@ s1	1	8	paperless-ngx/paperless-ngx#13486	ok
 s1	1	9	netbox-community/netbox#23277	ok
 s1	1	10	netbox-community/netbox#22926	repo cap
 s1	1	11	Open-Source-Legal/OpenContracts#2371	ok
+s3	1	3	swc-project/swc#12010	recheck: feedback round
+s3	1	6	chakra-ui/panda#3925	recheck: feedback round
+s3	1	3	swc-project/swc#12010	out of memory
+s3	1	6	chakra-ui/panda#3925	ok
