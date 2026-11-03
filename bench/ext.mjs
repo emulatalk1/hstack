@@ -270,7 +270,7 @@ const ISSUE_Q = `query($o: String!, $r: String!, $n: Int!) { repository(owner: $
 const PLATFORMS = ['linux/arm64', 'linux/amd64']
 const WALK = ['stack', 'tier', 'rank', 'id', 'result']
 const slugOf = (s) => s.toLowerCase().replace(/[^a-z0-9_-]/g, '-')
-const word = (s) => `'${s.replaceAll("'", `'\\''`)}'` // one single-quoted sh word
+export const word = (s) => `'${s.replaceAll("'", `'\\''`)}'` // one single-quoted sh word
 const later = (a, b) => Date.parse(a) > Date.parse(b)
 const isError = (result) => result.startsWith('error ')
 
@@ -345,6 +345,10 @@ async function dockerDiskFree() {
   if (df.code) return null
   return freeGB(limit, df.out.trim().split('\n'))
 }
+
+// ruling 10, the feedback round: the base run and both end runs gave no case and exited non-zero
+export const needsFeedback = (runs) => runs.length === 3 && runs.every((r) => r.cases === 0 && r.exitCode !== 0)
+export const FEEDBACK = "Given the PR's test files the script exited with an error and ran no test; accept any repo-relative path under a test folder, map it to the runner's own selection, and run the owning tests when none is runnable."
 
 export function netFailure(text) {
   if (/failed to resolve source metadata[^\n]*(not found|pull access denied|manifest unknown)/i.test(text)) return null // on that line only
@@ -570,11 +574,12 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
         if (!failed) recipe = r
       }
     }
-    while (!recipe && left-- > 0) {
+    // one recipe round, its prompt the brief plus extra: the recipe that passed (saved), or null with failed saying why
+    const round = async (extra, note = '') => {
       stage = 'recipe-agent'
       const k = 1 + Math.max(0, ...readdirSync(rounds).map((f) => Number(/^(\d+)\./.exec(f)?.[1] ?? 0)))
       const prompt = join(rounds, `${k}.prompt.md`), out = join(rounds, `${k}.reply.md`)
-      writeFileSync(prompt, brief.trimEnd() + '\n' + (failed ? retryText(failed) : ''))
+      writeFileSync(prompt, brief.trimEnd() + '\n' + extra)
       const reply = await recipeAgent({ env: envFile, label: `recipe-${slug}-${k}`, at: b.base, prompt, out })
       if (reply == null) throw new Error(`recipe round ${k}: no reply`) // a tool failure: the round is not spent
       if (!existsSync(out)) writeFileSync(out, reply)
@@ -582,13 +587,16 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       let r
       try { r = parseRecipe(reply) } catch (e) { // a spent round: the next one is told why
         failed = { what: 'reply', message: e.message }
-        appendFileSync(roundsTsv, `${k}\t${slug}\tbad reply\n`)
-        continue
+        appendFileSync(roundsTsv, `${k}\t${slug}\t${note}bad reply\n`)
+        return null
       }
       failed = await attempt(r, String(k), String(k))
-      appendFileSync(roundsTsv, `${k}\t${slug}\t${failed ? `${failed.what} failed` : 'pass'}\n`)
-      if (!failed) { recipe = r; writeFileSync(saved, JSON.stringify({ ...r, briefSha }, null, 2) + '\n') }
+      appendFileSync(roundsTsv, `${k}\t${slug}\t${note}${failed ? `${failed.what} failed` : 'pass'}\n`)
+      if (failed) return null
+      writeFileSync(saved, JSON.stringify({ ...r, briefSha }, null, 2) + '\n')
+      return r
     }
+    while (!recipe && left-- > 0) recipe = await round(failed ? retryText(failed) : '')
     meta.platform = recipe?.platform ?? null
     save()
     if (!recipe) return 'recipe failed'
@@ -599,12 +607,29 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     const atEnd = new Set(tests.length ? (await git(['ls-tree', '-r', '-z', '--name-only', end, '--', ...tests], { quiet: true })).split('\0').filter(Boolean) : [])
     const files = tests.filter((f) => atEnd.has(f)), del = tests.filter((f) => !atEnd.has(f))
     const endTag = `bench-ext/${slug}:${end.slice(0, 7)}`
-    if (!(await build(recipe, end, endTag, join(logs, 'end.build.log')))) return 'end build failed'
-    if (!files.length) return 'PR tests do not pass at end' // no file to run: never call the test script with none
-    const a = meta.attempt, run = (image, label, o) => runIn(recipe, image, label, files, { log: join(logs, `${label}.log`), xml: join(logs, `${label}.xml`), ...o })
-    const atBase = await run(baseTag, `base-${a}`, { del, copy: true })
-    const e1 = atBase && (await run(endTag, `end-${a}-1`)), e2 = e1 && (await run(endTag, `end-${a}-2`))
-    if (!e2) return 'out of memory'
+    // the end image, then one base run with the PR's tests and two end runs: their cases, or an out reason
+    const runAll = async (rec, sfx) => {
+      if (!(await build(rec, end, endTag, join(logs, `end${sfx}.build.log`)))) return 'end build failed'
+      if (!files.length) return 'PR tests do not pass at end' // no file to run: never call the test script with none
+      const a = `${meta.attempt}${sfx}`, run = (image, label, o) => runIn(rec, image, label, files, { log: join(logs, `${label}.log`), xml: join(logs, `${label}.xml`), ...o })
+      const atBase = await run(baseTag, `base-${a}`, { del, copy: true })
+      const e1 = atBase && (await run(endTag, `end-${a}-1`)), e2 = e1 && (await run(endTag, `end-${a}-2`))
+      return e2 ? [atBase, e1, e2] : 'out of memory'
+    }
+    let runs = await runAll(recipe, '')
+    if (typeof runs === 'string') return runs
+    // ruling 10: no case and an error in all three runs gets one more round (even at a spent budget), told only FEEDBACK
+    if (needsFeedback(meta.runs.slice(-3))) {
+      const r = await round(`\n${FEEDBACK}\n`, 'feedback ')
+      if (r) {
+        recipe = r
+        meta.platform = r.platform
+        save()
+        runs = await runAll(r, 'f')
+        if (typeof runs === 'string') return runs
+      }
+    }
+    const [atBase, e1, e2] = runs
     const { f2p, p2p, endPass } = failToPass(atBase, e1, e2)
     writeFileSync(join(sealed, 'f2p.json'), JSON.stringify({ f2p, p2p }, null, 2) + '\n')
     Object.assign(meta, { f2p: f2p.length, p2p: p2p.length })

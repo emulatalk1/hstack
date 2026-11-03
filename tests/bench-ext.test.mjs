@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup, extraProbe } from '../bench/lib/ext.mjs'
+import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup, extraProbe, sampleOf } from '../bench/lib/ext.mjs'
 
 const SEED = 'hstack-bench-2026-10-27'
 const groups = [
@@ -179,4 +179,14 @@ test('extraProbe: the first file under the test paths, in path order, with an ex
   expect(extraProbe(paths, tp, ['tests/a.rs', 'tests/x/LICENSE'])).toBe('tests/b/data.json')
   expect(extraProbe(paths, tp, ['tests/a.rs', 'tests/x/LICENSE', 'tests/c.json', 'tests/d.snap'])).toBe(null)
   expect(extraProbe(['tests/.gitkeep', 'tests/a.rs'], tp, ['tests/a.rs'])).toBe('tests/.gitkeep') // a dot file has no extension
+})
+
+test('sampleOf takes the first perStack accepted rows by rank, even when a recheck left more accepted', () => {
+  const rs = Array.from({ length: 12 }, (_, i) => ({ id: `r${i % 6}#${i + 1}`, repo: `r${i % 6}`, rank: String(i + 1) }))
+  const ok = (id) => ({ id, result: 'ok' })
+  const walked = [...rs.slice(0, 10).map((r) => ok(r.id)), { id: rs[2].id, result: 'no fail-to-pass test' }]
+  const got = sampleOf(rs, walked, { perStack: 8 })
+  expect(got.map((r) => r.rank)).toEqual(['1', '2', '4', '5', '6', '7', '8', '9']) // rank 3's last row is out; ranks 10 on are past 8
+  expect(coldSetup(got.map((r) => ({ repo: r.repo, rank: Number(r.rank) })))).toBe('r2') // r2's rank 3 is out, so it enters the sample last, at rank 9
+  expect(sampleOf([...rs].reverse(), walked, { perStack: 8 }).map((r) => r.rank)).toEqual(['1', '2', '4', '5', '6', '7', '8', '9'])
 })

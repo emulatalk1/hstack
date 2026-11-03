@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { diskFailure, diskIsLow, freeGB, issueAsOf, netFailure, parseRecipe, parseSize, runEnd } from '../bench/ext.mjs'
+import { diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, runEnd, word } from '../bench/ext.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // A local fixture repo stands in for GitHub, a fake gh answers the PR and issue queries, and a fixed recipe (or a fake
@@ -55,6 +55,7 @@ const badRecipe = { ...recipe, probe: ['tests/zebra_needs.sh'] } // fails at the
 const netRecipe = { ...recipe, dockerfile: recipe.dockerfile + 'RUN echo "fetch: dial tcp 10.0.0.1:443: connect: refused" && exit 1\n' }
 const killedRecipe = { ...recipe, test: '[ $# -gt 2 ] && exit 137\n' + junitTest } // the probe (2 paths) runs, the base run (3) is killed
 const diskRecipe = { ...recipe, test: '[ $# -gt 2 ] && { echo "write /tmp/x: no space left on device"; exit 1; }\n' + junitTest } // the base run (3 paths) prints it
+const usageRecipe = { ...recipe, test: '[ $# -gt 2 ] && { echo "usage: unexpected argument"; exit 2; }\n' + junitTest } // the probe (2 paths) passes, the PR's runs (3) exit with no JUnit
 // fails on any path that is not a shell check, as a script that cannot run a data file would
 const strictRecipe = { ...recipe, test: 'for f in "$@"; do case "$f" in *.sh) ;; *) echo "cannot run $f"; exit 2 ;; esac; done\n' + junitTest }
 
@@ -306,8 +307,33 @@ dtest('a run that prints a disk-full message is error run only when the disk is 
   expect(r1.stdout).toBe(`${low.slug(1)} error run\n`)
   expect(readFileSync(join(low.ext, 'tasks', low.slug(1), 'check.err'), 'utf8')).toBe('run: no space left on device\n')
   const roomy = setup({ use: diskRecipe })
-  const r2 = await run(roomy, ['check', 's1', '1'], { disk: 40 })
+  const r2 = await run(roomy, ['check', 's1', '1'], { disk: 40, reply: ['nope'] }) // the feedback round's reply is no recipe
   expect(r2.stdout).toBe(`${roomy.slug(1)} out PR tests do not pass at end\n`) // judged by its run: the repo's own output
+  expect(readFileSync(join(roomy.ext, 'recipes', roomy.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${roomy.slug(1)}\tfeedback bad reply\n`)
+}, 300000)
+
+test('a test file path reaches the script as one intact argument, whatever it holds', () => {
+  const paths = ['tests/a b.rs', 'tests/[id]/x.ts', 'tests/@scope/$x.rs', "tests/it's (1).rs", 'tests/"q".rs', 'tests/-n', 'tests/a\nb.rs']
+  const p = Bun.spawnSync(['sh', '-c', `for a in ${paths.map(word).join(' ')}; do printf '%s\\0' "$a"; done`])
+  expect(p.stdout.toString().split('\0').slice(0, -1)).toEqual(paths)
+})
+
+test('the feedback round is due only when all three runs gave no case and exited non-zero', () => {
+  const r = (exitCode, cases) => ({ label: 'x', timedOut: false, exitCode, cases })
+  expect(needsFeedback([r(2, 0), r(1, 0), r(94, 0)])).toBe(true)
+  expect(needsFeedback([r(2, 0), r(0, 0), r(1, 0)])).toBe(false) // one run exited 0
+  expect(needsFeedback([r(1, 6), r(1, 0), r(1, 0)])).toBe(false) // the base ran cases
+  expect(needsFeedback([r(1, 0), r(1, 0)])).toBe(false)
+})
+
+dtest('three runs with no case and an error get one feedback round, told only the fixed sentence (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = setup({ use: usageRecipe })
+  const r = await run(s, ['check', 's1', '1'], { reply: [JSON.stringify(recipe)] })
+  expect(r.stdout).toBe(`${s.slug(1)} ok f2p=1 p2p=3\n`)
+  expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tfeedback pass\n`)
+  expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds', '1.prompt.md'), 'utf8')).toBe(`RECIPE BRIEF\n\n${FEEDBACK}\n`)
+  expect(json(join(s.ext, 'tasks', s.slug(1), 'meta.json')).runs.map((x) => [x.label, x.exitCode, x.cases]))
+    .toEqual([['probe-reuse-1', 0, 3], ['base-1', 2, 0], ['end-1-1', 2, 0], ['end-1-2', 2, 0], ['probe-1', 0, 3], ['base-1f', 0, 4], ['end-1f-1', 0, 4], ['end-1f-2', 0, 4]])
 }, 300000)
 
 test('docker system df sizes parse in decimal units', () => {
