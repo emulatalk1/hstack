@@ -86,7 +86,8 @@ process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent }))
 `)
 
 // a data folder with its own repo owner, so container and image names never meet those of another test or run
-function setup({ withRecipe = true, use = recipe } = {}) {
+const BRIEF_SHA = new Bun.CryptoHasher('sha256').update('RECIPE BRIEF\n').digest('hex') // the brief setup writes
+function setup({ withRecipe = true, use = recipe, briefSha = BRIEF_SHA } = {}) {
   const owner = `fx${rand()}`, data = join(tmp, owner), ext = join(data, 'ext'), key = `${owner}__app`
   mkdirSync(join(ext, 'briefs'), { recursive: true })
   writeFileSync(join(data, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
@@ -97,7 +98,7 @@ function setup({ withRecipe = true, use = recipe } = {}) {
   writeFileSync(join(ext, 'candidates-1.tsv'), [head, ...rows].map((l) => l.join('\t')).join('\n') + '\n')
   if (withRecipe) {
     mkdirSync(join(ext, 'recipes', key), { recursive: true })
-    writeFileSync(join(ext, 'recipes', key, 'recipe.json'), JSON.stringify(use))
+    writeFileSync(join(ext, 'recipes', key, 'recipe.json'), JSON.stringify(briefSha ? { ...use, briefSha } : use))
   }
   return { owner, data, ext, key, slug: (n) => `${key}__${n}` }
 }
@@ -206,7 +207,7 @@ dtest('a reply that is not a recipe spends a round, and the next round is told w
   expect(r.stdout).toBe(`${s.slug(1)} ok f2p=1 p2p=3\n`)
   expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tbad reply\n2\t${s.slug(1)}\tpass\n`)
   expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds', '2.prompt.md'), 'utf8')).toStartWith('RECIPE BRIEF\n\nThe previous reply was not a valid recipe: ')
-  expect(json(join(s.ext, 'recipes', s.key, 'recipe.json'))).toEqual(recipe)
+  expect(json(join(s.ext, 'recipes', s.key, 'recipe.json'))).toEqual({ ...recipe, briefSha: BRIEF_SHA })
 }, 300000)
 
 dtest('the probe also runs a data file under the test paths: a script that fails on it fails the probe (needs BENCH_EXT_DOCKER=1)', async () => {
@@ -227,6 +228,19 @@ test('three replies that are not recipes are out with recipe failed', async () =
   expect(r.stdout).toBe(`${s.slug(1)} out recipe failed\n`)
   expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8').trim().split('\n').map((l) => l.split('\t')[2])).toEqual(['bad reply', 'bad reply', 'bad reply'])
   expect(existsSync(join(s.ext, 'tasks', s.slug(1), 'check.err'))).toBe(false)
+}, 60000)
+
+test('a saved recipe written under another brief is regenerated first, from the old recipe, within the round count', async () => {
+  for (const briefSha of [null, 'f'.repeat(64)]) { // none recorded, or another brief's
+    const s = setup({ briefSha })
+    const r = await run(s, ['check', 's1', '1'], { reply: ['nope', 'nope', 'nope', 'nope'] })
+    expect(r.stdout).toBe(`${s.slug(1)} out recipe failed\n`)
+    expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8').trim().split('\n').map((l) => l.split('\t')[2])).toEqual(['bad reply', 'bad reply', 'bad reply'])
+    const p1 = readFileSync(join(s.ext, 'recipes', s.key, 'rounds', '1.prompt.md'), 'utf8')
+    expect(p1).toStartWith('RECIPE BRIEF\n\nA recipe written under an earlier version of this brief follows.')
+    expect(p1).toContain(JSON.stringify(recipe.test))
+    expect(json(join(s.ext, 'tasks', s.slug(1), 'meta.json')).containers).toEqual([]) // the old recipe was not built or probed
+  }
 }, 60000)
 
 test('a recipe must copy the repo to /work and may not ask for host network, insecure mode or secrets', () => {
@@ -277,6 +291,7 @@ test('a docker daemon failure is error, not out', async () => {
   const r = await run(s, ['check', 's1', '1'], { env: { DOCKER_HOST: `unix:///nonexistent-${rand()}.sock` } })
   expect(r.stdout).toBe(`${s.slug(1)} error build\n`)
   expect(walkRows(s)).toEqual([['s1', '1', '1', `${s.owner}/app#1`, 'error build']])
+  expect(existsSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'))).toBe(false) // the current brief's recipe is reused, no round
   expect(readFileSync(join(s.ext, 'tasks', s.slug(1), 'check.err'), 'utf8')).toMatch(/^build: docker daemon/)
   expect(json(join(s.ext, 'tasks', s.slug(1), 'meta.json'))).toMatchObject({ base: c0, end: c1, containers: [], images: [] })
 }, 60000)

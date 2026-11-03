@@ -877,3 +877,43 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     bench-ext/fxx6s6av__app__1:f5a6d91
 - The user's decision (2026-11-03): Docker keeps 7.6 GB and 8 CPUs on this 32 GB machine; a repo whose tests need more memory is `out of memory` and every such out is reported to the user. `apache/datafusion#24211` stays `out of memory` (no recheck row); reported.
 - Task 5 Step 1, driver restarted: PID 15885 (process group 15885), code 9546c4a, start 2026-11-03T00:58:36Z; the walk resumes from walk.tsv (first the vite-plus recheck).
+- Task 5 Step 1, paused again by the controller (group 15885 killed) after the vite-plus recheck reused its old recipe (`probe-reuse-2` passed, the PR runs again 0 cases). Fix: a saved recipe carries `briefSha`; one under another brief is regenerated first (ruling 10, 2026-11-03). Gated run `BENCH_EXT_DOCKER=1 bun test tests/bench-ext-check.test.mjs` (18 pass) left these containers and images:
+    bench-ext-fx9crd4r__app__1-base-1
+    bench-ext-fx9crd4r__app__1-end-1-1
+    bench-ext-fx9crd4r__app__1-end-1-2
+    bench-ext-fx9crd4r__app__1-probe-1
+    bench-ext-fx9crd4r__app__1-probe-reuse-1
+    bench-ext-fxm2xkls__app__1-base-1
+    bench-ext-fxm2xkls__app__1-end-1-1
+    bench-ext-fxm2xkls__app__1-end-1-2
+    bench-ext-fxm2xkls__app__1-probe-reuse-1
+    bench-ext-fxn51kix__app__1-base-1
+    bench-ext-fxn51kix__app__1-end-1-1
+    bench-ext-fxn51kix__app__1-end-1-2
+    bench-ext-fxn51kix__app__1-probe-2
+    bench-ext-fxo40jr8__app__1-base-1
+    bench-ext-fxo40jr8__app__1-end-1-1
+    bench-ext-fxo40jr8__app__1-end-1-2
+    bench-ext-fxo40jr8__app__1-probe-reuse-1
+    bench-ext-fxtr6bky__app__1-base-1
+    bench-ext-fxtr6bky__app__1-probe-reuse-1
+    bench-ext-fxwnwf9k__app__1-base-1
+    bench-ext-fxwnwf9k__app__1-end-1-1
+    bench-ext-fxwnwf9k__app__1-end-1-2
+    bench-ext-fxwnwf9k__app__1-probe-2
+    bench-ext-fxxxif2e__app__1-probe-1
+    bench-ext-fxxxif2e__app__1-probe-2
+    bench-ext-fxxxif2e__app__1-probe-3
+    bench-ext/fx9crd4r__app__1:678235e
+    bench-ext/fx9crd4r__app__1:8f5161d
+    bench-ext/fxm2xkls__app__1:678235e
+    bench-ext/fxm2xkls__app__1:8f5161d
+    bench-ext/fxn51kix__app__1:678235e
+    bench-ext/fxn51kix__app__1:8f5161d
+    bench-ext/fxo40jr8__app__1:678235e
+    bench-ext/fxo40jr8__app__1:8f5161d
+    bench-ext/fxtr6bky__app__1:678235e
+    bench-ext/fxtr6bky__app__1:8f5161d
+    bench-ext/fxwnwf9k__app__1:678235e
+    bench-ext/fxwnwf9k__app__1:8f5161d
+    bench-ext/fxxxif2e__app__1:8f5161d

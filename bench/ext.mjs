@@ -313,7 +313,7 @@ export function netFailure(text) {
   return NET.find(([, re]) => re.test(text))?.[0] ?? null
 }
 const tail = (file) => readFileSync(file, 'utf8').split('\n').slice(-200).join('\n')
-const retryText = (f) => f.what === 'reply' ? `\nThe previous reply was not a valid recipe: ${f.message}\n` : `\nA previous recipe failed. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n\nThe last 200 lines of its ${f.what} log:\n\n\`\`\`\n${tail(f.log)}\n\`\`\`\n`
+const retryText = (f) => f.what === 'brief' ? `\nA recipe written under an earlier version of this brief follows. Start from it and change what this brief asks for:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n` : f.what === 'reply' ? `\nThe previous reply was not a valid recipe: ${f.message}\n` : `\nA previous recipe failed. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n\nThe last 200 lines of its ${f.what} log:\n\n\`\`\`\n${tail(f.log)}\n\`\`\`\n`
 
 // every external call has a limit: its process group is killed after timeoutSec and code is 'timeout'
 async function sp(argv, timeoutSec = 300) {
@@ -514,20 +514,25 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       const cases = await runIn(r, baseTag, `probe-${label}`, extra ? [...r.probe, extra] : r.probe, { log: `${probe}.log`, xml: `${probe}.xml` })
       return cases?.some((c) => c.status === 'pass') ? null : { r, what: 'probe', log: `${probe}.log` }
     }
-    let recipe = null, failed = null
-    if (existsSync(saved)) { // the repo's recipe, reused: not a round; when it fails here, the first round is told why
-      const r = parseRecipe(readFileSync(saved, 'utf8'))
-      failed = await attempt(r, `reuse-${slug}-${meta.attempt}`, `reuse-${meta.attempt}`)
-      if (!failed) recipe = r
-    }
+    const brief = readFileSync(join(ext, 'briefs', 'recipe.md'), 'utf8'), briefSha = sha(brief)
     const done = existsSync(roundsTsv) ? readFileSync(roundsTsv, 'utf8').trim().split('\n').map((l) => l.split('\t')) : []
     const mine = done.filter((d) => d[1] === slug).length
     let left = (done.length > mine ? 1 : 3) - mine // ruling 10: 3 rounds for the repo's first task that needs them, 1 for each further task
+    let recipe = null, failed = null
+    if (existsSync(saved)) { // the repo's recipe, reused: not a round; when it fails here, the first round is told why
+      const text = readFileSync(saved, 'utf8'), r = parseRecipe(text)
+      // ruling 10: a recipe written under another brief (or with no briefSha) is regenerated first, from the old one, while a round is left
+      if (JSON.parse(text).briefSha !== briefSha && left > 0) failed = { r, what: 'brief' }
+      else {
+        failed = await attempt(r, `reuse-${slug}-${meta.attempt}`, `reuse-${meta.attempt}`)
+        if (!failed) recipe = r
+      }
+    }
     while (!recipe && left-- > 0) {
       stage = 'recipe-agent'
       const k = 1 + Math.max(0, ...readdirSync(rounds).map((f) => Number(/^(\d+)\./.exec(f)?.[1] ?? 0)))
       const prompt = join(rounds, `${k}.prompt.md`), out = join(rounds, `${k}.reply.md`)
-      writeFileSync(prompt, readFileSync(join(ext, 'briefs', 'recipe.md'), 'utf8').trimEnd() + '\n' + (failed ? retryText(failed) : ''))
+      writeFileSync(prompt, brief.trimEnd() + '\n' + (failed ? retryText(failed) : ''))
       const reply = await recipeAgent({ env: envFile, label: `recipe-${slug}-${k}`, at: b.base, prompt, out })
       if (reply == null) throw new Error(`recipe round ${k}: no reply`) // a tool failure: the round is not spent
       if (!existsSync(out)) writeFileSync(out, reply)
@@ -540,7 +545,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       }
       failed = await attempt(r, String(k), String(k))
       appendFileSync(roundsTsv, `${k}\t${slug}\t${failed ? `${failed.what} failed` : 'pass'}\n`)
-      if (!failed) { recipe = r; writeFileSync(saved, JSON.stringify(r, null, 2) + '\n') }
+      if (!failed) { recipe = r; writeFileSync(saved, JSON.stringify({ ...r, briefSha }, null, 2) + '\n') }
     }
     meta.platform = recipe?.platform ?? null
     save()
