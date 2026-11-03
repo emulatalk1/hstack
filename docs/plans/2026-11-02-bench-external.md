@@ -2,10 +2,11 @@
 type: plan
 title: "External task selection plan"
 description: "Prereg step 4: register the rulings section 4.2 leaves open, enumerate every candidate PR of a fixed repo universe, sort once by the 4.2 hash rule and commit the list, then walk it in order, checking in a container that each task runs and has a fail-to-pass test, until 8 tasks per stack; commit the sample with hashes and what step 5 needs."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.310, at: "2026-11-02T22:00:00+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.310, at: "2026-11-02T23:30:00+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-03T22:17:58+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
