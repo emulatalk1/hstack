@@ -969,3 +969,47 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
 - Ruling (controller, 2026-11-03): recipe rounds spent while the disk was full do not count. `<data>/ext/recipes/mxsm__rocketmq-rust/rounds.tsv` (3 rounds, all `probe failed`, before 404231b) was moved to `rounds-before-disk-fix.tsv` (kept) at 06:07Z, while the walk was at rank 3, so its recheck has its 3 rounds again (they are numbered from 4 on).
 - `<data>/ext/walk-all.sh` (the user allowed clearing the build cache): a walk that exits 3 (docker disk low) gets one `docker builder prune -f`, with the freed size and `docker system df` logged to `walk-all.out`, and is started again; if it stops on low disk again with no check finished since the prune, the driver stops and says so.
 - Task 5 Step 1, driver restarted for the prune change: the old group 90923 was stopped at 06:13Z after `swc-project__swc__12010 out PR tests do not pass at end` (its removal done), along with the next check's docker build (toasty, its own group 94992; no walk.tsv row, so it is resumed). New driver PID 95393 (process group 95393), code d9bf894, start 2026-11-03T06:13:21Z.
+- Review fix (404231b follow-up): a disk-full message is the machine's failure only when the free-disk estimate taken right then is below 15 GB or cannot be made; the estimate counts 90% of the disk limit as usable; an accepted task's image with no digest is kept and named on stderr. Gated run `BENCH_EXT_DOCKER=1 bun test tests/bench-ext-check.test.mjs` (25 pass) left these fixture containers and images:
+    bench-ext-fx0jocna__app__1-base-1
+    bench-ext-fx0jocna__app__1-end-1-1
+    bench-ext-fx0jocna__app__1-end-1-2
+    bench-ext-fx0jocna__app__1-probe-2
+    bench-ext-fx0od47f__app__1-base-1
+    bench-ext-fx0od47f__app__1-end-1-1
+    bench-ext-fx0od47f__app__1-end-1-2
+    bench-ext-fx0od47f__app__1-probe-reuse-1
+    bench-ext-fx2uhtls__app__1-base-1
+    bench-ext-fx2uhtls__app__1-end-1-1
+    bench-ext-fx2uhtls__app__1-end-1-2
+    bench-ext-fx2uhtls__app__1-probe-2
+    bench-ext-fx5kx63k__app__1-base-1
+    bench-ext-fx5kx63k__app__1-end-1-1
+    bench-ext-fx5kx63k__app__1-end-1-2
+    bench-ext-fx5kx63k__app__1-probe-reuse-1
+    bench-ext-fx9ymbh9__app__1-base-1
+    bench-ext-fx9ymbh9__app__1-probe-reuse-1
+    bench-ext-fxntoniw__app__1-probe-1
+    bench-ext-fxntoniw__app__1-probe-2
+    bench-ext-fxntoniw__app__1-probe-3
+    bench-ext-fxoqwua1__app__1-base-1
+    bench-ext-fxoqwua1__app__1-end-1-1
+    bench-ext-fxoqwua1__app__1-end-1-2
+    bench-ext-fxoqwua1__app__1-probe-1
+    bench-ext-fxoqwua1__app__1-probe-reuse-1
+    bench-ext-fxtm8s1x__app__1-base-1
+    bench-ext-fxtm8s1x__app__1-probe-reuse-1
+    bench-ext/fx0jocna__app__1:b5cdaa7
+    bench-ext/fx0jocna__app__1:ce9680d
+    bench-ext/fx0od47f__app__1:b5cdaa7
+    bench-ext/fx0od47f__app__1:ce9680d
+    bench-ext/fx2uhtls__app__1:b5cdaa7
+    bench-ext/fx2uhtls__app__1:ce9680d
+    bench-ext/fx5kx63k__app__1:b5cdaa7
+    bench-ext/fx5kx63k__app__1:ce9680d
+    bench-ext/fx9ymbh9__app__1:b5cdaa7
+    bench-ext/fx9ymbh9__app__1:ce9680d
+    bench-ext/fxntoniw__app__1:b5cdaa7
+    bench-ext/fxoqwua1__app__1:b5cdaa7
+    bench-ext/fxoqwua1__app__1:ce9680d
+    bench-ext/fxtm8s1x__app__1:b5cdaa7
+    bench-ext/fxtm8s1x__app__1:ce9680d

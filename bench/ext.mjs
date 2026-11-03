@@ -320,8 +320,20 @@ export function parseSize(s) {
   return m ? Number(m[1]) * 1000 ** ' kMGTP'.indexOf(m[2] || ' ') : NaN
 }
 
+export const DISK_FLOOR_GB = 15
+// a disk-full message is the machine's only when the disk is then below the floor, or cannot be told (ruling 10): a repo whose
+// tests print it on a roomy disk is judged by its run
+export const diskIsLow = (free) => free === null || free < DISK_FLOOR_GB
+
+// free GB of a disk of limit bytes, 90% of it usable (the VM's root filesystem was 58.4 GB of a 64 GB limit), given the sizes
+// `docker system df` prints; null when a size does not parse
+export function freeGB(limit, sizes) {
+  const used = sizes.map(parseSize).reduce((a, b) => a + b, 0)
+  return Number.isFinite(used) ? (0.9 * limit - used) / 1e9 : null
+}
+
 // Docker's free disk in GB without a container: the disk limit (Docker Desktop's DiskSizeMiB, else the VM disk image's
-// apparent size) minus the sizes `docker system df` prints; null when it cannot be told
+// apparent size), see freeGB; null when it cannot be told
 async function dockerDiskFree() {
   const store = join(homedir(), 'Library/Group Containers/group.com.docker/settings-store.json')
   const raw = join(homedir(), 'Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw')
@@ -331,8 +343,7 @@ async function dockerDiskFree() {
   if (!(limit > 0)) return null
   const df = await sp(['docker', 'system', 'df', '--format', '{{.Size}}'])
   if (df.code) return null
-  const used = df.out.trim().split('\n').map(parseSize).reduce((a, b) => a + b, 0)
-  return Number.isFinite(used) ? (limit - used) / 1e9 : null
+  return freeGB(limit, df.out.trim().split('\n'))
 }
 
 export function netFailure(text) {
@@ -383,7 +394,7 @@ async function sealedRecipe({ env, label, at, prompt, out }) {
   return r.code === 0 && existsSync(out) ? readFileSync(out, 'utf8') : null
 }
 
-export async function check(row, cfg, { gh = realGh, remote = (repo) => `https://github.com/${repo}.git`, recipeAgent = sealedRecipe, data } = {}) {
+export async function check(row, cfg, { gh = realGh, remote = (repo) => `https://github.com/${repo}.git`, recipeAgent = sealedRecipe, diskFree = dockerDiskFree, data } = {}) {
   const started = Date.now(), ext = join(dataOf(data), 'ext')
   const [owner, name] = row.repo.split('/'), n = Number(row.id.split('#')[1])
   const key = slugOf(`${owner}__${name}`), slug = `${key}__${n}`
@@ -434,7 +445,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       if (code !== 0 && code !== 'timeout') { await daemon(); code = await once('a') }
       if (code !== 0) {
         await daemon()
-        const t = tail(log), sig = diskFailure(t) ?? netFailure(t)
+        const t = tail(log), disk = diskFailure(t), sig = (disk && diskIsLow(await diskFree()) ? disk : null) ?? netFailure(t)
         if (sig) throw new Error(sig) // the signature's name only: the log is the repo's output
         return false
       }
@@ -478,7 +489,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     if (status !== 'exited') throw new Error(`container ${c} is ${status}, not exited`)
     const how = runEnd(timedOut, exitCode, oom)
     const disk = exitCode !== '0' && diskFailure(tail(log))
-    if (disk) throw new Error(disk) // the signature only: the log is the repo's output
+    if (disk && diskIsLow(await diskFree())) throw new Error(disk) // the signature only: the log is the repo's output
     if (how === 'killed') throw new Error(`container ${c} was killed (exit ${exitCode}, OOMKilled ${oom})`)
     if (how === 'oom') { // the repo does not fit this machine: null, and the log says so (a probe's goes to the next round)
       appendFileSync(log, '\nbench: the container was killed for memory (OOMKilled)\n')
@@ -629,7 +640,11 @@ export async function removeOut(ext, slug, { ok = false } = {}) {
   }
   const rm = async (verb, name) => { if ((await sp(['docker', verb, name])).code === 0) gone.push(name); else console.error(`could not remove ${name}`) }
   for (const c of meta.containers) if (c.startsWith(`bench-ext-${slug}-`)) await rm('rm', c)
-  for (const i of meta.images) if (i.startsWith(`bench-ext/${slug}:`)) await rm('rmi', i)
+  for (const i of meta.images) {
+    if (!i.startsWith(`bench-ext/${slug}:`)) continue
+    if (ok && !meta.imageDigests[i]) { console.error(`kept ${i}: no digest recorded`); continue } // never remove what has no record
+    await rm('rmi', i)
+  }
   // an image a later build of the same tag left untagged has no name: removed by its recorded id, only while no tag points at it
   for (const id of meta.imageIds) {
     const t = await sp(['docker', 'image', 'inspect', '-f', '{{len .RepoTags}}', id])
@@ -670,7 +685,7 @@ export async function walk(args, inj = {}, print = (s) => console.log(s)) {
   while (errors < 2 && (next = nextToCheck(rows, walked(), cfg))) {
     const free = await diskFree()
     if (free === null && !told) { console.error('docker disk: free space cannot be estimated; going on'); told = true }
-    if (free !== null && free < 15) { print(`${stack} stopped: docker disk low (${free.toFixed(1)} GB free)`); return 3 }
+    if (free !== null && free < DISK_FLOOR_GB) { print(`${stack} stopped: docker disk low (${free.toFixed(1)} GB free)`); return 3 }
     const last = new Map(walked().map((w) => [w.id, w.result]))
     for (const c of next.capped) if (last.get(c.id) !== 'repo cap') appendWalk(ext, c, 'repo cap')
     const r = await check(next.row, cfg, inj)

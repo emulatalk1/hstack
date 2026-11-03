@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { diskFailure, issueAsOf, netFailure, parseRecipe, parseSize, runEnd } from '../bench/ext.mjs'
+import { diskFailure, diskIsLow, freeGB, issueAsOf, netFailure, parseRecipe, parseSize, runEnd } from '../bench/ext.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // A local fixture repo stands in for GitHub, a fake gh answers the PR and issue queries, and a fixed recipe (or a fake
@@ -54,6 +54,7 @@ const recipe = { platform, dockerfile: 'FROM alpine:3.22\nCOPY . /work\nWORKDIR 
 const badRecipe = { ...recipe, probe: ['tests/zebra_needs.sh'] } // fails at the base: no passing case
 const netRecipe = { ...recipe, dockerfile: recipe.dockerfile + 'RUN echo "fetch: dial tcp 10.0.0.1:443: connect: refused" && exit 1\n' }
 const killedRecipe = { ...recipe, test: '[ $# -gt 2 ] && exit 137\n' + junitTest } // the probe (2 paths) runs, the base run (3) is killed
+const diskRecipe = { ...recipe, test: '[ $# -gt 2 ] && { echo "write /tmp/x: no space left on device"; exit 1; }\n' + junitTest } // the base run (3 paths) prints it
 // fails on any path that is not a shell check, as a script that cannot run a data file would
 const strictRecipe = { ...recipe, test: 'for f in "$@"; do case "$f" in *.sh) ;; *) echo "cannot run $f"; exit 2 ;; esac; done\n' + junitTest }
 
@@ -292,6 +293,22 @@ test('a full disk in a log is the machine\'s, by its signature only', () => {
   expect(diskFailure('error: Disk quota exceeded (os error 122)')).toBe('disk quota exceeded')
   expect(diskFailure('error[E0425]: cannot find value')).toBe(null)
 })
+
+test('a disk-full message is the machine\'s only below the floor or with no estimate; 90% of the limit is usable', () => {
+  expect([null, 0, 14.9, 15, 40].map(diskIsLow)).toEqual([true, true, true, false, false])
+  expect(freeGB(64e9, ['26.63GB', '0B', '385.8MB'])).toBeCloseTo(57.6 - 26.63 - 0.3858, 6)
+  expect(freeGB(64e9, ['26.63GB', 'n/a'])).toBe(null)
+})
+
+dtest('a run that prints a disk-full message is error run only when the disk is low (needs BENCH_EXT_DOCKER=1)', async () => {
+  const low = setup({ use: diskRecipe })
+  const r1 = await run(low, ['check', 's1', '1'], { disk: 5 })
+  expect(r1.stdout).toBe(`${low.slug(1)} error run\n`)
+  expect(readFileSync(join(low.ext, 'tasks', low.slug(1), 'check.err'), 'utf8')).toBe('run: no space left on device\n')
+  const roomy = setup({ use: diskRecipe })
+  const r2 = await run(roomy, ['check', 's1', '1'], { disk: 40 })
+  expect(r2.stdout).toBe(`${roomy.slug(1)} out PR tests do not pass at end\n`) // judged by its run: the repo's own output
+}, 300000)
 
 test('docker system df sizes parse in decimal units', () => {
   expect(['26.63GB', '32.35MB', '385.8MB', '0B', '1.5kB', '2TB'].map(parseSize)).toEqual([26.63e9, 32.35e6, 385.8e6, 0, 1500, 2e12])
