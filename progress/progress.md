@@ -1524,3 +1524,11 @@ External, 21 tasks written (the last serve line of each was `servable` when its 
 Writer usage (from their `.run.json`, all claude-opus-5-5, all exit 0): real-estate 52 runs input 836, output 378493, cache read 11008563, cache write 1469595, 61.5 agent-minutes; external 21 runs input 743, output 381616, cache read 27189335, cache write 1383799, 63.2 agent-minutes. Total input 1579, output 760109, cache read 38197898, cache write 2852394. Wall clock of the runs: probe 0.7 min, pass 1 41.5 min, pass 2 3.0 min.
 
 Usage: implementer opus (this session), tokens and minutes recorded by the controller.
+
+Notes for the controller (Task 8):
+
+- Ruling 6 reading: 3 agreed commits have both an in-task and a later pair (36d089b: later p6a, in-task p8a; e3cf8ef: later p2, in-task p3; 5b6646d: later p4, in-task p8d). `write` gives a hunk a later pair lists to that pair's task and every other hunk to the in-task task. Result: 36d089b 1 check to p8a; e3cf8ef 2 to p2 and 2 to p3; 5b6646d 1 to p4 and 4 to p8d, so 3 checks went to the later pair's task (p2 2, p4 1). If the in-range rule should win for every hunk, a rule change and `write` on these 3 commits moves them (records reused, no new writer run).
+- Leak rule narrowed from "the sha" to 8 or more characters of the hash (24 false positives in pass 1, above). The briefs' sentence before the change read "the only hash text in a file is the check id." (task repo) and "... is a check id." (external); no superseded copy was kept.
+- Reading depth: task-repo writers averaged 1.2 agent-minutes and 4.7 Reads per run; the 4 empty-manifest runs used at most 1 Read and 0.2-0.3 min; some runs marked every check `interface: none` (090f6f2 9/9, 6c69b33 8/8, a5e0cd3 4/4; p1 12 of 13). No gate like Task 7's reading gate exists for the writers; whether to add one is open.
+- Parallel moves: each task's manifest total equals the sum of its runs' printed counts for all 14 tasks, and each oracle's file count equals its checks with a file + manifest + 2 scaffold files + the `node_modules` link, so no move under the lock lost an entry.
+- A repo's `serve.json` is shared by its tasks and a later task's serve rounds can rewrite it, so a graded oracle could run under a serve recipe its writer did not see (s1-07 and s1-08 reused theirs with rounds=0, so none so far).
