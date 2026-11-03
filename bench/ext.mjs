@@ -2,7 +2,8 @@
 // External task selection. `list`: search the repo universe of a tier, read each repo's stack markers, read every merged
 // PR of the window that links an issue, and write them sorted by key. Every response is saved under <data>/ext/raw/
 // before it is parsed, and a rerun reuses a saved one (resume). Prints counts only: never a PR title, body, path or issue.
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { withExport } from './env.mjs'
 import { baseOf, exists, extraProbe, failToPass, nextToCheck, repoOut, sortKey, stackOf, staticOut } from './lib/ext.mjs'
@@ -308,6 +309,32 @@ export function runEnd(timedOut, exitCode, oom) {
   return exitCode === '137' || exitCode === '143' ? 'killed' : 'finished' // killed from outside: the machine's failure
 }
 
+// a full Docker disk in a log tail: the machine's failure, never the repo's (ruling 10)
+export function diskFailure(text) {
+  return /no space left on device/i.test(text) ? 'no space left on device' : /disk quota exceeded/i.test(text) ? 'disk quota exceeded' : null
+}
+
+// a `docker system df` size (decimal units, as docker prints them) in bytes, or NaN
+export function parseSize(s) {
+  const m = /^([\d.]+)\s*([kMGTP]?)B$/.exec(s.trim())
+  return m ? Number(m[1]) * 1000 ** ' kMGTP'.indexOf(m[2] || ' ') : NaN
+}
+
+// Docker's free disk in GB without a container: the disk limit (Docker Desktop's DiskSizeMiB, else the VM disk image's
+// apparent size) minus the sizes `docker system df` prints; null when it cannot be told
+async function dockerDiskFree() {
+  const store = join(homedir(), 'Library/Group Containers/group.com.docker/settings-store.json')
+  const raw = join(homedir(), 'Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw')
+  let limit = null
+  try { limit = JSON.parse(readFileSync(store, 'utf8')).DiskSizeMiB * 1048576 } catch {}
+  if (!(limit > 0)) try { limit = statSync(raw).size } catch {}
+  if (!(limit > 0)) return null
+  const df = await sp(['docker', 'system', 'df', '--format', '{{.Size}}'])
+  if (df.code) return null
+  const used = df.out.trim().split('\n').map(parseSize).reduce((a, b) => a + b, 0)
+  return Number.isFinite(used) ? (limit - used) / 1e9 : null
+}
+
 export function netFailure(text) {
   if (/failed to resolve source metadata[^\n]*(not found|pull access denied|manifest unknown)/i.test(text)) return null // on that line only
   return NET.find(([, re]) => re.test(text))?.[0] ?? null
@@ -407,7 +434,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       if (code !== 0 && code !== 'timeout') { await daemon(); code = await once('a') }
       if (code !== 0) {
         await daemon()
-        const sig = netFailure(tail(log))
+        const t = tail(log), sig = diskFailure(t) ?? netFailure(t)
         if (sig) throw new Error(sig) // the signature's name only: the log is the repo's output
         return false
       }
@@ -450,6 +477,8 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     const [status, exitCode, oom] = st.out.trim().split(' ')
     if (status !== 'exited') throw new Error(`container ${c} is ${status}, not exited`)
     const how = runEnd(timedOut, exitCode, oom)
+    const disk = exitCode !== '0' && diskFailure(tail(log))
+    if (disk) throw new Error(disk) // the signature only: the log is the repo's output
     if (how === 'killed') throw new Error(`container ${c} was killed (exit ${exitCode}, OOMKilled ${oom})`)
     if (how === 'oom') { // the repo does not fit this machine: null, and the log says so (a probe's goes to the next round)
       appendFileSync(log, '\nbench: the container was killed for memory (OOMKilled)\n')
@@ -587,8 +616,17 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
 }
 
 // --remove-out: the containers and images check recorded for this out candidate, by exact name, never with -f
-async function removeOut(ext, slug) {
-  const meta = JSON.parse(readFileSync(join(ext, 'tasks', slug, 'meta.json'), 'utf8')), gone = []
+// after a verdict: an accepted task keeps its recipe and image digests, not its images (ruling 10), so both are removed alike
+export async function removeOut(ext, slug, { ok = false } = {}) {
+  const metaFile = join(ext, 'tasks', slug, 'meta.json'), meta = JSON.parse(readFileSync(metaFile, 'utf8')), gone = []
+  if (ok) {
+    meta.imageDigests = {}
+    for (const i of meta.images) {
+      const r = await sp(['docker', 'image', 'inspect', '--format', '{{.Id}}', i])
+      meta.imageDigests[i] = r.code === 0 ? r.out.trim() : null
+    }
+    writeFileSync(metaFile, JSON.stringify(meta, null, 2) + '\n')
+  }
   const rm = async (verb, name) => { if ((await sp(['docker', verb, name])).code === 0) gone.push(name); else console.error(`could not remove ${name}`) }
   for (const c of meta.containers) if (c.startsWith(`bench-ext-${slug}-`)) await rm('rm', c)
   for (const i of meta.images) if (i.startsWith(`bench-ext/${slug}:`)) await rm('rmi', i)
@@ -627,15 +665,19 @@ export async function walk(args, inj = {}, print = (s) => console.log(s)) {
   // tier 2 after tier 1: tier 1's accepted rows count, and its error and repo cap rows come first (ruling 14)
   const rows = ['1', '2'].slice(0, Number(tier)).flatMap((t) => readTsv(join(ext, `candidates-${t}.tsv`)).filter((r) => r.stack === stack && r.static === 'ok'))
   const walked = () => (existsSync(join(ext, 'walk.tsv')) ? readTsv(join(ext, 'walk.tsv')) : [])
-  let checked = 0, errors = 0, next
+  let checked = 0, errors = 0, next, told = false
+  const diskFree = inj.diskFree ?? dockerDiskFree
   while (errors < 2 && (next = nextToCheck(rows, walked(), cfg))) {
+    const free = await diskFree()
+    if (free === null && !told) { console.error('docker disk: free space cannot be estimated; going on'); told = true }
+    if (free !== null && free < 15) { print(`${stack} stopped: docker disk low (${free.toFixed(1)} GB free)`); return 3 }
     const last = new Map(walked().map((w) => [w.id, w.result]))
     for (const c of next.capped) if (last.get(c.id) !== 'repo cap') appendWalk(ext, c, 'repo cap')
     const r = await check(next.row, cfg, inj)
     checked++
     print(r.line)
     errors = isError(r.result) ? errors + 1 : 0
-    if (remove && r.result !== 'ok' && !isError(r.result)) await removeOut(ext, r.slug)
+    if (remove && !isError(r.result)) await removeOut(ext, r.slug, { ok: r.result === 'ok' })
   }
   const last = new Map(walked().map((w) => [w.id, w.result])), accepted = rows.filter((r) => last.get(r.id) === 'ok').length
   print(`${stack} tier ${tier}: accepted ${accepted}, checked ${checked}, list end ${!next && accepted < cfg.perStack ? 'yes' : 'no'}`)
@@ -654,7 +696,7 @@ export async function main(argv, inj = {}) {
       const r = await checkCmd(rest, inj)
       console.log(r.line)
       return isError(r.result) ? 1 : 0
-    } else if (cmd === 'walk') await walk(rest, inj)
+    } else if (cmd === 'walk') return await walk(rest, inj) ?? 0
     else throw new Error(USAGE)
     return 0
   } catch (e) { console.error(e.message); return 2 }

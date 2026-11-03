@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { issueAsOf, netFailure, parseRecipe, runEnd } from '../bench/ext.mjs'
+import { diskFailure, issueAsOf, netFailure, parseRecipe, parseSize, runEnd } from '../bench/ext.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // A local fixture repo stands in for GitHub, a fake gh answers the PR and issue queries, and a fixed recipe (or a fake
@@ -82,7 +82,7 @@ const gh = async (argv) => {
 }
 let i = 0
 const recipeAgent = async () => (Array.isArray(c.reply) ? c.reply[i++] ?? null : c.reply)
-process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent }))
+process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent, ...('diskFree' in c ? { diskFree: async () => c.diskFree } : {}) }))
 `)
 
 // a data folder with its own repo owner, so container and image names never meet those of another test or run
@@ -102,8 +102,8 @@ function setup({ withRecipe = true, use = recipe, briefSha = BRIEF_SHA } = {}) {
   }
   return { owner, data, ext, key, slug: (n) => `${key}__${n}` }
 }
-async function run(s, args, { reply = null, env = {} } = {}) {
-  const c = { args: [args[0], join(s.ext, 'groups.json'), ...args.slice(1)], pr: { 1: prAnswer(prs[1]), 2: prAnswer(prs[2]) }, issue: issueAnswer, remote: fx, reply }
+async function run(s, args, { reply = null, env = {}, disk } = {}) {
+  const c = { args: [args[0], join(s.ext, 'groups.json'), ...args.slice(1)], pr: { 1: prAnswer(prs[1]), 2: prAnswer(prs[2]) }, issue: issueAnswer, remote: fx, reply, ...(disk === undefined ? {} : { diskFree: disk }) }
   const p = Bun.spawn(['bun', runner, JSON.stringify(c)], { env: { ...process.env, HSTACK_BENCH_MACHINE: join(s.data, 'machine.json'), ...env }, stdout: 'pipe', stderr: 'pipe' })
   return { stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text(), code: await p.exited }
 }
@@ -150,7 +150,7 @@ dtest('test runs use no network (needs BENCH_EXT_DOCKER=1)', async () => {
   for (const c of containers) expect(docker('inspect', '-f', '{{.HostConfig.NetworkMode}}', c).stdout.toString().trim()).toBe('none')
 }, 300000)
 
-dtest('--remove-out removes only the names check recorded for an out candidate (needs BENCH_EXT_DOCKER=1)', async () => {
+dtest('--remove-out removes only the names check recorded, for an out and an accepted candidate, and keeps the accepted one\'s digests (needs BENCH_EXT_DOCKER=1)', async () => {
   if (!exists('container', 'bench-ext-other')) expect(docker('create', '--name', 'bench-ext-other', 'alpine:3.22', 'true').exitCode).toBe(0)
   const s = setup()
   const r = await run(s, ['walk', 's1', '--remove-out'])
@@ -158,12 +158,13 @@ dtest('--remove-out removes only the names check recorded for an out candidate (
   const out = json(join(s.ext, 'tasks', s.slug(2), 'meta.json')), ok = json(join(s.ext, 'tasks', s.slug(1), 'meta.json'))
   expect(out.containers.length).toBe(4)
   const removed = readFileSync(join(s.ext, 'removed.txt'), 'utf8').trim().split('\n')
-  expect(removed).toEqual([...out.containers, ...out.images])
-  for (const c of out.containers) expect(exists('container', c)).toBe(false)
-  for (const i of out.images) expect(exists('image', i)).toBe(false)
-  // the accepted candidate's end image is the same build as the out candidate's base image: it must survive
-  for (const c of ok.containers) expect(exists('container', c)).toBe(true)
-  for (const i of ok.images) expect(exists('image', i)).toBe(true)
+  expect(removed).toEqual([...ok.containers, ...ok.images, ...out.containers, ...out.images])
+  for (const c of [...out.containers, ...ok.containers]) expect(exists('container', c)).toBe(false)
+  for (const i of [...out.images, ...ok.images]) expect(exists('image', i)).toBe(false)
+  // an accepted task keeps its image digests, not its images (step 5 rebuilds)
+  expect(Object.keys(ok.imageDigests)).toEqual(ok.images)
+  for (const d of Object.values(ok.imageDigests)) expect(d).toMatch(/^sha256:[0-9a-f]{64}$/)
+  expect(out.imageDigests).toBeUndefined()
   expect(exists('container', 'bench-ext-other')).toBe(true)
   expect(walkRows(s).map((w) => w[4])).toEqual(['ok', 'no fail-to-pass test'])
 }, 600000)
@@ -285,6 +286,27 @@ test('a run killed for memory is the repo\'s (out of memory), one killed from ou
   expect(runEnd(false, '1', 'false')).toBe('finished')
   expect(runEnd(false, '0', 'false')).toBe('finished')
 })
+
+test('a full disk in a log is the machine\'s, by its signature only', () => {
+  expect(diskFailure('ERROR: failed to copy: write /var/lib/docker/x: no space left on device')).toBe('no space left on device')
+  expect(diskFailure('error: Disk quota exceeded (os error 122)')).toBe('disk quota exceeded')
+  expect(diskFailure('error[E0425]: cannot find value')).toBe(null)
+})
+
+test('docker system df sizes parse in decimal units', () => {
+  expect(['26.63GB', '32.35MB', '385.8MB', '0B', '1.5kB', '2TB'].map(parseSize)).toEqual([26.63e9, 32.35e6, 385.8e6, 0, 1500, 2e12])
+  expect(parseSize('n/a')).toBeNaN()
+})
+
+test('walk stops before a check when Docker\'s disk is low, and goes on (saying so once) when it cannot tell', async () => {
+  const s = setup()
+  const low = await run(s, ['walk', 's1'], { disk: 10.04 })
+  expect(low).toMatchObject({ code: 3, stdout: 's1 stopped: docker disk low (10.0 GB free)\n' })
+  expect(existsSync(join(s.ext, 'walk.tsv'))).toBe(false)
+  const unknown = await run(s, ['walk', 's1'], { disk: null, env: { DOCKER_HOST: `unix:///nonexistent-${rand()}.sock` } })
+  expect(unknown.stdout).toBe(`${s.slug(1)} error build\n${s.slug(1)} error build\ns1 tier 1: accepted 0, checked 2, list end no\n`)
+  expect(unknown.stderr.split('\n').filter((l) => l.includes('docker disk')).length).toBe(1)
+}, 60000)
 
 test('a missing image tag is the recipe\'s failure, the network\'s signatures are not', () => {
   expect(netFailure('#2 ERROR: failed to resolve source metadata for docker.io/library/python:9.9: docker.io/library/python:9.9: not found')).toBe(null)
