@@ -1449,7 +1449,7 @@ Brief revision: the first batch (driver started 2026-11-03T18:25:11Z) had 7 runs
 
 Labels (brief v2): `label 1 p8e` first as a pilot (18:31:29Z, 9 pairs, 7 Bash calls), then the driver (`sources/drive.sh`, `xargs -P 3`, 18:32:17Z-18:42:15Z) for the other 27 runs. Every run replied with every pair labelled once (28 of 28 first runs parsed; no rerun, no `step9` from a failed run). Bash calls per run (one `git show` can name several commits): label 1 p1 56, p2 23, p3 39, p4 44, p5 13, p6a 15, p6b 21, p6c 19, p7b 10, p7c 8, p8a 15, p8c 8, p8d 16, p8e 7; label 2 p1 53, p2 51, p3 27, p4 45, p5 14, p6a 35, p6b 18, p6c 28, p7b 10, p7c 8, p8a 14, p8c 11, p8d 19, p8e 7. For the three runs with Bash calls well below their pairs, context written (cache write) against the other labeller of the same task: label 1 p2 61840 vs 108027 (57%), p6a 41279 vs 63884 (65%), p8c 44032 vs 47570 (93%); v1's p1 run wrote 41711 against v2's 89312 and 94287. So label 1 p2 and p6a read less than their peers; whether that calls for a rule is left to the controller.
 
-`bun bench/oracle.mjs labels`:
+`bun bench/oracle.mjs labels` over these first runs (superseded by the reading-gate reruns below; kept for the record):
 
 | task | pairs | agreed fix | agreed not fix | disputed |
 |---|---|---|---|---|
@@ -1469,6 +1469,38 @@ Labels (brief v2): `label 1 p8e` first as a pilot (18:31:29Z, 9 pairs, 7 Bash ca
 | p8e | 9 | 5 | 4 | 0 |
 | total | 347 | 63 | 270 | 14 |
 
-By kind: in-task 29 agreed fix, 80 agreed not fix, 0 disputed; later 34 agreed fix, 190 agreed not fix, 14 disputed (to the step 9 queue). The 63 sources are 53 distinct commits.
+First-run labeller usage (28 runs under brief v2, from their `.run.json`): input 632, output 155604, cache read 11385833, cache write 1509006; model claude-opus-5-5; all exit 0. Superseded v1 runs (above) 120/36077/1554444/265604. Wall clock of the label runs: 18:25:11Z-18:28Z (v1, stopped) and 18:31:29Z-18:42:15Z (v2), about 14 min.
 
-Labeller usage (28 runs under brief v2, from their `.run.json`): input 632, output 155604, cache read 11385833, cache write 1509006; model claude-opus-5-5; all exit 0. Superseded v1 runs (above) 120/36077/1554444/265604. Wall clock of the label runs: 18:25:11Z-18:28Z (v1, stopped) and 18:31:29Z-18:42:15Z (v2), about 14 min.
+Fix round 1 (controller rulings after the review):
+
+- Reading gate: each run record now holds `shown`, the distinct listed commits the run named in a Bash `git -C <repo> show` whose tool result was not an error; a run whose reply is bad or whose `shown` is below the task's distinct commits is rerun once as `label-<r>-<task>-2` (same brief v2, same prompt), without looking at its labels; `labels` reads the rerun. The 28 first runs were made before the count existed (their streams were not kept), so none has `shown` and all 28 met the trigger and were rerun (driver 18:57:07Z-19:07:44Z, `sources/logs/`; the first runs' logs are in `sources/logs/round1/`).
+- `labels`: a pair with no valid label from a labeller is `none` (unlabelled), not `step9`; it prints `unlabelled` per task, per kind and in total, then the distinct source commits, and exits 1 while a pair is unlabelled.
+
+Reruns (`label <r> <task>` lines, `read <shown>/<commits>`): every rerun replied with every pair labelled (28 of 28). Read every listed commit: 13 of 28 (label 1: p1, p2, p3, p4, p6a, p6c, p8d; label 2: p1, p3, p6a, p6b, p6c, p7c). Still under-read, labels kept: 15 of 28: label 1 p5 9/13, p6b 15/21, p7b 9/15, p7c 5/8, p8a 12/19, p8c 7/14, p8e 4/9; label 2 p2 42/46, p4 12/42, p5 9/13, p7b 9/15, p8a 12/19, p8c 7/14, p8d 6/14, p8e 3/9. A commit shown only through a range (`a..b`), `<sha>^!`, `<sha>:<file>` or `git log -p` is not counted.
+
+`bun bench/oracle.mjs labels` (exit 0), the labels that stand:
+
+```
+p1: pairs 53, agreed fix 4, agreed not fix 43, disputed 6, unlabelled 0
+p2: pairs 46, agreed fix 9, agreed not fix 35, disputed 2, unlabelled 0
+p3: pairs 36, agreed fix 5, agreed not fix 30, disputed 1, unlabelled 0
+p4: pairs 42, agreed fix 9, agreed not fix 32, disputed 1, unlabelled 0
+p5: pairs 13, agreed fix 2, agreed not fix 11, disputed 0, unlabelled 0
+p6a: pairs 33, agreed fix 5, agreed not fix 28, disputed 0, unlabelled 0
+p6b: pairs 21, agreed fix 5, agreed not fix 16, disputed 0, unlabelled 0
+p6c: pairs 24, agreed fix 7, agreed not fix 16, disputed 1, unlabelled 0
+p7b: pairs 15, agreed fix 1, agreed not fix 14, disputed 0, unlabelled 0
+p7c: pairs 8, agreed fix 2, agreed not fix 6, disputed 0, unlabelled 0
+p8a: pairs 19, agreed fix 3, agreed not fix 15, disputed 1, unlabelled 0
+p8c: pairs 14, agreed fix 3, agreed not fix 11, disputed 0, unlabelled 0
+p8d: pairs 14, agreed fix 6, agreed not fix 8, disputed 0, unlabelled 0
+p8e: pairs 9, agreed fix 4, agreed not fix 5, disputed 0, unlabelled 0
+later: pairs 238, agreed fix 36, agreed not fix 191, disputed 11, unlabelled 0
+in-task: pairs 109, agreed fix 29, agreed not fix 79, disputed 1, unlabelled 0
+total: pairs 347, agreed fix 65, agreed not fix 270, disputed 12, unlabelled 0
+source commits: 52
+```
+
+Rerun usage (28 runs, from their `.run.json`): input 652, output 162117, cache read 12346665, cache write 1545533; model claude-opus-5-5; all exit 0; wall clock 18:57:07Z-19:07:44Z (10.6 min). Labeller total for the task (v1 7 runs + v2 first 28 + reruns 28 + 2 probes): input 1412, output 354766, cache read 25311412, cache write 3336797.
+
+Usage: implementer opus 210.5k tokens / 34.7 min before fix round 1; reviewer opus recorded by the controller.
