@@ -18,7 +18,7 @@ const SEALED_SETS = { source: ['catalog', 'extension'], kind: ['UI', 'logic', 'v
 
 // exit code of a git command that answers yes (0) or no (1)
 const gitCode = (repo, ...args) => Bun.spawn(['git', '-C', repo, ...args], { stdout: 'ignore', stderr: 'ignore' }).exited
-async function gitOut(repo, ...args) {
+export async function gitOut(repo, ...args) {
   const p = Bun.spawn(['git', '-C', repo, ...args], { stdout: 'pipe', stderr: 'ignore' })
   const [out, code] = [await new Response(p.stdout).text(), await p.exited]
   if (code !== 0) throw new Error(`git ${args[0]} failed (exit ${code})`)
@@ -35,11 +35,11 @@ async function readBugFile(path) {
   return bug
 }
 
-// tsv rows of every task: { task, commit, file, old, lines }
-function readRows(data, tasks) {
+// tsv rows of every task: { task, commit, file, old, lines, tests, subject }
+export function readRows(data, tasks) {
   return Object.keys(tasks).flatMap((t) => readFileSync(join(data, 'tasks', `${t}.tsv`), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => {
-    const [commit, file, old, lines] = l.split('\t')
-    return { task: t, commit, file, old: Number(old.split(',')[0]), lines: Number(lines) }
+    const [commit, file, old, lines, tests, subject] = l.split('\t')
+    return { task: t, commit, file, old: Number(old.split(',')[0]), lines: Number(lines), tests, subject }
   }))
 }
 

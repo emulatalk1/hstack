@@ -1,5 +1,9 @@
-import { test, expect } from 'bun:test'
+import { test, expect, afterAll, spyOn } from 'bun:test'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick } from '../bench/lib/oracle.mjs'
+import { oracle } from '../bench/oracle.mjs'
 
 const order = ['p1', 'p2', 'p3']
 
@@ -78,4 +82,130 @@ test('queuePick is stable and seed-dependent', () => {
   expect(queuePick([...ids].reverse(), 5, 's1')).toEqual(pick)
   expect(queuePick(ids, 5, 's2')).not.toEqual(pick)
   expect(queuePick(ids, 50, 's1')).toHaveLength(20)
+})
+
+// --- bench/oracle.mjs: pairs, label, labels (ruling 7) ---
+// t1 = c0..k3, t2 = k3..m1, t3 = m1..n1 (dropped); later commits come only from the tsv files, so they need no git object
+const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-oracle-')))
+const repo = join(tmp, 'repo'), data = join(tmp, 'data'), src = join(data, 'sources')
+const git = (...a) => Bun.spawnSync(['git', '-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
+const put = (files, msg) => {
+  for (const [f, text] of Object.entries(files)) { mkdirSync(join(repo, f, '..'), { recursive: true }); writeFileSync(join(repo, f), text) }
+  git('add', '-A'); git('commit', '-qm', msg)
+  return git('rev-parse', '--short=7', 'HEAD')
+}
+const ten = (x) => Array.from({ length: 10 }, (_, i) => `${x}${i}`).join('\n') + '\n'
+mkdirSync(repo, { recursive: true }); git('init', '-q')
+const c0 = put({ 'src/a.txt': ten('a'), 'src/b.txt': ten('b') }, 'zero')
+const k1 = put({ 'src/a.txt': ten('a').replace('a3', 'A3'), 'tests/a.test.txt': 'one\n' }, 'add a with its test')
+put({ 'src/b.txt': ten('b').replace('b1', 'B1') }, 'change b without a test')
+const k3 = put({ 'src/a.txt': ten('a').replace('a3', 'A3').replace('a7', 'A7'), 'src/x.spec.ts': 'spec\n' }, 'fix a seven found later')
+const m1 = put({ 'tests/b.test.txt': 'two\n' }, 'test b only')
+const n1 = put({ 'tests/c.test.txt': 'three\n', 'src/b.txt': 'gone\n' }, 'dropped task commit')
+mkdirSync(join(data, 'tasks'), { recursive: true })
+writeFileSync(join(data, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
+writeFileSync(join(data, 'tasks.json'), JSON.stringify({ t1: { no: 'T1', plan: 'one.md', base: c0, end: k3 }, t2: { no: 'T2', plan: 'two.md', base: k3, end: m1 }, t3: { no: 'T3', plan: 'three.md', base: m1, end: n1 } }))
+const tsv = (rows) => ['commit\tfile\told_lines\ttask_lines\ttests_changed\tsubject', ...rows.map((r) => r.join('\t'))].join('\n') + '\n'
+writeFileSync(join(data, 'tasks/t1.tsv'), tsv([
+  ['aaaaaaa', 'src/a.txt', '4,1', '5', 'yes', 'later fix of a'], // t1 5 > t2 3
+  ['aaaaaaa', 'src/c.txt', '1,2', '1', 'yes', 'later fix of a'], // t3 owns it (dropped)
+  ['bbbbbbb', 'src/a.txt', '2,1', '4', 'no', 'later change, no test'],
+  ['ccccccc', 'src/a.txt', '9,1', '2', 'yes', 'a tie'], // tie with t2: the earlier task
+]))
+writeFileSync(join(data, 'tasks/t2.tsv'), tsv([
+  ['aaaaaaa', 'src/a.txt', '4,1', '3', 'yes', 'later fix of a'],
+  ['ccccccc', 'src/a.txt', '9,1', '2', 'yes', 'a tie'],
+  ['ddddddd', 'src/b.txt', '5,1', '1', 'yes', 'later fix of b'],
+]))
+writeFileSync(join(data, 'tasks/t3.tsv'), tsv([['aaaaaaa', 'src/c.txt', '1,2', '2', 'yes', 'later fix of a']]))
+const task = join(tmp, 'task.json')
+writeFileSync(task, JSON.stringify({ name: 'tt', repo, db: null, port: 3999, start: 'true', ready: 'http://127.0.0.1:3999/', oracle: 'true', junit: 'r.xml' }))
+mkdirSync(join(data, 'briefs'))
+writeFileSync(join(data, 'briefs/label.md'), 'BRIEF-TEXT\n')
+writeFileSync(join(data, 'briefs/label-settings.json'), '{}')
+process.env.HSTACK_BENCH_MACHINE = join(data, 'machine.json')
+afterAll(() => rmSync(tmp, { recursive: true, force: true }))
+
+const quiet = async (fn) => {
+  const out = []
+  const a = spyOn(console, 'log').mockImplementation((...x) => out.push(x.join(' ')))
+  const b = spyOn(console, 'error').mockImplementation((...x) => out.push(x.join(' ')))
+  const c = spyOn(process.stdout, 'write').mockImplementation((x) => { out.push(String(x)); return true })
+  try { return { code: await fn(), out: out.join('\n') } } finally { a.mockRestore(); b.mockRestore(); c.mockRestore() }
+}
+const pairRows = () => readFileSync(join(src, 'pairs.tsv'), 'utf8').trim().split('\n').slice(1).map((l) => l.split('\t'))
+
+test('pairs lists a later commit only with tests changed and a hunk a step 5 task owns', async () => {
+  const r = await quiet(() => oracle(['pairs', task, '--drop', 't3']))
+  expect(r.code).toBe(0)
+  expect(readFileSync(join(src, 'pairs.tsv'), 'utf8').split('\n')[0]).toBe('commit\ttask\tkind\thunks')
+  const later = pairRows().filter((p) => p[2] === 'later')
+  expect(later).toEqual([['aaaaaaa', 't1', 'later', 'src/a.txt:4'], ['ccccccc', 't1', 'later', 'src/a.txt:9'], ['ddddddd', 't2', 'later', 'src/b.txt:5']])
+  expect(r.out).toContain('t1: in-task 2, later 2')
+  expect(r.out).toContain('t2: in-task 1, later 1')
+  expect(r.out).not.toContain('t3')
+})
+
+test('pairs lists in-task commits that change a test file', async () => {
+  await quiet(() => oracle(['pairs', task, '--drop', 't3']))
+  const inTask = pairRows().filter((p) => p[2] === 'in-task')
+  // the commit between k1 and k3 changes no test; k3's spec file is not a source hunk; m1 changes only a test; t3 is dropped
+  expect(inTask).toEqual([[k1, 't1', 'in-task', 'src/a.txt:4'], [k3, 't1', 'in-task', 'src/a.txt:8'], [m1, 't2', 'in-task', '']])
+})
+
+const reply = (r, t, text, n = '') => writeFileSync(join(src, `label-${r}-${t}${n}.reply.md`), text)
+const ran = (r, t, n = '') => writeFileSync(join(src, `label-${r}-${t}${n}.reply.md.run.json`), '{}')
+
+test('labels marks agreed fix as a source and a disagreement as step9', async () => {
+  await quiet(() => oracle(['pairs', task, '--drop', 't3']))
+  const j = (o) => JSON.stringify(Object.entries(o).map(([commit, label]) => ({ commit, label })))
+  reply(1, 't1', '```json\n' + j({ aaaaaaa: 'fix', ccccccc: 'fix', [k1]: 'build', [k3]: 'fix' }) + '\n```'); ran(1, 't1')
+  reply(2, 't1', j({ aaaaaaa: 'fix', ccccccc: 'requirement change', [k1]: 'build', [k3]: 'fixed' })); ran(2, 't1') // k3: not a label
+  reply(1, 't2', 'not json'); ran(1, 't2')
+  reply(1, 't2', j({ ddddddd: 'fix', [m1]: 'build' }), '-2'); ran(1, 't2', '-2') // the rerun counts
+  reply(2, 't2', j({ ddddddd: 'fix', [m1]: 'build' })); ran(2, 't2')
+  const r = await quiet(() => oracle(['labels']))
+  expect(r.code).toBe(0)
+  const rows = readFileSync(join(src, 'labels.tsv'), 'utf8').trim().split('\n')
+  expect(rows[0]).toBe('commit\ttask\tkind\tl1\tl2\tsource')
+  expect(rows.slice(1).map((l) => l.split('\t'))).toEqual([
+    [k1, 't1', 'in-task', 'build', 'build', 'no'],
+    [k3, 't1', 'in-task', 'fix', 'none', 'step9'],
+    ['aaaaaaa', 't1', 'later', 'fix', 'fix', 'yes'],
+    ['ccccccc', 't1', 'later', 'fix', 'requirement change', 'step9'],
+    [m1, 't2', 'in-task', 'build', 'build', 'no'],
+    ['ddddddd', 't2', 'later', 'fix', 'fix', 'yes'],
+  ])
+  expect(r.out).toContain('t1: pairs 4, agreed fix 1, agreed not fix 1, disputed 2')
+  expect(r.out).toContain('t2: pairs 2, agreed fix 1, agreed not fix 1, disputed 0')
+  for (const f of ['label-1-t1', 'label-2-t1', 'label-1-t2', 'label-1-t2-2', 'label-2-t2']) for (const x of ['.reply.md', '.reply.md.run.json']) rmSync(join(src, f + x))
+})
+
+test('label prints no reply text', async () => {
+  await quiet(() => oracle(['pairs', task, '--drop', 't3']))
+  const calls = []
+  const agent = async (args) => { // the first run replies with prose only, the rerun with every pair
+    const out = args[args.indexOf('--out') + 1]
+    calls.push(args)
+    writeFileSync(`${out}.run.json`, '{}')
+    writeFileSync(out, calls.length === 1 ? 'SENTINEL-REPLY no json here'
+      : `SENTINEL-REPLY [{"commit":"${k1}","label":"build"},{"commit":"${k3}","label":"fix"},{"commit":"aaaaaaa","label":"fix"},{"commit":"ccccccc","label":"requirement change"}] SENTINEL-REPLY`)
+    return 0
+  }
+  const r = await quiet(() => oracle(['label', task, '1', 't1'], { agent }))
+  expect(r.code).toBe(0)
+  expect(r.out).not.toContain('SENTINEL')
+  expect(r.out).toContain('label 1 t1: pairs 4, labelled 4, runs 2')
+  expect(calls.map((a) => a[1])).toEqual(['label-1-t1', 'label-1-t1-2'])
+  const a = calls[0], arg = (k) => a[a.indexOf(k) + 1]
+  expect(arg('--tools')).toBe('Read,Grep,Glob,Bash')
+  expect(arg('--settings')).toBe(join(data, 'briefs/label-settings.json'))
+  expect(arg('--prompt')).toBe(join(src, 'prompts/label-t1.md'))
+  const prompt = readFileSync(arg('--prompt'), 'utf8')
+  expect(prompt).toStartWith('BRIEF-TEXT\n')
+  for (const s of [k1, 'add a with its test', 'in-task', 'aaaaaaa', 'later fix of a', 'src/a.txt line 4', 'T1', 'one.md']) expect(prompt).toContain(s)
+  expect(prompt).not.toContain('ddddddd')
+  const again = await quiet(() => oracle(['label', task, '1', 't1'], { agent })) // done: no third run
+  expect(calls).toHaveLength(2)
+  expect(again.out).toContain('labelled 4, runs 2')
 })
