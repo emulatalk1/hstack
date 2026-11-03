@@ -1018,3 +1018,105 @@ f62a6a6d600627213971c0dd916111418bfd3b973bd7c14764be1dca140f1ee0  ext/sealed/apa
 7047fc00d700f588c43c655459d399910cb496319b59817d577c568131679b7f  ext/sealed/apache__iggy__4018/logs/endf.build.log
 1fbb11f0a946f6d5705f822553b8e98e4a2803497eeac466813878d19d9bd115  ext/sealed/apache__iggy__4018/logs/endf.build.log.iid
 ```
+
+
+### Addendum, 2026-11-03: final review (documentation only; the 24 tasks do not change)
+
+**The recipe of each sampled task.** `recipes/<key>/recipe.json` holds only a repo's latest recipe. The one hashed for `coder__xum` (a3bc5a1b…) is #5191's, saved when #5191's round passed, not #7059's. The table names, for each of the 24 tasks, the round whose reply was the recipe its accepted check used. It was derived from `meta.json` `runs` (labels and counts only) and `rounds.tsv`, never from the reply text:
+- When the last probe before the final attempt's base run is `probe-<k>`, the recipe is round k's reply.
+- When it is `probe-reuse-<a>`, the recipe is the repo's saved `recipe.json` at that time: the reply of the latest passing round of the repo whose run record (`rounds/<k>.reply.md.run.json` `end`) is earlier than the reuse probe's log (`rounds/reuse-<slug>-<a>.probe.log`, file time).
+- From e4c2f02 on, every check stores `recipeSha` (the SHA-256 of the recipe JSON it used) in `meta.json`. The 24 checks above ran before that, so for them this table and the hashes below are the record.
+
+| task | id | final attempt | probe before the base run | recipe from | round k (its rounds.tsv slug, result) | reply file |
+|---|---|---|---|---|---|---|
+| s1-01 | django-commons/django-debug-toolbar#2502 | 1 | probe-1 | its own round | 1 (django-commons__django-debug-toolbar__2502, pass) | `ext/recipes/django-commons__django-debug-toolbar/rounds/1.reply.md` |
+| s1-02 | fossasia/eventyay#4689 | 1 | probe-1 | its own round | 1 (fossasia__eventyay__4689, pass) | `ext/recipes/fossasia__eventyay/rounds/1.reply.md` |
+| s1-03 | openfoodfoundation/openfoodnetwork#14719 | 1 | probe-2 | its own round | 2 (openfoodfoundation__openfoodnetwork__14719, pass) | `ext/recipes/openfoodfoundation__openfoodnetwork/rounds/2.reply.md` |
+| s1-04 | Open-Source-Legal/OpenContracts#2124 | 1 | probe-1 | its own round | 1 (open-source-legal__opencontracts__2124, pass) | `ext/recipes/open-source-legal__opencontracts/rounds/1.reply.md` |
+| s1-05 | netbox-community/netbox#23175 | 1 | probe-1 | its own round | 1 (netbox-community__netbox__23175, pass) | `ext/recipes/netbox-community__netbox/rounds/1.reply.md` |
+| s1-06 | paperless-ngx/paperless-ngx#13486 | 1 | probe-2 | its own round | 2 (paperless-ngx__paperless-ngx__13486, pass) | `ext/recipes/paperless-ngx__paperless-ngx/rounds/2.reply.md` |
+| s1-07 | netbox-community/netbox#23277 | 1 | probe-reuse-1 | reused recipe.json | 1 (netbox-community__netbox__23175, pass) | `ext/recipes/netbox-community__netbox/rounds/1.reply.md` |
+| s1-08 | Open-Source-Legal/OpenContracts#2371 | 1 | probe-reuse-1 | reused recipe.json | 1 (open-source-legal__opencontracts__2124, pass) | `ext/recipes/open-source-legal__opencontracts/rounds/1.reply.md` |
+| s2-01 | RunMaestro/Maestro#1783 | 1 | probe-3 | its own round | 3 (runmaestro__maestro__1783, pass) | `ext/recipes/runmaestro__maestro/rounds/3.reply.md` |
+| s2-02 | coder/xum#7059 | 1 | probe-1 | its own round | 1 (coder__xum__7059, pass) | `ext/recipes/coder__xum/rounds/1.reply.md` |
+| s2-03 | CherryHQ/cherry-studio#19874 | 1 | probe-2 | its own round | 2 (cherryhq__cherry-studio__19874, pass) | `ext/recipes/cherryhq__cherry-studio/rounds/2.reply.md` |
+| s2-04 | coder/xum#5191 | 1 | probe-2 | its own round | 2 (coder__xum__5191, pass) | `ext/recipes/coder__xum/rounds/2.reply.md` |
+| s2-05 | CherryHQ/cherry-studio#18688 | 1 | probe-reuse-1 | reused recipe.json | 2 (cherryhq__cherry-studio__19874, pass) | `ext/recipes/cherryhq__cherry-studio/rounds/2.reply.md` |
+| s2-06 | OpenWhispr/openwhispr#2643 | 1 | probe-1 | its own round | 1 (openwhispr__openwhispr__2643, pass) | `ext/recipes/openwhispr__openwhispr/rounds/1.reply.md` |
+| s2-07 | IsmaelMartinez/teams-for-linux#2778 | 1 | probe-1 | its own round | 1 (ismaelmartinez__teams-for-linux__2778, pass) | `ext/recipes/ismaelmartinez__teams-for-linux/rounds/1.reply.md` |
+| s2-08 | super-productivity/super-productivity#11313 | 1 | probe-1 | its own round | 1 (super-productivity__super-productivity__11313, pass) | `ext/recipes/super-productivity__super-productivity/rounds/1.reply.md` |
+| s3-01 | voidzero-dev/vite-plus#2667 | 3 | probe-2 | its own round | 2 (voidzero-dev__vite-plus__2667, pass) | `ext/recipes/voidzero-dev__vite-plus/rounds/2.reply.md` |
+| s3-02 | tokio-rs/toasty#1238 | 3 | probe-reuse-3 | reused recipe.json | 1 (tokio-rs__toasty__1238, pass) | `ext/recipes/tokio-rs__toasty/rounds/1.reply.md` |
+| s3-03 | rust-lang/cargo#17562 | 3 | probe-reuse-3 | reused recipe.json | 1 (rust-lang__cargo__17562, pass) | `ext/recipes/rust-lang__cargo/rounds/1.reply.md` |
+| s3-04 | chakra-ui/panda#3925 | 3 | probe-3 | its own round | 3 (chakra-ui__panda__3925, feedback pass) | `ext/recipes/chakra-ui__panda/rounds/3.reply.md` |
+| s3-05 | lancedb/lancedb#4486 | 1 | probe-3 | its own round | 3 (lancedb__lancedb__4486, pass) | `ext/recipes/lancedb__lancedb/rounds/3.reply.md` |
+| s3-06 | nautechsystems/nautilus_trader#4813 | 2 | probe-reuse-2 | reused recipe.json | 3 (nautechsystems__nautilus_trader__4813, pass) | `ext/recipes/nautechsystems__nautilus_trader/rounds/3.reply.md` |
+| s3-07 | pola-rs/polars#30060 | 2 | probe-reuse-2 | reused recipe.json | 1 (pola-rs__polars__30060, pass) | `ext/recipes/pola-rs__polars/rounds/1.reply.md` |
+| s3-08 | pola-rs/polars#29923 | 1 | probe-reuse-1 | reused recipe.json | 1 (pola-rs__polars__30060, pass) | `ext/recipes/pola-rs__polars/rounds/1.reply.md` |
+
+Hashes of every reply named above, and of each sampled repo's `rounds.tsv` (paths relative to `<data>`):
+
+```
+a3ddd536bc2ee7e1d59265162391b2b006591c39d18bd846117cdcfeaedfe836  ext/recipes/chakra-ui__panda/rounds/3.reply.md
+eb17ddae4ce6398898fe462e2e370ffd109ec5a596add3af71c113076eb1edfd  ext/recipes/cherryhq__cherry-studio/rounds/2.reply.md
+fc69dd5bc9494b66f11772ab9cdc7985469d16e9ec79236a46d785229d847045  ext/recipes/coder__xum/rounds/1.reply.md
+3f621df648c3205438522bbf7e6321942e606f72e5fd0cff7c28b839c0d46fb6  ext/recipes/coder__xum/rounds/2.reply.md
+8059cc23246ba7943b5f571d6b83b0b009dbbfb9a1833bcc3ad84d1355a50793  ext/recipes/django-commons__django-debug-toolbar/rounds/1.reply.md
+5ae9475e22f5af3a9c3d19768947556c9acf1931b8ffaa14a108e041c0d7eab0  ext/recipes/fossasia__eventyay/rounds/1.reply.md
+97334b0eec03ed4b786eb16d269733a5e646cf31667336a78cdfff0e5fd58a1c  ext/recipes/ismaelmartinez__teams-for-linux/rounds/1.reply.md
+a99f77be439345d39ffbe37bab04e39fdfaada43f15be69ac0984bc5ebe322d6  ext/recipes/lancedb__lancedb/rounds/3.reply.md
+9ba6459b89d5e86b6425291d577e5528393f347663b8e0a709f26f7186978406  ext/recipes/nautechsystems__nautilus_trader/rounds/3.reply.md
+37e2b150674d5e114cae7309a8b62e7c93d206454c14b6e432c310db1e456176  ext/recipes/netbox-community__netbox/rounds/1.reply.md
+3a37f4cd4c04beebf28bcb988f3aecb59eca008ac5db0e09c190ca055b3b8d68  ext/recipes/open-source-legal__opencontracts/rounds/1.reply.md
+5176b9d5ba65d63d0f85bd7f18ad001b14759fff3391008fb6167c3ae4a61ed1  ext/recipes/openfoodfoundation__openfoodnetwork/rounds/2.reply.md
+032447082401b63c3c7134701d61cb345f5b683defc0e4f568ce650879b60848  ext/recipes/openwhispr__openwhispr/rounds/1.reply.md
+ae2a02ef2a4d60c64e47faf5cacdcc35fe970b26e0d8dcb3105e671267881cec  ext/recipes/paperless-ngx__paperless-ngx/rounds/2.reply.md
+61d67b454dd518964ce84bb14accdcb474bca4a0eb6fc90b18eb8620f227f52c  ext/recipes/pola-rs__polars/rounds/1.reply.md
+374d908c55ca4a98a96057d83c4eae34d49e659ccc4a65aa4d2212eaca198f5f  ext/recipes/runmaestro__maestro/rounds/3.reply.md
+ed3114ef998b2c2f4a4bccb947e14395577c2cc32ac18723c262472c98c6c1a7  ext/recipes/rust-lang__cargo/rounds/1.reply.md
+d5c19873926a67d9492af3f544d6a42a076bc0be034b9814851c12a378006bf2  ext/recipes/super-productivity__super-productivity/rounds/1.reply.md
+ace02af4ab42ecf71e1e91a475e558b92e19d6cfc0e1096472b0a089b2dfe4cb  ext/recipes/tokio-rs__toasty/rounds/1.reply.md
+4bc78dcee883ddeee12d8af8bc391bf5aaa4c5bdc0e18bd4d6c0c57a8a9779ad  ext/recipes/voidzero-dev__vite-plus/rounds/2.reply.md
+becdf8fdb68993932967fe8fe22502ce31f980aeb6cecc5961dd98703e61897c  ext/recipes/chakra-ui__panda/rounds.tsv
+feaedc4880c98df620b5047587192482b48ed863fba792bc0d760fa26f6cf86b  ext/recipes/cherryhq__cherry-studio/rounds.tsv
+3b5a70cce996d7e3c7c45c3fce8598d559f327dcbda97967566e9076b6a14855  ext/recipes/coder__xum/rounds.tsv
+51041d98d172bfcdbcbfbd74739c2836d17822843d3e7b79d19936e5a98b99a6  ext/recipes/django-commons__django-debug-toolbar/rounds.tsv
+9e96a46e95c72df2b6f5af8a2ba8ec9e8b1bd456819ca058570a3b73e848fcd3  ext/recipes/fossasia__eventyay/rounds.tsv
+83e7d63a5260aa5396f79856f3b00e8b8661a5982503508adf8626ea9e7a990a  ext/recipes/ismaelmartinez__teams-for-linux/rounds.tsv
+7fd87f4bddda0c7ce7a0b770ddda685e57154515b1835f48dfb4aee3e4fb1644  ext/recipes/lancedb__lancedb/rounds.tsv
+d3a82692d672854b77c6b10916e83e7cb3b40aa812587e73ee0b47a6b07812ce  ext/recipes/nautechsystems__nautilus_trader/rounds.tsv
+8ea62bea1f026ec2b1d2e93a26922aba07399998799b39ad331e788c94c6dbc4  ext/recipes/netbox-community__netbox/rounds.tsv
+22ef5e501a4303068ab41a076ca715c45571a569732797150d2bf75388febf90  ext/recipes/open-source-legal__opencontracts/rounds.tsv
+fce177ca2dc24aca787ac6eae4d2e5a9ff4135abe78ee62bb5ff562936531829  ext/recipes/openfoodfoundation__openfoodnetwork/rounds.tsv
+a011695d77ea635be5bccf1d89ce5a232c0a57b75a699176f65626a1e4ed49ab  ext/recipes/openwhispr__openwhispr/rounds.tsv
+7d5d8170c5177ad633322434804b0c853a0245165ad3c6bbf19e82111b2c3667  ext/recipes/paperless-ngx__paperless-ngx/rounds.tsv
+b7b6a92e194df1bef1223b53faae429c735c5346fe9cb7f9d246f9050f0ff7d9  ext/recipes/pola-rs__polars/rounds.tsv
+7a4d242934ba7a7c2ba607071af8105b1b76fe447999158a145c8c9b45dd3ab6  ext/recipes/runmaestro__maestro/rounds.tsv
+a612f151b69a3694d2e021dc5031b08706affd4b14aff8e1614fc5fbb18714bc  ext/recipes/rust-lang__cargo/rounds.tsv
+596270a8c3fa6576b5ac3d2ead6f1f62e1709a323c9fa6bbcf85c9aedeecd6ba  ext/recipes/super-productivity__super-productivity/rounds.tsv
+189a04a7d9432af8e8508ac4e7097a23db8674edbc8ea8e9d780cdd268adf9f9  ext/recipes/tokio-rs__toasty/rounds.tsv
+a7f0a2b40e63ed6c4d1300c81e1918e5f018718eb2cf3e87878070b89c2d795d  ext/recipes/voidzero-dev__vite-plus/rounds.tsv
+```
+
+**Interrupted checks.** Four recipe replies have no `rounds.tsv` row. Each was the reply of a round whose check was stopped while that recipe was being built or probed:
+- `swc-project__swc` 1 (started 00:29:05Z): stopped at the controller's pause at 00:30Z.
+- `swc-project__swc` 2 (started 01:02:50Z): stopped at the pause at 01:03Z.
+- `swc-project__swc` 4 (started 01:30:16Z): stopped at the restart for 1e0b47b at 01:32Z. The in-flight build I stopped then was swc's (`swc-project__swc-ctx-…`, per progress.md).
+- `servo__servo` 1 (started 05:23:30Z): stopped at the pause at 05:28Z.
+
+Other stops interrupted only builds of reused recipes, with no reply lost: toasty's at the 06:13Z restart, iggy's at 14:12Z before the build-cache prune.
+
+These rounds were not counted because, before e4c2f02, a round's row was appended to `rounds.tsv` only after its recipe had been built and probed. `meta.recipeRounds++` ran earlier, but only into the attempt's `meta.json`, and the next attempt resets that. From e4c2f02 on, the row is written `replied` as soon as the reply exists. The sample is unaffected: swc#12010 ended `out of memory` and servo#47685 `no fail-to-pass test`. Neither is sampled, and no sampled repo's budget depended on the uncounted rounds.
+
+**The sample command.** `bun bench/ext.mjs sample <data>/ext/groups.json` (e4c2f02) wrote `<data>/ext/sample.tsv` with 24 rows. It is byte-identical to `progress/step4/sample.tsv`:
+
+```
+a200de5b1785dcec02c45ebdafe867f030847a10d3e07c54fb684555a83e76d1  ext/sample.tsv
+```
+
+**Notes.**
+- The rows below each stack's stop are `not checked` by count only. `walk.tsv` has no row for them.
+- The `groups.json` hash line in `progress/progress.md` (Task 1) was edited in place before the enumeration, from 00447b07… to fcbc35b8…. The final value is correct and matches the hash above.
+- Ruling 14: `nextToCheck` counts every `ok` row toward the 8, while `sampleOf` also caps 2 per repo. No repo has a third `ok` row now. If a recheck gives one, the two would differ, and that needs handling then.
+- Other code from the review, with no effect on the record: `check` makes walk's disk-floor check (exit 3); a walk stopped on 2 errors exits 4 and says so; the driver `<data>/ext/walk-all.sh` stops on exit 4.
+- Prereg ruling 10 now has a dated sentence that attributes two disk rulings correctly ("rounds spent while the disk was full are not counted" and "a disk-full message counts as the machine's failure only when the disk is then below the floor" were controller rulings after review, not the user's decision). The same sentence marks the sample wording as an amendment and records the user's permission for `docker builder prune -f`.
