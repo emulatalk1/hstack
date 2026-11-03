@@ -185,8 +185,15 @@ test('sampleOf takes the first perStack accepted rows by rank, even when a reche
   const rs = Array.from({ length: 12 }, (_, i) => ({ id: `r${i % 6}#${i + 1}`, repo: `r${i % 6}`, rank: String(i + 1) }))
   const ok = (id) => ({ id, result: 'ok' })
   const walked = [...rs.slice(0, 10).map((r) => ok(r.id)), { id: rs[2].id, result: 'no fail-to-pass test' }]
-  const got = sampleOf(rs, walked, { perStack: 8 })
+  const got = sampleOf(rs, walked, { perStack: 8, perRepo: 2 })
   expect(got.map((r) => r.rank)).toEqual(['1', '2', '4', '5', '6', '7', '8', '9']) // rank 3's last row is out; ranks 10 on are past 8
   expect(coldSetup(got.map((r) => ({ repo: r.repo, rank: Number(r.rank) })))).toBe('r2') // r2's rank 3 is out, so it enters the sample last, at rank 9
-  expect(sampleOf([...rs].reverse(), walked, { perStack: 8 }).map((r) => r.rank)).toEqual(['1', '2', '4', '5', '6', '7', '8', '9'])
+  expect(sampleOf([...rs].reverse(), walked, { perStack: 8, perRepo: 2 }).map((r) => r.rank)).toEqual(['1', '2', '4', '5', '6', '7', '8', '9'])
+})
+
+test('sampleOf takes tier 1 before tier 2 and at most perRepo rows of a repo', () => {
+  const row = (id, repo, tier, rank) => ({ id, repo, tier: String(tier), rank: String(rank) })
+  const rs = [row('b#9', 'b', 2, 1), row('a#1', 'a', 1, 1), row('a#2', 'a', 1, 2), row('a#3', 'a', 1, 3), row('c#4', 'c', 1, 4)]
+  const walked = rs.map((r) => ({ id: r.id, result: 'ok' }))
+  expect(sampleOf(rs, walked, { perStack: 4, perRepo: 2 }).map((r) => r.id)).toEqual(['a#1', 'a#2', 'c#4', 'b#9'])
 })

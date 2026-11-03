@@ -111,10 +111,16 @@ export function extraProbe(paths, testPaths, probe) {
   return [...paths].sort().find((f) => !seen.has(ext(f)) && res.some((r) => r.test(f))) ?? null
 }
 
-// the sample of a stack: its first perStack accepted rows by rank (a recheck can leave more than perStack accepted)
+// the sample of a stack: its first perStack accepted rows by (tier, rank), at most perRepo per repo (a recheck can leave
+// more than perStack accepted, or a third of a repo)
 export function sampleOf(rows, walked, cfg) {
-  const last = new Map(walked.map((w) => [w.id, w.result]))
-  return rows.filter((r) => last.get(r.id) === 'ok').sort((a, b) => a.rank - b.rank).slice(0, cfg.perStack)
+  const last = new Map(walked.map((w) => [w.id, w.result])), per = new Map(), out = []
+  for (const r of rows.filter((x) => last.get(x.id) === 'ok').sort((a, b) => a.tier - b.tier || a.rank - b.rank)) {
+    if (out.length >= cfg.perStack || (per.get(r.repo) ?? 0) >= cfg.perRepo) continue
+    per.set(r.repo, (per.get(r.repo) ?? 0) + 1)
+    out.push(r)
+  }
+  return out
 }
 
 // the sampled repo whose best-ranked task ranks lowest (ruling 13)
