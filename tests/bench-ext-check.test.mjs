@@ -84,7 +84,7 @@ const gh = async (argv) => {
 }
 let i = 0
 const recipeAgent = async () => (Array.isArray(c.reply) ? c.reply[i++] ?? null : c.reply)
-process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent, ...('diskFree' in c ? { diskFree: async () => c.diskFree } : {}) }))
+process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent, ...('diskFree' in c ? { diskFree: async () => (Array.isArray(c.diskFree) ? (c.diskFree.length > 1 ? c.diskFree.shift() : c.diskFree[0]) : c.diskFree) } : {}) }))
 `)
 
 // a data folder with its own repo owner, so container and image names never meet those of another test or run
@@ -125,6 +125,7 @@ dtest('finds one fail-to-pass test in the fixture and writes meta.json (needs BE
   expect(meta).toMatchObject({ id: `${s.owner}/app#1`, slug: s.slug(1), stack: 's1', tier: 1, rank: 1, url: `https://github.com/${s.owner}/app/pull/1`, defaultBranch: 'main',
     pr: 1, prCreated: '2026-08-10T00:00:00Z', mergedAt: '2026-08-12T00:00:00Z', issue: 11, issueCreated: '2026-08-01T00:00:00Z', end: c1, base: c0, method: 'single',
     licence: 'MIT', stars: 1500, f2p: 1, p2p: 3, editHistory: 'none', platform, recipeRounds: 0 })
+  expect(meta.recipeSha).toBe(new Bun.CryptoHasher('sha256').update(JSON.stringify(recipe)).digest('hex')) // the recipe it used
   expect(meta.images).toEqual([`bench-ext/${s.slug(1)}:${c0.slice(0, 7)}`, `bench-ext/${s.slug(1)}:${c1.slice(0, 7)}`])
   // zebra_flip passes at the base only in the end's version; nothing_old only once the deletion is applied
   expect(json(join(s.ext, 'sealed', s.slug(1), 'f2p.json'))).toEqual({ f2p: ['fx::zebra_needs'], p2p: ['fx::nothing_old', 'fx::zebra_flip', 'fx::zebra_ok'] })
@@ -231,6 +232,7 @@ test('three replies that are not recipes are out with recipe failed', async () =
   expect(r.stdout).toBe(`${s.slug(1)} out recipe failed\n`)
   expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8').trim().split('\n').map((l) => l.split('\t')[2])).toEqual(['bad reply', 'bad reply', 'bad reply'])
   expect(existsSync(join(s.ext, 'tasks', s.slug(1), 'check.err'))).toBe(false)
+  expect(json(join(s.ext, 'tasks', s.slug(1), 'meta.json')).recipeSha).toBe(null)
 }, 60000)
 
 test('a saved recipe written under another brief is regenerated first, from the old recipe, within the round count', async () => {
@@ -265,6 +267,37 @@ test('the repo\'s first task keeps its 3 rounds after a further task spent one; 
   expect(readFileSync(tsv, 'utf8').trim().split('\n').map((l) => l.split('\t')[1])).toEqual([s.slug(1), s.slug(2), s.slug(1), s.slug(1)]) // 2 more: 3 in all
   expect((await run(s, ['check', 's1', '2'], { reply: ['nope'] })).stdout).toBe(`${s.slug(2)} out recipe failed\n`)
   expect(readFileSync(tsv, 'utf8').trim().split('\n').length).toBe(4) // its 1 round is spent
+}, 60000)
+
+test('a round is recorded as soon as its reply exists, so a check that dies after it still counts it', async () => {
+  const s = setup({ withRecipe: false })
+  const r = await run(s, ['check', 's1', '1'], { reply: [JSON.stringify(recipe)], env: { DOCKER_HOST: `unix:///nonexistent-${rand()}.sock` } })
+  expect(r.stdout).toBe(`${s.slug(1)} error build\n`) // the daemon is gone once the reply is in
+  expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\treplied\n`)
+  expect(json(join(s.ext, 'tasks', s.slug(1), 'meta.json')).recipeRounds).toBe(1)
+}, 60000)
+
+test('check stops before anything when Docker\'s disk is low, as walk does', async () => {
+  const s = setup()
+  const r = await run(s, ['check', 's1', '1'], { disk: 9.96 })
+  expect(r).toMatchObject({ code: 3, stdout: 's1 stopped: docker disk low (10.0 GB free)\n' })
+  expect(existsSync(join(s.ext, 'walk.tsv'))).toBe(false)
+  expect(existsSync(join(s.ext, 'tasks', s.slug(1)))).toBe(false)
+}, 60000)
+
+test('sample writes the first 8 accepted rows per stack with the meta.json fields and the cold-setup repo', async () => {
+  const s = setup()
+  writeFileSync(join(s.ext, 'walk.tsv'), `stack\ttier\trank\tid\tresult\ns1\t1\t1\t${s.owner}/app#1\tok\ns1\t1\t2\t${s.owner}/app#2\tok\n`)
+  for (const n of [1, 2]) {
+    mkdirSync(join(s.ext, 'tasks', s.slug(n)), { recursive: true })
+    writeFileSync(join(s.ext, 'tasks', s.slug(n), 'meta.json'), JSON.stringify({ url: `u${n}`, pr: n, issue: 10 + n, base: `b${n}`, end: `e${n}`, method: 'squash', f2p: n, editHistory: 'none', platform: 'linux/arm64' }))
+  }
+  const r = await run(s, ['sample'])
+  expect(r).toMatchObject({ code: 0, stdout: 'sample.tsv: 2 rows\n' })
+  expect(readFileSync(join(s.ext, 'sample.tsv'), 'utf8')).toBe([
+    'task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend\tmethod\tf2p\tedit_history\tplatform\tcold_setup',
+    `s1-01\ts1\t1\t1\t${s.owner}/app#1\tu1\t1\t11\tb1\te1\tsquash\t1\tnone\tlinux/arm64\tyes`,
+    `s1-02\ts1\t1\t2\t${s.owner}/app#2\tu2\t2\t12\tb2\te2\tsquash\t2\tnone\tlinux/arm64\tyes`, ''].join('\n'))
 }, 60000)
 
 test('a recipe must copy the repo to /work and may not ask for host network, insecure mode or secrets', () => {
@@ -303,7 +336,7 @@ test('a disk-full message is the machine\'s only below the floor or with no esti
 
 dtest('a run that prints a disk-full message is error run only when the disk is low (needs BENCH_EXT_DOCKER=1)', async () => {
   const low = setup({ use: diskRecipe })
-  const r1 = await run(low, ['check', 's1', '1'], { disk: 5 })
+  const r1 = await run(low, ['check', 's1', '1'], { disk: [40, 5] }) // roomy at the pre-check, low once the run has failed
   expect(r1.stdout).toBe(`${low.slug(1)} error run\n`)
   expect(readFileSync(join(low.ext, 'tasks', low.slug(1), 'check.err'), 'utf8')).toBe('run: no space left on device\n')
   const roomy = setup({ use: diskRecipe })
@@ -347,7 +380,7 @@ test('walk stops before a check when Docker\'s disk is low, and goes on (saying 
   expect(low).toMatchObject({ code: 3, stdout: 's1 stopped: docker disk low (10.0 GB free)\n' })
   expect(existsSync(join(s.ext, 'walk.tsv'))).toBe(false)
   const unknown = await run(s, ['walk', 's1'], { disk: null, env: { DOCKER_HOST: `unix:///nonexistent-${rand()}.sock` } })
-  expect(unknown.stdout).toBe(`${s.slug(1)} error build\n${s.slug(1)} error build\ns1 tier 1: accepted 0, checked 2, list end no\n`)
+  expect(unknown).toMatchObject({ code: 4, stdout: `${s.slug(1)} error build\n${s.slug(1)} error build\ns1 tier 1: accepted 0, checked 2, list end no, stopped on 2 errors in a row\n` })
   expect(unknown.stderr.split('\n').filter((l) => l.includes('docker disk')).length).toBe(1)
 }, 60000)
 

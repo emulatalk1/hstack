@@ -6,13 +6,14 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { withExport } from './env.mjs'
-import { baseOf, exists, extraProbe, failToPass, nextToCheck, repoOut, sortKey, stackOf, staticOut } from './lib/ext.mjs'
+import { baseOf, coldSetup, exists, extraProbe, failToPass, nextToCheck, repoOut, sampleOf, sortKey, stackOf, staticOut } from './lib/ext.mjs'
 import { readJunit } from './lib/junit.mjs'
 import { runGroup } from './lib/proc.mjs'
 
 const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
        bun bench/ext.mjs check <groups.json> <stack> <rank> [--tier <1|2>]
-       bun bench/ext.mjs walk <groups.json> <stack> [--tier <1|2>] [--remove-out]`
+       bun bench/ext.mjs walk <groups.json> <stack> [--tier <1|2>] [--remove-out]
+       bun bench/ext.mjs sample <groups.json> [--tier <1|2>]`
 const sha = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
 const flag = (argv, k) => argv.find((a) => a.startsWith(`${k}=`))?.slice(k.length + 1)
 const name = (argv) => (argv.includes('graphql') ? `graphql ${flag(argv, 'q') ?? '(repo batch)'}` : `${argv[3]} ${flag(argv, 'q')} page ${flag(argv, 'page')}`)
@@ -410,7 +411,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
   // the names of earlier attempts stay recorded for --remove-out; each attempt names its run containers anew
   const meta = { id: row.id, slug, stack: row.stack, tier: Number(row.tier), rank: Number(row.rank), url: `https://github.com/${row.repo}/pull/${n}`, defaultBranch: null,
     pr: n, prCreated: null, mergedAt: null, issue: Number(row.issue), issueCreated: null, end: null, base: null, method: null, licence: null, stars: Number(row.stars),
-    f2p: null, p2p: null, editHistory: null, platform: null, images: prev.images ?? [], recipeRounds: 0, minutes: null,
+    f2p: null, p2p: null, editHistory: null, platform: null, images: prev.images ?? [], recipeRounds: 0, recipeSha: null, minutes: null,
     attempt: (prev.attempt ?? 0) + 1, containers: prev.containers ?? [], imageIds: prev.imageIds ?? [], runs: prev.runs ?? [] }
   const save = () => writeFileSync(metaFile, JSON.stringify(meta, null, 2) + '\n')
   const task = { name: key, repo: repoDir, db: null, port: 1024, start: 'true', ready: 'http://localhost:1', oracle: 'true', junit: 'junit.xml', timeoutSec: 3600 }
@@ -574,30 +575,43 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
         if (!failed) recipe = r
       }
     }
+    // one row per round: written as soon as its reply exists (an interrupted round still counts), its result filled in after
+    const setRound = (k, word) => {
+      const rows = existsSync(roundsTsv) ? readFileSync(roundsTsv, 'utf8').split('\n').filter(Boolean) : []
+      const line = `${k}\t${slug}\t${word}`, i = rows.findIndex((l) => l.startsWith(`${k}\t${slug}\t`))
+      if (i >= 0) rows[i] = line
+      else rows.push(line)
+      writeFileSync(`${roundsTsv}.tmp`, rows.join('\n') + '\n')
+      renameSync(`${roundsTsv}.tmp`, roundsTsv)
+    }
     // one recipe round, its prompt the brief plus extra: the recipe that passed (saved), or null with failed saying why
     const round = async (extra, note = '') => {
       stage = 'recipe-agent'
-      const k = 1 + Math.max(0, ...readdirSync(rounds).map((f) => Number(/^(\d+)\./.exec(f)?.[1] ?? 0)))
+      // a round number no file and no rounds.tsv row has taken
+      const rows = existsSync(roundsTsv) ? readFileSync(roundsTsv, 'utf8').split('\n').filter(Boolean).map((l) => Number(l.split('\t')[0])) : []
+      const k = 1 + Math.max(0, ...rows, ...readdirSync(rounds).map((f) => Number(/^(\d+)\./.exec(f)?.[1] ?? 0)))
       const prompt = join(rounds, `${k}.prompt.md`), out = join(rounds, `${k}.reply.md`)
       writeFileSync(prompt, brief.trimEnd() + '\n' + extra)
       const reply = await recipeAgent({ env: envFile, label: `recipe-${slug}-${k}`, at: b.base, prompt, out })
       if (reply == null) throw new Error(`recipe round ${k}: no reply`) // a tool failure: the round is not spent
       if (!existsSync(out)) writeFileSync(out, reply)
+      setRound(k, `${note}replied`)
       meta.recipeRounds++
       let r
       try { r = parseRecipe(reply) } catch (e) { // a spent round: the next one is told why
         failed = { what: 'reply', message: e.message }
-        appendFileSync(roundsTsv, `${k}\t${slug}\t${note}bad reply\n`)
+        setRound(k, `${note}bad reply`)
         return null
       }
       failed = await attempt(r, String(k), String(k))
-      appendFileSync(roundsTsv, `${k}\t${slug}\t${note}${failed ? `${failed.what} failed` : 'pass'}\n`)
+      setRound(k, `${note}${failed ? `${failed.what} failed` : 'pass'}`)
       if (failed) return null
       writeFileSync(saved, JSON.stringify({ ...r, briefSha }, null, 2) + '\n')
       return r
     }
     while (!recipe && left-- > 0) recipe = await round(failed ? retryText(failed) : '')
     meta.platform = recipe?.platform ?? null
+    meta.recipeSha = recipe ? sha(JSON.stringify(recipe)) : null // the recipe this check used: recipe.json is the repo's latest
     save()
     if (!recipe) return 'recipe failed'
 
@@ -624,6 +638,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       if (r) {
         recipe = r
         meta.platform = r.platform
+        meta.recipeSha = sha(JSON.stringify(r))
         save()
         runs = await runAll(r, 'f')
         if (typeof runs === 'string') return runs
@@ -690,12 +705,43 @@ function parseArgs(args, nPos, allowRemove) {
   return { pos, ...o }
 }
 
+// the stop line when Docker's disk is below the floor, else null; an estimate that cannot be made is said on stderr (once)
+async function diskStop(stack, inj, state = {}) {
+  const free = await (inj.diskFree ?? dockerDiskFree)()
+  if (free === null && !state.told) { console.error('docker disk: free space cannot be estimated; going on'); state.told = true }
+  return free !== null && free < DISK_FLOOR_GB ? `${stack} stopped: docker disk low (${free.toFixed(1)} GB free)` : null
+}
+
 async function checkCmd(args, inj) {
   const { pos: [groupsPath, stack, rank], tier } = parseArgs(args, 3, false)
   const cfg = await Bun.file(groupsPath).json(), ext = join(dataOf(inj.data), 'ext')
   const row = readTsv(join(ext, `candidates-${tier}.tsv`)).find((r) => r.stack === stack && r.static === 'ok' && r.rank === rank)
   if (!row) throw new Error(`no ${stack} row of rank ${rank} in candidates-${tier}.tsv`)
+  const low = await diskStop(stack, inj)
+  if (low) return { line: low, code: 3 }
   return check(row, cfg, inj)
+}
+
+// sample.tsv: per stack (in groups.json order) its sampleOf rows, numbered <stack>-<nn>, with the meta.json fields of step 5
+export async function sample(args, inj = {}) {
+  const { pos: [groupsPath], tier } = parseArgs(args, 1, false)
+  const cfg = await Bun.file(groupsPath).json(), ext = join(dataOf(inj.data), 'ext')
+  const walked = readTsv(join(ext, 'walk.tsv'))
+  const cols = ['task', 'stack', 'tier', 'rank', 'id', 'url', 'pr', 'issue', 'base', 'end', 'method', 'f2p', 'edit_history', 'platform', 'cold_setup']
+  const out = [cols.join('\t')]
+  for (const g of [...cfg.groups].sort((a, b) => a.id.localeCompare(b.id))) {
+    const rows = ['1', '2'].slice(0, Number(tier)).flatMap((t) => readTsv(join(ext, `candidates-${t}.tsv`)).filter((r) => r.stack === g.id && r.static === 'ok'))
+    const picked = sampleOf(rows, walked, cfg), cold = coldSetup(picked.map((r) => ({ repo: r.repo, rank: Number(r.rank) })))
+    picked.forEach((r, i) => {
+      const [owner, rest] = r.id.split('/'), [name, n] = rest.split('#')
+      const m = JSON.parse(readFileSync(join(ext, 'tasks', `${slugOf(`${owner}__${name}`)}__${n}`, 'meta.json'), 'utf8'))
+      const v = { task: `${g.id}-${String(i + 1).padStart(2, '0')}`, stack: g.id, tier: r.tier, rank: r.rank, id: r.id, url: m.url, pr: m.pr, issue: m.issue, base: m.base,
+        end: m.end, method: m.method, f2p: m.f2p, edit_history: m.editHistory, platform: m.platform, cold_setup: r.repo === cold ? 'yes' : 'no' }
+      out.push(cols.map((c) => v[c]).join('\t'))
+    })
+  }
+  writeFileSync(join(ext, 'sample.tsv'), out.join('\n') + '\n')
+  return out.length - 1
 }
 
 export async function walk(args, inj = {}, print = (s) => console.log(s)) {
@@ -705,12 +751,11 @@ export async function walk(args, inj = {}, print = (s) => console.log(s)) {
   // tier 2 after tier 1: tier 1's accepted rows count, and its error and repo cap rows come first (ruling 14)
   const rows = ['1', '2'].slice(0, Number(tier)).flatMap((t) => readTsv(join(ext, `candidates-${t}.tsv`)).filter((r) => r.stack === stack && r.static === 'ok'))
   const walked = () => (existsSync(join(ext, 'walk.tsv')) ? readTsv(join(ext, 'walk.tsv')) : [])
-  let checked = 0, errors = 0, next, told = false
-  const diskFree = inj.diskFree ?? dockerDiskFree
+  let checked = 0, errors = 0, next
+  const state = {}
   while (errors < 2 && (next = nextToCheck(rows, walked(), cfg))) {
-    const free = await diskFree()
-    if (free === null && !told) { console.error('docker disk: free space cannot be estimated; going on'); told = true }
-    if (free !== null && free < DISK_FLOOR_GB) { print(`${stack} stopped: docker disk low (${free.toFixed(1)} GB free)`); return 3 }
+    const low = await diskStop(stack, inj, state)
+    if (low) { print(low); return 3 }
     const last = new Map(walked().map((w) => [w.id, w.result]))
     for (const c of next.capped) if (last.get(c.id) !== 'repo cap') appendWalk(ext, c, 'repo cap')
     const r = await check(next.row, cfg, inj)
@@ -720,7 +765,9 @@ export async function walk(args, inj = {}, print = (s) => console.log(s)) {
     if (remove && !isError(r.result)) await removeOut(ext, r.slug, { ok: r.result === 'ok' })
   }
   const last = new Map(walked().map((w) => [w.id, w.result])), accepted = rows.filter((r) => last.get(r.id) === 'ok').length
-  print(`${stack} tier ${tier}: accepted ${accepted}, checked ${checked}, list end ${!next && accepted < cfg.perStack ? 'yes' : 'no'}`)
+  const stopped = errors >= 2 // ruling 8: 2 errors in a row stop the walk, exit 4
+  print(`${stack} tier ${tier}: accepted ${accepted}, checked ${checked}, list end ${!next && accepted < cfg.perStack ? 'yes' : 'no'}${stopped ? ', stopped on 2 errors in a row' : ''}`)
+  return stopped ? 4 : 0
 }
 
 export async function main(argv, inj = {}) {
@@ -735,8 +782,9 @@ export async function main(argv, inj = {}) {
     } else if (cmd === 'check') {
       const r = await checkCmd(rest, inj)
       console.log(r.line)
-      return isError(r.result) ? 1 : 0
-    } else if (cmd === 'walk') return await walk(rest, inj) ?? 0
+      return r.code ?? (isError(r.result) ? 1 : 0)
+    } else if (cmd === 'walk') return await walk(rest, inj)
+    else if (cmd === 'sample') console.log(`sample.tsv: ${await sample(rest, inj)} rows`)
     else throw new Error(USAGE)
     return 0
   } catch (e) { console.error(e.message); return 2 }
