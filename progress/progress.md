@@ -1397,3 +1397,78 @@ Sealed agents (recipe and diagnosis runs) are summed in the Task 5 records above
 ### Task 5
 
 - Fixture Docker leftovers of `BENCH_EXT_DOCKER=1 bun test tests/bench-ext-check.test.mjs` (with the oracle-run tests): none. Container names (330) and image tags with ids (174) listed before and after the gated run are identical (`diff` empty, two runs); oracle-run removed its own grade containers and `-serve`/`-grade` images by recorded name, and the removal test removed the two containers it created.
+
+### Task 7
+
+Real-estate sources (rulings 1, 6, 7, 8), branch `worktree-agent-aeff905a58618581b`.
+
+(c) check (ruling 8), read before any label was spent: each task's end commit, `git grep` for file reads (`readFile*`, `readdir*`, `createReadStream`, `process.cwd()`, `fileURLToPath`, `homedir`, `showcase-data`) and for `process.env.*DIR|PATH|FILE|FOLDER` and `.env.example` paths in `src/` and `scripts/`, then `git ls-tree` for the folder a loader names. `MEDIA_DIR` is the upload folder the app writes (default `media` in the repo), not data it loads; `scripts/build-locations.mjs` reads a downloaded file given on its command line, and its output `src/seed/locations.json` is in the repo; the demo seed draws its photos in code.
+
+| task | end | needs outside data |
+|---|---|---|
+| p1 | 7adfd47 | no |
+| p2 | 5eced48 | no |
+| p3 | be6c20b | no |
+| p4 | 9bb39ab | no |
+| p5 | 31fcab0 | no |
+| p6a | d7f2fd3 | no |
+| p6b | 885c4c2 | no |
+| p6c | c8db5b7 | no |
+| p7b | 3137149 | no |
+| p7c | 0b02f41 | no |
+| p8a | d1ea76b | no |
+| p8b1 | 3e630e8 | yes, `src/seed/showcase.ts:13` (`const dir = process.env.SHOWCASE_DIR`, no default; `seed:showcase` loads `showcase.json` and `photos/` from that folder, and the repo holds no `showcase/` folder at 3e630e8: `git ls-tree` empty; the README there says `SHOWCASE_DIR=/path/to/showcase`) |
+| p8c | bee1c22 | no (`src/seed/showcase.ts:14` defaults to `showcase`, which the repo holds: 143 files) |
+| p8d | d7695d6 | no (same, `showcase/` in the repo) |
+| p8e | a9c2377 | no (same, `showcase/` in the repo) |
+
+p8b1 is dropped (`dropped needs outside data`); 14 tasks remain for step 5.
+
+Pairs (`bun bench/oracle.mjs pairs <data>/env/real-estate.json --drop p8b,p8b1`; p8b and p8b1 still own their hunks), 347 in all:
+
+| task | in-task | later | pairs |
+|---|---|---|---|
+| p1 | 10 | 43 | 53 |
+| p2 | 9 | 37 | 46 |
+| p3 | 10 | 26 | 36 |
+| p4 | 14 | 28 | 42 |
+| p5 | 7 | 6 | 13 |
+| p6a | 7 | 26 | 33 |
+| p6b | 6 | 15 | 21 |
+| p6c | 8 | 16 | 24 |
+| p7b | 6 | 9 | 15 |
+| p7c | 4 | 4 | 8 |
+| p8a | 7 | 12 | 19 |
+| p8c | 7 | 7 | 14 |
+| p8d | 8 | 6 | 14 |
+| p8e | 6 | 3 | 9 |
+
+Labeller settings checked by two unsealed probes before any label (`git log -1`, `git show --stat`, Read of the progress log, Grep of attribution.md: ok; Read and Glob of `<data>`, `ls` of `.evidence`, `git log --oneline -3`: denied). Probe usage 4/638/9917/11171 and one more of similar size, claude-opus-5-5.
+
+Brief revision: the first batch (driver started 2026-11-03T18:25:11Z) had 7 runs finish in 40-76 s each (p1: 53 pairs, 18/5475/245212/41711; its whole run wrote 42k tokens of context, too little for 53 diffs), so the labellers had labelled mostly from subjects. The driver was stopped at 18:28Z, the 7 finished runs (label 1: p1-p4, label 2: p1, p2, p4) and their prompts were moved unread to `sources/superseded/`, with brief v1 as `superseded/briefs/label-v1.md`, and their usage counted as superseded spend: 7 runs, 120/36077/1554444/265604 (input/output/cache read/cache write), claude-opus-5-5. Brief v2 adds one paragraph only: run `git show` on every listed commit and read its listed hunks before labelling it; a label from the subject alone is not acceptable. `sealed-agent` now records `toolUses` (tool calls by name) in each run record, and `label` prints the counted run's Bash calls. Every label below is under brief v2, for both labellers.
+
+Labels (brief v2): `label 1 p8e` first as a pilot (18:31:29Z, 9 pairs, 7 Bash calls), then the driver (`sources/drive.sh`, `xargs -P 3`, 18:32:17Z-18:42:15Z) for the other 27 runs. Every run replied with every pair labelled once (28 of 28 first runs parsed; no rerun, no `step9` from a failed run). Bash calls per run (one `git show` can name several commits): label 1 p1 56, p2 23, p3 39, p4 44, p5 13, p6a 15, p6b 21, p6c 19, p7b 10, p7c 8, p8a 15, p8c 8, p8d 16, p8e 7; label 2 p1 53, p2 51, p3 27, p4 45, p5 14, p6a 35, p6b 18, p6c 28, p7b 10, p7c 8, p8a 14, p8c 11, p8d 19, p8e 7.
+
+`bun bench/oracle.mjs labels`:
+
+| task | pairs | agreed fix | agreed not fix | disputed |
+|---|---|---|---|---|
+| p1 | 53 | 5 | 46 | 2 |
+| p2 | 46 | 9 | 35 | 2 |
+| p3 | 36 | 5 | 30 | 1 |
+| p4 | 42 | 8 | 32 | 2 |
+| p5 | 13 | 2 | 11 | 0 |
+| p6a | 33 | 4 | 26 | 3 |
+| p6b | 21 | 5 | 16 | 0 |
+| p6c | 24 | 7 | 16 | 1 |
+| p7b | 15 | 1 | 14 | 0 |
+| p7c | 8 | 2 | 6 | 0 |
+| p8a | 19 | 2 | 15 | 2 |
+| p8c | 14 | 3 | 11 | 0 |
+| p8d | 14 | 5 | 8 | 1 |
+| p8e | 9 | 5 | 4 | 0 |
+| total | 347 | 63 | 270 | 14 |
+
+By kind: in-task 29 agreed fix, 80 agreed not fix, 0 disputed; later 34 agreed fix, 190 agreed not fix, 14 disputed (to the step 9 queue). The 63 sources are 53 distinct commits.
+
+Labeller usage (28 runs under brief v2, from their `.run.json`): input 632, output 155604, cache read 11385833, cache write 1509006; model claude-opus-5-5; all exit 0. Superseded v1 runs (above) 120/36077/1554444/265604. Wall clock of the label runs: 18:25:11Z-18:28Z (v1, stopped) and 18:31:29Z-18:42:15Z (v2), about 14 min.
