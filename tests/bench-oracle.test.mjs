@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick } from '../bench/lib/oracle.mjs'
 import { oracle } from '../bench/oracle.mjs'
+import { check } from '../bench/input-check.mjs'
 
 const order = ['p1', 'p2', 'p3']
 
@@ -479,4 +480,62 @@ test('write prints no check name or behaviour', async () => {
   const skipped = await quiet(() => oracle(['write', 's9-02'], { agent }))
   expect(skipped.out).toBe('s9-02 skipped no serve recipe')
   expect(calls).toHaveLength(1)
+})
+
+// --- bench/oracle.mjs sheet (ruling 14) ---
+const sheetSetup = () => {
+  const ext = join(data, 'ext')
+  for (const d of ['env', 'briefs']) mkdirSync(join(ext, d), { recursive: true })
+  const cols = 'task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend'
+  writeFileSync(join(ext, 'sample.tsv'), [cols, `s9-01\ts9\t1\t1\town/rp#7\tu\t7\t6\t${k1Full}\t${k3Full}`, `s9-02\ts9\t1\t2\town/rp#8\tu\t8\t5\t${k1Full}\t${k3Full}`].join('\n') + '\n')
+  writeFileSync(join(ext, 'env/own__rp.json'), JSON.stringify({ name: 'own__rp', repo, db: null, port: 3998, start: 'true', ready: 'http://127.0.0.1:3998/', oracle: 'true', junit: 'r.xml' }))
+  writeFileSync(join(ext, 'briefs/interface.md'), 'SHEET-BRIEF\n')
+  for (const t of ['s9-01', 's9-02']) { mkdirSync(join(data, t), { recursive: true }); writeFileSync(join(data, t, 'input.md'), '# INPUT-TITLE\n\nINPUT-BODY\n') }
+  return ext
+}
+const replier = (replies, calls) => async (args) => {
+  calls.push(args)
+  const out = args[args.indexOf('--out') + 1]
+  writeFileSync(`${out}.run.json`, '{"code":0}')
+  writeFileSync(out, replies[calls.length - 1])
+  return 0
+}
+const SHEET_REPLY = ['Here is the sheet.', '# Interface sheet', '', '## /SENTINEL-PAGE', '- button text: "SENTINEL-SAVE"', '- URL path: "src/SENTINEL.ts"', '', '## SENTINEL-CMD', '- flag: "--SENTINEL"', '    - nested: "SENTINEL-X"', ''].join('\n')
+
+test('sheet deletes flagged lines and then passes input-check', async () => {
+  const ext = sheetSetup(), calls = []
+  const r = await quiet(() => oracle(['sheet', 's9-01'], { agent: replier([SHEET_REPLY], calls) }))
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('s9-01 sheet names=2 deleted=2 input-check=PASS')
+  const sheet = readFileSync(join(data, 's9-01/interface.md'), 'utf8')
+  expect(check(sheet)).toEqual([])
+  expect(sheet).toStartWith('# Interface sheet\n') // a preamble before the title is dropped
+  expect(sheet).toContain('- button text: "SENTINEL-SAVE"')
+  const a = calls[0], arg = (k) => a[a.indexOf(k) + 1]
+  expect(a[0]).toBe(join(ext, 'env/own__rp.json'))
+  expect(arg('--at')).toBe(k3Full)
+  expect(arg('--tools')).toBe('Read,Glob,Grep')
+  expect(arg('--out')).toBe(join(data, 's9-01/interface.reply.md'))
+  expect(a).not.toContain('--settings')
+  const prompt = readFileSync(arg('--prompt'), 'utf8')
+  expect(prompt).toStartWith('SHEET-BRIEF\n')
+  expect(prompt).toContain('INPUT-BODY')
+  expect(JSON.parse(readFileSync(join(data, 's9-01/interface.reply.md.run.json'), 'utf8')).promptSha).toHaveLength(64)
+  // an existing sheet with its run record is reused, not rerun
+  const again = await quiet(() => oracle(['sheet', 's9-01'], { agent: replier([SHEET_REPLY], calls) }))
+  expect(again.out).toBe(r.out)
+  expect(calls).toHaveLength(1)
+})
+
+test('sheet prints no name', async () => {
+  sheetSetup()
+  const calls = []
+  const r = await quiet(() => oracle(['sheet', 's9-02'], { agent: replier(['SENTINEL-NOT-A-SHEET\n', '# Interface sheet\n\n## SENTINEL\n- URL path: "src/SENTINEL.ts"\n'], calls) }))
+  expect(r.code).toBe(1)
+  expect(r.out).toBe('s9-02 sheet failed') // a title whose every bullet is deleted is not a sheet either
+  expect(calls.map((a) => a[a.indexOf('--out') + 1])).toEqual([join(data, 's9-02/interface.reply.md'), join(data, 's9-02/interface-2.reply.md')])
+  expect(existsSync(join(data, 's9-02/interface.md'))).toBe(false)
+  const reused = await quiet(() => oracle(['sheet', 's9-01'], { agent: replier([], calls) }))
+  expect(reused.out).not.toContain('SENTINEL')
+  expect(calls).toHaveLength(2)
 })

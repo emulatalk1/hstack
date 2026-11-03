@@ -7,12 +7,13 @@ import { basename, dirname, join, normalize, resolve } from 'node:path'
 import { gitOut, readRows } from './bugs.mjs'
 import { parseRunner, taskOf } from './ext.mjs'
 import { okBashCommands } from './lib/agent.mjs'
+import { check } from './input-check.mjs'
 import { hunkOwners } from './lib/oracle.mjs'
 import { isTestPath } from './lib/replay.mjs'
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task>'
+const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | sheet <external task>'
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
@@ -360,6 +361,41 @@ async function writeTask(task, agent) {
   return 0
 }
 
+// a reply as a sheet: from its title on, every line input-check flags deleted; null when no title or no bullet is left
+function toSheet(reply) {
+  const lines = reply.split('\n'), at = lines.findIndex((l) => l.trim() === '# Interface sheet')
+  if (at < 0) return null
+  const body = lines.slice(at), flagged = new Set(check(body.join('\n')).map((h) => h.line - 1))
+  const kept = body.filter((_, i) => !flagged.has(i)), names = kept.filter((l) => l.startsWith('- ')).length
+  return names ? { text: kept.join('\n').trimEnd() + '\n', names, deleted: flagged.size } : null
+}
+
+// an external task's interface sheet (ruling 14): one sealed agent at the end, read-only, given the brief and the input
+// only; a reply that is not a sheet is run once more (`-2`), and a run whose record exists is reused
+async function sheet(task, agent) {
+  const data = dataDir(), ext = join(data, 'ext'), t = taskOf(ext, task), dir = join(data, task), prompt = join(dir, 'work', 'interface.prompt.md')
+  const text = `${readFileSync(join(ext, 'briefs/interface.md'), 'utf8').trimEnd()}\n\n## The input\n\n${fence(readFileSync(join(dir, 'input.md'), 'utf8'), 'markdown')}`
+  for (const [name, label] of [['interface', `sheet-${task}`], ['interface-2', `sheet-${task}-2`]]) {
+    const out = join(dir, `${name}.reply.md`), rec = `${out}.run.json`
+    if (!existsSync(rec)) {
+      rmSync(out, { force: true })
+      mkdirSync(dirname(prompt), { recursive: true })
+      writeFileSync(prompt, text)
+      await agent([join(ext, 'env', `${t.key}.json`), label, '--prompt', prompt, '--out', out, '--at', t.end, '--tools', 'Read,Glob,Grep'])
+      const r = readJson(rec)
+      if (r) writeFileSync(rec, JSON.stringify({ ...r, promptSha: sha256(text) }, null, 2) + '\n')
+    } else if (readJson(rec)?.promptSha !== sha256(text)) { console.log(`${task} sheet refused a run whose prompt differs from the one it ran with`); return 1 }
+    const s = existsSync(out) ? toSheet(readFileSync(out, 'utf8')) : null
+    if (!s) continue
+    if (check(s.text).length) throw new Error(`${task} sheet still fails input-check`)
+    writeFileSync(join(dir, 'interface.md'), s.text)
+    console.log(`${task} sheet names=${s.names} deleted=${s.deleted} input-check=PASS`)
+    return 0
+  }
+  console.log(`${task} sheet failed`)
+  return 1
+}
+
 export async function oracle(args, { agent = sealedAgent } = {}) {
   if (!process.env.HSTACK_BENCH_MACHINE) throw new Error('set HSTACK_BENCH_MACHINE to the machine file (for example .evidence/bench/machine.json)')
   const [cmd, taskPath, ...rest] = args
@@ -367,6 +403,7 @@ export async function oracle(args, { agent = sealedAgent } = {}) {
   if (cmd === 'label' && taskPath && rest.length === 2) return label(taskPath, rest[0], rest[1], agent)
   if (cmd === 'labels' && args.length === 1) return labels()
   if (cmd === 'write' && taskPath && rest.length <= 1) return rest.length ? writeSource(taskPath, rest[0], agent) : writeTask(taskPath, agent)
+  if (cmd === 'sheet' && taskPath && rest.length === 0) return sheet(taskPath, agent)
   throw new Error(USAGE)
 }
 
