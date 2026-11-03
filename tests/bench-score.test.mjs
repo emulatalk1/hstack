@@ -339,3 +339,25 @@ test('a changed check file makes the run happen again', async () => {
     expect((await gradeFile()).oracleSha).not.toBe(sha)
   } finally { rmSync(join(oracleDir, 'checks'), { recursive: true, force: true }) }
 })
+
+test('an oracle folder with a symlinked folder or a dangling symlink grades, and the link target counts in oracleSha', async () => {
+  const task = mkTask(`cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"`), dirLink = join(oracleDir, 'linked'), dangling = join(oracleDir, 'dangling')
+  symlinkSync(tmp, dirLink); symlinkSync(join(tmp, 'nowhere'), dangling)
+  try {
+    expect((await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))).code).toBe(0)
+    const sha = (await gradeFile()).oracleSha
+    rmSync(dirLink); symlinkSync(repo, dirLink)
+    expect((await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))).code).toBe(0)
+    expect((await gradeFile()).oracleSha).not.toBe(sha)
+  } finally { rmSync(dirLink, { force: true }); rmSync(dangling, { force: true }) }
+})
+
+test('reuse runs again when the grade file does not parse', async () => {
+  const runs = counter(), task = mkTask(`echo x >> ${runs.f}; ${byPage}`)
+  mkdirSync(join(tmp, 'ev', 'grades'), { recursive: true })
+  writeFileSync(join(tmp, 'ev', 'grades', `${c7}.json`), '{ not json')
+  const out = await quiet(() => grade([task, oracleDir, '--at', c1, '--reuse'], { root: sub }))
+  expect(out.code).toBe(0)
+  expect(runs.n()).toBe(1)
+  expect((await gradeFile()).junit).toBe('ok')
+})

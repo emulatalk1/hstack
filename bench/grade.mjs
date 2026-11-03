@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Grade the oracle at a commit (or validate checks on ref/bad/base). Logic lives in lib/score.mjs.
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { ROOT, withEnv } from './env.mjs'
 import { readJunit } from './lib/junit.mjs'
@@ -35,10 +35,13 @@ export function checkJunitPath(task) {
 const runOracle = (task, oracleDir, commit, root, stdio) =>
   withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir }, stdio), { root, start: task.start !== null })
 
-// every file of the oracle folder but node_modules (a symlink by that name too), paths relative to it; latin1 keeps every byte
+// every file of the oracle folder but node_modules (a symlink by that name too), paths relative to it; latin1 keeps every byte.
+// Any other symlink counts by its target, never followed: it may point at a folder or nowhere.
 const oracleFiles = (dir, rel = '') => readdirSync(join(dir, rel), { withFileTypes: true }).flatMap((d) => {
   const p = rel ? `${rel}/${d.name}` : d.name
-  return d.name === 'node_modules' ? [] : d.isDirectory() ? oracleFiles(dir, p) : [{ path: p, text: readFileSync(join(dir, p), 'latin1') }]
+  if (d.name === 'node_modules') return []
+  if (d.isSymbolicLink()) return [{ path: p, text: 'link:' + readlinkSync(join(dir, p)) }]
+  return d.isDirectory() ? oracleFiles(dir, p) : [{ path: p, text: readFileSync(join(dir, p), 'latin1') }]
 })
 
 export async function grade(args, { root = ROOT } = {}) {
@@ -72,7 +75,7 @@ export async function grade(args, { root = ROOT } = {}) {
   const run = async (full) => {
     const sha7 = full.slice(0, 7), file = join(evDir, 'grades', `${sha7}.json`)
     // ruling 10: a run is reused when its commit and oracle are the same and it gave results
-    const old = flags.reuse && existsSync(file) ? await Bun.file(file).json() : null
+    const old = flags.reuse && existsSync(file) ? await Bun.file(file).json().catch(() => null) : null // unreadable: run again
     const reused = old?.commit === full && old.oracleSha === sha && old.junit === 'ok'
     let res, junit = 'ok'
     if (reused) res = new Map(ids.map((id) => [id, old.checks.find((c) => c.id === id)?.result ?? 'error']))
