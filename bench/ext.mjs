@@ -5,7 +5,7 @@
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { withExport } from './env.mjs'
-import { baseOf, exists, failToPass, nextToCheck, repoOut, sortKey, stackOf, staticOut } from './lib/ext.mjs'
+import { baseOf, exists, extraProbe, failToPass, nextToCheck, repoOut, sortKey, stackOf, staticOut } from './lib/ext.mjs'
 import { readJunit } from './lib/junit.mjs'
 import { runGroup } from './lib/proc.mjs'
 
@@ -504,11 +504,14 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     stage = 'recipe-agent'
     writeFileSync(envFile, JSON.stringify(task, null, 2) + '\n')
     const baseTag = `bench-ext/${slug}:${b.base.slice(0, 7)}`, saved = join(recipes, 'recipe.json'), roundsTsv = join(recipes, 'rounds.tsv')
-    // a recipe passes when its image of the base builds and a probe file passes in it; that image is the base image
+    // a recipe passes when its image of the base builds and a probe file passes in it; that image is the base image.
+    // The probe also gets one file of the base under the test paths with an extension no probe file has (extraProbe)
+    const baseFiles = (await git(['ls-tree', '-r', '-z', '--full-tree', b.base], { quiet: true })).split('\0').filter((l) => l.split(' ')[1] === 'blob').map((l) => l.slice(l.indexOf('\t') + 1))
     const attempt = async (r, file, label) => {
       const log = join(rounds, `${file}.build.log`), probe = join(rounds, `${file}.probe`)
       if (!(await build(r, b.base, baseTag, log))) return { r, what: 'build', log }
-      const cases = await runIn(r, baseTag, `probe-${label}`, r.probe, { log: `${probe}.log`, xml: `${probe}.xml` })
+      const extra = extraProbe(baseFiles, group.testPaths, r.probe)
+      const cases = await runIn(r, baseTag, `probe-${label}`, extra ? [...r.probe, extra] : r.probe, { log: `${probe}.log`, xml: `${probe}.xml` })
       return cases?.some((c) => c.status === 'pass') ? null : { r, what: 'probe', log: `${probe}.log` }
     }
     let recipe = null, failed = null

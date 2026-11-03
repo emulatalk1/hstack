@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup } from '../bench/lib/ext.mjs'
+import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup, extraProbe } from '../bench/lib/ext.mjs'
 
 const SEED = 'hstack-bench-2026-10-27'
 const groups = [
@@ -163,4 +163,20 @@ test('coldSetup picks the repo whose best rank is lowest', () => {
   const s = [{ repo: 'a', rank: 1 }, { repo: 'b', rank: 2 }, { repo: 'a', rank: 3 }, { repo: 'c', rank: 9 }, { repo: 'b', rank: 10 }]
   expect(coldSetup(s)).toBe('c')
   expect(coldSetup([])).toBeNull()
+})
+
+test('a recheck row makes an out row eligible again, and a later verdict closes it', () => {
+  const out = { id: 'r1#1', result: 'PR tests do not pass at end' }, re = { id: 'r1#1', result: 'recheck: probe change' }
+  expect(nextToCheck(rows, [out], ncfg).row.id).toBe('r1#2')
+  expect(nextToCheck(rows, [out, re], ncfg).row.id).toBe('r1#1')
+  expect(nextToCheck(rows, [out, re, { id: 'r1#1', result: 'no fail-to-pass test' }], ncfg).row.id).toBe('r1#2')
+})
+
+test('extraProbe: the first file under the test paths, in path order, with an extension no probe file has', () => {
+  const tp = ['(^|/)tests/']
+  const paths = ['tests/z.rs', 'src/a.json', 'tests/b/data.json', 'tests/a.rs', 'tests/README', 'tests/snap.snap']
+  expect(extraProbe(paths, tp, ['tests/a.rs'])).toBe('tests/README') // no extension is an extension of its own
+  expect(extraProbe(paths, tp, ['tests/a.rs', 'tests/x/LICENSE'])).toBe('tests/b/data.json')
+  expect(extraProbe(paths, tp, ['tests/a.rs', 'tests/x/LICENSE', 'tests/c.json', 'tests/d.snap'])).toBe(null)
+  expect(extraProbe(['tests/.gitkeep', 'tests/a.rs'], tp, ['tests/a.rs'])).toBe('tests/.gitkeep') // a dot file has no extension
 })

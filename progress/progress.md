@@ -833,3 +833,45 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
 - Task 5 Step 1, first run of the driver (PID 73579, code 911b1bf): s3 rank 1 `apache__datafusion__24211` ended `error run` twice (`check.err`: the base run's container was OOMKilled, exit 101; recipe round 1 passed, probe 593 cases, both images built), so the walk stopped on 2 errors in a row at 2026-11-03T00:08:06Z, accepted 0. Ruling (controller, 2026-11-03): a test run killed for memory is the out reason `out of memory` (prereg 4.2 ruling 10, commit 805b256; a probe killed for memory is a failed probe told to the next round). Gated check of the change (`BENCH_EXT_DOCKER=1 bun test tests/bench-ext-check.test.mjs -t 'finds one fail-to-pass|killed from outside'`, 3 pass) left containers `bench-ext-fxc2v7c7__app__1-{probe-reuse-1,base-1,end-1-1,end-1-2}`, `bench-ext-fx468dph__app__1-{probe-reuse-1,base-1}` and images `bench-ext/fxc2v7c7__app__1:{aa35d45,2654416}`, `bench-ext/fx468dph__app__1:{aa35d45,2654416}`.
 - `<data>/ext/briefs/recipe.md` now states the container's memory and CPUs (one sentence after the `test` bullet): SHA-256 before eb7b1209c7dc88e6614d3aa030c0e4e245eb1c86adb8238aa655051c4269b769, after 8dbe7f9434682bec87c1f71054fff6b1c568949f049c6b20b21f391fa8b8392b.
 - Task 5 Step 1, driver restarted: PID 89087 (process group 89087), code 805b256, start 2026-11-03T00:14:09Z; the walk resumes from walk.tsv.
+- Task 5 Step 1, paused by the controller (driver group 89087 killed, 2026-11-03, after `voidzero-dev__vite-plus__2667 out PR tests do not pass at end`; s3 rank 3 had started and has no walk.tsv row). Sealed diagnosis of that reject: one `sealed-agent` run, no `--at`, tools Read,Glob,Grep, settings `<data>/ext/briefs/diag-settings.json` (read only `sealed/voidzero-dev__vite-plus__2667/` and `recipes/voidzero-dev__vite-plus/`), prompt `<data>/ext/briefs/diag-prompt.md`; reply `A` (the script was given a path it cannot run); 12 s, usage 6/464/17719/6740, claude-opus-5-5.
+- Probe change (ruling 10, 2026-11-03): each probe also runs one base file under the test paths with an extension no probe file has; `<data>/ext/briefs/recipe.md` `test` bullet now says its arguments can include fixtures, data files, snapshots and helper modules. recipe.md SHA-256 8dbe7f9434682bec87c1f71054fff6b1c568949f049c6b20b21f391fa8b8392b -> e9adb166a59124fd1561873cf342b651bd15ca6a6513cfbb5c44edd573e78208. Appended to walk.tsv by hand: `s3 1 2 voidzero-dev/vite-plus#2667 recheck: probe change` (nextToCheck now returns it first for s3).
+- Gated run `BENCH_EXT_DOCKER=1 bun test tests/bench-ext-check.test.mjs` (17 pass) left these containers and images:
+    bench-ext-fx42gk1z__app__1-probe-1
+    bench-ext-fx42gk1z__app__1-probe-2
+    bench-ext-fx42gk1z__app__1-probe-3
+    bench-ext-fxb3tolx__app__1-base-1
+    bench-ext-fxb3tolx__app__1-end-1-1
+    bench-ext-fxb3tolx__app__1-end-1-2
+    bench-ext-fxb3tolx__app__1-probe-1
+    bench-ext-fxb3tolx__app__1-probe-reuse-1
+    bench-ext-fxejtqy8__app__1-base-1
+    bench-ext-fxejtqy8__app__1-end-1-1
+    bench-ext-fxejtqy8__app__1-end-1-2
+    bench-ext-fxejtqy8__app__1-probe-reuse-1
+    bench-ext-fxgg6x4r__app__1-base-1
+    bench-ext-fxgg6x4r__app__1-end-1-1
+    bench-ext-fxgg6x4r__app__1-end-1-2
+    bench-ext-fxgg6x4r__app__1-probe-2
+    bench-ext-fxpzhab1__app__1-base-1
+    bench-ext-fxpzhab1__app__1-end-1-1
+    bench-ext-fxpzhab1__app__1-end-1-2
+    bench-ext-fxpzhab1__app__1-probe-2
+    bench-ext-fxslm9x6__app__1-base-1
+    bench-ext-fxslm9x6__app__1-end-1-1
+    bench-ext-fxslm9x6__app__1-end-1-2
+    bench-ext-fxslm9x6__app__1-probe-reuse-1
+    bench-ext-fxx6s6av__app__1-base-1
+    bench-ext-fxx6s6av__app__1-probe-reuse-1
+    bench-ext/fx42gk1z__app__1:f5a6d91
+    bench-ext/fxb3tolx__app__1:4342324
+    bench-ext/fxb3tolx__app__1:f5a6d91
+    bench-ext/fxejtqy8__app__1:4342324
+    bench-ext/fxejtqy8__app__1:f5a6d91
+    bench-ext/fxgg6x4r__app__1:4342324
+    bench-ext/fxgg6x4r__app__1:f5a6d91
+    bench-ext/fxpzhab1__app__1:4342324
+    bench-ext/fxpzhab1__app__1:f5a6d91
+    bench-ext/fxslm9x6__app__1:4342324
+    bench-ext/fxslm9x6__app__1:f5a6d91
+    bench-ext/fxx6s6av__app__1:4342324
+    bench-ext/fxx6s6av__app__1:f5a6d91

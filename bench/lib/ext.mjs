@@ -96,11 +96,19 @@ export function nextToCheck(rows, walked, cfg) {
   const capped = []
   for (const row of rows) {
     const res = last.get(row.id)
-    if (res !== undefined && res !== 'repo cap' && !/^error\b/.test(res)) continue // accepted, dropped or out: final
+    if (res !== undefined && res !== 'repo cap' && !/^(error|recheck)\b/.test(res)) continue // accepted, dropped or out: final (a recheck row reopens it)
     if ((per.get(row.repo) ?? 0) >= cfg.perRepo) capped.push(row)
     else return { row, capped }
   }
   return null
+}
+
+// the extra probe path (ruling 10): the first file at the base, in path order, under the stack's test paths whose
+// extension no probe file has, so a test script that fails on a fixture or data file fails in a readable round; null if none
+export function extraProbe(paths, testPaths, probe) {
+  const ext = (f) => { const b = f.slice(f.lastIndexOf('/') + 1), i = b.lastIndexOf('.'); return i > 0 ? b.slice(i) : '' }
+  const seen = new Set(probe.map(ext)), res = testPaths.map((p) => new RegExp(p))
+  return [...paths].sort().find((f) => !seen.has(ext(f)) && res.some((r) => r.test(f))) ?? null
 }
 
 // the sampled repo whose best-ranked task ranks lowest (ruling 13)

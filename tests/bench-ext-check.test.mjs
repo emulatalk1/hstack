@@ -24,6 +24,7 @@ writeFileSync(join(fx, 'tests/zebra_needs.sh'), 'test -f src/feature.txt\n')
 writeFileSync(join(fx, 'tests/zebra_old.sh'), 'exit 1\n')
 writeFileSync(join(fx, 'tests/zebra_flip.sh'), 'exit 1\n') // fixed by the PR's test change alone: p2p only when the base runs the end's version
 writeFileSync(join(fx, 'src/base.txt'), 'base\n')
+writeFileSync(join(fx, 'tests/zebra.txt'), 'data\n') // a data file under tests/: the probe's extra path (ruling 10)
 writeFileSync(join(fx, '.dockerignore'), 'tests/\n') // the build must not apply it, or no test is in the image
 git('add', '.'); git('commit', '-qm', 'base')
 const c0 = git('rev-parse', 'HEAD')
@@ -52,7 +53,9 @@ const junitTest = [
 const recipe = { platform, dockerfile: 'FROM alpine:3.22\nCOPY . /work\nWORKDIR /work\n', test: junitTest, probe: ['tests/zebra_ok.sh'] }
 const badRecipe = { ...recipe, probe: ['tests/zebra_needs.sh'] } // fails at the base: no passing case
 const netRecipe = { ...recipe, dockerfile: recipe.dockerfile + 'RUN echo "fetch: dial tcp 10.0.0.1:443: connect: refused" && exit 1\n' }
-const killedRecipe = { ...recipe, test: '[ $# -gt 1 ] && exit 137\n' + junitTest } // the probe runs, the base run is killed
+const killedRecipe = { ...recipe, test: '[ $# -gt 2 ] && exit 137\n' + junitTest } // the probe (2 paths) runs, the base run (3) is killed
+// fails on any path that is not a shell check, as a script that cannot run a data file would
+const strictRecipe = { ...recipe, test: 'for f in "$@"; do case "$f" in *.sh) ;; *) echo "cannot run $f"; exit 2 ;; esac; done\n' + junitTest }
 
 const cfg = {
   seed: 'hstack-bench-2026-10-27', window: { createdFrom: '2026-07-01T00:00:00Z', mergedBefore: '2026-11-01T00:00:00Z' },
@@ -122,7 +125,7 @@ dtest('finds one fail-to-pass test in the fixture and writes meta.json (needs BE
   expect(meta.images).toEqual([`bench-ext/${s.slug(1)}:${c0.slice(0, 7)}`, `bench-ext/${s.slug(1)}:${c1.slice(0, 7)}`])
   // zebra_flip passes at the base only in the end's version; nothing_old only once the deletion is applied
   expect(json(join(s.ext, 'sealed', s.slug(1), 'f2p.json'))).toEqual({ f2p: ['fx::zebra_needs'], p2p: ['fx::nothing_old', 'fx::zebra_flip', 'fx::zebra_ok'] })
-  expect(meta.runs).toEqual([['probe-reuse-1', 2], ['base-1', 4], ['end-1-1', 4], ['end-1-2', 4]].map(([label, cases]) => ({ label, timedOut: false, exitCode: 0, cases })))
+  expect(meta.runs).toEqual([['probe-reuse-1', 3], ['base-1', 4], ['end-1-1', 4], ['end-1-2', 4]].map(([label, cases]) => ({ label, timedOut: false, exitCode: 0, cases })))
   // the commit is pinned by a ref, so a later gc keeps it
   expect(Bun.spawnSync(['git', '-C', join(s.ext, 'repos', s.key), 'rev-parse', `refs/ext/${c1}`]).stdout.toString().trim()).toBe(c1)
   expect(json(join(s.ext, 'tasks', s.slug(1), 'issue.json'))).toEqual({ title: 'Issue title', body: 'Issue body', asOf: '2026-08-10T00:00:00Z', editHistory: 'none' })
@@ -204,6 +207,18 @@ dtest('a reply that is not a recipe spends a round, and the next round is told w
   expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tbad reply\n2\t${s.slug(1)}\tpass\n`)
   expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds', '2.prompt.md'), 'utf8')).toStartWith('RECIPE BRIEF\n\nThe previous reply was not a valid recipe: ')
   expect(json(join(s.ext, 'recipes', s.key, 'recipe.json'))).toEqual(recipe)
+}, 300000)
+
+dtest('the probe also runs a data file under the test paths: a script that fails on it fails the probe (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = setup({ use: strictRecipe })
+  const r = await run(s, ['check', 's1', '1'], { reply: [JSON.stringify(recipe)] })
+  expect(r.stdout).toBe(`${s.slug(1)} ok f2p=1 p2p=3\n`)
+  // the reused recipe failed its probe, so the first round is told why; the fixed recipe passes
+  expect(readFileSync(join(s.ext, 'recipes', s.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tpass\n`)
+  const prompt = readFileSync(join(s.ext, 'recipes', s.key, 'rounds', '1.prompt.md'), 'utf8')
+  expect(prompt).toContain('The last 200 lines of its probe log')
+  expect(prompt).toContain('cannot run tests/zebra.txt')
+  expect(json(join(s.ext, 'tasks', s.slug(1), 'meta.json')).runs.slice(0, 2)).toEqual([{ label: 'probe-reuse-1', timedOut: false, exitCode: 2, cases: 0 }, { label: 'probe-1', timedOut: false, exitCode: 0, cases: 3 }])
 }, 300000)
 
 test('three replies that are not recipes are out with recipe failed', async () => {
