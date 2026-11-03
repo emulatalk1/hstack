@@ -361,13 +361,42 @@ async function writeTask(task, agent) {
   return 0
 }
 
-// a reply as a sheet: from its title on, every line input-check flags deleted; null when no title or no bullet is left
-function toSheet(reply) {
+// the brief's kinds (ruling 14): the real-estate sheet's twelve and eleven more
+const SHEET_KINDS = ['field label', 'option text', 'form accessible name', 'button text', 'link text', 'URL path', 'query parameter key', 'API path', 'API field name', 'heading', 'placeholder', 'column header',
+  'menu item', 'keyboard shortcut', 'setting label', 'window title', 'command', 'subcommand', 'flag', 'environment variable', 'config key', 'public API name', 'output field']
+const BULLET = new RegExp(`^- (${SHEET_KINDS.join('|')}): "(.+)"$`)
+
+// a reply as a sheet, from its title on: a line input-check flags (a `##` heading takes its section with it), a bullet
+// that is not `- <kind>: "<name>"` and any other text line are `deleted`; a name `found` misses is `notfound`; a section
+// left with no bullet is dropped. null when no title or no name is left
+async function toSheet(reply, found) {
   const lines = reply.split('\n'), at = lines.findIndex((l) => l.trim() === '# Interface sheet')
   if (at < 0) return null
-  const body = lines.slice(at), flagged = new Set(check(body.join('\n')).map((h) => h.line - 1))
-  const kept = body.filter((_, i) => !flagged.has(i)), names = kept.filter((l) => l.startsWith('- ')).length
-  return names ? { text: kept.join('\n').trimEnd() + '\n', names, deleted: flagged.size } : null
+  const body = lines.slice(at + 1).map((l) => l.trimEnd()), flagged = new Set(check(body.join('\n')).map((h) => h.line - 1))
+  const sections = []
+  let cur = null, deleted = 0, notfound = 0
+  for (const [i, l] of body.entries()) {
+    if (!l.trim()) continue
+    if (l.startsWith('## ')) {
+      cur = flagged.has(i) ? null : { head: l, bullets: [] }
+      if (cur) sections.push(cur); else deleted++
+      continue
+    }
+    const m = cur && !flagged.has(i) && BULLET.exec(l)
+    if (!m) deleted++
+    else if (await found(m[2])) cur.bullets.push(l)
+    else notfound++
+  }
+  const kept = sections.filter((s) => s.bullets.length), names = kept.reduce((n, s) => n + s.bullets.length, 0)
+  return names ? { text: ['# Interface sheet', ...kept.map((s) => `\n${s.head}\n${s.bullets.join('\n')}`)].join('\n') + '\n', names, deleted, notfound } : null
+}
+
+// a name is found when `git grep -F` at the commit names a file that is not a test (isTestPath or the stack's testPaths)
+const foundOutsideTests = (repo, commit, testPaths) => async (name) => {
+  const p = Bun.spawn(['git', '-C', repo, 'grep', '-F', '-l', '-z', '-e', name, commit, '--'], { stdout: 'pipe', stderr: 'ignore' })
+  const [out, code] = [await new Response(p.stdout).text(), await p.exited]
+  if (code > 1) throw new Error(`git grep failed (exit ${code})`)
+  return out.split('\0').filter(Boolean).map((f) => f.slice(commit.length + 1)).some((f) => !isTestPath(f) && !testPaths.some((r) => new RegExp(r).test(f)))
 }
 
 // an external task's interface sheet (ruling 14): one sealed agent at the end, read-only, given the brief and the input
@@ -375,21 +404,24 @@ function toSheet(reply) {
 async function sheet(task, agent) {
   const data = dataDir(), ext = join(data, 'ext'), t = taskOf(ext, task), dir = join(data, task), prompt = join(dir, 'work', 'interface.prompt.md')
   const text = `${readFileSync(join(ext, 'briefs/interface.md'), 'utf8').trimEnd()}\n\n## The input\n\n${fence(readFileSync(join(dir, 'input.md'), 'utf8'), 'markdown')}`
+  const taskFile = join(ext, 'env', `${t.key}.json`), { repo } = await loadTask(taskFile)
+  const group = JSON.parse(readFileSync(join(ext, 'groups.json'), 'utf8')).groups.find((g) => g.id === t.stack)
+  const found = foundOutsideTests(repo, t.end, group?.testPaths ?? [])
   for (const [name, label] of [['interface', `sheet-${task}`], ['interface-2', `sheet-${task}-2`]]) {
     const out = join(dir, `${name}.reply.md`), rec = `${out}.run.json`
     if (!existsSync(rec)) {
       rmSync(out, { force: true })
       mkdirSync(dirname(prompt), { recursive: true })
       writeFileSync(prompt, text)
-      await agent([join(ext, 'env', `${t.key}.json`), label, '--prompt', prompt, '--out', out, '--at', t.end, '--tools', 'Read,Glob,Grep'])
+      await agent([taskFile, label, '--prompt', prompt, '--out', out, '--at', t.end, '--tools', 'Read,Glob,Grep'])
       const r = readJson(rec)
       if (r) writeFileSync(rec, JSON.stringify({ ...r, promptSha: sha256(text) }, null, 2) + '\n')
     } else if (readJson(rec)?.promptSha !== sha256(text)) { console.log(`${task} sheet refused a run whose prompt differs from the one it ran with`); return 1 }
-    const s = existsSync(out) ? toSheet(readFileSync(out, 'utf8')) : null
+    const s = existsSync(out) ? await toSheet(readFileSync(out, 'utf8'), found) : null
     if (!s) continue
     if (check(s.text).length) throw new Error(`${task} sheet still fails input-check`)
     writeFileSync(join(dir, 'interface.md'), s.text)
-    console.log(`${task} sheet names=${s.names} deleted=${s.deleted} input-check=PASS`)
+    console.log(`${task} sheet names=${s.names} deleted=${s.deleted} notfound=${s.notfound} input-check=PASS`)
     return 0
   }
   console.log(`${task} sheet failed`)

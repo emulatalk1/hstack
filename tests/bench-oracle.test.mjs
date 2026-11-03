@@ -490,6 +490,7 @@ const sheetSetup = () => {
   writeFileSync(join(ext, 'sample.tsv'), [cols, `s9-01\ts9\t1\t1\town/rp#7\tu\t7\t6\t${k1Full}\t${k3Full}`, `s9-02\ts9\t1\t2\town/rp#8\tu\t8\t5\t${k1Full}\t${k3Full}`].join('\n') + '\n')
   writeFileSync(join(ext, 'env/own__rp.json'), JSON.stringify({ name: 'own__rp', repo, db: null, port: 3998, start: 'true', ready: 'http://127.0.0.1:3998/', oracle: 'true', junit: 'r.xml' }))
   writeFileSync(join(ext, 'briefs/interface.md'), 'SHEET-BRIEF\n')
+  writeFileSync(join(ext, 'groups.json'), JSON.stringify({ groups: [{ id: 's9', testPaths: ['\\.spec\\.ts$'] }] }))
   for (const t of ['s9-01', 's9-02']) { mkdirSync(join(data, t), { recursive: true }); writeFileSync(join(data, t, 'input.md'), '# INPUT-TITLE\n\nINPUT-BODY\n') }
   return ext
 }
@@ -500,17 +501,24 @@ const replier = (replies, calls) => async (args) => {
   writeFileSync(out, replies[calls.length - 1])
   return 0
 }
-const SHEET_REPLY = ['Here is the sheet.', '# Interface sheet', '', '## /SENTINEL-PAGE', '- button text: "SENTINEL-SAVE"', '- URL path: "src/SENTINEL.ts"', '', '## SENTINEL-CMD', '- flag: "--SENTINEL"', '    - nested: "SENTINEL-X"', ''].join('\n')
+// at k3: A7 and A3 are in src/a.txt (a source file); `spec` only in src/x.spec.ts (the stack's testPaths); `one` only in
+// tests/a.test.txt (isTestPath); SENTINEL-ABSENT nowhere
+const SHEET_REPLY = ['Here is the sheet.', '# Interface sheet', '',
+  '## /SENTINEL-PAGE', '- button text: "A7"', '- URL path: "src/SENTINEL.ts"', '- heading: "spec"', '- heading: "one"', '- heading: "SENTINEL-ABSENT"', '- SENTINEL kind: "A3"', 'SENTINEL prose', '',
+  '## src/SENTINEL.ts', '- heading: "A3"', '',
+  '## SENTINEL-CMD', '- flag: "A3"', '    - nested: "SENTINEL-X"', '',
+  '## SENTINEL-EMPTY', '- heading: "SENTINEL-ABSENT-2"', ''].join('\n')
 
 test('sheet deletes flagged lines and then passes input-check', async () => {
   const ext = sheetSetup(), calls = []
   const r = await quiet(() => oracle(['sheet', 's9-01'], { agent: replier([SHEET_REPLY], calls) }))
   expect(r.code).toBe(0)
-  expect(r.out).toBe('s9-01 sheet names=2 deleted=2 input-check=PASS')
+  // deleted: a flagged bullet, a bad kind, prose, a flagged heading and its bullet, a nested bullet; notfound: spec, one, the two absent
+  expect(r.out).toBe('s9-01 sheet names=2 deleted=6 notfound=4 input-check=PASS')
   const sheet = readFileSync(join(data, 's9-01/interface.md'), 'utf8')
   expect(check(sheet)).toEqual([])
-  expect(sheet).toStartWith('# Interface sheet\n') // a preamble before the title is dropped
-  expect(sheet).toContain('- button text: "SENTINEL-SAVE"')
+  // the preamble is dropped, and so is the section every name of which was not found
+  expect(sheet).toBe('# Interface sheet\n\n## /SENTINEL-PAGE\n- button text: "A7"\n\n## SENTINEL-CMD\n- flag: "A3"\n')
   const a = calls[0], arg = (k) => a[a.indexOf(k) + 1]
   expect(a[0]).toBe(join(ext, 'env/own__rp.json'))
   expect(arg('--at')).toBe(k3Full)
@@ -530,9 +538,9 @@ test('sheet deletes flagged lines and then passes input-check', async () => {
 test('sheet prints no name', async () => {
   sheetSetup()
   const calls = []
-  const r = await quiet(() => oracle(['sheet', 's9-02'], { agent: replier(['SENTINEL-NOT-A-SHEET\n', '# Interface sheet\n\n## SENTINEL\n- URL path: "src/SENTINEL.ts"\n'], calls) }))
+  const r = await quiet(() => oracle(['sheet', 's9-02'], { agent: replier(['SENTINEL-NOT-A-SHEET\n', '# Interface sheet\n\n## SENTINEL\n- URL path: "src/SENTINEL.ts"\n- heading: "SENTINEL-ABSENT"\n'], calls) }))
   expect(r.code).toBe(1)
-  expect(r.out).toBe('s9-02 sheet failed') // a title whose every bullet is deleted is not a sheet either
+  expect(r.out).toBe('s9-02 sheet failed') // a title with no bullet left (deleted or not found) is not a sheet either
   expect(calls.map((a) => a[a.indexOf('--out') + 1])).toEqual([join(data, 's9-02/interface.reply.md'), join(data, 's9-02/interface-2.reply.md')])
   expect(existsSync(join(data, 's9-02/interface.md'))).toBe(false)
   const reused = await quiet(() => oracle(['sheet', 's9-01'], { agent: replier([], calls) }))
