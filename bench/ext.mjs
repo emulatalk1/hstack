@@ -794,7 +794,7 @@ const keyOf = (id) => {
   return { key, slug: `${key}__${n}` }
 }
 // a task id's sample row with its key, slug and 0-based row index
-function taskOf(ext, task) {
+export function taskOf(ext, task) {
   const rows = sampleRows(ext), index = rows.findIndex((r) => r.task === task)
   if (index < 0) throw new Error(`no task ${task} in sample.tsv`)
   return { ...rows[index], ...keyOf(rows[index].id), index }

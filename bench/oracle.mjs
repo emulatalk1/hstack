@@ -1,16 +1,18 @@
 #!/usr/bin/env bun
 // Oracle preparation of the task repo (step 5, ruling 7): pair each source commit with its owner task, label each
-// pair twice by sealed agents, merge the labels. Prints counts only: a reply is sealed.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+// pair twice by sealed agents, merge the labels; then rewrite each source's tests as black-box checks by sealed writers
+// (ruling 9). Prints counts only: a reply, a manifest and a check are sealed.
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, normalize, resolve } from 'node:path'
 import { gitOut, readRows } from './bugs.mjs'
+import { parseRunner, taskOf } from './ext.mjs'
 import { okBashCommands } from './lib/agent.mjs'
 import { hunkOwners } from './lib/oracle.mjs'
 import { isTestPath } from './lib/replay.mjs'
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels'
+const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task>'
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
@@ -161,12 +163,182 @@ async function labels() {
   return rows.some((x) => x.source === 'none') ? 1 : 0
 }
 
+// --- write (ruling 9): one sealed writer per source commit or external task; each check goes to its owner's oracle ---
+const SEVERITY = ['high', 'medium', 'low']
+const KINDS = ['browser', 'http', 'api', 'window', 'files', 'cli', 'library', 'none']
+const REASONS = ['id', 'duplicate id', 'fields', 'severity', 'interface', 'hunk', 'file', 'leak']
+
+// every file under dir, paths relative to it, without node_modules
+const filesUnder = (dir, at = '') => (existsSync(join(dir, at)) ? readdirSync(join(dir, at), { withFileTypes: true }) : []).flatMap((e) =>
+  e.name === 'node_modules' ? [] : e.isDirectory() ? filesUnder(dir, join(at, e.name)) : [join(at, e.name)])
+const originPath = (o) => (typeof o === 'string' ? o.split('::')[0].trim() : '')
+// a file names the fix commit (its sha7 outside a check id) or the path of a test the checks came from
+const leaks = (text, sha7, origins) => {
+  const t = text.replace(new RegExp(`${sha7}-T\\d+`, 'g'), '')
+  return t.includes(sha7) || origins.some((o) => t.includes(o))
+}
+
+// the writer's manifest, each entry with its file, its owner task and why it is refused (null: accepted); null when
+// there is no manifest. A grouped entry (external) may name its file; otherwise the file is the one named `<id>.*`
+function judge(dir, sha7, ownerOf, grouped) {
+  let list = null
+  try { list = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) } catch {}
+  if (!Array.isArray(list)) return null
+  const files = filesUnder(dir).filter((f) => f !== 'manifest.json'), origins = [...new Set(list.map((e) => originPath(e?.origin)).filter(Boolean))]
+  const bad = new Set(files.filter((f) => leaks(readFileSync(join(dir, f), 'utf8'), sha7, origins)))
+  const ids = list.map((e) => e?.id), idRe = new RegExp(`^${sha7}-T\\d+$`)
+  const entries = list.map((e) => {
+    const file = e?.interface === 'none' ? null : grouped && typeof e?.file === 'string' ? normalize(e.file) : files.find((f) => basename(f).startsWith(`${e?.id}.`)) ?? ''
+    const task = ownerOf(e?.hunk) ?? null
+    const why = typeof e?.id !== 'string' || !idRe.test(e.id) ? 'id'
+      : ids.filter((x) => x === e.id).length > 1 ? 'duplicate id'
+      : ![e.origin, e.behaviour].every((x) => typeof x === 'string' && x.trim()) ? 'fields'
+      : !SEVERITY.includes(e.severity) ? 'severity'
+      : !KINDS.includes(e.interface) ? 'interface'
+      : !task ? 'hunk'
+      : file !== null && !files.includes(file) ? 'file'
+      : file !== null && bad.has(file) ? 'leak' : null
+    return { e, file, task, why }
+  })
+  return { entries, files, bad }
+}
+
+const entryOut = ({ e, file, task }, fix, withFile) => ({ id: e.id, fix_commit: fix, task, hunk: e.hunk, origin: e.origin, behaviour: e.behaviour, interface: e.interface, severity: e.severity, ...(withFile && file ? { file } : {}) })
+
+function report(label, how, code, entries) {
+  const ok = entries.filter((x) => !x.why), n = (f) => ok.filter(f).length
+  console.log(`write ${label}: writer ${how} code ${code}, entries ${entries.length}, written ${ok.length}, refused ${entries.length - ok.length}`)
+  const why = REASONS.map((r) => [r, entries.filter((x) => x.why === r).length]).filter(([, k]) => k)
+  if (why.length) console.log(`refused: ${why.map(([r, k]) => `${r} ${k}`).join(', ')}`)
+  console.log(`per task: ${[...new Set(ok.map((x) => x.task))].map((t) => `${t} ${n((x) => x.task === t)}`).join(', ') || 'none'}`)
+  console.log(`interface none: ${n((x) => x.e.interface === 'none')}`)
+  console.log(`severity: ${SEVERITY.map((s) => `${s} ${n((x) => x.e.severity === s)}`).join(', ')}`)
+}
+
+// one writer run into `dir`, granted Write and Edit there only; a run whose record exists is not run again
+async function runWriter(agent, { taskFile, label, at, prompt, out, dir, settings }) {
+  const rec = `${out}.run.json`, code = () => JSON.parse(readFileSync(rec, 'utf8')).code
+  if (existsSync(rec)) return { how: 'reused', code: code() }
+  rmSync(dir, { recursive: true, force: true })
+  rmSync(out, { force: true })
+  for (const d of [dir, dirname(settings)]) mkdirSync(d, { recursive: true })
+  writeFileSync(settings, JSON.stringify({ permissions: { additionalDirectories: [dir], allow: [`Read(/${dir}/**)`, `Edit(/${dir}/**)`] } }, null, 2) + '\n')
+  await agent([taskFile, label, '--prompt', prompt, '--out', out, '--at', at, '--tools', 'Read,Glob,Grep,Write,Edit', '--settings', settings])
+  return { how: 'ran', code: existsSync(rec) ? code() : null }
+}
+
+const fence = (text, lang = '') => `\`\`\`\`${lang}\n${text.trimEnd()}\n\`\`\`\`\n`
+const writePrompt = (file, text) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text) }
+
+// shortcut: a mkdir lock with no stale-lock recovery (a write killed inside the move leaves it); remove it by hand then
+async function locked(lock, fn) {
+  for (;;) {
+    try { mkdirSync(lock); break } catch (e) { if (e.code !== 'EEXIST') throw e; await Bun.sleep(100) }
+  }
+  try { return fn() } finally { rmSync(lock, { recursive: true, force: true }) }
+}
+
+// a source commit of the task repo: its agreed pairs give the hunks in scope and their owners (ruling 6)
+async function writeSource(taskPath, commit, agent) {
+  if (!/^[0-9a-f]{7,40}$/.test(commit)) throw new Error(`${commit} is not a commit hash`)
+  const { repo } = await loadTask(taskPath)
+  const data = dataDir(), src = join(data, 'sources'), sha7 = commit.slice(0, 7), scaffold = join(data, 'oracle-scaffold')
+  const yes = readFileSync(join(src, 'labels.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')).filter((r) => r[5] === 'yes')
+  const agreed = new Set(yes.map((r) => `${r[0]}\t${r[1]}`)), pairs = readPairs(src).filter((p) => p.commit === sha7 && agreed.has(`${p.commit}\t${p.task}`))
+  if (!pairs.length) throw new Error(`${sha7} is not an agreed source commit of sources/labels.tsv`)
+  const full = (await gitOut(repo, 'rev-parse', `${sha7}^{commit}`)).trim()
+  // an in-range commit belongs to its task; a later pair's hunk keeps its own owner (it is listed after, so it wins)
+  const scope = new Map()
+  for (const p of [...pairs].sort((a, b) => (a.kind === 'in-task' ? 0 : 1) - (b.kind === 'in-task' ? 0 : 1)))
+    for (const h of p.hunks.length ? p.hunks : p.kind === 'in-task' ? ['none'] : []) scope.set(h, p.task)
+  const files = (await gitOut(repo, 'diff', '--name-only', '--no-renames', `${full}^`, full)).split('\n').filter(Boolean)
+  const tests = files.filter(isTestPath), scoped = [...new Set([...scope.keys()].filter((h) => h !== 'none').map((h) => h.slice(0, h.lastIndexOf(':'))))]
+  const work = join(data, 're-work'), dir = join(work, sha7), prompt = join(work, 'prompts', `${sha7}.md`)
+  const scaffoldFiles = readdirSync(scaffold, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name)
+  writePrompt(prompt, [
+    readFileSync(join(data, 'briefs/oracle-re.md'), 'utf8').trimEnd() + '\n',
+    `## The check ids\n\nPrefix \`${sha7}\`: the ids are \`${sha7}-T1\`, \`${sha7}-T2\`, ...\n`,
+    `## The in-scope hunks and their owner tasks\n\n${[...scope].map(([h, t]) => h === 'none' ? `- \`none\` (task ${t}): the commit changes no source file of this task` : `- \`${h}\` (task ${t})`).join('\n')}\n`,
+    `## The source changes of these hunks\n\n${scoped.length ? fence(await gitOut(repo, 'show', '--format=', '-U0', '--no-renames', full, '--', ...scoped), 'diff') : 'none\n'}`,
+    `## The commit's test changes\n\n${tests.length ? fence(await gitOut(repo, 'show', '--format=', '--no-renames', full, '--', ...tests), 'diff') : 'none\n'}`,
+    `## The scaffold\n\nEach check runs from an oracle folder that holds these files beside it, with their packages installed.\n\n${scaffoldFiles.map((f) => `### ${f}\n\n${fence(readFileSync(join(scaffold, f), 'utf8'))}`).join('\n')}`,
+    `## Your output folder\n\n\`${dir}\`\n`,
+  ].join('\n'))
+  const { how, code } = await runWriter(agent, { taskFile: taskPath, label: `write-${sha7}`, at: full, prompt, out: join(work, `${sha7}.reply.md`), dir, settings: join(work, 'settings', `${sha7}.json`) })
+  const res = judge(dir, sha7, (h) => scope.get(h), false)
+  if (!res) { console.log(`write ${sha7}: writer ${how} code ${code}, no manifest`); return 1 }
+  const ok = res.entries.filter((x) => !x.why), owners = [...new Set([...yes.map((r) => r[1]), ...ok.map((x) => x.task)])]
+  await locked(join(work, '.lock'), () => {
+    for (const t of owners) { // this commit's earlier checks leave every oracle first, so a rerun replaces them
+      const o = join(data, t, 'oracle'), mine = (id) => String(id).startsWith(`${sha7}-T`)
+      const receives = ok.some((x) => x.task === t)
+      if (!existsSync(o) && !receives) continue
+      mkdirSync(o, { recursive: true })
+      for (const f of readdirSync(o)) if (mine(f)) rmSync(join(o, f), { recursive: true, force: true })
+      const kept = existsSync(join(o, 'manifest.json')) ? JSON.parse(readFileSync(join(o, 'manifest.json'), 'utf8')).filter((m) => !mine(m.id)) : []
+      if (receives) {
+        for (const f of scaffoldFiles) copyFileSync(join(scaffold, f), join(o, f))
+        if (!lstatSync(join(o, 'node_modules'), { throwIfNoEntry: false })) symlinkSync(join(scaffold, 'node_modules'), join(o, 'node_modules'))
+      }
+      for (const x of ok.filter((y) => y.task === t)) if (x.file) copyFileSync(join(dir, x.file), join(o, basename(x.file)))
+      writeFileSync(join(o, 'manifest.json'), JSON.stringify([...kept, ...ok.filter((x) => x.task === t).map((x) => entryOut(x, full, false))], null, 2) + '\n')
+    }
+  })
+  report(sha7, how, code, res.entries)
+  return 0
+}
+
+// an external task (ruling 9): one writer at the end, every source hunk of the PR in scope, its oracle replaced whole
+async function writeTask(task, agent) {
+  const data = dataDir(), ext = join(data, 'ext'), t = taskOf(ext, task), serveFile = join(ext, 'serve', t.key, 'serve.json')
+  // its verdict is the last serve line of the task; a repo's serve.json alone may come from an earlier task of the repo
+  const logTsv = join(ext, 'step5-logs/serve.tsv')
+  const verdict = (existsSync(logTsv) ? readFileSync(logTsv, 'utf8').split('\n').map((l) => l.split('\t')).filter((r) => r[0] === task) : []).at(-1)?.[4] ?? ''
+  if (!/ servable rounds=\d+$/.test(verdict) || !existsSync(serveFile)) { console.log(`${task} skipped no serve recipe`); return 0 }
+  const taskFile = join(ext, 'env', `${t.key}.json`), { repo } = await loadTask(taskFile), sha7 = t.end.slice(0, 7)
+  const group = JSON.parse(readFileSync(join(ext, 'groups.json'), 'utf8')).groups.find((g) => g.id === t.stack)
+  const pr = JSON.parse(readFileSync(join(ext, 'sealed', t.slug, 'pr.json'), 'utf8'))
+  const tests = (pr.pullRequest?.files?.nodes ?? []).map((f) => f.path).filter((f) => group.testPaths.some((p) => new RegExp(p).test(f)))
+  const { f2p } = JSON.parse(readFileSync(join(ext, 'sealed', t.slug, 'f2p.json'), 'utf8'))
+  const hunks = diffHunks(await gitOut(repo, 'diff', '-U0', '--no-renames', t.base, t.end)).filter((h) => !tests.includes(h.file)).map((h) => `${h.file}:${h.old}`)
+  const { briefSha, ...sv } = JSON.parse(readFileSync(serveFile, 'utf8'))
+  const recipe = JSON.parse(readFileSync(join(ext, 'tasks', t.slug, 'task-recipe.json'), 'utf8'))
+  const work = join(data, task, 'work'), dir = join(work, 'write'), prompt = join(work, 'write.prompt.md')
+  const list = (xs) => (xs.length ? xs.map((x) => `- \`${x}\``).join('\n') : 'none') + '\n'
+  writePrompt(prompt, [
+    readFileSync(join(ext, 'briefs/oracle.md'), 'utf8').trimEnd() + '\n',
+    `## The check ids\n\nPrefix \`${sha7}\`: the ids are \`${sha7}-T1\`, \`${sha7}-T2\`, ...\n`,
+    `## The PR's source hunks\n\n${list(hunks)}`,
+    `## The PR's test files\n\n${list(tests)}`,
+    `## The fail-to-pass test ids\n\n${list(f2p ?? [])}`,
+    `## The build recipe\n\nDockerfile (the repository's files are copied to \`/work\`):\n\n${fence(recipe.dockerfile, 'dockerfile')}\nIts test command:\n\n${fence(recipe.test, 'sh')}`,
+    `## The serve recipe\n\n${fence(JSON.stringify(sv, null, 2), 'json')}`,
+    `## The PR's diff (base to end)\n\n${fence(await gitOut(repo, 'diff', '--no-renames', t.base, t.end), 'diff')}`,
+    `## Your output folder\n\n\`${dir}\` (copied to \`/oracle\` in the container)\n`,
+  ].join('\n'))
+  const { how, code } = await runWriter(agent, { taskFile, label: `write-${task}`, at: t.end, prompt, out: join(work, 'write.reply.md'), dir, settings: join(work, 'write-settings.json') })
+  const res = judge(dir, sha7, (h) => (hunks.includes(h) ? task : null), true)
+  if (!res) { console.log(`write ${task}: writer ${how} code ${code}, no manifest`); return 1 }
+  let runner = null
+  try { runner = parseRunner(readFileSync(join(dir, 'runner.json'), 'utf8')) } catch {}
+  const runOnly = (l) => l.every((x, i) => /^RUN\s/.test(x.trim()) || (i > 0 && l[i - 1].trimEnd().endsWith('\\')))
+  if (!runner || !runOnly(runner.layer) || res.bad.has('runner.json')) { console.log(`write ${task}: writer ${how} code ${code}, runner.json missing or invalid`); return 1 }
+  const ok = res.entries.filter((x) => !x.why), used = new Set(ok.map((x) => x.file)), refused = new Set(res.entries.filter((x) => x.why).map((x) => x.file))
+  const o = join(data, task, 'oracle')
+  rmSync(o, { recursive: true, force: true })
+  for (const f of res.files.filter((f) => !res.bad.has(f) && (used.has(f) || !refused.has(f)))) cpSync(join(dir, f), join(o, f))
+  writeFileSync(join(o, 'manifest.json'), JSON.stringify(ok.map((x) => entryOut(x, t.end, true)), null, 2) + '\n')
+  report(task, how, code, res.entries)
+  return 0
+}
+
 export async function oracle(args, { agent = sealedAgent } = {}) {
   if (!process.env.HSTACK_BENCH_MACHINE) throw new Error('set HSTACK_BENCH_MACHINE to the machine file (for example .evidence/bench/machine.json)')
   const [cmd, taskPath, ...rest] = args
   if (cmd === 'pairs' && taskPath && (rest.length === 0 || (rest.length === 2 && rest[0] === '--drop'))) return pairs(taskPath, rest.length ? rest[1].split(',') : [])
   if (cmd === 'label' && taskPath && rest.length === 2) return label(taskPath, rest[0], rest[1], agent)
   if (cmd === 'labels' && args.length === 1) return labels()
+  if (cmd === 'write' && taskPath && rest.length <= 1) return rest.length ? writeSource(taskPath, rest[0], agent) : writeTask(taskPath, agent)
   throw new Error(USAGE)
 }
 
