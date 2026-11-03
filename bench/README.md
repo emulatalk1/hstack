@@ -104,7 +104,8 @@ env/<task>/briefs/                        layer briefs (review.md, audit.md, eva
 results/                                  agent-replay and run-arm records, one folder per arm run, replay baselines
 replay-dev/                               the dev replays of the build (smoke.md, bug files, patches, logs, agent/ records); bugs/ the 20 dev bug files of step 3
 transcripts/                              the bench agents' session transcripts from before noPersist (moved from ~/.claude/projects)
-sources/pairs.tsv  sources/labels.tsv      the task repo's source pairs and their merged labels
+sources/pairs.tsv                         the task repo's source pairs
+sources/labels.tsv                        their merged labels (sealed: its `step9` rows are the step 9 queue; read through a tool, counts only)
 sources/prompts/label-<task>.md           the labellers' prompt (sealed)
 sources/label-<r>-<task>[-2].reply.md     a labeller's reply (sealed), its .run.json beside; sources/logs/ the label runs' output
 ext/groups.json                           the stack data of external task selection (frozen; its hash is in progress/progress.md)
