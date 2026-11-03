@@ -289,12 +289,14 @@ test('write moves each check into the oracle of its hunk\'s owner', async () => 
       entry(`${s}-T4`, 'src/a.txt:8', { interface: 'none', severity: 'low' }),
       entry(`${s}-T5`, 'src/a.txt:8'),
       entry(`${s}-T6`, 'src/a.txt:8'),
+      entry(`${s}-T7`, 'src/a.txt:8', { interface: 'api' }),
     ]),
     [`${s}-T1.spec.ts`]: `test('${s}-T1 seven', () => {})\n`,
+    [`${s}-T7.spec.ts`]: `def test_${s}_T7(): pass  # names rewritten from '${s}'\n`, // the id prefix in other forms is no leak
     [`${s}-T2.spec.ts`]: 'api\n',
     [`${s}-T3.spec.ts`]: 'c\n',
     [`${s}-T5.spec.ts`]: '// from src/x.spec.ts\n',
-    [`${s}-T6.spec.ts`]: `// fixed in ${s}\n`,
+    [`${s}-T6.spec.ts`]: `// fixed in ${k3Full.slice(0, 9)}\n`,
   }), calls)
   const r = await quiet(() => oracle(['write', task, k3], { agent }))
   expect(r.code).toBe(0)
@@ -310,22 +312,22 @@ test('write moves each check into the oracle of its hunk\'s owner', async () => 
   expect(prompt).toStartWith('RE-BRIEF\n')
   for (const x of [`${s}-T`, 'src/a.txt:8', 't1', 'src/b.txt:5', 't2', '+spec', 'SCAFFOLD-CONFIG', work]) expect(prompt).toContain(x)
   expect(prompt).not.toContain('src/c.txt:1')
-  expect(manifestOf('t1').map((m) => m.id)).toEqual(['bbbbbbb-T1', `${s}-T1`, `${s}-T4`])
+  expect(manifestOf('t1').map((m) => m.id)).toEqual(['bbbbbbb-T1', `${s}-T1`, `${s}-T4`, `${s}-T7`])
   expect(manifestOf('t1')[1]).toEqual({ ...entry(`${s}-T1`, 'src/a.txt:8'), fix_commit: k3Full, task: 't1' })
   expect(manifestOf('t2')).toEqual([{ ...entry(`${s}-T2`, 'src/b.txt:5', { interface: 'api', severity: 'medium' }), fix_commit: k3Full, task: 't2' }])
-  expect(ls(t1)).toEqual([`${s}-T1.spec.ts`, 'bbbbbbb-T1.spec.ts', 'manifest.json', 'node_modules', 'package.json', 'run.config.ts'])
+  expect(ls(t1)).toEqual([`${s}-T1.spec.ts`, `${s}-T7.spec.ts`, 'bbbbbbb-T1.spec.ts', 'manifest.json', 'node_modules', 'package.json', 'run.config.ts'].sort())
   expect(ls(join(data, 't2/oracle'))).toEqual([`${s}-T2.spec.ts`, 'manifest.json', 'node_modules', 'package.json', 'run.config.ts'])
   expect(readlinkSync(join(t1, 'node_modules'))).toBe(join(scaffold, 'node_modules'))
   expect(existsSync(join(data, 't3/oracle'))).toBe(false)
-  expect(r.out).toContain(`write ${s}: writer ran code 0, entries 6, written 3, refused 3`)
+  expect(r.out).toContain(`write ${s}: writer ran code 0, entries 7, written 4, refused 3`)
   expect(r.out).toContain('refused: hunk 1, leak 2')
-  expect(r.out).toContain('per task: t1 2, t2 1')
+  expect(r.out).toContain('per task: t1 3, t2 1')
   expect(r.out).toContain('interface none: 1')
-  expect(r.out).toContain('severity: high 1, medium 1, low 1')
+  expect(r.out).toContain('severity: high 2, medium 1, low 1')
   const again = await quiet(() => oracle(['write', task, k3], { agent })) // the writer's record stands: only the move again
   expect(calls).toHaveLength(1)
-  expect(again.out).toContain(`write ${s}: writer reused code 0, entries 6, written 3, refused 3`)
-  expect(manifestOf('t1').map((m) => m.id)).toEqual(['bbbbbbb-T1', `${s}-T1`, `${s}-T4`])
+  expect(again.out).toContain(`write ${s}: writer reused code 0, entries 7, written 4, refused 3`)
+  expect(manifestOf('t1').map((m) => m.id)).toEqual(['bbbbbbb-T1', `${s}-T1`, `${s}-T4`, `${s}-T7`])
   expect(manifestOf('t2').map((m) => m.id)).toEqual([`${s}-T2`])
 })
 

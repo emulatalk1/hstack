@@ -172,20 +172,20 @@ const REASONS = ['id', 'duplicate id', 'fields', 'severity', 'interface', 'hunk'
 const filesUnder = (dir, at = '') => (existsSync(join(dir, at)) ? readdirSync(join(dir, at), { withFileTypes: true }) : []).flatMap((e) =>
   e.name === 'node_modules' ? [] : e.isDirectory() ? filesUnder(dir, join(at, e.name)) : [join(at, e.name)])
 const originPath = (o) => (typeof o === 'string' ? o.split('::')[0].trim() : '')
-// a file names the fix commit (its sha7 outside a check id) or the path of a test the checks came from
-const leaks = (text, sha7, origins) => {
-  const t = text.replace(new RegExp(`${sha7}-T\\d+`, 'g'), '')
-  return t.includes(sha7) || origins.some((o) => t.includes(o))
-}
+// a file names the fix commit or the path of a test the checks came from. Every id holds the sha7, and a writer whose
+// runner cannot put a hyphen in a name writes it in other forms (`<sha7>_T1`, a `<sha7>-T*` pattern), so only 8 or
+// more characters of the hash count as naming the commit
+const leaks = (text, full, origins) => text.includes(full.slice(0, 8)) || origins.some((o) => text.includes(o))
 
 // the writer's manifest, each entry with its file, its owner task and why it is refused (null: accepted); null when
 // there is no manifest. A grouped entry (external) may name its file; otherwise the file is the one named `<id>.*`
-function judge(dir, sha7, ownerOf, grouped) {
+function judge(dir, full, ownerOf, grouped) {
+  const sha7 = full.slice(0, 7)
   let list = null
   try { list = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) } catch {}
   if (!Array.isArray(list)) return null
   const files = filesUnder(dir).filter((f) => f !== 'manifest.json'), origins = [...new Set(list.map((e) => originPath(e?.origin)).filter(Boolean))]
-  const bad = new Set(files.filter((f) => leaks(readFileSync(join(dir, f), 'utf8'), sha7, origins)))
+  const bad = new Set(files.filter((f) => leaks(readFileSync(join(dir, f), 'utf8'), full, origins)))
   const ids = list.map((e) => e?.id), idRe = new RegExp(`^${sha7}-T\\d+$`)
   const entries = list.map((e) => {
     const file = e?.interface === 'none' ? null : grouped && typeof e?.file === 'string' ? normalize(e.file) : files.find((f) => basename(f).startsWith(`${e?.id}.`)) ?? ''
@@ -265,7 +265,7 @@ async function writeSource(taskPath, commit, agent) {
     `## Your output folder\n\n\`${dir}\`\n`,
   ].join('\n'))
   const { how, code } = await runWriter(agent, { taskFile: taskPath, label: `write-${sha7}`, at: full, prompt, out: join(work, `${sha7}.reply.md`), dir, settings: join(work, 'settings', `${sha7}.json`) })
-  const res = judge(dir, sha7, (h) => scope.get(h), false)
+  const res = judge(dir, full, (h) => scope.get(h), false)
   if (!res) { console.log(`write ${sha7}: writer ${how} code ${code}, no manifest`); return 1 }
   const ok = res.entries.filter((x) => !x.why), owners = [...new Set([...yes.map((r) => r[1]), ...ok.map((x) => x.task)])]
   await locked(join(work, '.lock'), () => {
@@ -317,7 +317,7 @@ async function writeTask(task, agent) {
     `## Your output folder\n\n\`${dir}\` (copied to \`/oracle\` in the container)\n`,
   ].join('\n'))
   const { how, code } = await runWriter(agent, { taskFile, label: `write-${task}`, at: t.end, prompt, out: join(work, 'write.reply.md'), dir, settings: join(work, 'write-settings.json') })
-  const res = judge(dir, sha7, (h) => (hunks.includes(h) ? task : null), true)
+  const res = judge(dir, t.end, (h) => (hunks.includes(h) ? task : null), true)
   if (!res) { console.log(`write ${task}: writer ${how} code ${code}, no manifest`); return 1 }
   let runner = null
   try { runner = parseRunner(readFileSync(join(dir, 'runner.json'), 'utf8')) } catch {}
