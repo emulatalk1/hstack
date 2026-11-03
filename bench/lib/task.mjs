@@ -29,11 +29,13 @@ export function parseTask(t, machine) {
   if (t.testTitle !== undefined) {
     try { if (typeof t.testTitle !== 'string') throw 0; new RegExp(t.testTitle) } catch { bad('testTitle', 'must be a valid regex source string') }
   }
+  // no host app: the oracle command builds and runs everything itself
+  if ((t.start === null) !== (t.ready === null)) bad('start', 'and ready must both be null or both be set')
   const layers = t.layers ?? {}
   if (typeof layers !== 'object' || Array.isArray(layers)) bad('layers', 'must be an object')
   return {
     name: t.name, repo: t.repo, db: t.db, port: t.port,
-    setup: list(t, 'setup'), start: str(t, 'start'), ready: str(t, 'ready'),
+    setup: list(t, 'setup'), start: t.start === null ? null : str(t, 'start'), ready: t.ready === null ? null : str(t, 'ready'),
     oracle: str(t, 'oracle'), junit: str(t, 'junit'), teardown: list(t, 'teardown'),
     testTitle: t.testTitle, layers, timeoutSec,
   }

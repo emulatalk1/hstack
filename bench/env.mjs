@@ -112,6 +112,7 @@ async function stop(proc, port) {
 
 export async function withEnv(task, commit, label, fn, opts = {}) {
   checkRoot(opts.root ?? ROOT)
+  if (task.start === null && opts.start !== false) throw new Error(`task ${task.name} has no app (start null)`)
   if (await portBusy(task.port)) throw new Error(`port ${task.port} busy`)
   return withWorktree(task, commit, label, async (dir) => {
     const url = `http://localhost:${task.port}`

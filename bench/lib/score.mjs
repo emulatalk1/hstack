@@ -35,7 +35,8 @@ export function verdict({ ref, bad, base }) {
   const bads = [].concat(bad)
   if (ref !== 'pass') return 'broken'
   if (bads.includes('pass')) return 'weak'
-  if (bads.some((b) => b !== 'fail')) return 'broken'
+  // ruling 10: with no base run the known-bad version is the base, so a missing feature there is the task itself
+  if (bads.some((b) => b !== 'fail')) return base === undefined && bads.every((b) => b === 'fail' || b === 'precondition') ? 'absent-at-base' : 'broken'
   if (base === 'fail') return 'pre-existing'
   if (base === 'precondition') return 'absent-at-base'
   if (base === 'error') return 'broken' // the base run could not be validated

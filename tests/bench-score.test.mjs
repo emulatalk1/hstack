@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { results, score, verdict, checksFrom, fixMatches, unscored } from '../bench/lib/score.mjs'
@@ -39,15 +39,30 @@ test('a precondition failure at the base is not pre-existing', () => {
   expect(verdict({ ref: 'pass', bad: 'fail', base: 'error' })).toBe('broken')
   expect(verdict({ ref: 'pass', bad: 'pass' })).toBe('weak')
   expect(verdict({ ref: 'fail', bad: 'fail' })).toBe('broken')
-  expect(verdict({ ref: 'pass', bad: 'precondition' })).toBe('broken')
+  expect(verdict({ ref: 'pass', bad: 'precondition', base: 'pass' })).toBe('broken')
   expect(verdict({ ref: 'pass', bad: 'error' })).toBe('broken')
+})
+
+test('absent at the known-bad version with no base run is absent-at-base', () => {
+  expect(verdict({ ref: 'pass', bad: 'precondition' })).toBe('absent-at-base')
+  expect(verdict({ ref: 'pass', bad: ['fail', 'precondition'] })).toBe('absent-at-base')
+  expect(verdict({ ref: 'pass', bad: ['precondition', 'error'] })).toBe('broken')
+  expect(verdict({ ref: 'pass', bad: ['precondition', 'pass'] })).toBe('weak')
+  expect(verdict({ ref: 'fail', bad: 'precondition' })).toBe('broken')
+})
+
+test('a precondition failure on a bad version with a base run is still broken', () => {
+  for (const base of ['pass', 'fail', 'precondition', 'error']) {
+    expect(verdict({ ref: 'pass', bad: 'precondition', base })).toBe('broken')
+    expect(verdict({ ref: 'pass', bad: ['fail', 'precondition'], base })).toBe('broken')
+  }
 })
 
 test('with several known-bad versions a check is weak if it passes on any, broken if any is neither pass nor fail', () => {
   expect(verdict({ ref: 'pass', bad: ['fail', 'fail'], base: 'pass' })).toBe('valid')
   expect(verdict({ ref: 'pass', bad: ['fail', 'pass'] })).toBe('weak')
   expect(verdict({ ref: 'pass', bad: ['precondition', 'pass'] })).toBe('weak')
-  expect(verdict({ ref: 'pass', bad: ['fail', 'precondition'] })).toBe('broken')
+  expect(verdict({ ref: 'pass', bad: ['fail', 'precondition'], base: 'pass' })).toBe('broken')
   expect(verdict({ ref: 'pass', bad: ['fail', 'error'], base: 'pass' })).toBe('broken')
   expect(verdict({ ref: 'pass', bad: ['fail', 'fail'], base: 'fail' })).toBe('pre-existing')
 })
@@ -235,4 +250,92 @@ test('grade leaves weak, broken and pre-existing checks out of the score and lis
   writeFileSync(join(tmp, 'ev', 'validation-bbbbbbb.json'), '{ not json')
   await expect(grade([mkTask('true'), oracleDir, '--at', c1], { root: sub })).rejects.toThrow('validation-bbbbbbb.json is not valid JSON')
   noValidations()
+})
+
+test('a task with start null runs setup, oracle and teardown and no app', async () => {
+  const marks = join(tmp, `marks-${rand()}`), f = join(tmp, `task-${rand()}.json`), name = `t${rand()}`
+  writeFileSync(f, JSON.stringify({ name, repo, db: null, port, start: null, ready: null, junit: 'results.xml', timeoutSec: 20,
+    setup: [`echo setup >> ${marks}`], oracle: `echo oracle >> ${marks}; cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"`, teardown: [`echo teardown >> ${marks}`] }))
+  const out = await quiet(() => grade([f, oracleDir, '--at', c1], { root: sub }))
+  expect(out.code).toBe(0)
+  expect(out[0]).toStartWith(`${c7} junit=ok pass=1 `)
+  expect(readFileSync(marks, 'utf8')).toBe('setup\noracle\nteardown\n')
+  expect(readdirSync(realpathSync(sub)).filter((n) => n.startsWith(`${name}-`))).toEqual([]) // no start log, no worktree
+})
+
+// grade in a child process, so the oracle's own stdout and stderr can be seen
+const gradeCli = async (args) => {
+  const p = Bun.spawn(['bun', '-e', `import { grade } from '${join(import.meta.dir, '../bench/grade.mjs')}'; process.exit(await grade(JSON.parse(process.argv[1]), { root: '${sub}' }))`, JSON.stringify(args)],
+    { stdout: 'pipe', stderr: 'pipe', env: { ...process.env } })
+  return { out: await new Response(p.stdout).text(), err: await new Response(p.stderr).text(), code: await p.exited }
+}
+
+test('sealed grade prints only counts and writes the oracle output to the log folder', async () => {
+  noValidations()
+  const logs = join(tmp, 'ev', 'logs'), b7 = c2.slice(0, 7)
+  rmSync(logs, { recursive: true, force: true })
+  const task = mkTask(`echo ORACLE-OUT; echo ORACLE-ERR >&2; ${byPage}`)
+  expect(await gradeCli([task, oracleDir, '--at', c1, '--sealed'])).toEqual({ out: `${c7} junit=ok pass=1 fail=0 precondition=1 error=1 excluded=0 build=1 requirement=0 featureMissing=0.5\n`, err: '', code: 0 })
+  const v = await gradeCli([task, oracleDir, '--validate', c1, '--bad', c2, '--sealed'])
+  expect({ err: v.err, code: v.code }).toEqual({ err: '', code: 0 })
+  const lines = v.out.split('\n')
+  expect(lines.length).toBe(4)
+  expect(lines[0]).toStartWith(`${c7} junit=ok `)
+  expect(lines[1]).toStartWith(`${b7} junit=ok `)
+  expect(lines.slice(2)).toEqual([`validation-${c7}: ${c7}-T1=valid ${c7}-T2=broken`, ''])
+  expect(readdirSync(logs).sort()).toEqual([`${c7}-1.log`, `${c7}-2.log`, `${b7}-1.log`].sort())
+  for (const f of readdirSync(logs)) expect(readFileSync(join(logs, f), 'utf8')).toBe('ORACLE-OUT\nORACLE-ERR\n')
+  noValidations()
+}, 30000)
+
+const counter = () => {
+  const f = join(tmp, `runs-${rand()}`)
+  return { f, n: () => (existsSync(f) ? readFileSync(f, 'utf8').length / 2 : 0) }
+}
+const gradeFile = () => Bun.file(join(tmp, 'ev', 'grades', `${c7}.json`)).json()
+
+test('reuse skips a run with the same oracle and commit', async () => {
+  noValidations()
+  rmSync(join(tmp, 'ev', 'grades'), { recursive: true, force: true })
+  const runs = counter(), task = mkTask(`echo x >> ${runs.f}; ${byPage}`)
+  await quiet(() => grade([mkTask(`echo x >> ${runs.f}`), oracleDir, '--at', c1], { root: sub })) // junit missing: not reused
+  const first = await quiet(() => grade([task, oracleDir, '--at', c1, '--reuse'], { root: sub }))
+  expect(runs.n()).toBe(2)
+  expect(first[0]).not.toContain('reused')
+  const g1 = await gradeFile()
+  expect(g1.oracleSha).toMatch(/^[0-9a-f]{64}$/)
+  // node_modules (a folder, or a symlink by that name deeper down) is not part of the oracle
+  mkdirSync(join(oracleDir, 'node_modules')); writeFileSync(join(oracleDir, 'node_modules', 'x.js'), 'x')
+  mkdirSync(join(oracleDir, 'deep')); symlinkSync(tmp, join(oracleDir, 'deep', 'node_modules'))
+  try {
+    const again = await quiet(() => grade([task, oracleDir, '--at', c1, '--reuse'], { root: sub }))
+    expect(runs.n()).toBe(2)
+    expect(again).toEqual([`${first[0]} reused`])
+    expect(again.code).toBe(0)
+    expect(await gradeFile()).toEqual(g1)
+    await quiet(() => grade([task, oracleDir, '--validate', c1, '--bad', c2, '--reuse'], { root: sub }))
+    expect(runs.n()).toBe(3) // only c2 ran
+    const v = await quiet(() => grade([task, oracleDir, '--validate', c1, '--bad', c2, '--reuse'], { root: sub }))
+    expect(runs.n()).toBe(3)
+    expect(v.slice(0, 2).every((l) => l.endsWith(' reused'))).toBe(true)
+    expect(v[2]).toBe(`validation-${c7}: ${c7}-T1=valid ${c7}-T2=broken`)
+  } finally {
+    rmSync(join(oracleDir, 'node_modules'), { recursive: true, force: true })
+    rmSync(join(oracleDir, 'deep'), { recursive: true, force: true })
+    noValidations()
+  }
+}, 30000)
+
+test('a changed check file makes the run happen again', async () => {
+  const runs = counter(), task = mkTask(`echo x >> ${runs.f}; ${byPage}`), check = join(oracleDir, 'checks', 'a.txt')
+  mkdirSync(join(oracleDir, 'checks')); writeFileSync(check, 'one')
+  try {
+    await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))
+    const sha = (await gradeFile()).oracleSha
+    writeFileSync(check, 'two')
+    const out = await quiet(() => grade([task, oracleDir, '--at', c1, '--reuse'], { root: sub }))
+    expect(runs.n()).toBe(2)
+    expect(out[0]).not.toContain('reused')
+    expect((await gradeFile()).oracleSha).not.toBe(sha)
+  } finally { rmSync(join(oracleDir, 'checks'), { recursive: true, force: true }) }
 })

@@ -79,6 +79,12 @@ test('start: false runs before, setup, fn and teardown but starts no app and lea
   expect(readdirSync(realpathSync(sub)).filter((n) => n.endsWith('-nostart.log'))).toEqual([])
 })
 
+test('a task with no app (start null) is refused unless start: false', async () => {
+  const task = mk({ start: null, ready: null })
+  await expect(withEnv(task, c1, 'noapp', async () => {}, opts)).rejects.toThrow(`task ${task.name} has no app (start null)`)
+  expect(await withEnv(task, c1, 'noapp', async () => 3, { ...opts, start: false })).toBe(3)
+})
+
 test('two labels at one commit get two folders', async () => {
   const a = mk()
   const b = mk({ name: a.name })

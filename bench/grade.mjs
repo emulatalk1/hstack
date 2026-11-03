@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
 // Grade the oracle at a commit (or validate checks on ref/bad/base). Logic lives in lib/score.mjs.
-import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { ROOT, withEnv } from './env.mjs'
 import { readJunit } from './lib/junit.mjs'
 import { runGroup } from './lib/proc.mjs'
 import { checksFrom, fixMatches, results, score, unscored, verdict } from './lib/score.mjs'
+import { oracleSha } from './lib/oracle.mjs'
 import { loadTask } from './lib/task.mjs'
 
-const USAGE = 'usage: bun bench/grade.mjs <task.json> <oracle dir> --at <commit> | --validate <ref> --bad <commit> [--bad <commit> ...] [--base <commit>]'
+const USAGE = 'usage: bun bench/grade.mjs <task.json> <oracle dir> (--at <commit> | --validate <ref> --bad <commit> [--bad <commit> ...] [--base <commit>]) [--sealed] [--reuse]'
 
 export async function resolveCommit(repo, commit) {
   const p = Bun.spawn(['git', '-C', repo, 'rev-parse', '--verify', `${commit}^{commit}`], { stdout: 'pipe', stderr: 'pipe' })
@@ -31,14 +32,21 @@ export function checkJunitPath(task) {
   if (isAbsolute(task.junit) || relative('/w', resolve('/w', task.junit)).startsWith('..')) throw new Error(`task junit ${task.junit} must be a relative path inside the worktree`)
 }
 
-const runOracle = (task, oracleDir, commit, root) =>
-  withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir }), { root })
+const runOracle = (task, oracleDir, commit, root, stdio) =>
+  withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir }, stdio), { root, start: task.start !== null })
+
+// every file of the oracle folder but node_modules (a symlink by that name too), paths relative to it; latin1 keeps every byte
+const oracleFiles = (dir, rel = '') => readdirSync(join(dir, rel), { withFileTypes: true }).flatMap((d) => {
+  const p = rel ? `${rel}/${d.name}` : d.name
+  return d.name === 'node_modules' ? [] : d.isDirectory() ? oracleFiles(dir, p) : [{ path: p, text: readFileSync(join(dir, p), 'latin1') }]
+})
 
 export async function grade(args, { root = ROOT } = {}) {
   const pos = [], flags = { bad: [] }
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
-    if (a === '--at' || a === '--base' || a === '--validate') flags[a.slice(2)] = args[++i] ?? ''
+    if (a === '--sealed' || a === '--reuse') flags[a.slice(2)] = true
+    else if (a === '--at' || a === '--base' || a === '--validate') flags[a.slice(2)] = args[++i] ?? ''
     else if (a === '--bad') flags.bad.push(args[++i] ?? '')
     else pos.push(a)
   }
@@ -59,17 +67,33 @@ export async function grade(args, { root = ROOT } = {}) {
   for (const f of readdirSync(evDir).filter((f) => /^validation-.+\.json$/.test(f)).sort())
     validations.push(await Bun.file(join(evDir, f)).json().catch(() => { throw new Error(`${join(evDir, f)} is not valid JSON`) }))
   const excluded = unscored(validations, ids), scoredChecks = checks.filter((c) => !excluded.some((e) => e.id === c.id))
+  const sha = oracleSha(oracleFiles(oracleDir))
 
   const run = async (full) => {
-    const { cases, junit } = await runOracle(task, oracleDir, full, root)
-    const res = results(cases, ids)
-    const g = { commit: full, task: task.name, at: new Date().toISOString(), junit,
+    const sha7 = full.slice(0, 7), file = join(evDir, 'grades', `${sha7}.json`)
+    // ruling 10: a run is reused when its commit and oracle are the same and it gave results
+    const old = flags.reuse && existsSync(file) ? await Bun.file(file).json() : null
+    const reused = old?.commit === full && old.oracleSha === sha && old.junit === 'ok'
+    let res, junit = 'ok'
+    if (reused) res = new Map(ids.map((id) => [id, old.checks.find((c) => c.id === id)?.result ?? 'error']))
+    else {
+      let stdio = 2
+      if (flags.sealed) { // the oracle's output is sealed: <task dir>/logs/<sha7>-<n>.log, the next free n
+        mkdirSync(join(evDir, 'logs'), { recursive: true })
+        let n = 1
+        while (existsSync(join(evDir, 'logs', `${sha7}-${n}.log`))) n++
+        stdio = openSync(join(evDir, 'logs', `${sha7}-${n}.log`), 'wx')
+      }
+      let cases
+      try { ({ cases, junit } = await runOracle(task, oracleDir, full, root, stdio)) } finally { if (flags.sealed) closeSync(stdio) }
+      res = results(cases, ids)
+    }
+    const g = { commit: full, task: task.name, at: reused ? old.at : new Date().toISOString(), oracleSha: sha, junit,
       checks: checks.map((c) => ({ ...c, result: res.get(c.id) })), excluded, unlabelled, score: score(scoredChecks, res) }
-    const file = join(evDir, 'grades', `${full.slice(0, 7)}.json`)
     mkdirSync(join(evDir, 'grades'), { recursive: true })
     await Bun.write(file, JSON.stringify(g, null, 2) + '\n')
     const n = (r) => g.checks.filter((c) => c.result === r).length
-    console.log(`${full.slice(0, 7)} junit=${junit} pass=${n('pass')} fail=${n('fail')} precondition=${n('precondition')} error=${n('error')} excluded=${excluded.length} build=${g.score.build} requirement=${g.score.requirement} featureMissing=${g.score.featureMissing}`)
+    console.log(`${sha7} junit=${junit} pass=${n('pass')} fail=${n('fail')} precondition=${n('precondition')} error=${n('error')} excluded=${excluded.length} build=${g.score.build} requirement=${g.score.requirement} featureMissing=${g.score.featureMissing}${reused ? ' reused' : ''}`)
     return { full, res, junit, file }
   }
 

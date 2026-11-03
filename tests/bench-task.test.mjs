@@ -52,6 +52,13 @@ test('refuses bad list, timeout and string fields', () => {
   expect(() => parseTask({ ...ok, start: '' }, machine)).toThrow('start')
   expect(() => parseTask({ ...ok, junit: undefined }, machine)).toThrow('junit')
 })
+test('start null needs ready null', () => {
+  const t = parseTask({ ...ok, start: null, ready: null }, machine)
+  expect([t.start, t.ready]).toEqual([null, null])
+  expect(() => parseTask({ ...ok, start: null }, machine)).toThrow('ready')
+  expect(() => parseTask({ ...ok, ready: null }, machine)).toThrow('ready')
+  expect(() => parseTask({ ...ok, start: undefined, ready: null }, machine)).toThrow('start')
+})
 test('refuses a symlink that points into a forbidden path', () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'bench-task-')))
   try {
