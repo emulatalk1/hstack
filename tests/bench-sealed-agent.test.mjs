@@ -44,9 +44,9 @@ if (mode === 'fail') process.exit(3)
 chmodSync(stub, 0o755)
 
 const calls = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [])
-const run = async (args, env = {}) => {
+const run = async (args, env = {}, record = '') => { // record: the source of a record option, e.g. '(s) => ({ n: 1 })'
   rmSync(log, { force: true })
-  const p = Bun.spawn(['bun', '-e', `import { sealedAgent } from '${join(import.meta.dir, '../bench/sealed-agent.mjs')}'; try { process.exit(await sealedAgent(JSON.parse(process.argv[1]), { root: '${sub}' })) } catch (e) { console.error(e.message); process.exit(2) }`, JSON.stringify(args)],
+  const p = Bun.spawn(['bun', '-e', `import { sealedAgent } from '${join(import.meta.dir, '../bench/sealed-agent.mjs')}'; try { process.exit(await sealedAgent(JSON.parse(process.argv[1]), { root: '${sub}'${record && `, record: ${record}`} })) } catch (e) { console.error(e.message); process.exit(2) }`, JSON.stringify(args)],
     { env: { ...process.env, HSTACK_BENCH_MACHINE: join(data, 'machine.json'), BENCH_CLAUDE: stub, STUB_LOG: log, ...env }, stdout: 'pipe', stderr: 'pipe' })
   return { stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text(), code: await p.exited }
 }
@@ -68,7 +68,14 @@ test('writes the reply to --out and version, tools, usage and models to the run 
   const x = rec(o)
   expect(x).toMatchObject({ at: null, code: 0, version: '9.9.9', tools: ['Read', 'Grep', 'Glob'], usage: { input: 7, output: 2, cacheRead: 0, cacheWrite: 0 }, models: ['stub-m'], toolUses: { Bash: 1, Read: 1 } })
   expect(x.label).toStartWith('l-')
+  expect(x.lines).toBeUndefined()
   expect(Date.parse(x.end) >= Date.parse(x.start)).toBe(true)
+})
+
+test('a record option adds its counts over the agent stream to the run record', async () => {
+  const o = out()
+  expect((await run(base(o), {}, "(s) => ({ lines: s.trim().split('\\n').length })")).code).toBe(0)
+  expect(rec(o).lines).toBe(6) // init, one assistant event, three tool_use events, result
 })
 
 test('with no --tools the agent gets one empty --tools argument and an empty folder', async () => {

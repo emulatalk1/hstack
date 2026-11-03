@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { gitOut, readRows } from './bugs.mjs'
+import { okBashCommands } from './lib/agent.mjs'
 import { hunkOwners } from './lib/oracle.mjs'
 import { isTestPath } from './lib/replay.mjs'
 import { loadTask } from './lib/task.mjs'
@@ -111,15 +112,26 @@ async function label(taskPath, r, task, agent) {
   mkdirSync(dirname(promptFile), { recursive: true })
   // both labellers get the same text; it is written only when it differs, so a running labeller never sees it change
   if (!existsSync(promptFile) || readFileSync(promptFile, 'utf8') !== prompt) writeFileSync(promptFile, prompt)
+  // reading gate (controller ruling): the listed commits a run named in a `git -C <repo> show` that did not fail
+  const commits = [...new Set(list.map((p) => p.commit))]
+  const record = (stream) => {
+    const shown = new Set()
+    for (const c of okBashCommands(stream)) {
+      const w = c.trim().split(/\s+/)
+      if (w[0] !== 'git' || w[1] !== '-C' || w[2] !== repo || w[3] !== 'show') continue
+      for (const x of w.slice(4)) if (/^[0-9a-f]{7,40}$/.test(x)) for (const k of commits) if (x.startsWith(k) || k.startsWith(x)) shown.add(k)
+    }
+    return { shown: shown.size }
+  }
+  const shownOf = async (n) => (await Bun.file(join(src, `${runName(r, task, n)}.reply.md.run.json`)).json().catch(() => ({}))).shown
+  // one rerun when the reply is bad or the run did not show every commit (no count recorded: not shown); labels are not looked at
   for (const n of [1, 2]) {
     const name = runName(r, task, n), out = join(src, `${name}.reply.md`)
-    if (!existsSync(`${out}.run.json`)) await agent([taskPath, name, '--prompt', promptFile, '--out', out, '--tools', 'Read,Grep,Glob,Bash', '--settings', join(data, 'briefs/label-settings.json')])
-    if (parseReply(existsSync(out) ? readFileSync(out, 'utf8') : '', list).ok) break
+    if (!existsSync(`${out}.run.json`)) await agent([taskPath, name, '--prompt', promptFile, '--out', out, '--tools', 'Read,Grep,Glob,Bash', '--settings', join(data, 'briefs/label-settings.json')], { record })
+    if (parseReply(existsSync(out) ? readFileSync(out, 'utf8') : '', list).ok && (await shownOf(n)) >= commits.length) break
   }
   const { runs, text } = finalReply(src, r, task)
-  // the counted run's shell calls: below the pairs, it cannot have read every diff
-  const bash = (await Bun.file(join(src, `${runName(r, task, runs)}.reply.md.run.json`)).json().catch(() => ({}))).toolUses?.Bash ?? 0
-  console.log(`label ${r} ${task}: pairs ${list.length}, labelled ${parseReply(text, list).got.size}, runs ${runs}, bash calls ${bash}`)
+  console.log(`label ${r} ${task}: pairs ${list.length}, labelled ${parseReply(text, list).got.size}, runs ${runs}, read ${(await shownOf(runs)) ?? 'unknown'}/${commits.length}`)
   return 0
 }
 
@@ -133,17 +145,20 @@ async function labels() {
   }
   const rows = list.map((p) => {
     const l1 = of(1, p), l2 = of(2, p)
-    const source = l1 === 'fix' && l2 === 'fix' ? 'yes' : l1 !== 'none' && l2 !== 'none' && l1 !== 'fix' && l2 !== 'fix' ? 'no' : 'step9'
+    // a pair a labeller left without a valid label is not a disagreement: it is unlabelled until a run labels it
+    const source = l1 === 'none' || l2 === 'none' ? 'none' : l1 === 'fix' && l2 === 'fix' ? 'yes' : l1 !== 'fix' && l2 !== 'fix' ? 'no' : 'step9'
     return { ...p, l1, l2, source }
   })
   writeFileSync(join(src, 'labels.tsv'), ['commit\ttask\tkind\tl1\tl2\tsource', ...rows.map((x) => [x.commit, x.task, x.kind, x.l1, x.l2, x.source].join('\t'))].join('\n') + '\n')
-  const count = (xs, s) => xs.filter((x) => x.source === s).length
-  for (const t of [...new Set(rows.map((x) => x.task))]) {
-    const xs = rows.filter((x) => x.task === t)
-    console.log(`${t}: pairs ${xs.length}, agreed fix ${count(xs, 'yes')}, agreed not fix ${count(xs, 'no')}, disputed ${count(xs, 'step9')}`)
+  const line = (name, xs) => {
+    const n = (s) => xs.filter((x) => x.source === s).length
+    console.log(`${name}: pairs ${xs.length}, agreed fix ${n('yes')}, agreed not fix ${n('no')}, disputed ${n('step9')}, unlabelled ${n('none')}`)
   }
-  console.log(`total: pairs ${rows.length}, agreed fix ${count(rows, 'yes')}, agreed not fix ${count(rows, 'no')}, disputed ${count(rows, 'step9')}`)
-  return 0
+  for (const t of [...new Set(rows.map((x) => x.task))]) line(t, rows.filter((x) => x.task === t))
+  for (const k of ['later', 'in-task']) line(k, rows.filter((x) => x.kind === k))
+  line('total', rows)
+  console.log(`source commits: ${new Set(rows.filter((x) => x.source === 'yes').map((x) => x.commit)).size}`)
+  return rows.some((x) => x.source === 'none') ? 1 : 0
 }
 
 export async function oracle(args, { agent = sealedAgent } = {}) {

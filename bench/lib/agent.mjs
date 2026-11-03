@@ -55,6 +55,16 @@ export function toolUses(streamJson) {
   return n
 }
 
+// the commands of the Bash calls whose tool_result is not an error (a denied or failed call is one)
+export function okBashCommands(streamJson) {
+  const cmd = new Map(), failed = new Set(), done = new Set()
+  for (const e of events(streamJson)) for (const b of Array.isArray(e?.message?.content) ? e.message.content : []) {
+    if (e.type === 'assistant' && b?.type === 'tool_use' && b.name === 'Bash') cmd.set(b.id, String(b.input?.command ?? ''))
+    if (e.type === 'user' && b?.type === 'tool_result') (b.is_error === true ? failed : done).add(b.tool_use_id)
+  }
+  return [...cmd].filter(([id]) => done.has(id) && !failed.has(id)).map(([, c]) => c)
+}
+
 export function judgeVerdict(text) {
   const body = /^\s*```json\n([\s\S]*?)\n```\s*$/.exec(text)?.[1] ?? text
   let v

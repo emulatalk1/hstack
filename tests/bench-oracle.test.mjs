@@ -123,8 +123,13 @@ writeFileSync(task, JSON.stringify({ name: 'tt', repo, db: null, port: 3999, sta
 mkdirSync(join(data, 'briefs'))
 writeFileSync(join(data, 'briefs/label.md'), 'BRIEF-TEXT\n')
 writeFileSync(join(data, 'briefs/label-settings.json'), '{}')
+const prevMachine = process.env.HSTACK_BENCH_MACHINE
 process.env.HSTACK_BENCH_MACHINE = join(data, 'machine.json')
-afterAll(() => rmSync(tmp, { recursive: true, force: true }))
+afterAll(() => {
+  if (prevMachine === undefined) delete process.env.HSTACK_BENCH_MACHINE
+  else process.env.HSTACK_BENCH_MACHINE = prevMachine
+  rmSync(tmp, { recursive: true, force: true })
+})
 
 const quiet = async (fn) => {
   const out = []
@@ -156,7 +161,7 @@ test('pairs lists in-task commits that change a test file', async () => {
 const reply = (r, t, text, n = '') => writeFileSync(join(src, `label-${r}-${t}${n}.reply.md`), text)
 const ran = (r, t, n = '') => writeFileSync(join(src, `label-${r}-${t}${n}.reply.md.run.json`), '{}')
 
-test('labels marks agreed fix as a source and a disagreement as step9', async () => {
+test('labels marks agreed fix as a source and a disagreement as step9, and a pair with no valid label as unlabelled', async () => {
   await quiet(() => oracle(['pairs', task, '--drop', 't3']))
   const j = (o) => JSON.stringify(Object.entries(o).map(([commit, label]) => ({ commit, label })))
   reply(1, 't1', '```json\n' + j({ aaaaaaa: 'fix', ccccccc: 'fix', [k1]: 'build', [k3]: 'fix' }) + '\n```'); ran(1, 't1')
@@ -165,19 +170,25 @@ test('labels marks agreed fix as a source and a disagreement as step9', async ()
   reply(1, 't2', j({ ddddddd: 'fix', [m1]: 'build' }), '-2'); ran(1, 't2', '-2') // the rerun counts
   reply(2, 't2', j({ ddddddd: 'fix', [m1]: 'build' })); ran(2, 't2')
   const r = await quiet(() => oracle(['labels']))
-  expect(r.code).toBe(0)
+  expect(r.code).toBe(1) // a pair is unlabelled
   const rows = readFileSync(join(src, 'labels.tsv'), 'utf8').trim().split('\n')
   expect(rows[0]).toBe('commit\ttask\tkind\tl1\tl2\tsource')
   expect(rows.slice(1).map((l) => l.split('\t'))).toEqual([
     [k1, 't1', 'in-task', 'build', 'build', 'no'],
-    [k3, 't1', 'in-task', 'fix', 'none', 'step9'],
+    [k3, 't1', 'in-task', 'fix', 'none', 'none'],
     ['aaaaaaa', 't1', 'later', 'fix', 'fix', 'yes'],
     ['ccccccc', 't1', 'later', 'fix', 'requirement change', 'step9'],
     [m1, 't2', 'in-task', 'build', 'build', 'no'],
     ['ddddddd', 't2', 'later', 'fix', 'fix', 'yes'],
   ])
-  expect(r.out).toContain('t1: pairs 4, agreed fix 1, agreed not fix 1, disputed 2')
-  expect(r.out).toContain('t2: pairs 2, agreed fix 1, agreed not fix 1, disputed 0')
+  expect(r.out).toContain('t1: pairs 4, agreed fix 1, agreed not fix 1, disputed 1, unlabelled 1')
+  expect(r.out).toContain('t2: pairs 2, agreed fix 1, agreed not fix 1, disputed 0, unlabelled 0')
+  expect(r.out).toContain('later: pairs 3, agreed fix 2, agreed not fix 0, disputed 1, unlabelled 0')
+  expect(r.out).toContain('in-task: pairs 3, agreed fix 0, agreed not fix 2, disputed 0, unlabelled 1')
+  expect(r.out).toContain('total: pairs 6, agreed fix 2, agreed not fix 2, disputed 1, unlabelled 1')
+  expect(r.out).toContain('source commits: 2')
+  reply(2, 't1', j({ aaaaaaa: 'fix', ccccccc: 'requirement change', [k1]: 'build', [k3]: 'build' }))
+  expect((await quiet(() => oracle(['labels']))).code).toBe(0)
   for (const f of ['label-1-t1', 'label-2-t1', 'label-1-t2', 'label-1-t2-2', 'label-2-t2']) for (const x of ['.reply.md', '.reply.md.run.json']) rmSync(join(src, f + x))
 })
 
@@ -187,7 +198,7 @@ test('label prints no reply text', async () => {
   const agent = async (args) => { // the first run replies with prose only, the rerun with every pair
     const out = args[args.indexOf('--out') + 1]
     calls.push(args)
-    writeFileSync(`${out}.run.json`, JSON.stringify({ toolUses: { Bash: calls.length * 3 } }))
+    writeFileSync(`${out}.run.json`, '{}') // no reading count: read as none
     writeFileSync(out, calls.length === 1 ? 'SENTINEL-REPLY no json here'
       : `SENTINEL-REPLY [{"commit":"${k1}","label":"build"},{"commit":"${k3}","label":"fix"},{"commit":"aaaaaaa","label":"fix"},{"commit":"ccccccc","label":"requirement change"}] SENTINEL-REPLY`)
     return 0
@@ -195,7 +206,7 @@ test('label prints no reply text', async () => {
   const r = await quiet(() => oracle(['label', task, '1', 't1'], { agent }))
   expect(r.code).toBe(0)
   expect(r.out).not.toContain('SENTINEL')
-  expect(r.out).toContain('label 1 t1: pairs 4, labelled 4, runs 2, bash calls 6')
+  expect(r.out).toContain('label 1 t1: pairs 4, labelled 4, runs 2, read unknown/4')
   expect(calls.map((a) => a[1])).toEqual(['label-1-t1', 'label-1-t1-2'])
   const a = calls[0], arg = (k) => a[a.indexOf(k) + 1]
   expect(arg('--tools')).toBe('Read,Grep,Glob,Bash')
@@ -207,5 +218,34 @@ test('label prints no reply text', async () => {
   expect(prompt).not.toContain('ddddddd')
   const again = await quiet(() => oracle(['label', task, '1', 't1'], { agent })) // done: no third run
   expect(calls).toHaveLength(2)
-  expect(again.out).toContain('labelled 4, runs 2, bash calls 6')
+  expect(again.out).toContain('labelled 4, runs 2, read unknown/4')
+})
+
+// a stream of Bash calls: [command, is_error]
+const stream = (calls) => calls.flatMap(([command, err], i) => [
+  { type: 'assistant', message: { id: `m${i}`, content: [{ type: 'tool_use', id: `u${i}`, name: 'Bash', input: { command } }] } },
+  { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: `u${i}`, is_error: err, content: 'x' }] } },
+]).map((e) => JSON.stringify(e)).join('\n')
+
+test('label reruns a run that did not show every listed commit, whatever its labels, and keeps a rerun that still under-reads', async () => {
+  await quiet(() => oracle(['pairs', task, '--drop', 't3']))
+  const full = git("rev-parse", k3)
+  const runs = [
+    stream([[`git -C ${repo} show ${k1} ${full}`, false], [`git -C ${repo} show aaaaaaa`, true], [`git -C /elsewhere show ccccccc`, false], [`git -C ${repo} log -1 ccccccc`, false]]),
+    stream([[`git -C ${repo} show --stat ${k1}`, false], [`git -C ${repo} show ${k3} aaaaaaa`, false], [`git -C ${repo} show ${k3}:src/a.txt`, false]]),
+  ]
+  const calls = []
+  const agent = async (args, { record }) => { // both runs label every pair; neither shows ccccccc
+    const out = args[args.indexOf('--out') + 1]
+    writeFileSync(`${out}.run.json`, JSON.stringify(record(runs[calls.length])))
+    calls.push(args)
+    writeFileSync(out, `[{"commit":"${k1}","label":"build"},{"commit":"${k3}","label":"fix"},{"commit":"aaaaaaa","label":"fix"},{"commit":"ccccccc","label":"fix"}]`)
+    return 0
+  }
+  const r = await quiet(() => oracle(['label', task, '2', 't1'], { agent }))
+  expect(r.code).toBe(0)
+  expect(calls.map((a) => a[1])).toEqual(['label-2-t1', 'label-2-t1-2'])
+  expect(JSON.parse(readFileSync(join(src, 'label-2-t1.reply.md.run.json'), 'utf8'))).toEqual({ shown: 2 }) // k1, k3; aaaaaaa's show failed
+  expect(r.out).toContain('label 2 t1: pairs 4, labelled 4, runs 2, read 3/4')
+  for (const f of ['label-2-t1', 'label-2-t1-2']) for (const x of ['.reply.md', '.reply.md.run.json']) rmSync(join(src, f + x))
 })

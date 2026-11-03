@@ -11,7 +11,7 @@ import { loadTask } from './lib/task.mjs'
 
 const USAGE = 'usage: bun bench/sealed-agent.mjs <task.json> <label> --prompt <file> --out <file> [--at <commit>] [--tools <name,name,...>] [--settings <file>]'
 
-export async function sealedAgent(args, { root = ROOT } = {}) {
+export async function sealedAgent(args, { root = ROOT, record } = {}) {
   const pos = [], flags = {}
   for (let i = 0; i < args.length; i++) {
     if (!args[i].startsWith('--')) { pos.push(args[i]); continue }
@@ -39,7 +39,7 @@ export async function sealedAgent(args, { root = ROOT } = {}) {
   const { models, ...u } = usage(run.out)
   let text = null
   if (run.code === 0) try { text = finalText(run.out) } catch {}
-  await Bun.write(rec, JSON.stringify({ label, at, settings, start, end: new Date().toISOString(), code: run.code, version: info.version, tools: info.tools, usage: u, models, toolUses: toolUses(run.out) }, null, 2) + '\n')
+  await Bun.write(rec, JSON.stringify({ label, at, settings, start, end: new Date().toISOString(), code: run.code, version: info.version, tools: info.tools, usage: u, models, toolUses: toolUses(run.out), ...record?.(run.out) }, null, 2) + '\n')
   if (text === null) return 1
   await Bun.write(flags.out, text)
   return 0
