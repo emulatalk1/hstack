@@ -41,6 +41,20 @@ export function usage(streamJson) {
   return { input: sum('input_tokens'), output: sum('output_tokens'), cacheRead: sum('cache_read_input_tokens'), cacheWrite: sum('cache_creation_input_tokens'), models }
 }
 
+// tool calls by tool name: a count that shows whether an agent did the reading its brief asks, without its content
+export function toolUses(streamJson) {
+  const seen = new Set(), n = {}
+  for (const e of events(streamJson)) {
+    if (e?.type !== 'assistant' || !Array.isArray(e.message?.content)) continue
+    for (const b of e.message.content) {
+      if (b?.type !== 'tool_use' || seen.has(b.id)) continue
+      seen.add(b.id)
+      n[b.name] = (n[b.name] ?? 0) + 1
+    }
+  }
+  return n
+}
+
 export function judgeVerdict(text) {
   const body = /^\s*```json\n([\s\S]*?)\n```\s*$/.exec(text)?.[1] ?? text
   let v

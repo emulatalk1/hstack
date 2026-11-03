@@ -35,6 +35,8 @@ appendFileSync(process.env.STUB_LOG, JSON.stringify({ args: a, cwd: process.cwd(
 const t = a[a.indexOf('--tools') + 1]
 say({ type: 'system', subtype: 'init', claude_code_version: '9.9.9', tools: t ? t.split(',') : [] })
 say({ type: 'assistant', message: { id: 'm', model: 'stub-m', usage: { input_tokens: 7, output_tokens: 2 }, content: [] } })
+// one API message streams one event per block: the same tool_use id seen twice is one call
+for (const id of ['u1', 'u1', 'u2']) say({ type: 'assistant', message: { id: 'm2', model: 'stub-m', content: [{ type: 'tool_use', id, name: id === 'u2' ? 'Read' : 'Bash', input: {} }] } })
 const mode = process.env.STUB_MODE ?? 'result'
 if (mode === 'result') say({ type: 'result', subtype: 'success', result: 'REPLY-TEXT' })
 if (mode === 'fail') process.exit(3)
@@ -64,7 +66,7 @@ test('writes the reply to --out and version, tools, usage and models to the run 
   expect(c.args.slice(c.args.indexOf('--tools'), c.args.indexOf('--tools') + 2)).toEqual(['--tools', 'Read,Grep,Glob'])
   expect(c.args).toContain('--no-session-persistence')
   const x = rec(o)
-  expect(x).toMatchObject({ at: null, code: 0, version: '9.9.9', tools: ['Read', 'Grep', 'Glob'], usage: { input: 7, output: 2, cacheRead: 0, cacheWrite: 0 }, models: ['stub-m'] })
+  expect(x).toMatchObject({ at: null, code: 0, version: '9.9.9', tools: ['Read', 'Grep', 'Glob'], usage: { input: 7, output: 2, cacheRead: 0, cacheWrite: 0 }, models: ['stub-m'], toolUses: { Bash: 1, Read: 1 } })
   expect(x.label).toStartWith('l-')
   expect(Date.parse(x.end) >= Date.parse(x.start)).toBe(true)
 })

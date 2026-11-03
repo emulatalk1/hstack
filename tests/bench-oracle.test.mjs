@@ -187,7 +187,7 @@ test('label prints no reply text', async () => {
   const agent = async (args) => { // the first run replies with prose only, the rerun with every pair
     const out = args[args.indexOf('--out') + 1]
     calls.push(args)
-    writeFileSync(`${out}.run.json`, '{}')
+    writeFileSync(`${out}.run.json`, JSON.stringify({ toolUses: { Bash: calls.length * 3 } }))
     writeFileSync(out, calls.length === 1 ? 'SENTINEL-REPLY no json here'
       : `SENTINEL-REPLY [{"commit":"${k1}","label":"build"},{"commit":"${k3}","label":"fix"},{"commit":"aaaaaaa","label":"fix"},{"commit":"ccccccc","label":"requirement change"}] SENTINEL-REPLY`)
     return 0
@@ -195,7 +195,7 @@ test('label prints no reply text', async () => {
   const r = await quiet(() => oracle(['label', task, '1', 't1'], { agent }))
   expect(r.code).toBe(0)
   expect(r.out).not.toContain('SENTINEL')
-  expect(r.out).toContain('label 1 t1: pairs 4, labelled 4, runs 2')
+  expect(r.out).toContain('label 1 t1: pairs 4, labelled 4, runs 2, bash calls 6')
   expect(calls.map((a) => a[1])).toEqual(['label-1-t1', 'label-1-t1-2'])
   const a = calls[0], arg = (k) => a[a.indexOf(k) + 1]
   expect(arg('--tools')).toBe('Read,Grep,Glob,Bash')
@@ -207,5 +207,5 @@ test('label prints no reply text', async () => {
   expect(prompt).not.toContain('ddddddd')
   const again = await quiet(() => oracle(['label', task, '1', 't1'], { agent })) // done: no third run
   expect(calls).toHaveLength(2)
-  expect(again.out).toContain('labelled 4, runs 2')
+  expect(again.out).toContain('labelled 4, runs 2, bash calls 6')
 })

@@ -117,7 +117,9 @@ async function label(taskPath, r, task, agent) {
     if (parseReply(existsSync(out) ? readFileSync(out, 'utf8') : '', list).ok) break
   }
   const { runs, text } = finalReply(src, r, task)
-  console.log(`label ${r} ${task}: pairs ${list.length}, labelled ${parseReply(text, list).got.size}, runs ${runs}`)
+  // the counted run's shell calls: below the pairs, it cannot have read every diff
+  const bash = (await Bun.file(join(src, `${runName(r, task, runs)}.reply.md.run.json`)).json().catch(() => ({}))).toolUses?.Bash ?? 0
+  console.log(`label ${r} ${task}: pairs ${list.length}, labelled ${parseReply(text, list).got.size}, runs ${runs}, bash calls ${bash}`)
   return 0
 }
 

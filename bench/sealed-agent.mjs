@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { ROOT, withExport } from './env.mjs'
 import { runClaude } from './agent-replay.mjs'
-import { finalText, usage } from './lib/agent.mjs'
+import { finalText, toolUses, usage } from './lib/agent.mjs'
 import { initInfo } from './lib/arm.mjs'
 import { loadTask } from './lib/task.mjs'
 
@@ -39,7 +39,7 @@ export async function sealedAgent(args, { root = ROOT } = {}) {
   const { models, ...u } = usage(run.out)
   let text = null
   if (run.code === 0) try { text = finalText(run.out) } catch {}
-  await Bun.write(rec, JSON.stringify({ label, at, settings, start, end: new Date().toISOString(), code: run.code, version: info.version, tools: info.tools, usage: u, models }, null, 2) + '\n')
+  await Bun.write(rec, JSON.stringify({ label, at, settings, start, end: new Date().toISOString(), code: run.code, version: info.version, tools: info.tools, usage: u, models, toolUses: toolUses(run.out) }, null, 2) + '\n')
   if (text === null) return 1
   await Bun.write(flags.out, text)
   return 0
