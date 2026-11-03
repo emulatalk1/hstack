@@ -578,14 +578,14 @@ const clTask = (d, t, fix, rows, files) => {
   writeFileSync(join(d, t, `validation-${fix.slice(0, 7)}.json`), JSON.stringify({ ref: fix, checks: rows.filter(([, v]) => v).map(([id, v]) => ({ id, verdict: v })) }))
 }
 // a fake sealed agent: a classifier labels each id of its prompt by rate(rater, id) (undefined: left out); a splitter
-// writes split(ids) into its out/ folder, or nothing
-const fake = (calls, { rate = () => 'traceable', split = () => null } = {}) => async (args) => {
+// writes split(ids, label) into its out/ folder, or nothing; stream(args), when given, is the transcript the record hook reads
+const fake = (calls, { rate = () => 'traceable', split = () => null, stream } = {}) => async (args, opts) => {
   calls.push(args)
   const arg = (k) => args[args.indexOf(k) + 1], out = arg('--out'), prompt = readFileSync(arg('--prompt'), 'utf8')
   const ids = [...prompt.matchAll(/`([0-9a-z]+-T\d+)`/g)].map((m) => m[1])
-  writeFileSync(`${out}.run.json`, '{"code":0}')
+  writeFileSync(`${out}.run.json`, JSON.stringify({ code: 0, ...(stream ? opts.record(stream(args)) : {}) }))
   if (args[1].startsWith('split-')) {
-    const files = split(ids)
+    const files = split(ids, args[1])
     for (const [f, text] of Object.entries(files ?? {})) writeFileSync(join(out, '..', 'out', f), text)
     writeFileSync(out, files ? 'split' : 'cannot split')
     return 0
@@ -608,10 +608,15 @@ test('classify gives the raters the manifest without fix_commit, origin, hunk or
     [`${e}-T4`, 'valid', { interface: 'none' }], [`${e}-T5`, 'valid', { file: `${e}-T5.ts`, dropped: true }], [`${e}-T6`, 'valid', { file: `${e}-T6.ts` }]],
   { 'checks/group.ts': 'SENTINEL-CHECK\n', [`${e}-T3.ts`]: 'x\n', [`${e}-T5.ts`]: 'x\n', [`${e}-T6.ts`]: 'SENTINEL-CHECK\n', 'runner.json': '{}' })
   const rate = (r, id) => (id.endsWith('T6') && r === 2 ? 'partly' : 'traceable')
-  const r = await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate }) })))
+  const folder = join(d, 'x1-01/work/classify')
+  // the transcript the record hook counts: a Read in the folder, one that failed, one outside it
+  const use = (id, file_path) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: 'Read', input: { file_path } }] } })
+  const res = (id, is_error) => JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error }] } })
+  const stream = () => [use('a', `${folder}/input.md`), res('a', false), use('b', `${folder}/manifest.json`), res('b', true), use('c', '/elsewhere/x'), res('c', false)].join('\n')
+  const r = await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate, stream }) })))
   expect(r.code).toBe(0)
   expect(r.out).toBe('x1-01 classified=3 build=2 requirement=0 partly=0 disputed=1 kappa=0.00 raw=0.67 ac1=0.61')
-  const folder = join(d, 'x1-01/work/classify')
+  expect(jsonAt(join(d, 'x1-01/classify-1.reply.md.run.json'))).toMatchObject({ reads: 2, readsInFolder: 1 })
   expect(ls(folder)).toEqual([`${e}-T6.ts`, 'checks', 'input.md', 'interface.md', 'manifest.json'])
   const shown = jsonAt(join(folder, 'manifest.json'))
   expect(shown.map((m) => m.id)).toEqual([`${e}-T1`, `${e}-T2`, `${e}-T6`])
@@ -632,6 +637,28 @@ test('classify gives the raters the manifest without fix_commit, origin, hunk or
   const again = await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate }) })))
   expect(again.out).toBe(r.out)
   expect(calls).toHaveLength(2)
+  // a changed brief: refused before any run, and the prompt the raters ran with stays
+  const prompt = readFileSync(argOf(calls[0], '--prompt'), 'utf8')
+  writeFileSync(join(d, 'briefs/classify.md'), 'CLASSIFY-BRIEF-2\n')
+  expect(await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate }) })))).toEqual({ code: 1, out: 'x1-01 classify refused a run whose prompt differs from the one it ran with' })
+  expect(readFileSync(argOf(calls[0], '--prompt'), 'utf8')).toBe(prompt)
+  expect(calls).toHaveLength(2)
+})
+
+test('classify fails without labels or agreement when a rater has no labelled reply after its rerun', async () => {
+  const d = clData('cl8'), e = END.slice(0, 7), calls = []
+  clTask(d, 'x1-01', END, [[`${e}-T1`, 'valid'], [`${e}-T2`, 'valid']], { [`${e}-T1.ts`]: 'x\n', [`${e}-T2.ts`]: 'x\n' })
+  const rate = (r) => (r === 2 ? undefined : 'traceable')
+  const r = await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate }) })))
+  expect(r).toEqual({ code: 1, out: 'x1-01 classify failed: rater 2 has no labelled reply (no label, or a run that failed)' })
+  expect(calls).toHaveLength(3)
+  for (const f of ['labels.json', 'agreement.json', 'classify-2.json']) expect(existsSync(join(d, 'x1-01', f))).toBe(false)
+  // a run that ended with a code other than 0 fails the same way, whatever its reply
+  const d2 = clData('cl9'), calls2 = []
+  clTask(d2, 'x1-01', END, [[`${e}-T1`, 'valid']], { [`${e}-T1.ts`]: 'x\n' })
+  const agent = async (args, opts) => { await fake(calls2)(args, opts); if (args[1].startsWith('classify-1')) writeFileSync(`${argOf(args, '--out')}.run.json`, '{"code":1}'); return 0 }
+  expect((await withData(d2, () => quiet(() => oracle(['classify', 'x1-01'], { agent })))).out).toBe('x1-01 classify failed: rater 1 has no labelled reply (no label, or a run that failed)')
+  expect(existsSync(join(d2, 'x1-01/agreement.json'))).toBe(false)
 })
 
 test('classify reruns a bad reply once and leaves an id the rerun still misses disputed', async () => {
@@ -664,8 +691,8 @@ test('agreed partly goes to split and disputed stays unlabelled', async () => {
   clTask(d, 'r2', FIX, [[id(9), 'valid']], spec(9)) // another task holds a check of the same commit: new ids come after it
   const rate = (r, x) => ({ [id(1)]: 'traceable', [id(2)]: 'not traceable', [id(3)]: 'partly', [id(4)]: r === 1 ? 'traceable' : 'not traceable', [id(5)]: 'partly',
     [id(10)]: 'traceable', [id(11)]: 'partly' })[x]
-  // the splitter splits the first partly check and cannot split the second
-  const split = (ids) => (ids.includes(id(10)) ? { 'manifest.json': JSON.stringify(ids.map((x) => ({ id: x, behaviour: 'SENTINEL-B', severity: 'medium' }))), ...spec(10), ...spec(11) } : null)
+  // the splitter cannot split the first partly check and splits the second
+  const split = (ids, label) => (label.endsWith(id(5).toLowerCase()) ? { 'manifest.json': JSON.stringify(ids.map((x) => ({ id: x, behaviour: 'SENTINEL-B', severity: 'medium' }))), ...spec(10), ...spec(11) } : null)
   const agent = fake(calls, { rate, split }), task = join(d, 'env/r.json')
   const validate = async (a) => { // the new checks validate
     vcalls.push(a)
@@ -682,7 +709,8 @@ test('agreed partly goes to split and disputed stays unlabelled', async () => {
   expect(vcalls).toEqual([[task, 'r1']])
   const splits = calls.filter((a) => a[1].startsWith('split-'))
   expect(splits.map((a) => a[1])).toEqual([`split-r1-${id(3)}`, `split-r1-${id(5)}`].map((x) => x.toLowerCase())) // an agent label is lower case
-  expect(readFileSync(argOf(splits[1], '--prompt'), 'utf8')).toContain(`\`${id(12)}\``) // numbered after the first split's
+  for (const sp of splits) expect(readFileSync(argOf(sp, '--prompt'), 'utf8')).toContain(`\`${id(10)}\``) // the failed split left no id in an oracle
+  expect(jsonAt(join(d, 'r1/work', `split-${id(3)}`, 'split.reply.md.run.json')).ids).toEqual([id(10), id(11)])
   const work = join(d, 'r1/work', `split-${id(3)}`), prompt = readFileSync(argOf(splits[0], '--prompt'), 'utf8')
   expect(jsonAt(argOf(splits[0], '--settings')).permissions.allow).toEqual([`Read(/${work}/**)`, `Edit(/${join(work, 'out')}/**)`])
   expect(prompt).toStartWith('SPLIT-BRIEF\n')
@@ -690,19 +718,42 @@ test('agreed partly goes to split and disputed stays unlabelled', async () => {
   expect(ls(join(work, 'in'))).toEqual([`${id(3)}.spec.ts`, 'entry.json', 'input.md', 'interface.md'])
   expect(Object.keys(jsonAt(join(work, 'in/entry.json'))).sort()).toEqual(['behaviour', 'id', 'interface', 'severity'])
   const byId = new Map(jsonAt(join(d, 'r1/oracle/manifest.json')).map((x) => [x.id, x]))
-  expect(byId.get(id(3))).toMatchObject({ dropped: true, split_into: [id(10), id(11)] })
-  expect(byId.get(id(5)).dropped).toBeUndefined()
+  expect(byId.get(id(5))).toMatchObject({ dropped: true, split_into: [id(10), id(11)] })
+  expect(byId.get(id(3)).dropped).toBeUndefined()
   expect(byId.get(id(10))).toMatchObject({ fix_commit: FIX, task: 'r1', hunk: 'src/a.ts:3', origin: 'SENTINEL-ORIGIN.spec.ts::t', interface: 'browser', severity: 'medium' })
   expect(existsSync(join(d, 'r1/oracle', `${id(11)}.spec.ts`))).toBe(true)
   // the new checks are classified alone: partly again -> requirement; the unsplittable partly -> requirement; disputed stays out
   expect(calls.filter((a) => a[1].startsWith('classify-split'))).toHaveLength(2)
   expect(jsonAt(join(d, 'r1/work/classify-split/manifest.json')).map((x) => x.id)).toEqual([id(10), id(11)])
-  expect(jsonAt(join(d, 'r1/labels.json'))).toEqual({ [id(1)]: 'build', [id(2)]: 'requirement', [id(5)]: 'requirement', [id(10)]: 'build', [id(11)]: 'requirement' })
+  expect(jsonAt(join(d, 'r1/labels.json'))).toEqual({ [id(1)]: 'build', [id(2)]: 'requirement', [id(3)]: 'requirement', [id(10)]: 'build', [id(11)]: 'requirement' })
   expect(jsonAt(join(d, 'r1/agreement.json'))).toMatchObject({ disputed: [id(4)], split: { checks: 2, disputed: [] } })
-  // a rerun leaves the split check alone and validates nothing again
+  // a rerun reuses the failed split's run with its recorded ids (not stale, though T10 and T11 now exist), leaves the
+  // split check alone and validates nothing again
   const again = await withData(d, () => quiet(() => oracle(['split', task, 'r1'], { agent, validate })))
   expect(again.out).toBe(s.out.replace('split=1', 'split=0'))
   expect(vcalls).toHaveLength(1)
+  expect(calls.filter((a) => a[1].startsWith('split-'))).toHaveLength(2)
+})
+
+test('split validates new checks that have no verdict and fails when validate throws', async () => {
+  const d = clData('cl10'), f = FIX.slice(0, 7), id = (n) => `${f}-T${n}`, calls = []
+  const spec = (n) => ({ [`${id(n)}.spec.ts`]: "import { test } from '@playwright/test'\n" })
+  clTask(d, 'r1', FIX, [[id(1), 'valid']], spec(1))
+  const split = (ids) => ({ 'manifest.json': JSON.stringify(ids.map((x) => ({ id: x, behaviour: 'b', severity: 'low' }))), ...spec(2), ...spec(3) })
+  const agent = fake(calls, { rate: () => 'partly', split }), task = join(d, 'env/r.json')
+  await withData(d, () => quiet(() => oracle(['classify', task, 'r1'], { agent })))
+  const bad = async () => { throw new Error('grade died\nSENTINEL-DETAIL') }
+  const s = await withData(d, () => quiet(() => oracle(['split', task, 'r1'], { agent, validate: bad })))
+  expect(s).toEqual({ code: 1, out: 'r1 split validate failed (grade died); the new checks are not classified' })
+  expect(calls.filter((a) => a[1].startsWith('classify-split'))).toHaveLength(0)
+  // the rerun splits nothing again but validates the checks still without a verdict, then classifies them
+  const vcalls = []
+  const validate = async (a) => { vcalls.push(a); const v = join(d, 'r1', `validation-${f}.json`), x = jsonAt(v); writeFileSync(v, JSON.stringify({ ...x, checks: [...x.checks, { id: id(2), verdict: 'valid' }, { id: id(3), verdict: 'valid' }] })); return 0 }
+  const again = await withData(d, () => quiet(() => oracle(['split', task, 'r1'], { agent, validate })))
+  expect(again).toEqual({ code: 0, out: 'r1 split partly=1 split=0 failed=0 stale=0 new=2 classified=2 build=0 requirement=2 disputed=0' })
+  expect(vcalls).toEqual([[task, 'r1']])
+  expect(await withData(d, () => quiet(() => oracle(['split', task, 'r1'], { agent, validate: async () => 4 })))).toMatchObject({ code: 0 }) // all validated: not called
+  expect(calls.filter((a) => a[1].startsWith('split-'))).toHaveLength(1)
 })
 
 test('split puts the new checks of a grouped external file into that file', async () => {
@@ -735,14 +786,16 @@ test('queue picks by seed and prints only counts', async () => {
   clTask(d, 'r1', FIX, re, files(re))
   clTask(d, 'x1-01', END, x1, files(x1))
   clTask(d, 'x2-01', g.padEnd(40, '0'), x2, files(x2))
-  const rate = (r, id) => (id.endsWith('-T2') && r === 2 ? 'partly' : id.endsWith('-T3') ? 'not traceable' : 'traceable')
+  const rate = (r, id) => (id.endsWith('-T2') && r === 2 ? 'partly' : id.endsWith('-T3') ? 'not traceable' : id.endsWith('-T4') ? 'partly' : 'traceable')
   for (const a of [[join(d, 'env/r.json'), 'r1'], ['x1-01'], ['x2-01']]) expect((await withData(d, () => quiet(() => oracle(['classify', ...a], { agent: fake(calls, { rate }) })))).code).toBe(0)
+  // an agreed partly that a rule made requirement (a failed split) is no agreed classification for 7.2
+  writeFileSync(join(d, 'r1/labels.json'), JSON.stringify({ ...jsonAt(join(d, 'r1/labels.json')), [`${f}-T4`]: 'requirement' }))
   const q = await withData(d, () => quiet(() => oracle(['queue'])))
   expect(q.code).toBe(0)
   expect(q.out.split('\n')).toEqual([
-    'queue: labels 1, classify 3, sample-7.1 23, sample-7.2 26, inputs 3',
-    'task-repo: tasks 1, checks 14, kappa=0.64 raw=0.93 ac1=0.92 usable yes',
-    'external: tasks 2, checks 15, kappa=0.62 raw=0.87 ac1=0.84 usable yes',
+    'queue: labels 1, classify 3, sample-7.1 23, sample-7.2 24, inputs 3',
+    'task-repo: tasks 1, checks 14, kappa=0.77 raw=0.93 ac1=0.92 usable yes',
+    'external: tasks 2, checks 15, kappa=0.69 raw=0.87 ac1=0.83 usable yes',
   ])
   expect(q.out).not.toContain('SENTINEL')
   const tsv = (n) => readFileSync(join(d, 'step9', n), 'utf8').trim().split('\n').map((l) => l.split('\t'))
@@ -753,8 +806,8 @@ test('queue picks by seed and prints only counts', async () => {
   expect(s71.filter((r) => r[0] === 'x1').map((r) => r[2])).toEqual(queuePick(ids(x1), 10, SEED))
   expect(s71.filter((r) => r[0] === 'x2').map((r) => r[2])).toEqual(queuePick(ids(x2.slice(0, 3)), 10, SEED)) // not the broken check
   const s72 = tsv('sample-7.2.tsv').slice(1)
-  expect(s72.filter((r) => r[0] === 'task-repo')).toHaveLength(13)
-  expect(s72.filter((r) => r[0] === 'external').map((r) => r[2])).toEqual(queuePick([...ids(x1), ...ids(x2.slice(0, 3))].filter((id) => !id.endsWith('-T2')), 20, SEED))
+  expect(s72.filter((r) => r[0] === 'task-repo').map((r) => r[2])).toEqual(queuePick(ids(re).filter((id) => !/-T[24]$/.test(id)), 20, SEED))
+  expect(s72.filter((r) => r[0] === 'external').map((r) => r[2])).toEqual(queuePick([...ids(x1), ...ids(x2.slice(0, 3))].filter((id) => !/-T[24]$/.test(id)), 20, SEED))
   expect(tsv('inputs.tsv').slice(1)).toEqual([['task-repo', 'r1'], ...queuePick(['x1-01', 'x2-01'], 2, SEED).map((t) => ['external', t])])
 })
 
