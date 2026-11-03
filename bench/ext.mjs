@@ -301,6 +301,13 @@ const NET = Object.entries({ 'failed to resolve source metadata': /failed to res
   'HTTP 503': /HTTP[^\n]{0,12}\b503\b|503 Service Unavailable/i, 'HTTP 502': /HTTP[^\n]{0,12}\b502\b|502 Bad Gateway/i })
 // the network signature in a failed build's log tail, or null. A tag or image that does not exist says `failed to resolve
 // source metadata ... not found` too: that is the recipe's failure (a spent round the agent is told of), never the network's
+// how a run ended: our limit fired (a finished run), killed for memory, killed from outside, or exited by itself
+export function runEnd(timedOut, exitCode, oom) {
+  if (timedOut) return 'finished'
+  if (oom === 'true') return 'oom' // ruling 10: the repo does not fit this machine, an out reason
+  return exitCode === '137' || exitCode === '143' ? 'killed' : 'finished' // killed from outside: the machine's failure
+}
+
 export function netFailure(text) {
   if (/failed to resolve source metadata[^\n]*(not found|pull access denied|manifest unknown)/i.test(text)) return null // on that line only
   return NET.find(([, re]) => re.test(text))?.[0] ?? null
@@ -442,8 +449,14 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     if (st.code) { await daemon(); throw new Error(`docker inspect ${c} failed (exit ${st.code})`) }
     const [status, exitCode, oom] = st.out.trim().split(' ')
     if (status !== 'exited') throw new Error(`container ${c} is ${status}, not exited`)
-    // killed from outside (our own limit aside) or out of memory: the machine's failure. Our limit is a finished run.
-    if (!timedOut && (oom === 'true' || exitCode === '137' || exitCode === '143')) throw new Error(`container ${c} was killed (exit ${exitCode}, OOMKilled ${oom})`)
+    const how = runEnd(timedOut, exitCode, oom)
+    if (how === 'killed') throw new Error(`container ${c} was killed (exit ${exitCode}, OOMKilled ${oom})`)
+    if (how === 'oom') { // the repo does not fit this machine: null, and the log says so (a probe's goes to the next round)
+      appendFileSync(log, '\nbench: the container was killed for memory (OOMKilled)\n')
+      meta.runs.push({ label, timedOut, exitCode: Number(exitCode), oom: true, cases: 0 })
+      save()
+      return null
+    }
     stage = 'cp'
     rmSync(xml, { force: true })
     const got = await sp(['docker', 'cp', `${c}:/out/junit.xml`, xml])
@@ -496,7 +509,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       const log = join(rounds, `${file}.build.log`), probe = join(rounds, `${file}.probe`)
       if (!(await build(r, b.base, baseTag, log))) return { r, what: 'build', log }
       const cases = await runIn(r, baseTag, `probe-${label}`, r.probe, { log: `${probe}.log`, xml: `${probe}.xml` })
-      return cases.some((c) => c.status === 'pass') ? null : { r, what: 'probe', log: `${probe}.log` }
+      return cases?.some((c) => c.status === 'pass') ? null : { r, what: 'probe', log: `${probe}.log` }
     }
     let recipe = null, failed = null
     if (existsSync(saved)) { // the repo's recipe, reused: not a round; when it fails here, the first round is told why
@@ -540,7 +553,8 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     if (!files.length) return 'PR tests do not pass at end' // no file to run: never call the test script with none
     const a = meta.attempt, run = (image, label, o) => runIn(recipe, image, label, files, { log: join(logs, `${label}.log`), xml: join(logs, `${label}.xml`), ...o })
     const atBase = await run(baseTag, `base-${a}`, { del, copy: true })
-    const e1 = await run(endTag, `end-${a}-1`), e2 = await run(endTag, `end-${a}-2`)
+    const e1 = atBase && (await run(endTag, `end-${a}-1`)), e2 = e1 && (await run(endTag, `end-${a}-2`))
+    if (!e2) return 'out of memory'
     const { f2p, p2p, endPass } = failToPass(atBase, e1, e2)
     writeFileSync(join(sealed, 'f2p.json'), JSON.stringify({ f2p, p2p }, null, 2) + '\n')
     Object.assign(meta, { f2p: f2p.length, p2p: p2p.length })

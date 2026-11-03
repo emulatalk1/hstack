@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-11-03
+* **Update**: Added to ruling 10 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2), after the list commit and before any task was accepted, the out reason `out of memory`: a test run Docker reports OOMKilled is the repo not fitting this machine (7.6 GB, 8 CPUs), after `end build failed`; the recipe brief states the memory limit.
+
 ## 2026-11-02
 * **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2) the rulings for step 4 before any enumeration: the stacks (Django or Rails, Electron, Rust), the repo universe and snapshot window, the sort key with its test vectors, the walk order, the base and end commits, and the user's decisions of 2026-11-02.
 * **Creation**: Added the [external task selection plan](/plans/2026-11-02-bench-external.md) (draft), step 4 of the pre-registration: the rulings section 4.2 leaves open, one sorted candidate list committed before any check, and a walk in sort order that checks each task in a container.

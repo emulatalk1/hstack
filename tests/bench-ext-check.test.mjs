@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { issueAsOf, netFailure, parseRecipe } from '../bench/ext.mjs'
+import { issueAsOf, netFailure, parseRecipe, runEnd } from '../bench/ext.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // A local fixture repo stands in for GitHub, a fake gh answers the PR and issue queries, and a fixed recipe (or a fake
@@ -224,6 +224,16 @@ test('a recipe must copy the repo to /work and may not ask for host network, ins
     expect(bad(ok.dockerfile + run + '\n')).toThrow('may not use')
   expect(() => parseRecipe(JSON.stringify({ ...ok, platform: 'linux/s390x' }))).toThrow('the recipe is not')
   expect(() => parseRecipe(JSON.stringify({ ...ok, probe: [] }))).toThrow('the recipe is not')
+})
+
+test('a run killed for memory is the repo\'s (out of memory), one killed from outside is the machine\'s', () => {
+  expect(runEnd(false, '137', 'true')).toBe('oom')
+  expect(runEnd(false, '101', 'true')).toBe('oom') // the first datafusion base run: a panic code with OOMKilled set
+  expect(runEnd(false, '137', 'false')).toBe('killed')
+  expect(runEnd(false, '143', 'false')).toBe('killed')
+  expect(runEnd(true, '137', 'false')).toBe('finished') // our own limit stopped it
+  expect(runEnd(false, '1', 'false')).toBe('finished')
+  expect(runEnd(false, '0', 'false')).toBe('finished')
 })
 
 test('a missing image tag is the recipe\'s failure, the network\'s signatures are not', () => {
