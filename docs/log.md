@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-03
+* **Update**: Recorded in ruling 10 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2) the user's decision of 2026-11-03: Docker keeps 7.6 GB and 8 CPUs, a repo whose tests need more memory is `out of memory`, and every such out is reported to the user.
 * **Update**: Added to ruling 10 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2) that each recipe probe also runs a non-test file from a test folder, and that candidates rejected before this change for `PR tests do not pass at end` are rechecked, after a sealed diagnosis traced the first such reject to the recipe interface.
 * **Update**: Added to ruling 10 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2), after the list commit and before any task was accepted, the out reason `out of memory`: a test run Docker reports OOMKilled is the repo not fitting this machine (7.6 GB, 8 CPUs), after `end build failed`; the recipe brief states the memory limit.
 
