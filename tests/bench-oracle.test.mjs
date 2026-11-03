@@ -257,6 +257,7 @@ mkdirSync(join(scaffold, 'node_modules'), { recursive: true })
 writeFileSync(join(scaffold, 'run.config.ts'), 'SCAFFOLD-CONFIG\n')
 writeFileSync(join(scaffold, 'package.json'), '{}\n')
 writeFileSync(join(data, 'briefs/oracle-re.md'), 'RE-BRIEF\n')
+writeFileSync(join(data, 'briefs/oracle-re.json'), JSON.stringify({ suffix: '.spec.ts', imports: ['runner-lib'], kinds: ['browser', 'http', 'api', 'none'] }))
 const useSources = () => {
   writeFileSync(join(src, 'pairs.tsv'), ['commit\ttask\tkind\thunks', `${k1}\tt1\tin-task\tsrc/a.txt:4`, `${k3}\tt1\tin-task\tsrc/a.txt:8`, `${k3}\tt2\tlater\tsrc/b.txt:5`, `${k3}\tt3\tlater\tsrc/c.txt:1`].join('\n') + '\n')
   writeFileSync(join(src, 'labels.tsv'), ['commit\ttask\tkind\tl1\tl2\tsource', `${k1}\tt1\tin-task\tfix\tfix\tyes`, `${k3}\tt1\tin-task\tfix\tfix\tyes`, `${k3}\tt2\tlater\tfix\tfix\tyes`, `${k3}\tt3\tlater\tfix\trequirement change\tstep9`].join('\n') + '\n')
@@ -292,7 +293,7 @@ test('write moves each check into the oracle of its hunk\'s owner', async () => 
       entry(`${s}-T7`, 'src/a.txt:8', { interface: 'api' }),
     ]),
     [`${s}-T1.spec.ts`]: `test('${s}-T1 seven', () => {})\n`,
-    [`${s}-T7.spec.ts`]: `def test_${s}_T7(): pass  # names rewritten from '${s}'\n`, // the id prefix in other forms is no leak
+    [`${s}-T7.spec.ts`]: `def test_${s}_T7(): pass  # names built on prefix '${s}'\n`, // the id prefix in other forms is no leak
     [`${s}-T2.spec.ts`]: 'api\n',
     [`${s}-T3.spec.ts`]: 'c\n',
     [`${s}-T5.spec.ts`]: '// from src/x.spec.ts\n',
@@ -324,8 +325,10 @@ test('write moves each check into the oracle of its hunk\'s owner', async () => 
   expect(r.out).toContain('per task: t1 3, t2 1')
   expect(r.out).toContain('interface none: 1')
   expect(r.out).toContain('severity: high 2, medium 1, low 1')
+  expect(r.out).not.toContain('SENTINEL')
   const again = await quiet(() => oracle(['write', task, k3], { agent })) // the writer's record stands: only the move again
   expect(calls).toHaveLength(1)
+  expect(again.out).not.toContain('SENTINEL')
   expect(again.out).toContain(`write ${s}: writer reused code 0, entries 7, written 4, refused 3`)
   expect(manifestOf('t1').map((m) => m.id)).toEqual(['bbbbbbb-T1', `${s}-T1`, `${s}-T4`, `${s}-T7`])
   expect(manifestOf('t2').map((m) => m.id)).toEqual([`${s}-T2`])
@@ -344,6 +347,92 @@ test('write refuses a manifest entry with no severity or a duplicate id', async 
   expect(existsSync(join(data, 't1/oracle', `${s}-T2.spec.ts`))).toBe(false)
   expect(r.out).toContain('entries 5, written 1, refused 4')
   expect(r.out).toContain('refused: duplicate id 2, severity 2')
+  expect(r.out).not.toContain('SENTINEL')
+})
+
+// one fake writer run on k1 (in-task t1, hunk src/a.txt:4) with the given entries and files; its record is dropped after
+const k1Run = async (entries, files) => {
+  useSources()
+  const s = k1.slice(0, 7), calls = []
+  for (const f of [s, `${s}-2`]) for (const x of ['.reply.md', '.reply.md.run.json']) rmSync(join(data, 're-work', f + x), { force: true })
+  const r = await quiet(() => oracle(['write', task, k1], { agent: writer(() => ({ 'manifest.json': JSON.stringify(entries(s)), ...files(s) }), calls) }))
+  return { ...r, s, calls }
+}
+
+test('write refuses a task-repo check that imports anything but the runner', async () => {
+  const { code, out, s } = await k1Run((s) => [entry(`${s}-T1`, 'src/a.txt:4'), entry(`${s}-T2`, 'src/a.txt:4'), entry(`${s}-T3`, 'src/a.txt:4'), entry(`${s}-T4`, 'src/a.txt:4')], (s) => ({
+    [`${s}-T1.spec.ts`]: "import { test } from 'runner-lib'\n",
+    [`${s}-T2.spec.ts`]: "import { test } from 'runner-lib'\nimport { price } from '../src/price'\n",
+    [`${s}-T3.spec.ts`]: "const fs = require('node:fs')\n",
+    [`${s}-T4.spec.ts`]: "const m = await import(name)\n",
+  }))
+  expect(code).toBe(0)
+  expect(out).toContain('entries 4, written 1, refused 3')
+  expect(out).toContain('refused: import 3')
+  expect(manifestOf('t1').filter((m) => m.id.startsWith(s)).map((m) => m.id)).toEqual([`${s}-T1`])
+})
+
+test('write refuses a task-repo check whose file is not named <id> and the suffix', async () => {
+  const { out } = await k1Run((s) => [entry(`${s}-T1`, 'src/a.txt:4'), entry(`${s}-T2`, 'src/a.txt:4')], (s) => ({ [`${s}-T1.spec.ts`]: 'one\n', [`${s}-T2.ts`]: 'two\n' }))
+  expect(out).toContain('entries 2, written 1, refused 1')
+  expect(out).toContain('refused: file 1')
+})
+
+test('write refuses a task-repo check with a kind of interface the task repo has not', async () => {
+  const { out } = await k1Run((s) => [entry(`${s}-T1`, 'src/a.txt:4', { interface: 'cli' }), entry(`${s}-T2`, 'src/a.txt:4', { interface: 'http' })], (s) => ({ [`${s}-T1.spec.ts`]: 'one\n', [`${s}-T2.spec.ts`]: 'two\n' }))
+  expect(out).toContain('entries 2, written 1, refused 1')
+  expect(out).toContain('refused: interface 1')
+})
+
+test('write reruns once a writer that left no entry or only interface none, and the second run stands', async () => {
+  useSources()
+  const s = k1.slice(0, 7), calls = [], none = (id) => entry(id, 'src/a.txt:4', { interface: 'none' })
+  for (const f of [s, `${s}-2`]) for (const x of ['.reply.md', '.reply.md.run.json']) rmSync(join(data, 're-work', f + x), { force: true })
+  const runs = [[], [none(`${s}-T1`), none(`${s}-T2`)]]
+  const agent = writer(() => ({ 'manifest.json': JSON.stringify(runs[calls.length - 1]) }), calls)
+  const r = await quiet(() => oracle(['write', task, k1], { agent }))
+  expect(r.code).toBe(0)
+  expect(calls.map((a) => a[1])).toEqual([`write-${s}`, `write-${s}-2`])
+  const a = calls[1], arg = (k) => a[a.indexOf(k) + 1]
+  expect(arg('--out')).toBe(join(data, 're-work', `${s}-2.reply.md`))
+  expect(arg('--prompt')).toBe(calls[0][calls[0].indexOf('--prompt') + 1])
+  expect(JSON.parse(readFileSync(arg('--settings'), 'utf8')).permissions.additionalDirectories).toEqual([join(data, 're-work', `${s}-2`)])
+  expect(existsSync(join(data, 're-work', `${s}.reply.md.run.json`))).toBe(true) // the first record stays
+  expect(r.out).toContain('entries 2, written 2, refused 0')
+  expect(r.out).toContain('rerun: the first run left no entry or only interface none; the second run stands')
+  expect(manifestOf('t1').filter((m) => m.id.startsWith(s)).map((m) => m.interface)).toEqual(['none', 'none'])
+  const again = await quiet(() => oracle(['write', task, k1], { agent })) // all none again: it stands, no third run
+  expect(calls).toHaveLength(2)
+  expect(again.out).toContain('writer reused code 0, entries 2, written 2')
+})
+
+test('write refuses to reuse a writer whose prompt has changed since it ran', async () => {
+  useSources()
+  const s = k1.slice(0, 7), calls = []
+  const agent = writer(() => ({}), calls)
+  const rec = join(data, 're-work', `${s}-2.reply.md.run.json`), prompt = join(data, 're-work/prompts', `${s}.md`)
+  expect(JSON.parse(readFileSync(rec, 'utf8')).promptSha).toBe(new Bun.CryptoHasher('sha256').update(readFileSync(prompt, 'utf8')).digest('hex'))
+  writeFileSync(join(data, 'briefs/oracle-re.md'), 'RE-BRIEF CHANGED\n')
+  try {
+    const r = await quiet(() => oracle(['write', task, k1], { agent }))
+    expect(r.code).toBe(1)
+    expect(r.out).toBe(`write ${s}: refused 1 writer run whose prompt differs from the one it ran with`)
+    expect(calls).toHaveLength(0)
+    expect(readFileSync(prompt, 'utf8')).toStartWith('RE-BRIEF\n') // the prompt on file is still the one the writer saw
+  } finally { writeFileSync(join(data, 'briefs/oracle-re.md'), 'RE-BRIEF\n') }
+})
+
+test('write gives a hunk an in-task pair and a later pair both list to the later pair\'s task', async () => {
+  useSources()
+  const s = k1.slice(0, 7), calls = []
+  writeFileSync(join(src, 'pairs.tsv'), ['commit\ttask\tkind\thunks', `${k1}\tt2\tlater\tsrc/a.txt:4`, `${k1}\tt1\tin-task\tsrc/a.txt:4,src/b.txt:9`].join('\n') + '\n')
+  writeFileSync(join(src, 'labels.tsv'), ['commit\ttask\tkind\tl1\tl2\tsource', `${k1}\tt1\tin-task\tfix\tfix\tyes`, `${k1}\tt2\tlater\tfix\tfix\tyes`].join('\n') + '\n')
+  for (const f of [s, `${s}-2`]) for (const x of ['.reply.md', '.reply.md.run.json']) rmSync(join(data, 're-work', f + x), { force: true })
+  const agent = writer(() => ({ 'manifest.json': JSON.stringify([entry(`${s}-T1`, 'src/a.txt:4'), entry(`${s}-T2`, 'src/b.txt:9')]), [`${s}-T1.spec.ts`]: '1\n', [`${s}-T2.spec.ts`]: '2\n' }), calls)
+  const r = await quiet(() => oracle(['write', task, k1], { agent }))
+  expect(r.out).toContain('per task: t2 1, t1 1')
+  expect(manifestOf('t2').filter((m) => m.id.startsWith(s)).map((m) => m.id)).toEqual([`${s}-T1`])
+  expect(manifestOf('t1').filter((m) => m.id.startsWith(s)).map((m) => m.id)).toEqual([`${s}-T2`])
 })
 
 test('write prints no check name or behaviour', async () => {

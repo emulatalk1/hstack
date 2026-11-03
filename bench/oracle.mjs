@@ -166,7 +166,11 @@ async function labels() {
 // --- write (ruling 9): one sealed writer per source commit or external task; each check goes to its owner's oracle ---
 const SEVERITY = ['high', 'medium', 'low']
 const KINDS = ['browser', 'http', 'api', 'window', 'files', 'cli', 'library', 'none']
-const REASONS = ['id', 'duplicate id', 'fields', 'severity', 'interface', 'hunk', 'file', 'leak']
+const REASONS = ['id', 'duplicate id', 'fields', 'severity', 'interface', 'hunk', 'file', 'import', 'leak']
+// the module specifiers a file names, and whether it loads one it does not name (a computed require or import)
+const SPECIFIER = /\bfrom\s*['"`]([^'"`]+)['"`]|\brequire\s*\(\s*['"`]([^'"`]+)['"`]|\bimport\s*\(?\s*['"`]([^'"`]+)['"`]/g
+const imports = (text) => [...text.matchAll(SPECIFIER)].map((m) => m[1] ?? m[2] ?? m[3])
+const computedImport = (text) => /\b(?:require|import)\s*\(\s*[^'"`\s)]/.test(text)
 
 // every file under dir, paths relative to it, without node_modules
 const filesUnder = (dir, at = '') => (existsSync(join(dir, at)) ? readdirSync(join(dir, at), { withFileTypes: true }) : []).flatMap((e) =>
@@ -178,8 +182,9 @@ const originPath = (o) => (typeof o === 'string' ? o.split('::')[0].trim() : '')
 const leaks = (text, full, origins) => text.includes(full.slice(0, 8)) || origins.some((o) => text.includes(o))
 
 // the writer's manifest, each entry with its file, its owner task and why it is refused (null: accepted); null when
-// there is no manifest. A grouped entry (external) may name its file; otherwise the file is the one named `<id>.*`
-function judge(dir, full, ownerOf, grouped) {
+// there is no manifest. A grouped entry (external) may name its file; otherwise the file is the one named `<id>.*`, or
+// `<id><suffix>` exactly when the rules give a suffix. Rules (the task repo's, data): { suffix, imports, kinds }
+function judge(dir, full, ownerOf, grouped, rules = {}) {
   const sha7 = full.slice(0, 7)
   let list = null
   try { list = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) } catch {}
@@ -188,15 +193,18 @@ function judge(dir, full, ownerOf, grouped) {
   const bad = new Set(files.filter((f) => leaks(readFileSync(join(dir, f), 'utf8'), full, origins)))
   const ids = list.map((e) => e?.id), idRe = new RegExp(`^${sha7}-T\\d+$`)
   const entries = list.map((e) => {
-    const file = e?.interface === 'none' ? null : grouped && typeof e?.file === 'string' ? normalize(e.file) : files.find((f) => basename(f).startsWith(`${e?.id}.`)) ?? ''
+    const file = e?.interface === 'none' ? null : grouped && typeof e?.file === 'string' ? normalize(e.file)
+      : rules.suffix ? `${e?.id}${rules.suffix}` : files.find((f) => basename(f).startsWith(`${e?.id}.`)) ?? ''
     const task = ownerOf(e?.hunk) ?? null
+    const text = file !== null && files.includes(file) ? readFileSync(join(dir, file), 'utf8') : ''
     const why = typeof e?.id !== 'string' || !idRe.test(e.id) ? 'id'
       : ids.filter((x) => x === e.id).length > 1 ? 'duplicate id'
       : ![e.origin, e.behaviour].every((x) => typeof x === 'string' && x.trim()) ? 'fields'
       : !SEVERITY.includes(e.severity) ? 'severity'
-      : !KINDS.includes(e.interface) ? 'interface'
+      : !(rules.kinds ?? KINDS).includes(e.interface) ? 'interface'
       : !task ? 'hunk'
       : file !== null && !files.includes(file) ? 'file'
+      : rules.imports && (computedImport(text) || imports(text).some((s) => !rules.imports.includes(s))) ? 'import'
       : file !== null && bad.has(file) ? 'leak' : null
     return { e, file, task, why }
   })
@@ -205,9 +213,10 @@ function judge(dir, full, ownerOf, grouped) {
 
 const entryOut = ({ e, file, task }, fix, withFile) => ({ id: e.id, fix_commit: fix, task, hunk: e.hunk, origin: e.origin, behaviour: e.behaviour, interface: e.interface, severity: e.severity, ...(withFile && file ? { file } : {}) })
 
-function report(label, how, code, entries) {
+function report(label, { how, code, runs }, entries) {
   const ok = entries.filter((x) => !x.why), n = (f) => ok.filter(f).length
   console.log(`write ${label}: writer ${how} code ${code}, entries ${entries.length}, written ${ok.length}, refused ${entries.length - ok.length}`)
+  if (runs === 2) console.log('rerun: the first run left no entry or only interface none; the second run stands')
   const why = REASONS.map((r) => [r, entries.filter((x) => x.why === r).length]).filter(([, k]) => k)
   if (why.length) console.log(`refused: ${why.map(([r, k]) => `${r} ${k}`).join(', ')}`)
   console.log(`per task: ${[...new Set(ok.map((x) => x.task))].map((t) => `${t} ${n((x) => x.task === t)}`).join(', ') || 'none'}`)
@@ -215,20 +224,36 @@ function report(label, how, code, entries) {
   console.log(`severity: ${SEVERITY.map((s) => `${s} ${n((x) => x.e.severity === s)}`).join(', ')}`)
 }
 
-// one writer run into `dir`, granted Write and Edit there only; a run whose record exists is not run again
-async function runWriter(agent, { taskFile, label, at, prompt, out, dir, settings }) {
-  const rec = `${out}.run.json`, code = () => JSON.parse(readFileSync(rec, 'utf8')).code
-  if (existsSync(rec)) return { how: 'reused', code: code() }
+const sha256 = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
+const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
+
+// one writer run into `dir`, granted Write and Edit there only. The prompt file is written only when a writer runs, and
+// its sha256 goes into the run record; a run whose record exists is reused only when today's prompt is the same
+async function runWriter(agent, { taskFile, label, at, prompt, text, out, dir, settings }) {
+  const rec = `${out}.run.json`
+  if (existsSync(rec)) { const r = readJson(rec); return r?.promptSha === sha256(text) ? { how: 'reused', code: r.code } : { how: 'reused', stale: true } }
   rmSync(dir, { recursive: true, force: true })
   rmSync(out, { force: true })
-  for (const d of [dir, dirname(settings)]) mkdirSync(d, { recursive: true })
+  for (const d of [dir, dirname(settings), dirname(prompt)]) mkdirSync(d, { recursive: true })
+  writeFileSync(prompt, text)
   writeFileSync(settings, JSON.stringify({ permissions: { additionalDirectories: [dir], allow: [`Read(/${dir}/**)`, `Edit(/${dir}/**)`] } }, null, 2) + '\n')
   await agent([taskFile, label, '--prompt', prompt, '--out', out, '--at', at, '--tools', 'Read,Glob,Grep,Write,Edit', '--settings', settings])
-  return { how: 'ran', code: existsSync(rec) ? code() : null }
+  const r = readJson(rec)
+  if (r) writeFileSync(rec, JSON.stringify({ ...r, promptSha: sha256(text) }, null, 2) + '\n')
+  return { how: 'ran', code: r?.code ?? null }
 }
 
+// controller ruling: a run that leaves no manifest, an empty one, or only `interface: none` entries is run once more
+// (`-2`: same prompt, its own folder, reply and settings; the first record stays), and the second run stands
+async function writer(agent, o) {
+  const first = await runWriter(agent, o), l = readJson(join(o.dir, 'manifest.json'))
+  if (first.stale || (Array.isArray(l) && l.some((e) => e?.interface !== 'none'))) return { ...first, dir: o.dir, runs: 1 }
+  const two = { ...o, label: `${o.label}-2`, out: o.out.replace(/\.reply\.md$/, '-2.reply.md'), dir: `${o.dir}-2`, settings: o.settings.replace(/\.json$/, '-2.json') }
+  return { ...(await runWriter(agent, two)), dir: two.dir, runs: 2 }
+}
+const staleLine = (label) => `write ${label}: refused 1 writer run whose prompt differs from the one it ran with`
+
 const fence = (text, lang = '') => `\`\`\`\`${lang}\n${text.trimEnd()}\n\`\`\`\`\n`
-const writePrompt = (file, text) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text) }
 
 // shortcut: a mkdir lock with no stale-lock recovery (a write killed inside the move leaves it); remove it by hand then
 async function locked(lock, fn) {
@@ -255,7 +280,8 @@ async function writeSource(taskPath, commit, agent) {
   const tests = files.filter(isTestPath), scoped = [...new Set([...scope.keys()].filter((h) => h !== 'none').map((h) => h.slice(0, h.lastIndexOf(':'))))]
   const work = join(data, 're-work'), dir = join(work, sha7), prompt = join(work, 'prompts', `${sha7}.md`)
   const scaffoldFiles = readdirSync(scaffold, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name)
-  writePrompt(prompt, [
+  const rules = JSON.parse(readFileSync(join(data, 'briefs/oracle-re.json'), 'utf8'))
+  const text = [
     readFileSync(join(data, 'briefs/oracle-re.md'), 'utf8').trimEnd() + '\n',
     `## The check ids\n\nPrefix \`${sha7}\`: the ids are \`${sha7}-T1\`, \`${sha7}-T2\`, ...\n`,
     `## The in-scope hunks and their owner tasks\n\n${[...scope].map(([h, t]) => h === 'none' ? `- \`none\` (task ${t}): the commit changes no source file of this task` : `- \`${h}\` (task ${t})`).join('\n')}\n`,
@@ -263,10 +289,11 @@ async function writeSource(taskPath, commit, agent) {
     `## The commit's test changes\n\n${tests.length ? fence(await gitOut(repo, 'show', '--format=', '--no-renames', full, '--', ...tests), 'diff') : 'none\n'}`,
     `## The scaffold\n\nEach check runs from an oracle folder that holds these files beside it, with their packages installed.\n\n${scaffoldFiles.map((f) => `### ${f}\n\n${fence(readFileSync(join(scaffold, f), 'utf8'))}`).join('\n')}`,
     `## Your output folder\n\n\`${dir}\`\n`,
-  ].join('\n'))
-  const { how, code } = await runWriter(agent, { taskFile: taskPath, label: `write-${sha7}`, at: full, prompt, out: join(work, `${sha7}.reply.md`), dir, settings: join(work, 'settings', `${sha7}.json`) })
-  const res = judge(dir, full, (h) => scope.get(h), false)
-  if (!res) { console.log(`write ${sha7}: writer ${how} code ${code}, no manifest`); return 1 }
+  ].join('\n')
+  const w = await writer(agent, { taskFile: taskPath, label: `write-${sha7}`, at: full, prompt, text, out: join(work, `${sha7}.reply.md`), dir, settings: join(work, 'settings', `${sha7}.json`) })
+  if (w.stale) { console.log(staleLine(sha7)); return 1 }
+  const res = judge(w.dir, full, (h) => scope.get(h), false, rules)
+  if (!res) { console.log(`write ${sha7}: writer ${w.how} code ${w.code}, no manifest`); return 1 }
   const ok = res.entries.filter((x) => !x.why), owners = [...new Set([...yes.map((r) => r[1]), ...ok.map((x) => x.task)])]
   await locked(join(work, '.lock'), () => {
     for (const t of owners) { // this commit's earlier checks leave every oracle first, so a rerun replaces them
@@ -280,11 +307,11 @@ async function writeSource(taskPath, commit, agent) {
         for (const f of scaffoldFiles) copyFileSync(join(scaffold, f), join(o, f))
         if (!lstatSync(join(o, 'node_modules'), { throwIfNoEntry: false })) symlinkSync(join(scaffold, 'node_modules'), join(o, 'node_modules'))
       }
-      for (const x of ok.filter((y) => y.task === t)) if (x.file) copyFileSync(join(dir, x.file), join(o, basename(x.file)))
+      for (const x of ok.filter((y) => y.task === t)) if (x.file) copyFileSync(join(w.dir, x.file), join(o, basename(x.file)))
       writeFileSync(join(o, 'manifest.json'), JSON.stringify([...kept, ...ok.filter((x) => x.task === t).map((x) => entryOut(x, full, false))], null, 2) + '\n')
     }
   })
-  report(sha7, how, code, res.entries)
+  report(sha7, w, res.entries)
   return 0
 }
 
@@ -305,7 +332,7 @@ async function writeTask(task, agent) {
   const recipe = JSON.parse(readFileSync(join(ext, 'tasks', t.slug, 'task-recipe.json'), 'utf8'))
   const work = join(data, task, 'work'), dir = join(work, 'write'), prompt = join(work, 'write.prompt.md')
   const list = (xs) => (xs.length ? xs.map((x) => `- \`${x}\``).join('\n') : 'none') + '\n'
-  writePrompt(prompt, [
+  const text = [
     readFileSync(join(ext, 'briefs/oracle.md'), 'utf8').trimEnd() + '\n',
     `## The check ids\n\nPrefix \`${sha7}\`: the ids are \`${sha7}-T1\`, \`${sha7}-T2\`, ...\n`,
     `## The PR's source hunks\n\n${list(hunks)}`,
@@ -315,20 +342,21 @@ async function writeTask(task, agent) {
     `## The serve recipe\n\n${fence(JSON.stringify(sv, null, 2), 'json')}`,
     `## The PR's diff (base to end)\n\n${fence(await gitOut(repo, 'diff', '--no-renames', t.base, t.end), 'diff')}`,
     `## Your output folder\n\n\`${dir}\` (copied to \`/oracle\` in the container)\n`,
-  ].join('\n'))
-  const { how, code } = await runWriter(agent, { taskFile, label: `write-${task}`, at: t.end, prompt, out: join(work, 'write.reply.md'), dir, settings: join(work, 'write-settings.json') })
-  const res = judge(dir, t.end, (h) => (hunks.includes(h) ? task : null), true)
-  if (!res) { console.log(`write ${task}: writer ${how} code ${code}, no manifest`); return 1 }
+  ].join('\n')
+  const w = await writer(agent, { taskFile, label: `write-${task}`, at: t.end, prompt, text, out: join(work, 'write.reply.md'), dir, settings: join(work, 'write-settings.json') })
+  if (w.stale) { console.log(staleLine(task)); return 1 }
+  const res = judge(w.dir, t.end, (h) => (hunks.includes(h) ? task : null), true)
+  if (!res) { console.log(`write ${task}: writer ${w.how} code ${w.code}, no manifest`); return 1 }
   let runner = null
-  try { runner = parseRunner(readFileSync(join(dir, 'runner.json'), 'utf8')) } catch {}
+  try { runner = parseRunner(readFileSync(join(w.dir, 'runner.json'), 'utf8')) } catch {}
   const runOnly = (l) => l.every((x, i) => /^RUN\s/.test(x.trim()) || (i > 0 && l[i - 1].trimEnd().endsWith('\\')))
-  if (!runner || !runOnly(runner.layer) || res.bad.has('runner.json')) { console.log(`write ${task}: writer ${how} code ${code}, runner.json missing or invalid`); return 1 }
+  if (!runner || !runOnly(runner.layer) || res.bad.has('runner.json')) { console.log(`write ${task}: writer ${w.how} code ${w.code}, runner.json missing or invalid`); return 1 }
   const ok = res.entries.filter((x) => !x.why), used = new Set(ok.map((x) => x.file)), refused = new Set(res.entries.filter((x) => x.why).map((x) => x.file))
   const o = join(data, task, 'oracle')
   rmSync(o, { recursive: true, force: true })
-  for (const f of res.files.filter((f) => !res.bad.has(f) && (used.has(f) || !refused.has(f)))) cpSync(join(dir, f), join(o, f))
+  for (const f of res.files.filter((f) => !res.bad.has(f) && (used.has(f) || !refused.has(f)))) cpSync(join(w.dir, f), join(o, f))
   writeFileSync(join(o, 'manifest.json'), JSON.stringify(ok.map((x) => entryOut(x, t.end, true)), null, 2) + '\n')
-  report(task, how, code, res.entries)
+  report(task, w, res.entries)
   return 0
 }
 
