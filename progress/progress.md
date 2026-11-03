@@ -920,3 +920,49 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
 - Owning-tests rule (ruling 10, 2026-11-03): the `test` bullet of `<data>/ext/briefs/recipe.md` says that when no argument is a runnable test file, the script runs the tests that own them (and "runs only those files" became "runs only those tests"). recipe.md SHA-256 e9adb166a59124fd1561873cf342b651bd15ca6a6513cfbb5c44edd573e78208 -> fe75d6437ffb1b895e64ac95e326c457b84f2db71b33a3f1da59bd941bb9c6fb; every saved recipe is regenerated before use (briefSha). Structured sealed diagnosis of vite-plus (diag2, 79 s, usage 16/4575/373228/167710): 4 args, none with a probe extension, none runnable, the script ran nothing. Appended to walk.tsv: `s3 1 2 voidzero-dev/vite-plus#2667 recheck: owning tests`.
 - Task 5 Step 1, driver restarted: PID 28940 (process group 28940), code dc62bb7, start 2026-11-03T01:14:06Z (first the vite-plus recheck).
 - Task 5 Step 1, restart for 1e0b47b (a stale recipe is never used; the repo's first task keeps 3 rounds): driver group 28940 stopped at 2026-11-03T01:32Z with the in-flight swc-project__swc (s3 rank 3) build's own group 41543 (no walk.tsv row; it is resumed); new driver PID 44205 (process group 44205), code 1e0b47b, start 2026-11-03T01:32:33Z.
+- Task 5 Step 1, the full Docker disk (2026-11-03). The walk was paused by the controller (group 44205). Five s3 `end build failed` checks (ranks 4, 5, 9, 10, 11) each got a sealed diagnosis; all five said `disk`. Total usage 48/5461/1239785/631449. Docker's VM disk was 58.4 GB with 0 free.
+- The user's decision: clearing Docker's build cache is allowed, and accepted tasks keep their recipe and image digests, not their images. Code 404231b: a disk signature in a build or run log is an `error`, the walk stops below 15 GB estimated free, and `--remove-out` also removes an accepted task's images after recording `imageDigests`. The driver also stops on the walk's exit 3 (disk low).
+- `docker system df` before (`Type: total, active, size, reclaimable`): Images 35, 22, 26.63GB, 4.181GB; Containers 150, 2, 32.35MB, 27.34MB; Local Volumes 5, 1, 385.8MB, 216MB; Build Cache 149, 0, 43.37GB, 19.86GB.
+- Ran `docker builder prune -f` once; it reclaimed 19.86GB.
+- Accepted tasks emptied through `removeOut(..., { ok: true })`, with digests in meta.json `imageDigests`:
+    vite-plus: `bench-ext/voidzero-dev__vite-plus__2667:ce940e3` sha256:0db821993e45ae5cebc1d465659d842588430aef8a056ffd8f25cb3084c164e5, `:a3035cf` sha256:4575b9b22cd7575d9a29692d7f26aadfe583388f356ae7cdbdbf6d2b18ad7e8f
+    lancedb: `bench-ext/lancedb__lancedb__4486:982b2a1` sha256:9970e4be622736d818457ddf70136ffa6a51329ae3d6db68782e8eed0f2bd47d, `:180eaaf` sha256:695a8b97ab6da259ed720c4708407530c6b0da28c456db38421974fa8e72c806
+    Their containers and images were appended to removed.txt. Containers of vite-plus's attempts 1-2 had already been removed after its earlier out verdicts, so stderr said `could not remove` for them.
+- `docker system df` after: Images 31, 18, 4.807GB, 4.181GB; Containers 142, 2, 5.109MB, 107.9kB; Local Volumes 5, 1, 385.8MB, 216MB; Build Cache 95, 0, 23.51GB, 20.56GB.
+- The walk's free-disk estimate: limit 64.0 GB (DiskSizeMiB 61035) minus 28.7 GB used = 35.3 GB free.
+- Appended to walk.tsv: `recheck: disk` for s3 ranks 3, 4, 5, 6, 7, 9, 10, 11 (swc, toasty, cargo, panda, rocketmq-rust, nautilus_trader, iggy, polars).
+- Gated run `BENCH_EXT_DOCKER=1 bun test tests/bench-ext-check.test.mjs` (23 pass) left these fixture containers and images:
+    bench-ext-fx0d65j0__app__1-base-1
+    bench-ext-fx0d65j0__app__1-probe-reuse-1
+    bench-ext-fx652fn2__app__1-base-1
+    bench-ext-fx652fn2__app__1-end-1-1
+    bench-ext-fx652fn2__app__1-end-1-2
+    bench-ext-fx652fn2__app__1-probe-reuse-1
+    bench-ext-fxkepp6q__app__1-probe-1
+    bench-ext-fxkepp6q__app__1-probe-2
+    bench-ext-fxkepp6q__app__1-probe-3
+    bench-ext-fxlberl8__app__1-base-1
+    bench-ext-fxlberl8__app__1-end-1-1
+    bench-ext-fxlberl8__app__1-end-1-2
+    bench-ext-fxlberl8__app__1-probe-2
+    bench-ext-fxlquqou__app__1-base-1
+    bench-ext-fxlquqou__app__1-end-1-1
+    bench-ext-fxlquqou__app__1-end-1-2
+    bench-ext-fxlquqou__app__1-probe-2
+    bench-ext-fxz85fap__app__1-base-1
+    bench-ext-fxz85fap__app__1-end-1-1
+    bench-ext-fxz85fap__app__1-end-1-2
+    bench-ext-fxz85fap__app__1-probe-1
+    bench-ext-fxz85fap__app__1-probe-reuse-1
+    bench-ext/fx0d65j0__app__1:9d77abf
+    bench-ext/fx0d65j0__app__1:a9f5a4c
+    bench-ext/fx652fn2__app__1:9d77abf
+    bench-ext/fx652fn2__app__1:a9f5a4c
+    bench-ext/fxkepp6q__app__1:9d77abf
+    bench-ext/fxlberl8__app__1:9d77abf
+    bench-ext/fxlberl8__app__1:a9f5a4c
+    bench-ext/fxlquqou__app__1:9d77abf
+    bench-ext/fxlquqou__app__1:a9f5a4c
+    bench-ext/fxz85fap__app__1:9d77abf
+    bench-ext/fxz85fap__app__1:a9f5a4c
+- Task 5 Step 1, driver restarted: PID 90923 (process group 90923), code 404231b, start 2026-11-03T06:05:36Z.
