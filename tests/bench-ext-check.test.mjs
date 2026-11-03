@@ -743,6 +743,20 @@ dtest('removal deletes only names docker.json records (needs BENCH_EXT_DOCKER=1)
   } finally { for (const c of [mine, stray]) if (exists('container', c)) docker('rm', c) } // this test created both
 }, 600000)
 
+dtest('a run past the container limit ends inside the container: timeout, no JUnit, non-zero (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = oracleTask({ inj: { timeoutSec: 8 }, runner: { layer: [], run: 'sleep 600' } })
+  const started = Date.now(), r = await grade(s, ['--at', c1, '--sealed'])
+  expect(Date.now() - started).toBeLessThan(300000) // the 600 s run did not finish
+  expect(r).toMatchObject({ code: 1, stderr: '' })
+  expect(r.stdout).toStartWith(`${c17} junit=missing `)
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(`${c17}\ttimeout\n`)
+  expect(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8')).toContain('bench: not done in 8 s, killed')
+  const d = json(join(s.data, 's1-01', 'docker.json'))
+  expect(d.containers).toEqual([box(s, c1)])
+  for (const c of d.containers) expect(exists('container', c)).toBe(false)
+  for (const i of d.images) expect(exists('image', i.name)).toBe(false)
+}, 900000)
+
 test('oracle-run refuses an absent or malformed runner.json before any Docker call', async () => {
   for (const runner of [null, '{"layer": "RUN true", "run": "sh x"}', JSON.stringify({ layer: ['RUN --network=host true'], run: 'sh x' }), JSON.stringify({ layer: [], run: ' ' })]) {
     const s = oracleTask({ runner })

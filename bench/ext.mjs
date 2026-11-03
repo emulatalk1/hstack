@@ -874,10 +874,14 @@ const serveScript = (readySec, dir = '/work', then = 'exit 0') => ['cd /work', '
   'while :; do', `  if sh ${dir}/.bench-ready.sh >/dev/null 2>&1; then [ -e /tmp/.bench-ready-limit ] && break; echo "bench: ready"; ${then}; fi`,
   '  [ -e /tmp/.bench-ready-limit ] && break', '  sleep 2', 'done',
   `echo "bench: ready did not exit 0 within ${readySec} s; its output now:"`, `sh ${dir}/.bench-ready.sh 2>&1 | tail -n 20`, 'exit 3', ''].join('\n')
-// oracle-run's: an empty JUnit first (a run that never gets ready still has results, every check error), then serve's
-// script from /oracle; once ready, a marker and the runner's run (in /work), which rewrites /out/junit.xml
-const gradeScript = (readySec) => ['mkdir -p /out', "echo '<testsuites/>' > /out/junit.xml",
-  serveScript(readySec, '/oracle', 'touch /out/.bench-ready; sh /oracle/.bench-run.sh; echo "bench: run exited $?"; exit 0')].join('\n')
+// oracle-run's: an empty JUnit first (a run that never gets ready still has results, every check error), then the body
+// (serve's script from /oracle; once ready, a marker and the runner's run in /work, which rewrites /out/junit.xml) under
+// the container's own limit: a timer marks it and kills the process group (PID 1 survives a kill and exits 124), so the
+// container ends even when oracle-run was killed and no host limit is left
+const gradeScript = (limitSec) => ['mkdir -p /out', "echo '<testsuites/>' > /out/junit.xml", 'sh /oracle/.bench-body.sh &', 'body=$!',
+  `(sleep ${limitSec}; touch /out/.bench-timeout; echo "bench: not done in ${limitSec} s, killed"; kill -9 0) &`,
+  'wait $body', 'code=$?', '[ -e /out/.bench-timeout ] && exit 124', 'exit $code', ''].join('\n')
+const gradeBody = (readySec) => serveScript(readySec, '/oracle', 'touch /out/.bench-ready; sh /oracle/.bench-run.sh; echo "bench: run exited $?"; exit 0')
 
 // `serve` (ruling 5 of step 5): a serve recipe per repo, from rounds of a sealed agent, that serves the task at its base and
 // its end in one offline container of the task's recipe plus the layer. What it builds is removed as soon as it ends
@@ -1013,13 +1017,16 @@ export async function oracleRun(args, inj = {}) {
   const low = await diskFloor(task, inj)
   if (low) throw new Error(low)
 
-  const diskFree = inj.diskFree ?? dockerDiskFree, readySec = inj.readySec ?? 600
+  const diskFree = inj.diskFree ?? dockerDiskFree, readySec = inj.readySec ?? 600, limitSec = inj.timeoutSec ?? 1800
   const head = (await must(['git', '-C', dir, 'rev-parse', 'HEAD'], 'git rev-parse')).trim(), sha7 = head.slice(0, 7)
   const build = join(data, task, 'build'), logs = join(ext, 'sealed', t.slug, 'logs')
   for (const d of [build, logs]) mkdirSync(d, { recursive: true })
   const record = (f) => recordDocker(join(data, task, 'docker.json'), f)
-  const prefix = `bench-ext-${t.slug}-grade-${sha7}-`, n = record(() => {}).containers.filter((c) => c.startsWith(prefix)).length + 1
-  const name = prefix + n, sealed = (what) => join(logs, `grade-${sha7}-${n}.${what}`), log = sealed('log')
+  // n: one more than the recorded serve images of this commit (recorded before each build), so a run that failed in a
+  // build still takes its number and no log is overwritten
+  const serveTag = `bench-ext/${t.slug}:${sha7}-serve`, gradeTag = `bench-ext/${t.slug}:${sha7}-grade`
+  const n = record(() => {}).images.filter((i) => i.name === serveTag).length + 1
+  const name = `bench-ext-${t.slug}-grade-${sha7}-${n}`, sealed = (what) => join(logs, `grade-${sha7}-${n}.${what}`), log = sealed('log')
   let seq = 0
   const scratch = (what, commit, fn) => withExport({ name: t.key, repo: dir }, commit, `${what}-${t.slug}-${process.pid}-${seq++}`, fn)
   // the name is recorded before the build, so a run killed meanwhile still leaves it to `remove`
@@ -1038,15 +1045,16 @@ export async function oracleRun(args, inj = {}) {
   process.on('SIGTERM', stop)
   process.on('SIGINT', stop)
   try {
-    const serveTag = `bench-ext/${t.slug}:${sha7}-serve`, gradeTag = `bench-ext/${t.slug}:${sha7}-grade`
     // the base's serve build log is readable; any other commit may hold the PR or an arm's product
     await image(serveTag, `${recipe.dockerfile.trimEnd()}\n${sv.layer.join('\n')}\n`, 'HEAD', head === t.base ? join(build, `${sha7}-${n}.serve.build.log`) : sealed('serve.build.log'))
     await image(gradeTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, sealed('grade.build.log'))
     const r = await runContainer({ scratch, name, image: gradeTag, platform: recipe.platform, cmd: ['sh', '/oracle/.bench-grade.sh'], dest: '/oracle', log, timeoutSec: 1800, diskFree,
       stage: () => {}, created: () => { box = name; record((d) => d.containers.push(name)) },
       files: (into) => {
-        cpSync(oracle, into, { recursive: true, filter: (f) => basename(f) !== 'node_modules' }) // as oracleSha counts it, so --reuse stays sound
-        writeFileSync(join(into, '.bench-grade.sh'), gradeScript(readySec))
+        // as oracleSha counts it (no node_modules, a symlink by its own text), so --reuse stays sound
+        cpSync(oracle, into, { recursive: true, verbatimSymlinks: true, filter: (f) => basename(f) !== 'node_modules' })
+        writeFileSync(join(into, '.bench-grade.sh'), gradeScript(limitSec))
+        writeFileSync(join(into, '.bench-body.sh'), gradeBody(readySec))
         writeFileSync(join(into, '.bench-start.sh'), `${sv.start}\n`)
         writeFileSync(join(into, '.bench-ready.sh'), `${sv.ready}\n`)
         writeFileSync(join(into, '.bench-run.sh'), `${runner.run}\n`)
@@ -1055,6 +1063,7 @@ export async function oracleRun(args, inj = {}) {
     if (r.timedOut) { readiness('timeout'); throw new Error(`${name}: not done in 1800 s, killed`) } // runContainer killed it
     await scratch('out', null, async (o) => {
       await must(['docker', 'cp', `${name}:/out`, o], `docker cp out of ${name}`, { quiet: true })
+      if (existsSync(join(o, 'out', '.bench-timeout'))) { readiness('timeout'); throw new Error(`${name}: not done in ${limitSec} s, killed inside`) }
       readiness(existsSync(join(o, 'out', '.bench-ready')) ? 'ready' : 'not ready')
       if (r.how === 'oom') throw new Error(`${name} was killed for memory (OOMKilled)`)
       copyFileSync(join(o, 'out', 'junit.xml'), junit)
