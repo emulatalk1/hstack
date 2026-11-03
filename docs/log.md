@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-03
+* **Creation**: Locked the 24 external tasks of step 4 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) in `progress/step4-lock.md`, with `progress/step4/sample.tsv` and `progress/step4/walk.tsv`: 8 tasks per stack from 6, 6 and 7 repos, the walk summary, the events and rulings of the walk, and the SHA-256 of their records.
 * **Update**: Recorded in ruling 10 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2) the user's decision that a full Docker disk is the machine's failure and that accepted tasks keep their recipe and image digests, not their images; the S3 outs after the first accepted task, except the out-of-memory one, are rechecked.
 * **Update**: Added to ruling 10 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2) that a test script given only test data runs the tests that own it, and that earlier `PR tests do not pass at end` candidates are rechecked.
 * **Update**: Added to ruling 10 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2) that a recipe written under an older brief is regenerated before use.

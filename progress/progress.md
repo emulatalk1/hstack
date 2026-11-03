@@ -1013,3 +1013,11 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     bench-ext/fxoqwua1__app__1:ce9680d
     bench-ext/fxtm8s1x__app__1:b5cdaa7
     bench-ext/fxtm8s1x__app__1:ce9680d
+- Task 5 Step 1, end of the walk. The controller restarted the driver at 2026-11-03T06:38:15Z (PID 11902, code ea48116). At 09:23:58Z s3 stopped on low disk (6.5 GB free); the driver's `docker builder prune -f` freed 42.92 GB and the s3 walk went on. s3 reached accepted 8 at 09:48:39Z, s2 at 10:35:53Z, s1 at 12:52:41Z, then `done`.
+- Task 5 usage (Steps 1-4):
+    walk wall clock: 2026-11-02T23:52:47Z to 2026-11-03T12:52:41Z, 13.0 h, of which the driver ran 698 min (11.6 h) across 8 driver runs; the pauses were the controller's diagnoses and rulings.
+    checks: 54 `check` runs over 36 candidates (the `attempt`s in `meta.json`); 465 min summed over the last attempts' `minutes`.
+    recipe agent: 49 runs (the `.run.json` under `recipes/*/rounds/`), all exit 0, claude-opus-5-5, usage input 829 / output 426486 / cacheRead 11919487 / cacheWrite 1923705.
+    sealed diagnoses: 7 runs (vite-plus ×2, the five disk diagnoses), all exit 0, claude-opus-5-5, usage 70 / 10500 / 1630732 / 805899.
+    GraphQL by `check`: no counter is kept. At most 2 calls per check run (the PR, then the issue unless the base check put the candidate out first), so at most 108 calls for the 54 runs, each a small query.
+- Task 5 Steps 2-4: checks and lock in `progress/step4-lock.md`, with `progress/step4/walk.tsv` (copy) and `progress/step4/sample.tsv`. In each stack every rank up to the last checked one has a row; 8 `ok` per stack; at most 2 per repo; 6, 6 and 7 repos (s1, s2, s3); no sampled repo was used in hstack; all 27 clones are bare. Cold-setup repos: s1 paperless-ngx/paperless-ngx, s2 super-productivity/super-productivity, s3 the-open-engine/zeroshot.
