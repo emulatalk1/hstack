@@ -854,12 +854,15 @@ export function parseServe(text) {
   const r = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
   if (!Array.isArray(r?.layer) || !r.layer.every((l) => typeof l === 'string') || typeof r.start !== 'string' || typeof r.ready !== 'string' || !r.ready.trim() || typeof r.notes !== 'string') throw new Error('the serve recipe is not { layer: [Dockerfile lines], start, ready, notes }')
   if (r.layer.some((l) => UNSAFE.test(l))) throw new Error('the layer may not use --network=host, --security=insecure or an ssh or secret mount')
+  if (!r.start.trim()) throw new Error('start is empty: it must start the app') // an empty recipe would pass with nothing served
   return { layer: r.layer, start: r.start, ready: r.ready, notes: r.notes }
 }
 // the container's static command: start in the background, then ready every 2 s until it exits 0 (exit 0) or readySec
-// pass (exit 3, after one more ready run whose output the log keeps)
-const serveScript = (readySec) => ['cd /work', 'sh /work/.bench-start.sh &', 'i=0', `while [ $i -lt ${Math.ceil(readySec / 2)} ]; do`,
-  '  if sh /work/.bench-ready.sh >/dev/null 2>&1; then echo "bench: ready"; exit 0; fi', '  sleep 2', '  i=$((i+1))', 'done',
+// pass by the clock (a background timer's file; exit 3, after one more ready run whose output the log keeps). A ready
+// that answers only after the limit fails
+const serveScript = (readySec) => ['cd /work', 'rm -f /tmp/.bench-ready-limit', `(sleep ${readySec}; touch /tmp/.bench-ready-limit) &`, 'sh /work/.bench-start.sh &',
+  'while :; do', '  if sh /work/.bench-ready.sh >/dev/null 2>&1; then [ -e /tmp/.bench-ready-limit ] && break; echo "bench: ready"; exit 0; fi',
+  '  [ -e /tmp/.bench-ready-limit ] && break', '  sleep 2', 'done',
   `echo "bench: ready did not exit 0 within ${readySec} s; its output now:"`, 'sh /work/.bench-ready.sh 2>&1 | tail -n 20', 'exit 3', ''].join('\n')
 
 // `serve` (ruling 5 of step 5): a serve recipe per repo, from rounds of a sealed agent, that serves the task at its base and
@@ -876,14 +879,6 @@ export async function serve(args, inj = {}) {
     writeFileSync(saved, JSON.stringify({ ...SERVE_EMPTY, briefSha: null }, null, 2) + '\n')
     return { line: `${task} servable rounds=0`, code: 0 }
   }
-  // below the floor, the BuildKit cache goes first (the user's decision of 2026-11-03)
-  const told = {}
-  let low = await diskStop(task, inj, told)
-  if (low) {
-    await (inj.prune ?? (() => must(['docker', 'builder', 'prune', '-f'], 'docker builder prune', { timeoutSec: 1800 })))()
-    low = await diskStop(task, inj, told)
-  }
-  if (low) return { line: low, code: 3 }
 
   const diskFree = inj.diskFree ?? dockerDiskFree, serveAgent = inj.serveAgent ?? sealedRecipe, readySec = inj.readySec ?? 600
   const logs = join(ext, 'sealed', t.slug, 'logs'), taskDir = join(data, task), dockerJson = join(taskDir, 'docker.json')
@@ -927,9 +922,20 @@ export async function serve(args, inj = {}) {
 
   let result
   try {
+    // below the floor, the BuildKit cache goes first (the user's decision of 2026-11-03)
+    const told = {}
+    let low = await diskStop(task, inj, told)
+    if (low) {
+      stage = 'prune'
+      await (inj.prune ?? (() => must(['docker', 'builder', 'prune', '-f'], 'docker builder prune', { timeoutSec: 1800 })))()
+      low = await diskStop(task, inj, told)
+    }
+    if (low) return { line: low, code: 3 }
+    stage = 'task-env'
     const recipe = parseRecipe(readFileSync(join(ext, 'tasks', t.slug, 'task-recipe.json'), 'utf8'))
     let served = null, failed = null
     if (existsSync(saved)) { // the repo's serve recipe under this brief, reused: not a round; when it fails here, the first round is told why
+      stage = 'reuse'
       const text = readFileSync(saved, 'utf8')
       if (JSON.parse(text).briefSha === briefSha) {
         const s = parseServe(text), n = readdirSync(rounds).filter((f) => f.startsWith(`reuse-${t.slug}-`) && f.endsWith('.base.build.log')).length + 1

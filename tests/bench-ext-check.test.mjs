@@ -14,8 +14,16 @@ const dtest = DOCKER ? test : test.skip
 const dropRoot = releaseRoot()
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-ext-check-')))
 const made = [] // every data folder setup made
+// image ids that existed before this run: a cached build can give one of them again, and a container this run did not
+// create may hold it, so it is never this run's to remove
+const idsBefore = new Set(DOCKER ? Bun.spawnSync(['docker', 'images', '-a', '-q', '--no-trunc']).stdout.toString().split('\n').filter(Boolean) : [])
 afterAll(async () => {
-  if (DOCKER) for (const s of made) for (const n of [1, 2]) if (existsSync(join(s.ext, 'tasks', s.slug(n), 'meta.json')) && json(join(s.ext, 'tasks', s.slug(n), 'meta.json')).images) await removeOut(s.ext, s.slug(n))
+  if (DOCKER) for (const s of made) for (const n of [1, 2]) {
+    const f = join(s.ext, 'tasks', s.slug(n), 'meta.json'), meta = existsSync(f) && json(f)
+    if (!meta?.images) continue // no check ran there
+    writeFileSync(f, JSON.stringify({ ...meta, imageIds: meta.imageIds.filter((id) => !idsBefore.has(id)) }))
+    await removeOut(s.ext, s.slug(n))
+  }
   rmSync(tmp, { recursive: true, force: true })
   dropRoot()
 }, 600000)
@@ -577,6 +585,28 @@ dtest('serve containers use no network (needs BENCH_EXT_DOCKER=1)', async () => 
   const lines = readFileSync(join(s.ext, 'serve', s.key, 'rounds', '1.base.log'), 'utf8').split('\n')
   expect(lines).toContain('lo')
   expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
+}, 600000)
+
+test('serve spends a round on a reply with an empty start, and tells the next round why', async () => {
+  const s = step5()
+  withRecipe(s)
+  const empty = JSON.stringify({ layer: [], start: ' ', ready: 'true', notes: '' })
+  const r = await run(s, ['serve', 's1-01'], { disk: 40, more: { serveReply: empty } })
+  expect(r).toMatchObject({ code: 0, stdout: 's1-01 dropped not servable\n', stderr: '' })
+  expect(readFileSync(join(s.ext, 'serve', s.key, 'rounds.tsv'), 'utf8')).toBe([1, 2, 3].map((k) => `${k}\t${s.slug(1)}\tbad reply\n`).join(''))
+  expect(readFileSync(join(s.ext, 'serve', s.key, 'rounds', '2.prompt.md'), 'utf8')).toBe('SERVE BRIEF\n\nThe previous reply was not a valid recipe: start is empty: it must start the app\n')
+  expect(existsSync(join(s.ext, 'serve', s.key, 'serve.json'))).toBe(false)
+}, 60000)
+
+dtest('serve fails a ready that answers only after the time limit (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = step5()
+  withRecipe(s)
+  // up at 10 s and each ready takes 3 s: counting 3 passes of 2 s would still pass it at 13 s; the 6 s clock does not
+  const late = { ...serveRecipe, start: '(sleep 10; touch /tmp/up) &', ready: 'sleep 3; test -e /tmp/up' }
+  const r = await run(s, ['serve', 's1-01'], { more: { serveReply: JSON.stringify(late), readySec: 6 } })
+  expect(r).toMatchObject({ code: 0, stdout: 's1-01 dropped not servable\n' })
+  expect(readFileSync(join(s.ext, 'serve', s.key, 'rounds', '1.base.log'), 'utf8')).toContain('bench: ready did not exit 0 within 6 s')
+  for (const c of json(join(s.data, 's1-01', 'docker.json')).containers) expect(exists('container', c)).toBe(false)
 }, 600000)
 
 dtest('serve drops a task whose ready never answers, appending dropped to walk.tsv (needs BENCH_EXT_DOCKER=1)', async () => {
