@@ -966,3 +966,5 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     bench-ext/fxz85fap__app__1:9d77abf
     bench-ext/fxz85fap__app__1:a9f5a4c
 - Task 5 Step 1, driver restarted: PID 90923 (process group 90923), code 404231b, start 2026-11-03T06:05:36Z.
+- Ruling (controller, 2026-11-03): recipe rounds spent while the disk was full do not count. `<data>/ext/recipes/mxsm__rocketmq-rust/rounds.tsv` (3 rounds, all `probe failed`, before 404231b) was moved to `rounds-before-disk-fix.tsv` (kept) at 06:07Z, while the walk was at rank 3, so its recheck has its 3 rounds again (they are numbered from 4 on).
+- `<data>/ext/walk-all.sh` (the user allowed clearing the build cache): a walk that exits 3 (docker disk low) gets one `docker builder prune -f`, with the freed size and `docker system df` logged to `walk-all.out`, and is started again; if it stops on low disk again with no check finished since the prune, the driver stops and says so.
