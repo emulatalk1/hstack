@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-03
+* **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 7.1) the rulings of the [oracle preparation plan](/plans/2026-11-03-bench-oracles.md) for step 5 before any oracle run: scope, task ids, the serve check, the owners of real-estate hunks, the label, rewrite, validation and keep rules, the classifiers and the human queue, and the user's decisions of 2026-11-03 on Docker removal and on label disagreements.
 * **Approve**: the built [external task selection plan](/plans/2026-11-02-bench-external.md) (status `stable`): 24 external tasks, 8 per stack, locked in `progress/step4-lock.md` with the hashes of their records. Two candidates were `out of memory` at Docker's 7.6 GB (datafusion#24211, swc#12010) and eventyay#4509 stays out under the stop rule; the lock now also lists the cargo#17562 build interrupted at 06:38Z.
 * **Update**: Added to `progress/step4-lock.md` the final-review addendum: the round whose reply is each sampled task's recipe, with the hashes of those replies and of the sampled repos' `rounds.tsv`; the interrupted checks; the sample command's byte-identical output; and notes on rows not checked, the `groups.json` hash line, and ruling 14.
 * **Update**: Added to ruling 10 of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 4.2) a sentence that attributes two disk rulings to the controller, marks the sample wording as an amendment, and records the user's permission for `docker builder prune -f`.
