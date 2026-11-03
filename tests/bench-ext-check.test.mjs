@@ -124,7 +124,7 @@ function setup({ withRecipe = true, use = recipe, briefSha = BRIEF_SHA } = {}) {
   return s
 }
 async function run(s, args, { reply = null, env = {}, disk, more = {} } = {}) {
-  const c = { args: [args[0], join(s.ext, 'groups.json'), ...args.slice(1)], pr: { 1: prAnswer(prs[1]), 2: prAnswer(prs[2]) }, issue: issueAnswer, remote: fx, reply, ...more, ...(disk === undefined ? {} : { diskFree: disk }) }
+  const c = { args: ['oracle-run', 'remove'].includes(args[0]) ? args : [args[0], join(s.ext, 'groups.json'), ...args.slice(1)], pr: { 1: prAnswer(prs[1]), 2: prAnswer(prs[2]) }, issue: issueAnswer, remote: fx, reply, ...more, ...(disk === undefined ? {} : { diskFree: disk }) }
   const p = Bun.spawn(['bun', runner, JSON.stringify(c)], { env: { ...process.env, HSTACK_BENCH_MACHINE: join(s.data, 'machine.json'), ...env }, stdout: 'pipe', stderr: 'pipe' })
   return { stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text(), code: await p.exited }
 }
@@ -641,4 +641,115 @@ test('sample keeps ids and numbers a replacement after the highest', async () =>
   }
   expect((await run(s, ['sample'])).stdout).toBe('sample.tsv: 2 rows\n')
   expect(readFileSync(join(s.ext, 'sample.tsv'), 'utf8').split('\n').map((l) => l.split('\t')[0])).toEqual(['task', 's1-01', 's1-04', ''])
+}, 60000)
+
+// step 5, oracle-run: grade runs it as the task's oracle command. The fixture: the served busybox app and an oracle of two
+// sh checks writing JUnit, T1 passing at the base and the end, T2 at the end only (the end's file src/feature.txt)
+const c17 = c1.slice(0, 7), c07 = c0.slice(0, 7)
+const oracleRunner = join(tmp, 'oracle-runner.mjs') // oracle-run with injections (a short ready limit)
+writeFileSync(oracleRunner, `import { main } from ${JSON.stringify(join(import.meta.dir, '../bench/ext.mjs'))}\nprocess.exit(await main(['oracle-run', process.argv[2]], JSON.parse(process.argv[3])))\n`)
+const RUNNER = { layer: ['RUN mkdir -p /opt/oracle-tools'], run: 'sh /oracle/run.sh' }
+function oracleTask({ inj, runner = RUNNER, serve = serveRecipe } = {}) {
+  const s = step5()
+  withRecipe(s)
+  mkdirSync(join(s.ext, 'serve', s.key), { recursive: true })
+  writeFileSync(join(s.ext, 'serve', s.key, 'serve.json'), JSON.stringify({ ...serve, briefSha: SERVE_BRIEF_SHA }))
+  const oracle = join(s.data, 's1-01', 'oracle')
+  mkdirSync(oracle, { recursive: true })
+  writeFileSync(join(oracle, 'T1.sh'), 'wget -q -O /dev/null http://127.0.0.1:8080/tests/zebra_ok.sh\n')
+  writeFileSync(join(oracle, 'T2.sh'), 'wget -q -O /dev/null http://127.0.0.1:8080/src/feature.txt\n')
+  writeFileSync(join(oracle, 'run.sh'), ['{ echo "<testsuite>"', 'for n in 1 2; do',
+    `  if sh /oracle/T$n.sh; then echo "<testcase classname=\\"fx\\" name=\\"${c17}-T$n serves\\"/>"; else echo "<testcase classname=\\"fx\\" name=\\"${c17}-T$n serves\\"><failure message=\\"not served\\"/></testcase>"; fi`,
+    'done', 'echo "</testsuite>"; } > /out/junit.xml', ''].join('\n'))
+  if (runner) writeFileSync(join(oracle, 'runner.json'), typeof runner === 'string' ? runner : JSON.stringify(runner))
+  writeFileSync(join(oracle, 'manifest.json'), JSON.stringify([1, 2].map((n) => ({ id: `${c17}-T${n}`, fix_commit: c17, severity: 'high', interface: 'http' }))))
+  mkdirSync(join(s.data, 'env'), { recursive: true })
+  writeFileSync(join(s.data, 'env', 's1-01.json'), JSON.stringify({ name: 's1-01', repo: join(s.ext, 'repos', s.key), db: null, port: 49152, start: null, ready: null, setup: [], teardown: [],
+    oracle: inj ? `bun ${oracleRunner} s1-01 '${JSON.stringify(inj)}'` : `bun ${join(import.meta.dir, '../bench/ext.mjs')} oracle-run s1-01`, junit: '.bench-junit.xml', timeoutSec: 7800 }))
+  return s
+}
+async function grade(s, args) {
+  const p = Bun.spawn(['bun', join(import.meta.dir, '../bench/grade.mjs'), join(s.data, 'env', 's1-01.json'), join(s.data, 's1-01', 'oracle'), ...args],
+    { env: { ...process.env, HSTACK_BENCH_MACHINE: join(s.data, 'machine.json') }, stdout: 'pipe', stderr: 'pipe' })
+  return { stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text(), code: await p.exited }
+}
+const box = (s, c, n = 1) => `bench-ext-${s.slug(1)}-grade-${c.slice(0, 7)}-${n}`
+const tags = (s, c) => [`bench-ext/${s.slug(1)}:${c.slice(0, 7)}-serve`, `bench-ext/${s.slug(1)}:${c.slice(0, 7)}-grade`]
+
+// one validation, shared by the tests that read it; oracle-run removes what it built, so they read the records and the logs
+let validatedOnce
+const validated = () => (validatedOnce ??= (async () => {
+  if (!exists('container', 'bench-ext-other')) expect(docker('create', '--name', 'bench-ext-other', 'alpine:3.22', 'true').exitCode).toBe(0)
+  const s = oracleTask()
+  return { s, r: await grade(s, ['--validate', c1, '--bad', c0, '--sealed']) }
+})())
+
+dtest('grade validates a fixture check valid with end against base (needs BENCH_EXT_DOCKER=1)', async () => {
+  const { s, r } = await validated()
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  expect(r.stdout).toContain(`validation-${c17}: ${c17}-T1=weak ${c17}-T2=valid\n`)
+  const v = json(join(s.data, 's1-01', `validation-${c17}.json`))
+  expect(v.checks.map((c) => [c.id, c.ref, c.bad, c.verdict])).toEqual([[`${c17}-T1`, 'pass', ['pass'], 'weak'], [`${c17}-T2`, 'pass', ['fail'], 'valid']])
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(`${c17}\tready\n${c07}\tready\n`)
+  // the base's serve build log is readable; the end's, every grade build log and the container output are sealed
+  expect(existsSync(join(s.data, 's1-01', 'build', `${c07}-1.serve.build.log`))).toBe(true)
+  expect(existsSync(join(s.data, 's1-01', 'build', `${c17}-1.serve.build.log`))).toBe(false)
+  const sealed = join(s.ext, 'sealed', s.slug(1), 'logs')
+  for (const f of [`grade-${c17}-1.serve.build.log`, `grade-${c17}-1.grade.build.log`, `grade-${c07}-1.grade.build.log`, `grade-${c17}-1.log`]) expect(existsSync(join(sealed, f))).toBe(true)
+  // the container's output reached oracle-run's stderr, which the sealed grade logged
+  expect(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8')).toContain('bench: ready')
+}, 900000)
+
+dtest('the grade container uses no network and is recorded in docker.json (needs BENCH_EXT_DOCKER=1)', async () => {
+  const { s } = await validated()
+  const lines = readFileSync(join(s.data, 's1-01', 'logs', `${c07}-1.log`), 'utf8').split('\n') // start lists the interfaces
+  expect(lines).toContain('lo')
+  expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
+  const d = json(join(s.data, 's1-01', 'docker.json'))
+  expect(d.containers).toEqual([box(s, c1), box(s, c0)])
+  expect(d.images.map((i) => i.name)).toEqual([...tags(s, c1), ...tags(s, c0)])
+  for (const i of d.images) expect(d.digests[i.name]).toBe(i.id)
+  for (const i of d.images) expect(i.id).toMatch(/^sha256:[0-9a-f]{64}$/)
+  // removed by exact name as each run ends, digests kept
+  expect(readFileSync(join(s.ext, 'removed.txt'), 'utf8')).toBe([box(s, c1), ...tags(s, c1), box(s, c0), ...tags(s, c0), ''].join('\n'))
+  for (const c of d.containers) expect(exists('container', c)).toBe(false)
+  for (const i of d.images) expect(exists('image', i.name)).toBe(false)
+  expect(exists('container', 'bench-ext-other')).toBe(true)
+}, 900000)
+
+dtest('a run that never gets ready gives every check error and the validation is still written (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = oracleTask({ inj: { readySec: 4 }, serve: { ...serveRecipe, ready: 'echo still waiting; false' } })
+  const r = await grade(s, ['--validate', c1, '--bad', c0, '--sealed'])
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  const v = json(join(s.data, 's1-01', `validation-${c17}.json`))
+  expect(v.checks.map((c) => [c.ref, c.bad])).toEqual([['error', ['error']], ['error', ['error']]])
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(`${c17}\tnot ready\n${c07}\tnot ready\n`)
+  expect(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8')).toContain('bench: ready did not exit 0 within 4 s')
+  for (const c of json(join(s.data, 's1-01', 'docker.json')).containers) expect(exists('container', c)).toBe(false)
+}, 900000)
+
+dtest('removal deletes only names docker.json records (needs BENCH_EXT_DOCKER=1)', async () => {
+  if (!exists('container', 'bench-ext-other')) expect(docker('create', '--name', 'bench-ext-other', 'alpine:3.22', 'true').exitCode).toBe(0)
+  const s = step5(), mine = box(s, c1), stray = box(s, c1, 2) // a name of the task docker.json does not record
+  try {
+    for (const c of [mine, stray]) expect(docker('create', '--name', c, 'alpine:3.22', 'true').exitCode).toBe(0)
+    mkdirSync(join(s.data, 's1-01'), { recursive: true })
+    writeFileSync(join(s.data, 's1-01', 'docker.json'), JSON.stringify({ images: [], containers: [mine, 'bench-ext-other'] }))
+    const r = await run(s, ['remove', 's1-01'])
+    expect(r).toMatchObject({ code: 0, stdout: 's1-01 removed 1\n', stderr: '' })
+    expect(exists('container', mine)).toBe(false)
+    expect(exists('container', stray)).toBe(true)
+    expect(exists('container', 'bench-ext-other')).toBe(true)
+  } finally { for (const c of [mine, stray]) if (exists('container', c)) docker('rm', c) } // this test created both
+}, 600000)
+
+test('oracle-run refuses an absent or malformed runner.json before any Docker call', async () => {
+  for (const runner of [null, '{"layer": "RUN true", "run": "sh x"}', JSON.stringify({ layer: ['RUN --network=host true'], run: 'sh x' }), JSON.stringify({ layer: [], run: ' ' })]) {
+    const s = oracleTask({ runner })
+    const r = await run(s, ['oracle-run', 's1-01'], { env: { BENCH_DIR: fx, BENCH_ORACLE: join(s.data, 's1-01', 'oracle'), BENCH_JUNIT: join(s.data, 'junit.xml') }, disk: 40 })
+    expect(r.code).not.toBe(0)
+    expect(r.stderr).toContain('runner.json')
+    expect(existsSync(join(s.data, 's1-01', 'docker.json'))).toBe(false)
+    expect(existsSync(join(s.data, 'junit.xml'))).toBe(false)
+  }
 }, 60000)

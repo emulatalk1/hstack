@@ -2,9 +2,9 @@
 // External task selection. `list`: search the repo universe of a tier, read each repo's stack markers, read every merged
 // PR of the window that links an issue, and write them sorted by key. Every response is saved under <data>/ext/raw/
 // before it is parsed, and a rerun reuses a saved one (resume). Prints counts only: never a PR title, body, path or issue.
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, copyFileSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { withExport } from './env.mjs'
 import { check as inputCheck } from './input-check.mjs'
 import { baseOf, coldSetup, exists, extraProbe, failToPass, keptIds, nextToCheck, repoOut, sampleOf, sortKey, stackOf, staticOut } from './lib/ext.mjs'
@@ -16,7 +16,9 @@ const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
        bun bench/ext.mjs walk <groups.json> <stack> [--tier <1|2>] [--remove-out]
        bun bench/ext.mjs sample <groups.json> [--tier <1|2>]
        bun bench/ext.mjs task-env <groups.json> <task> (--reply <reply file> --sha <sha256> | --from-meta)
-       bun bench/ext.mjs serve <groups.json> <task>`
+       bun bench/ext.mjs serve <groups.json> <task>
+       bun bench/ext.mjs oracle-run <task>   (grade's oracle command: BENCH_DIR, BENCH_ORACLE, BENCH_JUNIT)
+       bun bench/ext.mjs remove <task>`
 const sha = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
 const flag = (argv, k) => argv.find((a) => a.startsWith(`${k}=`))?.slice(k.length + 1)
 const name = (argv) => (argv.includes('graphql') ? `graphql ${flag(argv, 'q') ?? '(repo batch)'}` : `${argv[3]} ${flag(argv, 'q')} page ${flag(argv, 'page')}`)
@@ -432,16 +434,16 @@ async function buildImage({ scratch, dockerfile, test, platform, commit, tag, lo
 }
 
 // one run in a new container `name` of image with no network and a static command: files(dir) writes what goes in to
-// /work by docker cp; created() records the name as soon as it exists. { how, timedOut, exitCode, oom } (how: runEnd);
+// dest (/work) by docker cp; created() records the name as soon as it exists. { how, timedOut, exitCode, oom } (how: runEnd);
 // a throw when Docker fails, the run is killed from outside, or it prints a disk-full message while the disk is low
-async function runContainer({ scratch, name, image, platform, cmd, files, created, log, timeoutSec, diskFree, stage }) {
+async function runContainer({ scratch, name, image, platform, cmd, files, created, log, timeoutSec, diskFree, stage, dest = '/work' }) {
   stage('run')
   await must(['docker', 'create', '--network', 'none', '--platform', platform, '--name', name, image, ...cmd], `docker create ${name}`)
   created()
   stage('cp')
   await scratch('in', null, async (dir) => {
     await files(dir)
-    await must(['docker', 'cp', `${dir}/.`, `${name}:/work`], `docker cp into ${name}`, { quiet: true })
+    await must(['docker', 'cp', `${dir}/.`, `${name}:${dest}`], `docker cp into ${name}`, { quiet: true })
   })
   stage('run')
   const fd = openSync(log, 'w')
@@ -722,7 +724,8 @@ async function removeNames(ext, slug, { containers, images, ids }) {
     if (r.code === 0) gone.push(name)
     else if (!/no such (container|image)/i.test(r.err)) console.error(`could not remove ${name}`)
   }
-  for (const c of new Set(containers)) if (c.startsWith(`bench-ext-${slug}-`)) await rm('rm', c)
+  // killed first (an error when it is not running): a SIGKILLed oracle-run leaves its container running, and rm has no -f
+  for (const c of new Set(containers)) if (c.startsWith(`bench-ext-${slug}-`)) { await sp(['docker', 'kill', c]); await rm('rm', c) }
   for (const i of new Set(images)) if (i.startsWith(`bench-ext/${slug}:`)) await rm('rmi', i)
   for (const id of new Set(ids)) {
     const t = await sp(['docker', 'image', 'inspect', '-f', '{{len .RepoTags}}', id])
@@ -745,7 +748,14 @@ export async function removeRecorded(data, task, slug) {
     if (r.code === 0) { d.digests[n] = r.out.trim(); present.push(n) }
   }
   writeFileSync(f, JSON.stringify(d, null, 2) + '\n')
-  return removeNames(join(data, 'ext'), slug, { containers: d.containers, images: present, ids: d.images.map((i) => i.id) })
+  return removeNames(join(data, 'ext'), slug, { containers: d.containers, images: present, ids: d.images.map((i) => i.id).filter(Boolean) })
+}
+// <data>/<task>/docker.json changed by f, written back
+function recordDocker(file, f) {
+  const d = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { images: [], containers: [] }
+  f(d)
+  writeFileSync(file, JSON.stringify(d, null, 2) + '\n')
+  return d
 }
 
 function parseArgs(args, nPos, allowRemove) {
@@ -857,13 +867,17 @@ export function parseServe(text) {
   if (!r.start.trim()) throw new Error('start is empty: it must start the app') // an empty recipe would pass with nothing served
   return { layer: r.layer, start: r.start, ready: r.ready, notes: r.notes }
 }
-// the container's static command: start in the background, then ready every 2 s until it exits 0 (exit 0) or readySec
-// pass by the clock (a background timer's file; exit 3, after one more ready run whose output the log keeps). A ready
-// that answers only after the limit fails
-const serveScript = (readySec) => ['cd /work', 'rm -f /tmp/.bench-ready-limit', `(sleep ${readySec}; touch /tmp/.bench-ready-limit) &`, 'sh /work/.bench-start.sh &',
-  'while :; do', '  if sh /work/.bench-ready.sh >/dev/null 2>&1; then [ -e /tmp/.bench-ready-limit ] && break; echo "bench: ready"; exit 0; fi',
+// the container's static command: in /work, start (dir/.bench-start.sh) in the background, then ready every 2 s until it
+// exits 0 (then the sh line `then`, by default exit 0) or readySec pass by the clock (a background timer's file; exit 3,
+// after one more ready run whose output the log keeps). A ready that answers only after the limit fails
+const serveScript = (readySec, dir = '/work', then = 'exit 0') => ['cd /work', 'rm -f /tmp/.bench-ready-limit', `(sleep ${readySec}; touch /tmp/.bench-ready-limit) &`, `sh ${dir}/.bench-start.sh &`,
+  'while :; do', `  if sh ${dir}/.bench-ready.sh >/dev/null 2>&1; then [ -e /tmp/.bench-ready-limit ] && break; echo "bench: ready"; ${then}; fi`,
   '  [ -e /tmp/.bench-ready-limit ] && break', '  sleep 2', 'done',
-  `echo "bench: ready did not exit 0 within ${readySec} s; its output now:"`, 'sh /work/.bench-ready.sh 2>&1 | tail -n 20', 'exit 3', ''].join('\n')
+  `echo "bench: ready did not exit 0 within ${readySec} s; its output now:"`, `sh ${dir}/.bench-ready.sh 2>&1 | tail -n 20`, 'exit 3', ''].join('\n')
+// oracle-run's: an empty JUnit first (a run that never gets ready still has results, every check error), then serve's
+// script from /oracle; once ready, a marker and the runner's run (in /work), which rewrites /out/junit.xml
+const gradeScript = (readySec) => ['mkdir -p /out', "echo '<testsuites/>' > /out/junit.xml",
+  serveScript(readySec, '/oracle', 'touch /out/.bench-ready; sh /oracle/.bench-run.sh; echo "bench: run exited $?"; exit 0')].join('\n')
 
 // `serve` (ruling 5 of step 5): a serve recipe per repo, from rounds of a sealed agent, that serves the task at its base and
 // its end in one offline container of the task's recipe plus the layer. What it builds is removed as soon as it ends
@@ -883,12 +897,7 @@ export async function serve(args, inj = {}) {
   const diskFree = inj.diskFree ?? dockerDiskFree, serveAgent = inj.serveAgent ?? sealedRecipe, readySec = inj.readySec ?? 600
   const logs = join(ext, 'sealed', t.slug, 'logs'), taskDir = join(data, task), dockerJson = join(taskDir, 'docker.json')
   for (const d of [logs, taskDir]) mkdirSync(d, { recursive: true })
-  const record = (f) => {
-    const d = existsSync(dockerJson) ? JSON.parse(readFileSync(dockerJson, 'utf8')) : { images: [], containers: [] }
-    f(d)
-    writeFileSync(dockerJson, JSON.stringify(d, null, 2) + '\n')
-    return d
-  }
+  const record = (f) => recordDocker(dockerJson, f)
   let stage = 'task-env', seq = 0
   const scratch = (what, commit, fn) => withExport({ name: t.key, repo: join(ext, 'repos', t.key) }, commit, `${what}-${t.slug}-${process.pid}-${seq++}`, fn)
   const brief = readFileSync(join(ext, 'briefs', 'serve.md'), 'utf8'), briefSha = sha(brief)
@@ -922,14 +931,7 @@ export async function serve(args, inj = {}) {
 
   let result
   try {
-    // below the floor, the BuildKit cache goes first (the user's decision of 2026-11-03)
-    const told = {}
-    let low = await diskStop(task, inj, told)
-    if (low) {
-      stage = 'prune'
-      await (inj.prune ?? (() => must(['docker', 'builder', 'prune', '-f'], 'docker builder prune', { timeoutSec: 1800 })))()
-      low = await diskStop(task, inj, told)
-    }
+    const low = await diskFloor(task, inj, () => { stage = 'prune' })
     if (low) return { line: low, code: 3 }
     stage = 'task-env'
     const recipe = parseRecipe(readFileSync(join(ext, 'tasks', t.slug, 'task-recipe.json'), 'utf8'))
@@ -975,6 +977,94 @@ export async function serve(args, inj = {}) {
   }
   const mine = roundRows(roundsTsv).filter((r) => r[1] === t.slug).length
   return { line: result === 'servable' ? `${task} servable rounds=${mine}` : `${task} ${result}`, code: isError(result) ? 1 : 0 }
+}
+
+// step 5's disk floor: below it the BuildKit cache goes first (the user's decision of 2026-11-03); the stop line when it
+// stays low, else null
+async function diskFloor(task, inj, onPrune = () => {}) {
+  const told = {}
+  if (!(await diskStop(task, inj, told))) return null
+  onPrune()
+  await (inj.prune ?? (() => must(['docker', 'builder', 'prune', '-f'], 'docker builder prune', { timeoutSec: 1800 })))()
+  return diskStop(task, inj, told)
+}
+
+// runner.json, the oracle's: { layer: [Dockerfile lines after the serve image], run: a sh body that writes /out/junit.xml }
+export function parseRunner(text) {
+  let r = null
+  try { r = JSON.parse(text) } catch {}
+  if (!Array.isArray(r?.layer) || !r.layer.every((l) => typeof l === 'string') || typeof r.run !== 'string' || !r.run.trim()) throw new Error('runner.json is not { layer: [Dockerfile lines], run }')
+  if (r.layer.some((l) => UNSAFE.test(l))) throw new Error('runner.json: the layer may not use --network=host, --security=insecure or an ssh or secret mount')
+  return { layer: r.layer, run: r.run }
+}
+
+// `oracle-run` (step 5): grade's oracle command for an external task. The commit of BENCH_DIR (git archive HEAD) is built
+// with the task recipe plus the serve layer, then FROM it with the oracle's runner layer; one offline container starts the
+// app, waits for ready and runs the checks; its JUnit goes to BENCH_JUNIT. Everything it built is removed when it ends
+export async function oracleRun(args, inj = {}) {
+  const { pos: [task] } = parseArgs(args, 1, false)
+  const { BENCH_DIR: dir, BENCH_ORACLE: oracle, BENCH_JUNIT: junit } = process.env
+  if (!dir || !oracle || !junit) throw new Error('oracle-run is grade\'s oracle command: BENCH_DIR, BENCH_ORACLE and BENCH_JUNIT must be set')
+  const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
+  const runner = parseRunner(readFileSync(join(oracle, 'runner.json'), 'utf8'))
+  const recipe = parseRecipe(readFileSync(join(ext, 'tasks', t.slug, 'task-recipe.json'), 'utf8'))
+  const serveText = readFileSync(join(ext, 'serve', t.key, 'serve.json'), 'utf8')
+  const sv = JSON.parse(serveText).briefSha === null ? SERVE_EMPTY : parseServe(serveText) // null: a stack with no serve check
+  const low = await diskFloor(task, inj)
+  if (low) throw new Error(low)
+
+  const diskFree = inj.diskFree ?? dockerDiskFree, readySec = inj.readySec ?? 600
+  const head = (await must(['git', '-C', dir, 'rev-parse', 'HEAD'], 'git rev-parse')).trim(), sha7 = head.slice(0, 7)
+  const build = join(data, task, 'build'), logs = join(ext, 'sealed', t.slug, 'logs')
+  for (const d of [build, logs]) mkdirSync(d, { recursive: true })
+  const record = (f) => recordDocker(join(data, task, 'docker.json'), f)
+  const prefix = `bench-ext-${t.slug}-grade-${sha7}-`, n = record(() => {}).containers.filter((c) => c.startsWith(prefix)).length + 1
+  const name = prefix + n, sealed = (what) => join(logs, `grade-${sha7}-${n}.${what}`), log = sealed('log')
+  let seq = 0
+  const scratch = (what, commit, fn) => withExport({ name: t.key, repo: dir }, commit, `${what}-${t.slug}-${process.pid}-${seq++}`, fn)
+  // the name is recorded before the build, so a run killed meanwhile still leaves it to `remove`
+  const image = async (tag, dockerfile, commit, buildLog) => {
+    record((d) => d.images.push({ name: tag, id: null }))
+    const id = await buildImage({ scratch, dockerfile, test: recipe.test, platform: recipe.platform, commit, tag, log: buildLog, diskFree })
+    if (!id) throw new Error(`${tag}: the build failed`)
+    record((d) => { d.images.findLast((i) => i.name === tag && i.id === null).id = id })
+  }
+  let box = null
+  const stop = async () => {
+    if (box) await sp(['docker', 'kill', box]) // this run created it
+    await removeRecorded(data, task, t.slug)
+    process.exit(143)
+  }
+  process.on('SIGTERM', stop)
+  process.on('SIGINT', stop)
+  try {
+    const serveTag = `bench-ext/${t.slug}:${sha7}-serve`, gradeTag = `bench-ext/${t.slug}:${sha7}-grade`
+    // the base's serve build log is readable; any other commit may hold the PR or an arm's product
+    await image(serveTag, `${recipe.dockerfile.trimEnd()}\n${sv.layer.join('\n')}\n`, 'HEAD', head === t.base ? join(build, `${sha7}-${n}.serve.build.log`) : sealed('serve.build.log'))
+    await image(gradeTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, sealed('grade.build.log'))
+    const r = await runContainer({ scratch, name, image: gradeTag, platform: recipe.platform, cmd: ['sh', '/oracle/.bench-grade.sh'], dest: '/oracle', log, timeoutSec: 1800, diskFree,
+      stage: () => {}, created: () => { box = name; record((d) => d.containers.push(name)) },
+      files: (into) => {
+        cpSync(oracle, into, { recursive: true, filter: (f) => basename(f) !== 'node_modules' }) // as oracleSha counts it, so --reuse stays sound
+        writeFileSync(join(into, '.bench-grade.sh'), gradeScript(readySec))
+        writeFileSync(join(into, '.bench-start.sh'), `${sv.start}\n`)
+        writeFileSync(join(into, '.bench-ready.sh'), `${sv.ready}\n`)
+        writeFileSync(join(into, '.bench-run.sh'), `${runner.run}\n`)
+      } })
+    const readiness = (s) => appendFileSync(join(build, 'readiness.tsv'), `${sha7}\t${s}\n`)
+    if (r.timedOut) { readiness('timeout'); throw new Error(`${name}: not done in 1800 s, killed`) } // runContainer killed it
+    await scratch('out', null, async (o) => {
+      await must(['docker', 'cp', `${name}:/out`, o], `docker cp out of ${name}`, { quiet: true })
+      readiness(existsSync(join(o, 'out', '.bench-ready')) ? 'ready' : 'not ready')
+      if (r.how === 'oom') throw new Error(`${name} was killed for memory (OOMKilled)`)
+      copyFileSync(join(o, 'out', 'junit.xml'), junit)
+    })
+  } finally {
+    process.off('SIGTERM', stop)
+    process.off('SIGINT', stop)
+    if (existsSync(log)) process.stderr.write(readFileSync(log)) // a sealed grade logs it
+    await removeRecorded(data, task, t.slug)
+  }
 }
 
 export async function walk(args, inj = {}, print = (s) => console.log(s)) {
@@ -1023,6 +1113,10 @@ export async function main(argv, inj = {}) {
       const r = await serve(rest, inj)
       console.log(r.line)
       return r.code
+    } else if (cmd === 'oracle-run') await oracleRun(rest, inj)
+    else if (cmd === 'remove') { // what <data>/<task>/docker.json records, as a run killed before its own removal left it
+      const { pos: [task] } = parseArgs(rest, 1, false), data = dataOf(inj.data)
+      console.log(`${task} removed ${(await removeRecorded(data, task, taskOf(join(data, 'ext'), task).slug)).length}`)
     }
     else throw new Error(USAGE)
     return 0
