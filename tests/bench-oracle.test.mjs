@@ -599,7 +599,7 @@ const withData = async (d, fn) => {
   process.env.HSTACK_BENCH_MACHINE = join(d, 'machine.json')
   try { return await fn() } finally { process.env.HSTACK_BENCH_MACHINE = prev }
 }
-const arg = (a, k) => a[a.indexOf(k) + 1]
+const argOf = (a, k) => a[a.indexOf(k) + 1]
 const jsonAt = (f) => JSON.parse(readFileSync(f, 'utf8'))
 
 test('classify gives the raters the manifest without fix_commit, origin, hunk or task', async () => {
@@ -617,14 +617,14 @@ test('classify gives the raters the manifest without fix_commit, origin, hunk or
   expect(shown.map((m) => m.id)).toEqual([`${e}-T1`, `${e}-T2`, `${e}-T6`])
   for (const m of shown) for (const k of ['fix_commit', 'origin', 'hunk', 'task']) expect(m).not.toHaveProperty(k)
   expect(calls.map((a) => a[1]).sort()).toEqual(['classify-1-x1-01', 'classify-2-x1-01'])
-  expect(arg(calls[0], '--prompt')).toBe(arg(calls[1], '--prompt'))
+  expect(argOf(calls[0], '--prompt')).toBe(argOf(calls[1], '--prompt'))
   for (const a of calls) {
     expect(a[0]).toBe(join(d, 'env/x1-01.json'))
     expect(a).not.toContain('--at')
-    expect(arg(a, '--tools')).toBe('Read,Glob,Grep')
-    expect(jsonAt(arg(a, '--settings')).permissions).toEqual({ additionalDirectories: [folder], allow: [`Read(/${folder}/**)`] })
+    expect(argOf(a, '--tools')).toBe('Read,Glob,Grep')
+    expect(jsonAt(argOf(a, '--settings')).permissions).toEqual({ additionalDirectories: [folder], allow: [`Read(/${folder}/**)`] })
   }
-  expect(readFileSync(arg(calls[0], '--prompt'), 'utf8')).toStartWith('CLASSIFY-BRIEF\n')
+  expect(readFileSync(argOf(calls[0], '--prompt'), 'utf8')).toStartWith('CLASSIFY-BRIEF\n')
   expect(jsonAt(join(d, 'x1-01/labels.json'))).toEqual({ [`${e}-T1`]: 'build', [`${e}-T2`]: 'build' })
   expect(jsonAt(join(d, 'x1-01/agreement.json'))).toMatchObject({ n: 3, agree: 2, checks: 3, usable: false, partly: [], disputed: [`${e}-T6`] })
   // a task of tasks.json needs its task file; a run with its record and the same prompt is reused
@@ -682,9 +682,9 @@ test('agreed partly goes to split and disputed stays unlabelled', async () => {
   expect(vcalls).toEqual([[task, 'r1']])
   const splits = calls.filter((a) => a[1].startsWith('split-'))
   expect(splits.map((a) => a[1])).toEqual([`split-r1-${id(3)}`, `split-r1-${id(5)}`].map((x) => x.toLowerCase())) // an agent label is lower case
-  expect(readFileSync(arg(splits[1], '--prompt'), 'utf8')).toContain(`\`${id(12)}\``) // numbered after the first split's
-  const work = join(d, 'r1/work', `split-${id(3)}`), prompt = readFileSync(arg(splits[0], '--prompt'), 'utf8')
-  expect(jsonAt(arg(splits[0], '--settings')).permissions.allow).toEqual([`Read(/${work}/**)`, `Edit(/${join(work, 'out')}/**)`])
+  expect(readFileSync(argOf(splits[1], '--prompt'), 'utf8')).toContain(`\`${id(12)}\``) // numbered after the first split's
+  const work = join(d, 'r1/work', `split-${id(3)}`), prompt = readFileSync(argOf(splits[0], '--prompt'), 'utf8')
+  expect(jsonAt(argOf(splits[0], '--settings')).permissions.allow).toEqual([`Read(/${work}/**)`, `Edit(/${join(work, 'out')}/**)`])
   expect(prompt).toStartWith('SPLIT-BRIEF\n')
   expect(prompt).toContain('RE-RULES')
   expect(ls(join(work, 'in'))).toEqual([`${id(3)}.spec.ts`, 'entry.json', 'input.md', 'interface.md'])
@@ -711,7 +711,7 @@ test('split puts the new checks of a grouped external file into that file', asyn
   const rate = (r, x) => (x === id(1) ? 'partly' : 'traceable')
   const split = (ids) => ({ 'manifest.json': JSON.stringify(ids.map((x) => ({ id: x, behaviour: 'b', severity: 'low', file: 'checks/group.ts' }))) })
   const agent = async (args) => { // the splitter rewrites the grouped file in out/
-    if (args[1].startsWith('split-')) { mkdirSync(join(arg(args, '--out'), '..', 'out/checks'), { recursive: true }); writeFileSync(join(arg(args, '--out'), '..', 'out/checks/group.ts'), 'NEW\n') }
+    if (args[1].startsWith('split-')) { mkdirSync(join(argOf(args, '--out'), '..', 'out/checks'), { recursive: true }); writeFileSync(join(argOf(args, '--out'), '..', 'out/checks/group.ts'), 'NEW\n') }
     return fake(calls, { rate, split })(args)
   }
   const validate = async (a) => { vcalls.push(a); const v = join(d, 'x1-01', `validation-${e}.json`), x = jsonAt(v); writeFileSync(v, JSON.stringify({ ...x, checks: [...x.checks, { id: id(3), verdict: 'absent-at-base' }, { id: id(4), verdict: 'weak' }] })); return 0 }
@@ -719,7 +719,7 @@ test('split puts the new checks of a grouped external file into that file', asyn
   const s = await withData(d, () => quiet(() => oracle(['split', 'x1-01'], { agent, validate })))
   expect(s.out).toBe('x1-01 split partly=1 split=1 failed=0 stale=0 new=2 classified=1 build=1 requirement=0 disputed=0') // the weak half is not classified
   expect(vcalls).toEqual([['x1-01']])
-  const sp = calls.find((a) => a[1].startsWith('split-')), prompt = readFileSync(arg(sp, '--prompt'), 'utf8')
+  const sp = calls.find((a) => a[1].startsWith('split-')), prompt = readFileSync(argOf(sp, '--prompt'), 'utf8')
   expect(prompt).toContain('EXT-RULES')
   expect(prompt).toContain('SENTINEL-RUN')
   expect(jsonAt(join(d, 'x1-01/work', `split-${id(1)}`, 'in/entry.json')).file).toBe('checks/group.ts')
