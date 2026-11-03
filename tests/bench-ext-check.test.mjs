@@ -243,6 +243,27 @@ test('a saved recipe written under another brief is regenerated first, from the 
   }
 }, 60000)
 
+test('a stale recipe with no round left is recipe failed and is never built', async () => {
+  const s = setup({ briefSha: null })
+  const tsv = join(s.ext, 'recipes', s.key, 'rounds.tsv'), spent = [1, 2, 3].map((k) => `${k}\t${s.slug(1)}\tbad reply\n`).join('')
+  writeFileSync(tsv, spent)
+  const r = await run(s, ['check', 's1', '1'], { reply: ['nope'] })
+  expect(r.stdout).toBe(`${s.slug(1)} out recipe failed\n`)
+  expect(readFileSync(tsv, 'utf8')).toBe(spent)
+  expect(json(join(s.ext, 'tasks', s.slug(1), 'meta.json')).containers).toEqual([])
+}, 60000)
+
+test('the repo\'s first task keeps its 3 rounds after a further task spent one; a further task gets 1', async () => {
+  const s = setup({ withRecipe: false })
+  const tsv = join(s.ext, 'recipes', s.key, 'rounds.tsv')
+  mkdirSync(join(s.ext, 'recipes', s.key), { recursive: true })
+  writeFileSync(tsv, `1\t${s.slug(1)}\tbad reply\n2\t${s.slug(2)}\tbad reply\n`)
+  expect((await run(s, ['check', 's1', '1'], { reply: ['nope', 'nope', 'nope'] })).stdout).toBe(`${s.slug(1)} out recipe failed\n`)
+  expect(readFileSync(tsv, 'utf8').trim().split('\n').map((l) => l.split('\t')[1])).toEqual([s.slug(1), s.slug(2), s.slug(1), s.slug(1)]) // 2 more: 3 in all
+  expect((await run(s, ['check', 's1', '2'], { reply: ['nope'] })).stdout).toBe(`${s.slug(2)} out recipe failed\n`)
+  expect(readFileSync(tsv, 'utf8').trim().split('\n').length).toBe(4) // its 1 round is spent
+}, 60000)
+
 test('a recipe must copy the repo to /work and may not ask for host network, insecure mode or secrets', () => {
   const ok = { platform: 'linux/arm64', dockerfile: 'FROM alpine:3.22\nCOPY . /work\nWORKDIR /work\nRUN true\n', test: 'true', probe: ['a'] }
   expect(parseRecipe('```json\n' + JSON.stringify(ok) + '\n```')).toEqual(ok)

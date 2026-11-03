@@ -517,12 +517,14 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     const brief = readFileSync(join(ext, 'briefs', 'recipe.md'), 'utf8'), briefSha = sha(brief)
     const done = existsSync(roundsTsv) ? readFileSync(roundsTsv, 'utf8').trim().split('\n').map((l) => l.split('\t')) : []
     const mine = done.filter((d) => d[1] === slug).length
-    let left = (done.length > mine ? 1 : 3) - mine // ruling 10: 3 rounds for the repo's first task that needs them, 1 for each further task
+    // ruling 10: 3 rounds for the repo's first task that needs them (the first slug in rounds.tsv), 1 for each further task
+    let left = ((done[0]?.[1] ?? slug) === slug ? 3 : 1) - mine
     let recipe = null, failed = null
     if (existsSync(saved)) { // the repo's recipe, reused: not a round; when it fails here, the first round is told why
       const text = readFileSync(saved, 'utf8'), r = parseRecipe(text)
-      // ruling 10: a recipe written under another brief (or with no briefSha) is regenerated first, from the old one, while a round is left
-      if (JSON.parse(text).briefSha !== briefSha && left > 0) failed = { r, what: 'brief' }
+      // ruling 10: a recipe written under another brief (or with no briefSha) is never used: regenerated first, from the old one
+      // (with no round left, the candidate is recipe failed)
+      if (JSON.parse(text).briefSha !== briefSha) failed = { r, what: 'brief' }
       else {
         failed = await attempt(r, `reuse-${slug}-${meta.attempt}`, `reuse-${meta.attempt}`)
         if (!failed) recipe = r
