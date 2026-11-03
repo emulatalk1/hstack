@@ -1584,3 +1584,15 @@ Step 5 serve check of the external tasks, run 2026-11-03 18:05Z–21:00Z (UTC) f
 - **Wall clock.** About 2 h 55 min in all: task-env 1 min, S3 serve under 1 s, S1+S2 serve 2 h 35 min, walk 5.6 min, s2-09 serve 5.1 min.
 - **pgsnap equal** around every batch: s3, s12 (s1-01…s2-08), walk s2, s2r1 (s2-09). Each list was `postgres real_estate real_estate_hstack real_estate_hstack_test template0 template1`.
 - **Docker.** Before and after: 330 container names and 174 image tags, with no difference in either list. All of them are leftovers from earlier fixture and step 4 runs plus the real-estate containers. Every `-serve` image and container was removed by recorded name (66 `-serve` names in `ext/removed.txt`; the walk's `--remove-out` removed the sokuji check's 10 names). No prune was run by hand. No serve run printed a prune or disk-low line (all stderr files are empty). BuildKit's cache went from 780 entries (23.6 GB) to 190 (28.8 GB), which suggests BuildKit's own garbage collection; it was not checked further.
+
+### Task 10
+
+External interface sheets (ruling 14), branch `worktree-agent-ae7e9651c5862a778`; code commit d3e4e3b (`oracle.mjs sheet`). Brief `<data>/ext/briefs/interface.md`: the real-estate brief's rules and reply format, stack-neutral (no stack, tool, repo or task named), with ruling 14's 23 kinds, one `##` section per page, window, command or API, no nested or indented bullets, and "read names from the product's code, never from a test, spec or fixture file". No database and no Docker in this task; pgsnap not run (it calls `docker exec`, and no run touches a database).
+
+Runs (driver `<data>/ext/step5-sheet.sh`, `xargs -P 3`, logs `<data>/ext/step5-logs/sheet-<task>.log`, counts only): trial s1-01 21:13:39Z-21:13:49Z (0.2 min); the other 23 (s1-01 reused) 21:14:13Z-21:16:37Z (2.4 min). 24 of 24 exit 0, 24 sheets written, 0 failed, 0 reruns (`-2`), 0 refused for a changed prompt; each `interface.md` passes `bun bench/input-check.mjs` (24 PASS).
+
+Per task, names (bullets kept) / deleted (lines `input-check` flagged): s1-01 11/0, s1-02 5/0, s1-03 15/0, s1-04 27/0, s1-05 26/0, s1-06 8/0, s1-07 16/0, s1-08 11/0; s2-01 33/0, s2-02 17/0, s2-03 15/0, s2-04 7/0, s2-05 31/0, s2-07 3/0, s2-08 10/0, s2-09 27/0; s3-01 8/1, s3-02 11/0, s3-03 3/0, s3-04 16/1, s3-05 49/0, s3-06 35/0, s3-07 15/0, s3-08 9/0. Totals: names 408 (s1 119, s2 143, s3 146), deleted 2.
+
+Sheet agents' usage (24 `<task>/interface.reply.md.run.json`, all code 0, all claude-opus-5-5): input 201, output 22181, cache read 1548206, cache write 461666; 7.0 agent-minutes. Reading depth (`toolUses`): 1 to 10 tool calls per run (median about 4), 0.16-0.46 min per run; s1-01 1 Read, s1-07, s3-01 and s3-08 Grep only. No reading gate checks a sheet agent's reading, and `toolUses` holds counts, not paths, so whether an agent opened a test file at the end commit is not recorded.
+
+Usage: implementer opus (this session), tokens and minutes recorded by the controller.
