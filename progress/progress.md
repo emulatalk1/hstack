@@ -876,3 +876,4 @@ Built subagent-driven: one implementer per task, a fresh task reviewer and scope
     bench-ext/fxx6s6av__app__1:4342324
     bench-ext/fxx6s6av__app__1:f5a6d91
 - The user's decision (2026-11-03): Docker keeps 7.6 GB and 8 CPUs on this 32 GB machine; a repo whose tests need more memory is `out of memory` and every such out is reported to the user. `apache/datafusion#24211` stays `out of memory` (no recheck row); reported.
+- Task 5 Step 1, driver restarted: PID 15885 (process group 15885), code 9546c4a, start 2026-11-03T00:58:36Z; the walk resumes from walk.tsv (first the vite-plus recheck).
