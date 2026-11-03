@@ -130,3 +130,11 @@ export function coldSetup(sample) {
   if (!best.size) return null
   return [...best].reduce((a, b) => (b[1] > a[1] ? b : a))[0]
 }
+
+// ruling 2 of step 5: a sampled row keeps its id from the previous sample (rows { task, id }); a new row takes its stack's
+// next number after the highest the previous sample or a task folder (used: folder names) holds, so a dropped id is retired
+export function keptIds(picked, stack, prev, used = []) {
+  const old = new Map(prev.map((r) => [r.id, r.task])), re = new RegExp(`^${stack}-(\\d+)$`)
+  let next = Math.max(0, ...[...prev.map((r) => r.task), ...used].map((t) => Number(re.exec(t)?.[1] ?? 0)))
+  return picked.map((r) => old.get(r.id) ?? `${stack}-${String(++next).padStart(2, '0')}`)
+}

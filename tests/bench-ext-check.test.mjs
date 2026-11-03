@@ -2,17 +2,23 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, runEnd, word } from '../bench/ext.mjs'
+import { diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, removeOut, runEnd, word } from '../bench/ext.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // A local fixture repo stands in for GitHub, a fake gh answers the PR and issue queries, and a fixed recipe (or a fake
-// recipe agent) stands in for the sealed agent. Tests that build or run containers need BENCH_EXT_DOCKER=1: every run
-// leaves its bench-ext-* containers and bench-ext/* images (nothing here removes what it did not record).
+// recipe agent) stands in for the sealed agent. Tests that build or run containers need BENCH_EXT_DOCKER=1: the
+// bench-ext-* containers and bench-ext/* images a check records are removed at the end by their recorded names (serve
+// removes its own); nothing here removes a name it did not record.
 const DOCKER = process.env.BENCH_EXT_DOCKER === '1'
 const dtest = DOCKER ? test : test.skip
 const dropRoot = releaseRoot()
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-ext-check-')))
-afterAll(() => { rmSync(tmp, { recursive: true, force: true }); dropRoot() })
+const made = [] // every data folder setup made
+afterAll(async () => {
+  if (DOCKER) for (const s of made) for (const n of [1, 2]) if (existsSync(join(s.ext, 'tasks', s.slug(n), 'meta.json')) && json(join(s.ext, 'tasks', s.slug(n), 'meta.json')).images) await removeOut(s.ext, s.slug(n))
+  rmSync(tmp, { recursive: true, force: true })
+  dropRoot()
+}, 600000)
 const rand = () => Math.random().toString(36).slice(2, 8)
 
 const fx = join(tmp, 'fixture')
@@ -82,9 +88,12 @@ const gh = async (argv) => {
   const n = +argv.find((a) => a.startsWith('n=')).slice(2), q = argv.find((a) => a.startsWith('query='))
   return JSON.stringify(q.includes('pullRequest(') ? c.pr[n] : c.issue)
 }
-let i = 0
+let i = 0, j = 0
 const recipeAgent = async () => (Array.isArray(c.reply) ? c.reply[i++] ?? null : c.reply)
-process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent, ...('diskFree' in c ? { diskFree: async () => (Array.isArray(c.diskFree) ? (c.diskFree.length > 1 ? c.diskFree.shift() : c.diskFree[0]) : c.diskFree) } : {}) }))
+const serveAgent = async () => (Array.isArray(c.serveReply) ? c.serveReply[j++] ?? null : c.serveReply ?? null)
+process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent, serveAgent, ...(c.readySec ? { readySec: c.readySec } : {}),
+  ...(c.prune ? { prune: async () => console.error('bench-test: builder prune') } : {}),
+  ...('diskFree' in c ? { diskFree: async () => (Array.isArray(c.diskFree) ? (c.diskFree.length > 1 ? c.diskFree.shift() : c.diskFree[0]) : c.diskFree) } : {}) }))
 `)
 
 // a data folder with its own repo owner, so container and image names never meet those of another test or run
@@ -102,10 +111,12 @@ function setup({ withRecipe = true, use = recipe, briefSha = BRIEF_SHA } = {}) {
     mkdirSync(join(ext, 'recipes', key), { recursive: true })
     writeFileSync(join(ext, 'recipes', key, 'recipe.json'), JSON.stringify(briefSha ? { ...use, briefSha } : use))
   }
-  return { owner, data, ext, key, slug: (n) => `${key}__${n}` }
+  const s = { owner, data, ext, key, slug: (n) => `${key}__${n}` }
+  made.push(s)
+  return s
 }
-async function run(s, args, { reply = null, env = {}, disk } = {}) {
-  const c = { args: [args[0], join(s.ext, 'groups.json'), ...args.slice(1)], pr: { 1: prAnswer(prs[1]), 2: prAnswer(prs[2]) }, issue: issueAnswer, remote: fx, reply, ...(disk === undefined ? {} : { diskFree: disk }) }
+async function run(s, args, { reply = null, env = {}, disk, more = {} } = {}) {
+  const c = { args: [args[0], join(s.ext, 'groups.json'), ...args.slice(1)], pr: { 1: prAnswer(prs[1]), 2: prAnswer(prs[2]) }, issue: issueAnswer, remote: fx, reply, ...more, ...(disk === undefined ? {} : { diskFree: disk }) }
   const p = Bun.spawn(['bun', runner, JSON.stringify(c)], { env: { ...process.env, HSTACK_BENCH_MACHINE: join(s.data, 'machine.json'), ...env }, stdout: 'pipe', stderr: 'pipe' })
   return { stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text(), code: await p.exited }
 }
@@ -288,6 +299,7 @@ test('check stops before anything when Docker\'s disk is low, as walk does', asy
 test('sample writes the first 8 accepted rows per stack with the meta.json fields and the cold-setup repo', async () => {
   const s = setup()
   writeFileSync(join(s.ext, 'walk.tsv'), `stack\ttier\trank\tid\tresult\ns1\t1\t1\t${s.owner}/app#1\tok\ns1\t1\t2\t${s.owner}/app#2\tok\n`)
+  writeFileSync(join(s.ext, 'sample.tsv'), SAMPLE_HEAD + '\n') // a live sample with no row: no id to keep
   for (const n of [1, 2]) {
     mkdirSync(join(s.ext, 'tasks', s.slug(n)), { recursive: true })
     writeFileSync(join(s.ext, 'tasks', s.slug(n), 'meta.json'), JSON.stringify({ url: `u${n}`, pr: n, issue: 10 + n, base: `b${n}`, end: `e${n}`, method: 'squash', f2p: n, editHistory: 'none', platform: 'linux/arm64' }))
@@ -443,3 +455,160 @@ test('the issue as it stood when the PR opened', () => {
     { createdAt: '2026-08-15T00:00:00Z', previousTitle: 'second', currentTitle: 'third' }, { createdAt: '2026-08-16T00:00:00Z', previousTitle: 'third', currentTitle: 'now' }] } }
   expect(issueAsOf(issue(renames), at).title).toBe('second')
 })
+
+// step 5: task files and the serve check. A live sample.tsv names the fixture's PR 1 as s1-01; the bare clone is the
+// fixture's, as check leaves it
+const SAMPLE_HEAD = 'task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend\tmethod\tf2p\tedit_history\tplatform\tcold_setup'
+const sha256 = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
+const RECIPE_SHA = sha256(JSON.stringify(recipe))
+function step5({ serveRequired = ['s1'] } = {}) {
+  const s = setup()
+  Bun.spawnSync(['git', 'clone', '-q', '--bare', fx, join(s.ext, 'repos', s.key)])
+  writeFileSync(join(s.ext, 'sample.tsv'), [SAMPLE_HEAD, `s1-01\ts1\t1\t1\t${s.owner}/app#1\tu\t1\t11\t${c0}\t${c1}\tsingle\t1\tnone\t${platform}\tyes`, ''].join('\n'))
+  writeFileSync(join(s.ext, 'walk.tsv'), `stack\ttier\trank\tid\tresult\ns1\t1\t1\t${s.owner}/app#1\tok\n`)
+  mkdirSync(join(s.ext, 'tasks', s.slug(1)), { recursive: true })
+  writeFileSync(join(s.ext, 'tasks', s.slug(1), 'meta.json'), JSON.stringify({ id: `${s.owner}/app#1`, slug: s.slug(1), base: c0, end: c1, recipeSha: RECIPE_SHA }))
+  writeFileSync(join(s.ext, 'tasks', s.slug(1), 'issue.json'), JSON.stringify({ title: 'Make the zebra stripe', body: 'It should stripe.\n```\nzebra()\n```\nSee src/zebra.py too.', asOf: 'x', editHistory: 'none' }))
+  writeFileSync(join(s.ext, 'step5.json'), JSON.stringify({ serveRequired }))
+  writeFileSync(join(s.ext, 'briefs/serve.md'), 'SERVE BRIEF\n')
+  return s
+}
+const withRecipe = (s) => writeFileSync(join(s.ext, 'tasks', s.slug(1), 'task-recipe.json'), JSON.stringify(recipe, null, 2) + '\n')
+const SERVE_BRIEF_SHA = sha256('SERVE BRIEF\n')
+// busybox httpd (the layer installs it: the build has network) serves the files of /work; start also lists the
+// container's network interfaces into the readable base log
+const serveRecipe = { layer: ['RUN apk add --no-cache busybox-extras'], start: 'ls /sys/class/net; busybox-extras httpd -p 8080 -h /work', ready: 'wget -q -O /dev/null http://127.0.0.1:8080/tests/zebra_ok.sh', notes: 'http://127.0.0.1:8080/' }
+
+test('task-env refuses a reply whose hash differs', async () => {
+  const s = step5(), reply = join(s.data, 'reply.md'), text = '```json\n' + JSON.stringify(recipe) + '\n```\n'
+  writeFileSync(reply, text)
+  const bad = await run(s, ['task-env', 's1-01', '--reply', reply, '--sha', 'f'.repeat(64)])
+  expect(bad).toMatchObject({ code: 2, stdout: '' })
+  expect(bad.stderr).toContain('SHA-256')
+  expect(existsSync(join(s.ext, 'tasks', s.slug(1), 'task-recipe.json'))).toBe(false)
+  const good = await run(s, ['task-env', 's1-01', '--reply', reply, '--sha', sha256(text)])
+  expect(good.code).toBe(0)
+  expect(json(join(s.ext, 'tasks', s.slug(1), 'task-recipe.json'))).toEqual(recipe)
+  expect(json(join(s.data, 'env', 's1-01.json'))).toEqual({ name: 's1-01', repo: join(s.ext, 'repos', s.key), db: null, port: 49152, start: null, ready: null, setup: [], teardown: [],
+    oracle: `bun ${join(import.meta.dir, '../bench/ext.mjs')} oracle-run s1-01`, junit: '.bench-junit.xml', timeoutSec: 7800 })
+}, 60000)
+
+test('task-env --from-meta finds the reply by recipeSha', async () => {
+  const s = step5(), rounds = join(s.ext, 'recipes', s.key, 'rounds')
+  mkdirSync(rounds, { recursive: true })
+  writeFileSync(join(rounds, '1.reply.md'), JSON.stringify(badRecipe))
+  writeFileSync(join(rounds, '2.reply.md'), 'not a recipe')
+  writeFileSync(join(rounds, '3.reply.md'), 'Here:\n' + JSON.stringify(recipe))
+  const r = await run(s, ['task-env', 's1-01', '--from-meta'])
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  expect(json(join(s.ext, 'tasks', s.slug(1), 'task-recipe.json'))).toEqual(recipe)
+  rmSync(join(rounds, '3.reply.md'))
+  const none = await run(s, ['task-env', 's1-01', '--from-meta'])
+  expect(none.code).toBe(2)
+  expect(none.stderr).toContain('recipeSha')
+}, 60000)
+
+test('task-env writes input.md verbatim and counts input-check hits', async () => {
+  const s = step5(), reply = join(s.data, 'reply.md')
+  writeFileSync(reply, JSON.stringify(recipe))
+  const r = await run(s, ['task-env', 's1-01', '--reply', reply, '--sha', sha256(JSON.stringify(recipe))])
+  expect(r).toMatchObject({ code: 0, stdout: 's1-01 input-check hits=4\n', stderr: '' }) // two fence lines, a source path and a file name
+  expect(readFileSync(join(s.data, 's1-01', 'input.md'), 'utf8')).toBe('# Make the zebra stripe\n\nIt should stripe.\n```\nzebra()\n```\nSee src/zebra.py too.')
+}, 60000)
+
+test('serve gives a stack that needs no serve check the empty serve recipe, with no round', async () => {
+  const s = step5({ serveRequired: [] })
+  const r = await run(s, ['serve', 's1-01'])
+  expect(r).toMatchObject({ code: 0, stdout: 's1-01 servable rounds=0\n' })
+  expect(json(join(s.ext, 'serve', s.key, 'serve.json'))).toEqual({ layer: [], start: '', ready: 'true', notes: '', briefSha: null })
+  expect(existsSync(join(s.ext, 'serve', s.key, 'rounds.tsv'))).toBe(false)
+  expect(existsSync(join(s.data, 's1-01', 'docker.json'))).toBe(false)
+}, 60000)
+
+test('serve prunes the BuildKit cache when Docker\'s disk is low, and stops when it stays low', async () => {
+  const s = step5()
+  withRecipe(s)
+  const r = await run(s, ['serve', 's1-01'], { disk: 5, more: { prune: true } })
+  expect(r).toMatchObject({ code: 3, stdout: 's1-01 stopped: docker disk low (5.0 GB free)\n' })
+  expect(r.stderr).toContain('bench-test: builder prune')
+  expect(existsSync(join(s.ext, 'serve', s.key, 'rounds.tsv'))).toBe(false)
+}, 60000)
+
+// one served task, shared by the tests that read it; serve removes what it built, so they read the records and the logs
+let servedOnce
+const served = () => (servedOnce ??= (async () => {
+  if (!exists('container', 'bench-ext-other')) expect(docker('create', '--name', 'bench-ext-other', 'alpine:3.22', 'true').exitCode).toBe(0)
+  const s = step5()
+  withRecipe(s)
+  return { s, r: await run(s, ['serve', 's1-01'], { more: { serveReply: ['```json\n' + JSON.stringify(serveRecipe) + '\n```'], readySec: 60 } }) }
+})())
+
+dtest('serve passes when ready answers at base and end (needs BENCH_EXT_DOCKER=1)', async () => {
+  const { s, r } = await served()
+  expect(r).toMatchObject({ code: 0, stdout: 's1-01 servable rounds=1\n', stderr: '' })
+  expect(json(join(s.ext, 'serve', s.key, 'serve.json'))).toEqual({ ...serveRecipe, briefSha: SERVE_BRIEF_SHA })
+  expect(readFileSync(join(s.ext, 'serve', s.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tpass\n`)
+  expect(readFileSync(join(s.ext, 'serve', s.key, 'rounds', '1.prompt.md'), 'utf8')).toBe('SERVE BRIEF\n')
+  expect(readFileSync(join(s.ext, 'serve', s.key, 'rounds', '1.base.log'), 'utf8')).toContain('bench: ready')
+  expect(readFileSync(join(s.ext, 'sealed', s.slug(1), 'logs', 'serve-1.end.log'), 'utf8')).toContain('bench: ready')
+  // every name is recorded at creation, with the image ids, and removed by that name once the check ends (digests kept)
+  const tag = (c) => `bench-ext/${s.slug(1)}:${c.slice(0, 7)}-serve`, box = (c) => `bench-ext-${s.slug(1)}-serve-${c.slice(0, 7)}-1`
+  const d = json(join(s.data, 's1-01', 'docker.json'))
+  expect(d.images.map((i) => i.name)).toEqual([tag(c0), tag(c1)])
+  expect(d.containers).toEqual([box(c0), box(c1)])
+  for (const i of d.images) expect(d.digests[i.name]).toBe(i.id)
+  for (const i of d.images) expect(i.id).toMatch(/^sha256:[0-9a-f]{64}$/)
+  expect(readFileSync(join(s.ext, 'removed.txt'), 'utf8')).toBe([box(c0), box(c1), tag(c0), tag(c1), ''].join('\n'))
+  for (const c of d.containers) expect(exists('container', c)).toBe(false)
+  for (const i of d.images) expect(exists('image', i.name)).toBe(false)
+  expect(exists('container', 'bench-ext-other')).toBe(true)
+  // a second serve reuses the saved serve recipe with no round, and names its containers anew
+  const again = await run(s, ['serve', 's1-01'], { more: { readySec: 60 } })
+  expect(again).toMatchObject({ code: 0, stdout: 's1-01 servable rounds=1\n' })
+  expect(readFileSync(join(s.ext, 'serve', s.key, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tpass\n`)
+  const d2 = json(join(s.data, 's1-01', 'docker.json'))
+  expect(d2.containers).toEqual([box(c0), box(c1), box(c0).replace(/-1$/, '-2'), box(c1).replace(/-1$/, '-2')])
+  for (const c of d2.containers) expect(exists('container', c)).toBe(false)
+  for (const i of d2.images) expect(exists('image', i.name)).toBe(false)
+}, 600000)
+
+dtest('serve containers use no network (needs BENCH_EXT_DOCKER=1)', async () => {
+  const { s } = await served()
+  const lines = readFileSync(join(s.ext, 'serve', s.key, 'rounds', '1.base.log'), 'utf8').split('\n')
+  expect(lines).toContain('lo')
+  expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
+}, 600000)
+
+dtest('serve drops a task whose ready never answers, appending dropped to walk.tsv (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = step5()
+  withRecipe(s)
+  const never = { ...serveRecipe, ready: 'echo still waiting; false' }
+  const r = await run(s, ['serve', 's1-01'], { more: { serveReply: JSON.stringify(never), readySec: 4 } })
+  expect(r).toMatchObject({ code: 0, stdout: 's1-01 dropped not servable\n' })
+  expect(readFileSync(join(s.ext, 'serve', s.key, 'rounds.tsv'), 'utf8')).toBe([1, 2, 3].map((k) => `${k}\t${s.slug(1)}\tserve failed\n`).join(''))
+  expect(walkRows(s).at(-1)).toEqual(['s1', '1', '1', `${s.owner}/app#1`, 'dropped'])
+  expect(existsSync(join(s.ext, 'serve', s.key, 'serve.json'))).toBe(false)
+  // a retry is told the previous serve recipe and the end of its base log
+  const p2 = readFileSync(join(s.ext, 'serve', s.key, 'rounds', '2.prompt.md'), 'utf8')
+  expect(p2).toStartWith('SERVE BRIEF\n')
+  expect(p2).toContain('The last 200 lines of its serve log')
+  expect(p2).toContain('still waiting')
+  const d = json(join(s.data, 's1-01', 'docker.json'))
+  expect(d.containers.length).toBe(3) // the base only: no round served there
+  for (const c of d.containers) expect(exists('container', c)).toBe(false)
+  for (const i of d.images) expect(exists('image', i.name)).toBe(false)
+}, 600000)
+
+test('sample keeps ids and numbers a replacement after the highest', async () => {
+  const s = setup()
+  // app#1 stays sampled as s1-01; s1-02 (another PR) was dropped and the folder s1-03 retires that id too
+  writeFileSync(join(s.ext, 'walk.tsv'), `stack\ttier\trank\tid\tresult\ns1\t1\t1\t${s.owner}/app#1\tok\ns1\t1\t2\t${s.owner}/app#2\tok\n`)
+  writeFileSync(join(s.ext, 'sample.tsv'), [SAMPLE_HEAD, `s1-01\ts1\t1\t1\t${s.owner}/app#1`, `s1-02\ts1\t1\t9\t${s.owner}/app#9`, ''].join('\n'))
+  mkdirSync(join(s.data, 's1-03'))
+  for (const n of [1, 2]) {
+    mkdirSync(join(s.ext, 'tasks', s.slug(n)), { recursive: true })
+    writeFileSync(join(s.ext, 'tasks', s.slug(n), 'meta.json'), JSON.stringify({ url: `u${n}`, pr: n, issue: 10 + n, base: `b${n}`, end: `e${n}`, method: 'squash', f2p: n, editHistory: 'none', platform: 'linux/arm64' }))
+  }
+  expect((await run(s, ['sample'])).stdout).toBe('sample.tsv: 2 rows\n')
+  expect(readFileSync(join(s.ext, 'sample.tsv'), 'utf8').split('\n').map((l) => l.split('\t')[0])).toEqual(['task', 's1-01', 's1-04', ''])
+}, 60000)

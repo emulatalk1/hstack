@@ -6,14 +6,17 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { withExport } from './env.mjs'
-import { baseOf, coldSetup, exists, extraProbe, failToPass, nextToCheck, repoOut, sampleOf, sortKey, stackOf, staticOut } from './lib/ext.mjs'
+import { check as inputCheck } from './input-check.mjs'
+import { baseOf, coldSetup, exists, extraProbe, failToPass, keptIds, nextToCheck, repoOut, sampleOf, sortKey, stackOf, staticOut } from './lib/ext.mjs'
 import { readJunit } from './lib/junit.mjs'
 import { runGroup } from './lib/proc.mjs'
 
 const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
        bun bench/ext.mjs check <groups.json> <stack> <rank> [--tier <1|2>]
        bun bench/ext.mjs walk <groups.json> <stack> [--tier <1|2>] [--remove-out]
-       bun bench/ext.mjs sample <groups.json> [--tier <1|2>]`
+       bun bench/ext.mjs sample <groups.json> [--tier <1|2>]
+       bun bench/ext.mjs task-env <groups.json> <task> (--reply <reply file> --sha <sha256> | --from-meta)
+       bun bench/ext.mjs serve <groups.json> <task>`
 const sha = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
 const flag = (argv, k) => argv.find((a) => a.startsWith(`${k}=`))?.slice(k.length + 1)
 const name = (argv) => (argv.includes('graphql') ? `graphql ${flag(argv, 'q') ?? '(repo batch)'}` : `${argv[3]} ${flag(argv, 'q')} page ${flag(argv, 'page')}`)
@@ -287,13 +290,14 @@ export function issueAsOf(issue, asOf) {
   return typeof v?.diff === 'string' ? { title, body: v.diff, editHistory: 'recovered' } : { title, body: issue.body, editHistory: 'unverified' }
 }
 
+const UNSAFE = /--network[= ]+host|--security[= ]+insecure|--mount[= ][^\n]*type=(ssh|secret)/i
 // the reply is data: its shape is checked before any field reaches docker
 export function parseRecipe(text) {
   const r = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
   const probe = Array.isArray(r?.probe) && r.probe.length >= 1 && r.probe.length <= 3 && r.probe.every((p) => typeof p === 'string' && p)
   if (!PLATFORMS.includes(r?.platform) || typeof r.dockerfile !== 'string' || !r.dockerfile || typeof r.test !== 'string' || !probe) throw new Error('the recipe is not { platform, dockerfile, test, probe: [1 to 3 paths] }')
   if (!/^\s*COPY\s+\.\s+\/work\/?\s*$/im.test(r.dockerfile) || !/^\s*WORKDIR\s+\/work\/?\s*$/im.test(r.dockerfile)) throw new Error('the dockerfile must have COPY . /work and WORKDIR /work')
-  if (/--network[= ]+host|--security[= ]+insecure|--mount[= ][^\n]*type=(ssh|secret)/i.test(r.dockerfile)) throw new Error('the dockerfile may not use --network=host, --security=insecure or an ssh or secret mount')
+  if (UNSAFE.test(r.dockerfile)) throw new Error('the dockerfile may not use --network=host, --security=insecure or an ssh or secret mount')
   return { platform: r.platform, dockerfile: r.dockerfile, test: r.test, probe: r.probe }
 }
 // a build that fails twice with one of these in its log tail is the network's failure, not the repo's
@@ -356,7 +360,7 @@ export function netFailure(text) {
   return NET.find(([, re]) => re.test(text))?.[0] ?? null
 }
 const tail = (file) => readFileSync(file, 'utf8').split('\n').slice(-200).join('\n')
-const retryText = (f) => f.what === 'brief' ? `\nA recipe written under an earlier version of this brief follows. Start from it and change what this brief asks for:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n` : f.what === 'reply' ? `\nThe previous reply was not a valid recipe: ${f.message}\n` : `\nA previous recipe failed. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n\nThe last 200 lines of its ${f.what} log:\n\n\`\`\`\n${tail(f.log)}\n\`\`\`\n`
+const retryText = (f) => f.what === 'end' ? `\nA previous recipe served at this commit and not at the later commit it must also serve. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n` : f.what === 'brief' ? `\nA recipe written under an earlier version of this brief follows. Start from it and change what this brief asks for:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n` : f.what === 'reply' ? `\nThe previous reply was not a valid recipe: ${f.message}\n` : `\nA previous recipe failed. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n\nThe last 200 lines of its ${f.what} log:\n\n\`\`\`\n${tail(f.log)}\n\`\`\`\n`
 
 // every external call has a limit: its process group is killed after timeoutSec and code is 'timeout'
 async function sp(argv, timeoutSec = 300) {
@@ -393,6 +397,85 @@ const appendWalk = (ext, row, result) => {
   appendFileSync(f, [row.stack, row.tier, row.rank, row.id, result].join('\t') + '\n')
 }
 
+const daemon = async () => {
+  const r = await sp(['docker', 'version', '--format', '{{.Server.Version}}'])
+  if (r.code) throw new Error(`docker daemon: ${r.code === 'timeout' ? 'no answer in 300 s' : r.err.trim().slice(-300)}`)
+}
+
+// the image of commit (its files by scratch, plus .bench.Dockerfile, an empty .bench.Dockerfile.dockerignore and
+// .bench-test.sh) tagged tag: its id; false when the build fails (the repo's failure), a throw when the daemon, the
+// network or a low disk does
+async function buildImage({ scratch, dockerfile, test, platform, commit, tag, log, diskFree }) {
+  return scratch('ctx', commit, async (dir) => {
+    writeFileSync(join(dir, '.bench.Dockerfile'), dockerfile)
+    writeFileSync(join(dir, '.bench.Dockerfile.dockerignore'), '') // BuildKit reads it instead of the repo's .dockerignore
+    writeFileSync(join(dir, '.bench-test.sh'), test)
+    const iid = `${log}.iid`
+    const once = async (flag) => {
+      rmSync(iid, { force: true })
+      const fd = openSync(log, flag)
+      try {
+        return (await runGroup(['docker', 'build', '--progress=plain', '--platform', platform, '-f', join(dir, '.bench.Dockerfile'), '--iidfile', iid, '-t', tag, dir], { timeoutSec: 2700, stdout: fd, stderr: fd })).code
+      } finally { closeSync(fd) }
+    }
+    let code = await once('w')
+    // once more from the BuildKit cache: a network blip passes then, the repo's own failure fails again
+    if (code !== 0 && code !== 'timeout') { await daemon(); code = await once('a') }
+    if (code !== 0) {
+      await daemon()
+      const t = tail(log), disk = diskFailure(t), sig = (disk && diskIsLow(await diskFree()) ? disk : null) ?? netFailure(t)
+      if (sig) throw new Error(sig) // the signature's name only: the log is the repo's output
+      return false
+    }
+    return readFileSync(iid, 'utf8').trim()
+  })
+}
+
+// one run in a new container `name` of image with no network and a static command: files(dir) writes what goes in to
+// /work by docker cp; created() records the name as soon as it exists. { how, timedOut, exitCode, oom } (how: runEnd);
+// a throw when Docker fails, the run is killed from outside, or it prints a disk-full message while the disk is low
+async function runContainer({ scratch, name, image, platform, cmd, files, created, log, timeoutSec, diskFree, stage }) {
+  stage('run')
+  await must(['docker', 'create', '--network', 'none', '--platform', platform, '--name', name, image, ...cmd], `docker create ${name}`)
+  created()
+  stage('cp')
+  await scratch('in', null, async (dir) => {
+    await files(dir)
+    await must(['docker', 'cp', `${dir}/.`, `${name}:/work`], `docker cp into ${name}`, { quiet: true })
+  })
+  stage('run')
+  const fd = openSync(log, 'w')
+  let code
+  try { ({ code } = await runGroup(['docker', 'start', '-a', name], { timeoutSec, stdout: fd, stderr: fd })) } finally { closeSync(fd) }
+  const timedOut = code === 'timeout'
+  if (timedOut) await sp(['docker', 'kill', name]) // this tool created it
+  const st = await sp(['docker', 'inspect', '-f', '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}', name])
+  if (st.code) { await daemon(); throw new Error(`docker inspect ${name} failed (exit ${st.code})`) }
+  const [status, exitCode, oom] = st.out.trim().split(' ')
+  if (status !== 'exited') throw new Error(`container ${name} is ${status}, not exited`)
+  const how = runEnd(timedOut, exitCode, oom)
+  const disk = exitCode !== '0' && diskFailure(tail(log))
+  if (disk && diskIsLow(await diskFree())) throw new Error(disk) // the signature only: the log is the repo's output
+  if (how === 'killed') throw new Error(`container ${name} was killed (exit ${exitCode}, OOMKilled ${oom})`)
+  return { how, timedOut, exitCode, oom }
+}
+
+// rounds.tsv (`k slug result`): one row per round, written as soon as its reply exists (an interrupted round still counts),
+// its result filled in after
+const roundRows = (tsv) => (existsSync(tsv) ? readFileSync(tsv, 'utf8').split('\n').filter(Boolean).map((l) => l.split('\t')) : [])
+function setRound(tsv, k, slug, result) {
+  const rows = roundRows(tsv).map((r) => r.join('\t'))
+  const line = `${k}\t${slug}\t${result}`, i = rows.findIndex((l) => l.startsWith(`${k}\t${slug}\t`))
+  if (i >= 0) rows[i] = line
+  else rows.push(line)
+  writeFileSync(`${tsv}.tmp`, rows.join('\n') + '\n')
+  renameSync(`${tsv}.tmp`, tsv)
+}
+// a round number no file in dir and no rounds.tsv row has taken
+const nextRound = (tsv, dir) => 1 + Math.max(0, ...roundRows(tsv).map((r) => Number(r[0])), ...readdirSync(dir).map((f) => Number(/^(\d+)\./.exec(f)?.[1] ?? 0)))
+// ruling 10: 3 rounds for the repo's first task that needs them (the first slug in rounds.tsv), 1 for each further task
+const roundsLeft = (tsv, slug) => { const done = roundRows(tsv); return ((done[0]?.[1] ?? slug) === slug ? 3 : 1) - done.filter((d) => d[1] === slug).length }
+
 // the default recipe agent: a sealed agent with read tools on the files of the base; null when it gives no reply
 async function sealedRecipe({ env, label, at, prompt, out }) {
   const r = await sp([process.execPath, join(import.meta.dir, 'sealed-agent.mjs'), env, label, '--at', at, '--tools', 'Read,Glob,Grep', '--prompt', prompt, '--out', out], 4000) // the agent's own limit is 3600 s
@@ -425,41 +508,16 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
     if (!body?.data?.repository) throw new Error(`gh graphql: ${JSON.stringify(body?.errors ?? body).slice(0, 300)}`)
     return body.data.repository
   }
-  const daemon = async () => {
-    const r = await sp(['docker', 'version', '--format', '{{.Server.Version}}'])
-    if (r.code) throw new Error(`docker daemon: ${r.code === 'timeout' ? 'no answer in 300 s' : r.err.trim().slice(-300)}`)
-  }
   // the image of commit with the recipe: false when the build fails (the repo's failure), a throw when the daemon or the
   // network does
-  const build = (recipe, commit, tag, log) => {
+  const build = async (recipe, commit, tag, log) => {
     stage = 'build'
-    return scratch('ctx', commit, async (dir) => {
-      writeFileSync(join(dir, '.bench.Dockerfile'), recipe.dockerfile)
-      writeFileSync(join(dir, '.bench.Dockerfile.dockerignore'), '') // BuildKit reads it instead of the repo's .dockerignore
-      writeFileSync(join(dir, '.bench-test.sh'), recipe.test)
-      const iid = `${log}.iid`
-      const once = async (flag) => {
-        rmSync(iid, { force: true })
-        const fd = openSync(log, flag)
-        try {
-          return (await runGroup(['docker', 'build', '--progress=plain', '--platform', recipe.platform, '-f', join(dir, '.bench.Dockerfile'), '--iidfile', iid, '-t', tag, dir], { timeoutSec: 2700, stdout: fd, stderr: fd })).code
-        } finally { closeSync(fd) }
-      }
-      let code = await once('w')
-      // once more from the BuildKit cache: a network blip passes then, the repo's own failure fails again
-      if (code !== 0 && code !== 'timeout') { await daemon(); code = await once('a') }
-      if (code !== 0) {
-        await daemon()
-        const t = tail(log), disk = diskFailure(t), sig = (disk && diskIsLow(await diskFree()) ? disk : null) ?? netFailure(t)
-        if (sig) throw new Error(sig) // the signature's name only: the log is the repo's output
-        return false
-      }
-      const id = readFileSync(iid, 'utf8').trim()
-      if (!meta.images.includes(tag)) meta.images.push(tag)
-      if (!meta.imageIds.includes(id)) meta.imageIds.push(id)
-      save()
-      return true
-    })
+    const id = await buildImage({ scratch, dockerfile: recipe.dockerfile, test: recipe.test, platform: recipe.platform, commit, tag, log, diskFree })
+    if (!id) return false
+    if (!meta.images.includes(tag)) meta.images.push(tag)
+    if (!meta.imageIds.includes(id)) meta.imageIds.push(id)
+    save()
+    return true
   }
   const archive = async (paths, dir) => {
     const tar = join(dir, '.bench-tests.tar')
@@ -470,32 +528,15 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
   // one run in a new container of image with no network: the scripts (and, with copy, the PR's test files from end) go in
   // by docker cp, its command names no file, and its JUnit comes out by docker cp; [] when it wrote none
   const runIn = async (recipe, image, label, files, { del = [], copy = false, log, xml }) => {
-    stage = 'run'
     const c = `bench-ext-${slug}-${label}`
-    await must(['docker', 'create', '--network', 'none', '--platform', recipe.platform, '--name', c, image, 'sh', '/work/.bench-run.sh'], `docker create ${c}`)
-    meta.containers.push(c)
-    save()
-    stage = 'cp'
-    await scratch('in', null, async (dir) => {
-      if (copy) await archive(files, dir)
-      writeFileSync(join(dir, '.bench-test.sh'), recipe.test) // also here: a repo's .dockerignore may have kept it out of the image
-      writeFileSync(join(dir, '.bench-run.sh'), ['rm -f /out/junit.xml', 'cd /work', 'mkdir -p /out', ...del.map((f) => `rm -f -- ${word(f)}`), `exec sh /work/.bench-test.sh ${files.map(word).join(' ')}`, ''].join('\n'))
-      await must(['docker', 'cp', `${dir}/.`, `${c}:/work`], `docker cp into ${c}`, { quiet: true })
-    })
-    stage = 'run'
-    const fd = openSync(log, 'w')
-    let code
-    try { ({ code } = await runGroup(['docker', 'start', '-a', c], { timeoutSec: 1800, stdout: fd, stderr: fd })) } finally { closeSync(fd) }
-    const timedOut = code === 'timeout'
-    if (timedOut) await sp(['docker', 'kill', c]) // this check created it
-    const st = await sp(['docker', 'inspect', '-f', '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}', c])
-    if (st.code) { await daemon(); throw new Error(`docker inspect ${c} failed (exit ${st.code})`) }
-    const [status, exitCode, oom] = st.out.trim().split(' ')
-    if (status !== 'exited') throw new Error(`container ${c} is ${status}, not exited`)
-    const how = runEnd(timedOut, exitCode, oom)
-    const disk = exitCode !== '0' && diskFailure(tail(log))
-    if (disk && diskIsLow(await diskFree())) throw new Error(disk) // the signature only: the log is the repo's output
-    if (how === 'killed') throw new Error(`container ${c} was killed (exit ${exitCode}, OOMKilled ${oom})`)
+    const { how, timedOut, exitCode } = await runContainer({ scratch, name: c, image, platform: recipe.platform, cmd: ['sh', '/work/.bench-run.sh'], log, timeoutSec: 1800, diskFree,
+      stage: (s) => { stage = s },
+      created: () => { meta.containers.push(c); save() },
+      files: async (dir) => {
+        if (copy) await archive(files, dir)
+        writeFileSync(join(dir, '.bench-test.sh'), recipe.test) // also here: a repo's .dockerignore may have kept it out of the image
+        writeFileSync(join(dir, '.bench-run.sh'), ['rm -f /out/junit.xml', 'cd /work', 'mkdir -p /out', ...del.map((f) => `rm -f -- ${word(f)}`), `exec sh /work/.bench-test.sh ${files.map(word).join(' ')}`, ''].join('\n'))
+      } })
     if (how === 'oom') { // the repo does not fit this machine: null, and the log says so (a probe's goes to the next round)
       appendFileSync(log, '\nbench: the container was killed for memory (OOMKilled)\n')
       meta.runs.push({ label, timedOut, exitCode: Number(exitCode), oom: true, cases: 0 })
@@ -560,10 +601,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       return cases?.some((c) => c.status === 'pass') ? null : { r, what: 'probe', log: `${probe}.log` }
     }
     const brief = readFileSync(join(ext, 'briefs', 'recipe.md'), 'utf8'), briefSha = sha(brief)
-    const done = existsSync(roundsTsv) ? readFileSync(roundsTsv, 'utf8').trim().split('\n').map((l) => l.split('\t')) : []
-    const mine = done.filter((d) => d[1] === slug).length
-    // ruling 10: 3 rounds for the repo's first task that needs them (the first slug in rounds.tsv), 1 for each further task
-    let left = ((done[0]?.[1] ?? slug) === slug ? 3 : 1) - mine
+    let left = roundsLeft(roundsTsv, slug)
     let recipe = null, failed = null
     if (existsSync(saved)) { // the repo's recipe, reused: not a round; when it fails here, the first round is told why
       const text = readFileSync(saved, 'utf8'), r = parseRecipe(text)
@@ -575,36 +613,25 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
         if (!failed) recipe = r
       }
     }
-    // one row per round: written as soon as its reply exists (an interrupted round still counts), its result filled in after
-    const setRound = (k, word) => {
-      const rows = existsSync(roundsTsv) ? readFileSync(roundsTsv, 'utf8').split('\n').filter(Boolean) : []
-      const line = `${k}\t${slug}\t${word}`, i = rows.findIndex((l) => l.startsWith(`${k}\t${slug}\t`))
-      if (i >= 0) rows[i] = line
-      else rows.push(line)
-      writeFileSync(`${roundsTsv}.tmp`, rows.join('\n') + '\n')
-      renameSync(`${roundsTsv}.tmp`, roundsTsv)
-    }
+    const setRow = (k, result) => setRound(roundsTsv, k, slug, result)
     // one recipe round, its prompt the brief plus extra: the recipe that passed (saved), or null with failed saying why
     const round = async (extra, note = '') => {
       stage = 'recipe-agent'
-      // a round number no file and no rounds.tsv row has taken
-      const rows = existsSync(roundsTsv) ? readFileSync(roundsTsv, 'utf8').split('\n').filter(Boolean).map((l) => Number(l.split('\t')[0])) : []
-      const k = 1 + Math.max(0, ...rows, ...readdirSync(rounds).map((f) => Number(/^(\d+)\./.exec(f)?.[1] ?? 0)))
-      const prompt = join(rounds, `${k}.prompt.md`), out = join(rounds, `${k}.reply.md`)
+      const k = nextRound(roundsTsv, rounds), prompt = join(rounds, `${k}.prompt.md`), out = join(rounds, `${k}.reply.md`)
       writeFileSync(prompt, brief.trimEnd() + '\n' + extra)
       const reply = await recipeAgent({ env: envFile, label: `recipe-${slug}-${k}`, at: b.base, prompt, out })
       if (reply == null) throw new Error(`recipe round ${k}: no reply`) // a tool failure: the round is not spent
       if (!existsSync(out)) writeFileSync(out, reply)
-      setRound(k, `${note}replied`)
+      setRow(k, `${note}replied`)
       meta.recipeRounds++
       let r
       try { r = parseRecipe(reply) } catch (e) { // a spent round: the next one is told why
         failed = { what: 'reply', message: e.message }
-        setRound(k, `${note}bad reply`)
+        setRow(k, `${note}bad reply`)
         return null
       }
       failed = await attempt(r, String(k), String(k))
-      setRound(k, `${note}${failed ? `${failed.what} failed` : 'pass'}`)
+      setRow(k, `${note}${failed ? `${failed.what} failed` : 'pass'}`)
       if (failed) return null
       writeFileSync(saved, JSON.stringify({ ...r, briefSha }, null, 2) + '\n')
       return r
@@ -678,19 +705,47 @@ export async function removeOut(ext, slug, { ok = false } = {}) {
     }
     writeFileSync(metaFile, JSON.stringify(meta, null, 2) + '\n')
   }
-  const rm = async (verb, name) => { if ((await sp(['docker', verb, name])).code === 0) gone.push(name); else console.error(`could not remove ${name}`) }
-  for (const c of meta.containers) if (c.startsWith(`bench-ext-${slug}-`)) await rm('rm', c)
-  for (const i of meta.images) {
-    if (!i.startsWith(`bench-ext/${slug}:`)) continue
-    if (ok && !meta.imageDigests[i]) { console.error(`kept ${i}: no digest recorded`); continue } // never remove what has no record
-    await rm('rmi', i)
+  const images = meta.images.filter((i) => {
+    if (ok && i.startsWith(`bench-ext/${slug}:`) && !meta.imageDigests[i]) { console.error(`kept ${i}: no digest recorded`); return false } // never remove what has no record
+    return true
+  })
+  await removeNames(ext, slug, { containers: meta.containers, images, ids: meta.imageIds })
+}
+
+// containers, then images, by exact name and never with -f, only names of this slug (`bench-ext-<slug>-`,
+// `bench-ext/<slug>:`); then each recorded image id no tag points at any more (a later build of the same tag left it
+// untagged). Each name removed is appended to removed.txt; one already gone is passed over
+async function removeNames(ext, slug, { containers, images, ids }) {
+  const gone = []
+  const rm = async (verb, name) => {
+    const r = await sp(['docker', verb, name])
+    if (r.code === 0) gone.push(name)
+    else if (!/no such (container|image)/i.test(r.err)) console.error(`could not remove ${name}`)
   }
-  // an image a later build of the same tag left untagged has no name: removed by its recorded id, only while no tag points at it
-  for (const id of meta.imageIds) {
+  for (const c of new Set(containers)) if (c.startsWith(`bench-ext-${slug}-`)) await rm('rm', c)
+  for (const i of new Set(images)) if (i.startsWith(`bench-ext/${slug}:`)) await rm('rmi', i)
+  for (const id of new Set(ids)) {
     const t = await sp(['docker', 'image', 'inspect', '-f', '{{len .RepoTags}}', id])
     if (t.code === 0 && t.out.trim() === '0') await rm('rmi', id)
   }
   if (gone.length) appendFileSync(join(ext, 'removed.txt'), gone.map((g) => `${g}\n`).join(''))
+  return gone
+}
+
+// step 5 (the user's decision of 2026-11-03): what <data>/<task>/docker.json records is removed as soon as the step that
+// built it ends. Each image name still present first gets its digest (`docker image inspect .Id`) in docker.json `digests`
+export async function removeRecorded(data, task, slug) {
+  const f = join(data, task, 'docker.json')
+  if (!existsSync(f)) return []
+  const d = JSON.parse(readFileSync(f, 'utf8')), present = []
+  d.digests ??= {}
+  for (const n of new Set(d.images.map((i) => i.name))) {
+    if (!n.startsWith(`bench-ext/${slug}:`)) continue
+    const r = await sp(['docker', 'image', 'inspect', '--format', '{{.Id}}', n])
+    if (r.code === 0) { d.digests[n] = r.out.trim(); present.push(n) }
+  }
+  writeFileSync(f, JSON.stringify(d, null, 2) + '\n')
+  return removeNames(join(data, 'ext'), slug, { containers: d.containers, images: present, ids: d.images.map((i) => i.id) })
 }
 
 function parseArgs(args, nPos, allowRemove) {
@@ -722,26 +777,198 @@ async function checkCmd(args, inj) {
   return check(row, cfg, inj)
 }
 
-// sample.tsv: per stack (in groups.json order) its sampleOf rows, numbered <stack>-<nn>, with the meta.json fields of step 5
+// the step 5 sample: the live sample.tsv, else step 4's locked copy
+const sampleRows = (ext) => readTsv(existsSync(join(ext, 'sample.tsv')) ? join(ext, 'sample.tsv') : join(import.meta.dir, '../progress/step4/sample.tsv'))
+const keyOf = (id) => {
+  const [owner, rest] = id.split('/'), [name, n] = rest.split('#'), key = slugOf(`${owner}__${name}`)
+  return { key, slug: `${key}__${n}` }
+}
+// a task id's sample row with its key, slug and 0-based row index
+function taskOf(ext, task) {
+  const rows = sampleRows(ext), index = rows.findIndex((r) => r.task === task)
+  if (index < 0) throw new Error(`no task ${task} in sample.tsv`)
+  return { ...rows[index], ...keyOf(rows[index].id), index }
+}
+
+// sample.tsv: per stack (in id order) its sampleOf rows with the meta.json fields of step 5; a row keeps the id the previous
+// sample gave it, a new one takes its stack's next unused number (keptIds)
 export async function sample(args, inj = {}) {
   const { pos: [groupsPath], tier } = parseArgs(args, 1, false)
-  const cfg = await Bun.file(groupsPath).json(), ext = join(dataOf(inj.data), 'ext')
-  const walked = readTsv(join(ext, 'walk.tsv'))
+  const cfg = await Bun.file(groupsPath).json(), data = dataOf(inj.data), ext = join(data, 'ext')
+  const walked = readTsv(join(ext, 'walk.tsv')), prev = sampleRows(ext), used = readdirSync(data)
   const cols = ['task', 'stack', 'tier', 'rank', 'id', 'url', 'pr', 'issue', 'base', 'end', 'method', 'f2p', 'edit_history', 'platform', 'cold_setup']
   const out = [cols.join('\t')]
   for (const g of [...cfg.groups].sort((a, b) => a.id.localeCompare(b.id))) {
     const rows = ['1', '2'].slice(0, Number(tier)).flatMap((t) => readTsv(join(ext, `candidates-${t}.tsv`)).filter((r) => r.stack === g.id && r.static === 'ok'))
-    const picked = sampleOf(rows, walked, cfg), cold = coldSetup(picked.map((r) => ({ repo: r.repo, rank: Number(r.rank) })))
-    picked.forEach((r, i) => {
-      const [owner, rest] = r.id.split('/'), [name, n] = rest.split('#')
-      const m = JSON.parse(readFileSync(join(ext, 'tasks', `${slugOf(`${owner}__${name}`)}__${n}`, 'meta.json'), 'utf8'))
-      const v = { task: `${g.id}-${String(i + 1).padStart(2, '0')}`, stack: g.id, tier: r.tier, rank: r.rank, id: r.id, url: m.url, pr: m.pr, issue: m.issue, base: m.base,
+    const picked = sampleOf(rows, walked, cfg), cold = coldSetup(picked.map((r) => ({ repo: r.repo, rank: Number(r.rank) }))), ids = keptIds(picked, g.id, prev, used)
+    out.push(...picked.map((r, i) => {
+      const m = JSON.parse(readFileSync(join(ext, 'tasks', keyOf(r.id).slug, 'meta.json'), 'utf8'))
+      const v = { task: ids[i], stack: g.id, tier: r.tier, rank: r.rank, id: r.id, url: m.url, pr: m.pr, issue: m.issue, base: m.base,
         end: m.end, method: m.method, f2p: m.f2p, edit_history: m.editHistory, platform: m.platform, cold_setup: r.repo === cold ? 'yes' : 'no' }
-      out.push(cols.map((c) => v[c]).join('\t'))
-    })
+      return cols.map((c) => v[c]).join('\t')
+    }).sort()) // in id order: a replacement after the kept rows
   }
   writeFileSync(join(ext, 'sample.tsv'), out.join('\n') + '\n')
   return out.length - 1
+}
+
+// `task-env` (rulings 3 and 4 of step 5): the task's recipe from the reply its accepted check used, its input from the issue
+// and its task file. Prints only the input-check hit count
+export async function taskEnv(args, inj = {}) {
+  const pos = [], o = {}
+  for (let i = 0; i < args.length; i++) {
+    if (['--reply', '--sha'].includes(args[i]) && args[i + 1] !== undefined && !(args[i].slice(2) in o)) o[args[i].slice(2)] = args[++i]
+    else if (args[i] === '--from-meta') o.fromMeta = true
+    else if (args[i].startsWith('--')) throw new Error(USAGE)
+    else pos.push(args[i])
+  }
+  if (pos.length !== 2 || (o.fromMeta ? 'reply' in o || 'sha' in o : !('reply' in o && 'sha' in o))) throw new Error(USAGE)
+  const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, pos[1]), taskDir = join(ext, 'tasks', t.slug)
+  let recipe = null
+  if (o.fromMeta) { // a replacement: the repo's reply whose parsed recipe check hashed into meta.json
+    const want = JSON.parse(readFileSync(join(taskDir, 'meta.json'), 'utf8')).recipeSha, dir = join(ext, 'recipes', t.key, 'rounds')
+    const replies = (existsSync(dir) ? readdirSync(dir) : []).filter((f) => /^\d+\.reply\.md$/.test(f)).sort((a, b) => parseInt(a) - parseInt(b))
+    for (const f of replies) {
+      try { const r = parseRecipe(readFileSync(join(dir, f), 'utf8')); if (want && sha(JSON.stringify(r)) === want) { recipe = r; break } } catch {}
+    }
+    if (!recipe) throw new Error(`${t.task}: no reply of ${t.key} parses to the recipeSha of meta.json`)
+  } else {
+    const bytes = readFileSync(o.reply)
+    if (sha(bytes) !== o.sha) throw new Error(`${o.reply}: its SHA-256 is not ${o.sha}`)
+    recipe = parseRecipe(bytes.toString('utf8'))
+  }
+  writeFileSync(join(taskDir, 'task-recipe.json'), JSON.stringify(recipe, null, 2) + '\n')
+  const issue = JSON.parse(readFileSync(join(taskDir, 'issue.json'), 'utf8')), input = `# ${issue.title}\n\n${issue.body ?? ''}`
+  mkdirSync(join(data, t.task), { recursive: true })
+  writeFileSync(join(data, t.task, 'input.md'), input)
+  mkdirSync(join(data, 'env'), { recursive: true })
+  // no host app: grade runs the oracle command, which builds and serves the commit in Docker; the port is never bound
+  writeFileSync(join(data, 'env', `${t.task}.json`), JSON.stringify({ name: t.task, repo: join(ext, 'repos', t.key), db: null, port: 49152 + t.index, start: null, ready: null,
+    setup: [], teardown: [], oracle: `bun ${join(import.meta.dir, 'ext.mjs')} oracle-run ${t.task}`, junit: '.bench-junit.xml', timeoutSec: 7800 }, null, 2) + '\n')
+  return `${t.task} input-check hits=${inputCheck(input).length}`
+}
+
+export const SERVE_EMPTY = { layer: [], start: '', ready: 'true', notes: '' }
+// the reply is data: its shape is checked before a line reaches docker
+export function parseServe(text) {
+  const r = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
+  if (!Array.isArray(r?.layer) || !r.layer.every((l) => typeof l === 'string') || typeof r.start !== 'string' || typeof r.ready !== 'string' || !r.ready.trim() || typeof r.notes !== 'string') throw new Error('the serve recipe is not { layer: [Dockerfile lines], start, ready, notes }')
+  if (r.layer.some((l) => UNSAFE.test(l))) throw new Error('the layer may not use --network=host, --security=insecure or an ssh or secret mount')
+  return { layer: r.layer, start: r.start, ready: r.ready, notes: r.notes }
+}
+// the container's static command: start in the background, then ready every 2 s until it exits 0 (exit 0) or readySec
+// pass (exit 3, after one more ready run whose output the log keeps)
+const serveScript = (readySec) => ['cd /work', 'sh /work/.bench-start.sh &', 'i=0', `while [ $i -lt ${Math.ceil(readySec / 2)} ]; do`,
+  '  if sh /work/.bench-ready.sh >/dev/null 2>&1; then echo "bench: ready"; exit 0; fi', '  sleep 2', '  i=$((i+1))', 'done',
+  `echo "bench: ready did not exit 0 within ${readySec} s; its output now:"`, 'sh /work/.bench-ready.sh 2>&1 | tail -n 20', 'exit 3', ''].join('\n')
+
+// `serve` (ruling 5 of step 5): a serve recipe per repo, from rounds of a sealed agent, that serves the task at its base and
+// its end in one offline container of the task's recipe plus the layer. What it builds is removed as soon as it ends
+export async function serve(args, inj = {}) {
+  const { pos: [groupsPath, task] } = parseArgs(args, 2, false)
+  const cfg = await Bun.file(groupsPath).json(), data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
+  if (!cfg.groups.some((g) => g.id === t.stack)) throw new Error(`no stack ${t.stack} in ${groupsPath}`)
+  const { serveRequired } = JSON.parse(readFileSync(join(ext, 'step5.json'), 'utf8'))
+  if (!Array.isArray(serveRequired)) throw new Error('step5.json has no serveRequired list')
+  const dir = join(ext, 'serve', t.key), rounds = join(dir, 'rounds'), saved = join(dir, 'serve.json'), roundsTsv = join(dir, 'rounds.tsv')
+  mkdirSync(rounds, { recursive: true })
+  if (!serveRequired.includes(t.stack)) { // its interface is the program or the public API, which its step 4 runs reach
+    writeFileSync(saved, JSON.stringify({ ...SERVE_EMPTY, briefSha: null }, null, 2) + '\n')
+    return { line: `${task} servable rounds=0`, code: 0 }
+  }
+  // below the floor, the BuildKit cache goes first (the user's decision of 2026-11-03)
+  const told = {}
+  let low = await diskStop(task, inj, told)
+  if (low) {
+    await (inj.prune ?? (() => must(['docker', 'builder', 'prune', '-f'], 'docker builder prune', { timeoutSec: 1800 })))()
+    low = await diskStop(task, inj, told)
+  }
+  if (low) return { line: low, code: 3 }
+
+  const diskFree = inj.diskFree ?? dockerDiskFree, serveAgent = inj.serveAgent ?? sealedRecipe, readySec = inj.readySec ?? 600
+  const logs = join(ext, 'sealed', t.slug, 'logs'), taskDir = join(data, task), dockerJson = join(taskDir, 'docker.json')
+  for (const d of [logs, taskDir]) mkdirSync(d, { recursive: true })
+  const record = (f) => {
+    const d = existsSync(dockerJson) ? JSON.parse(readFileSync(dockerJson, 'utf8')) : { images: [], containers: [] }
+    f(d)
+    writeFileSync(dockerJson, JSON.stringify(d, null, 2) + '\n')
+    return d
+  }
+  let stage = 'task-env', seq = 0
+  const scratch = (what, commit, fn) => withExport({ name: t.key, repo: join(ext, 'repos', t.key) }, commit, `${what}-${t.slug}-${process.pid}-${seq++}`, fn)
+  const brief = readFileSync(join(ext, 'briefs', 'serve.md'), 'utf8'), briefSha = sha(brief)
+
+  // one serve recipe at one commit: null when ready answered, else 'build', 'serve' or 'oom'
+  const serveAt = async (recipe, s, commit, log) => {
+    const sha7 = commit.slice(0, 7), tag = `bench-ext/${t.slug}:${sha7}-serve`, box = `bench-ext-${t.slug}-serve-${sha7}-`
+    stage = 'build'
+    const id = await buildImage({ scratch, dockerfile: `${recipe.dockerfile.trimEnd()}\n${s.layer.join('\n')}\n`, test: recipe.test, platform: recipe.platform, commit, tag, log: `${log}.build.log`, diskFree })
+    if (!id) return 'build'
+    record((d) => { if (!d.images.some((i) => i.name === tag && i.id === id)) d.images.push({ name: tag, id }) })
+    const name = box + (record(() => {}).containers.filter((c) => c.startsWith(box)).length + 1)
+    const r = await runContainer({ scratch, name, image: tag, platform: recipe.platform, cmd: ['sh', '/work/.bench-serve.sh'], log: `${log}.log`, timeoutSec: readySec + 300, diskFree,
+      stage: (x) => { stage = x },
+      created: () => record((d) => d.containers.push(name)),
+      files: (dir) => {
+        writeFileSync(join(dir, '.bench-serve.sh'), serveScript(readySec))
+        writeFileSync(join(dir, '.bench-start.sh'), `${s.start}\n`)
+        writeFileSync(join(dir, '.bench-ready.sh'), `${s.ready}\n`)
+      } })
+    if (r.how === 'oom') { appendFileSync(`${log}.log`, '\nbench: the container was killed for memory (OOMKilled)\n'); return 'oom' }
+    return r.exitCode === '0' && !r.timedOut ? null : 'serve'
+  }
+  // at the base (readable logs), then at the end (sealed logs: the next round is told only that it failed there)
+  const attempt = async (recipe, s, label) => {
+    const base = join(rounds, `${label}.base`), atBase = await serveAt(recipe, s, t.base, base)
+    if (atBase) return atBase === 'oom' ? { what: 'oom' } : { r: s, what: atBase, log: atBase === 'build' ? `${base}.build.log` : `${base}.log` }
+    const atEnd = await serveAt(recipe, s, t.end, join(logs, `serve-${label}.end`))
+    return atEnd === 'oom' ? { what: 'oom' } : atEnd ? { r: s, what: 'end' } : null
+  }
+
+  let result
+  try {
+    const recipe = parseRecipe(readFileSync(join(ext, 'tasks', t.slug, 'task-recipe.json'), 'utf8'))
+    let served = null, failed = null
+    if (existsSync(saved)) { // the repo's serve recipe under this brief, reused: not a round; when it fails here, the first round is told why
+      const text = readFileSync(saved, 'utf8')
+      if (JSON.parse(text).briefSha === briefSha) {
+        const s = parseServe(text), n = readdirSync(rounds).filter((f) => f.startsWith(`reuse-${t.slug}-`) && f.endsWith('.base.build.log')).length + 1
+        failed = await attempt(recipe, s, `reuse-${t.slug}-${n}`)
+        if (!failed) served = s
+      }
+    }
+    for (let left = roundsLeft(roundsTsv, t.slug); !served && failed?.what !== 'oom' && left > 0; left--) {
+      stage = 'serve-agent'
+      const k = nextRound(roundsTsv, rounds), prompt = join(rounds, `${k}.prompt.md`), out = join(rounds, `${k}.reply.md`)
+      writeFileSync(prompt, brief.trimEnd() + '\n' + (failed ? retryText(failed) : ''))
+      const reply = await serveAgent({ env: join(ext, 'env', `${t.key}.json`), label: `serve-${t.slug}-${k}`, at: t.base, prompt, out })
+      if (reply == null) throw new Error(`serve round ${k}: no reply`) // a tool failure: the round is not spent
+      if (!existsSync(out)) writeFileSync(out, reply)
+      setRound(roundsTsv, k, t.slug, 'replied')
+      let s
+      try { s = parseServe(reply) } catch (e) { // a spent round: the next one is told why
+        failed = { what: 'reply', message: e.message }
+        setRound(roundsTsv, k, t.slug, 'bad reply')
+        continue
+      }
+      failed = await attempt(recipe, s, String(k))
+      setRound(roundsTsv, k, t.slug, !failed ? 'pass' : failed.what === 'oom' ? 'out of memory' : `${failed.what} failed`)
+      if (!failed) {
+        writeFileSync(saved, JSON.stringify({ ...s, briefSha }, null, 2) + '\n')
+        served = s
+      }
+    }
+    result = served ? 'servable' : failed?.what === 'oom' ? 'dropped out of memory' : 'dropped not servable'
+    if (!served) appendWalk(ext, t, 'dropped') // ruling 14 then replaces it
+    rmSync(join(ext, 'tasks', t.slug, 'serve.err'), { force: true })
+  } catch (e) {
+    result = `error ${stage}`
+    writeFileSync(join(ext, 'tasks', t.slug, 'serve.err'), `${stage}: ${e.message}\n`)
+  } finally {
+    await removeRecorded(data, task, t.slug)
+  }
+  const mine = roundRows(roundsTsv).filter((r) => r[1] === t.slug).length
+  return { line: result === 'servable' ? `${task} servable rounds=${mine}` : `${task} ${result}`, code: isError(result) ? 1 : 0 }
 }
 
 export async function walk(args, inj = {}, print = (s) => console.log(s)) {
@@ -785,6 +1012,12 @@ export async function main(argv, inj = {}) {
       return r.code ?? (isError(r.result) ? 1 : 0)
     } else if (cmd === 'walk') return await walk(rest, inj)
     else if (cmd === 'sample') console.log(`sample.tsv: ${await sample(rest, inj)} rows`)
+    else if (cmd === 'task-env') console.log(await taskEnv(rest, inj))
+    else if (cmd === 'serve') {
+      const r = await serve(rest, inj)
+      console.log(r.line)
+      return r.code
+    }
     else throw new Error(USAGE)
     return 0
   } catch (e) { console.error(e.message); return 2 }

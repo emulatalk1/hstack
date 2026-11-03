@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup, extraProbe, sampleOf } from '../bench/lib/ext.mjs'
+import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup, extraProbe, sampleOf, keptIds } from '../bench/lib/ext.mjs'
 
 const SEED = 'hstack-bench-2026-10-27'
 const groups = [
@@ -196,4 +196,13 @@ test('sampleOf takes tier 1 before tier 2 and at most perRepo rows of a repo', (
   const rs = [row('b#9', 'b', 2, 1), row('a#1', 'a', 1, 1), row('a#2', 'a', 1, 2), row('a#3', 'a', 1, 3), row('c#4', 'c', 1, 4)]
   const walked = rs.map((r) => ({ id: r.id, result: 'ok' }))
   expect(sampleOf(rs, walked, { perStack: 4, perRepo: 2 }).map((r) => r.id)).toEqual(['a#1', 'a#2', 'c#4', 'b#9'])
+})
+
+test('keptIds keeps a row\'s id and numbers a new row after the highest id its stack has used', () => {
+  const prev = [{ task: 's1-01', id: 'a#1' }, { task: 's1-02', id: 'a#2' }, { task: 's1-03', id: 'b#3' }, { task: 's2-01', id: 'c#1' }]
+  // b#3 (s1-03) was dropped: its id is retired, so the replacement d#9 takes s1-04
+  expect(keptIds([{ id: 'a#1' }, { id: 'd#9' }, { id: 'a#2' }], 's1', prev)).toEqual(['s1-01', 's1-04', 's1-02'])
+  // a task folder retires an id too, even after the sample that held it was rewritten
+  expect(keptIds([{ id: 'a#1' }, { id: 'd#9' }], 's1', prev.slice(0, 2), ['s1-03', 's1-07', 's10-09', 'p1', 's1-x'])).toEqual(['s1-01', 's1-08'])
+  expect(keptIds([{ id: 'e#1' }, { id: 'f#2' }], 's3', prev)).toEqual(['s3-01', 's3-02'])
 })
