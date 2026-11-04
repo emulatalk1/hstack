@@ -831,7 +831,7 @@ async function split(c, agent, validate) {
   const o = join(c.dir, 'oracle'), tally = { split: 0, failed: 0, stale: 0 }
   for (const id of agr.partly) {
     const manifest = clManifest(c), e = manifest.find((x) => x.id === id)
-    if (!e || e.dropped === true) continue // split already
+    if (!e || e.dropped === true || e.restored_from_split) continue // split already (and maybe restored below)
     const s = await splitOne(agent, c, e, manifest)
     if (s?.stale) { tally.stale++; continue }
     if (!s) { tally.failed++; writeLabels(c, { [id]: 'requirement' }); continue } // 6.3: not splittable -> requirement
@@ -851,6 +851,18 @@ async function split(c, agent, validate) {
       try { const code = await validate(c.ext ? [c.task] : [c.taskFile, c.task]); if (code !== 0) why = `exit ${code}` } catch (err) { why = String(err?.message ?? err).split('\n')[0] }
       if (why !== null) { console.log(`${c.task} split validate failed (${why}); the new checks are not classified`); return 1 }
     }
+    // 6.3 (controller ruling): a split none of whose new checks is scored did not split the check; the original comes
+    // back with its earlier verdict and goes to requirement, and its new checks are dropped
+    const man = clManifest(c), back = man.filter((x) => x.dropped === true && agr.partly.includes(x.id) && (x.split_into ?? []).every((n) => !CL_SCORED.includes(clVerdict(c, { ...x, id: n }))))
+    if (back.length) {
+      const gone = back.flatMap((x) => x.split_into)
+      writeFileSync(join(o, 'manifest.json'), JSON.stringify(man.map((x) => {
+        if (back.includes(x)) { const { dropped, split_into, ...rest } = x; return { ...rest, restored_from_split: split_into } }
+        return gone.includes(x.id) ? { ...x, dropped: true, drop_reason: 'split gave no scored half' } : x
+      }), null, 2) + '\n')
+      writeLabels(c, Object.fromEntries(back.map((x) => [x.id, 'requirement'])), gone)
+      tally.restored = back.length
+    }
     const fresh = clScored(c).filter((x) => made.includes(x.id))
     if (fresh.length) {
       r = await classRound(agent, c, 'classify-split', fresh)
@@ -860,7 +872,7 @@ async function split(c, agent, validate) {
     }
   }
   const v = Object.values(r?.labels ?? {})
-  console.log(`${c.task} split partly=${agr.partly.length} split=${tally.split} failed=${tally.failed} stale=${tally.stale} new=${made.length} classified=${r?.ids.length ?? 0} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length + (r?.partly.length ?? 0)} disputed=${r?.disputed.length ?? 0}`)
+  console.log(`${c.task} split partly=${agr.partly.length} split=${tally.split} failed=${tally.failed} restored=${tally.restored ?? 0} stale=${tally.stale} new=${made.length} classified=${r?.ids.length ?? 0} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length + (r?.partly.length ?? 0)} disputed=${r?.disputed.length ?? 0}`)
   return tally.stale ? 1 : 0
 }
 
