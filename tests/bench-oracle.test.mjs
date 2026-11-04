@@ -695,6 +695,24 @@ test('a task-repo base without the app file is not run and gives precondition at
   expect(runs[0]).toContain('--base')
 })
 
+test('sweep reads a boundary without the app file as precondition for every check, with no run', async () => {
+  // as the sweep test, with tests/a.test.txt the app file: t1's base c0 has none, so y (which fails at c0) moves too
+  const appTask = join(tmp, 'task-app.json'), x = `${n1}-T1`, y = `${n1}-T2`
+  writeFileSync(appTask, JSON.stringify({ ...JSON.parse(readFileSync(task, 'utf8')), appFile: 'tests/a.test.txt' }))
+  rmSync(join(data, 't1'), { recursive: true, force: true })
+  rmSync(join(data, 't3'), { recursive: true, force: true })
+  freshTask('t2', [entryAt(x, n1Full, { task: 't2' }), entryAt(y, n1Full, { task: 't2' })], { [`${x}.spec.ts`]: 'X\n', [`${y}.spec.ts`]: 'Y\n' })
+  writeFileSync(join(data, 't2', `validation-${n1}.json`), JSON.stringify({ checks: [{ id: x, verdict: 'pre-existing' }, { id: y, verdict: 'pre-existing' }] }))
+  const events = []
+  const table = (c, id) => (c.length > 7 ? 'valid' : c === c0 ? (id === x ? 'pass' : 'fail') : 'fail')
+  const r = await quiet(() => oracle(['sweep', appTask, '--drop', 't3'], { grade: fakeGrade(table, [], events), agent: fakeAgents() }))
+  expect(r.code).toBe(0)
+  expect(events.filter((e) => e.startsWith('at '))).toEqual([`at ${n1}`, `at ${m1}`, `at ${k3}`]) // c0 is not run
+  expect(r.out).toContain(`sweep ${c0}: no app, every check precondition`)
+  expect(manifestOf('t1').map((m) => m.id)).toEqual([x, y])
+  expect(r.out).toContain('sweep: pre-existing 2, boundaries 4, moved 2, recorded 0')
+})
+
 // --- bench/oracle.mjs sheet (ruling 14) ---
 const sheetSetup = () => {
   const ext = join(data, 'ext')

@@ -69,3 +69,9 @@ s3	1	10	apache/iggy#4018	recheck: feedback round
 s3	1	10	apache/iggy#4018	PR tests do not pass at end
 s2	1	11	OpenWhispr/openwhispr#2643	dropped
 s2	1	14	kizuna-ai-lab/sokuji#361	ok
+s1	1	11	Open-Source-Legal/OpenContracts#2371	dropped
+s2	1	5	coder/xum#5191	dropped
+s1	1	12	fossasia/eventyay#4768	no fail-to-pass test
+s1	1	13	we-promise/sure#4246	ok
+s2	1	7	coder/xum#7086	no fail-to-pass test
+s2	1	8	coder/xum#6616	ok

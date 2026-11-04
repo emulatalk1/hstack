@@ -460,6 +460,9 @@ const lastLog = (logs, sha7) => {
   return n.length ? join(logs, `${sha7}-${Math.max(...n)}.log`) : null
 }
 
+// controller ruling: a commit without the task's app file holds no app, so nothing a task builds exists there
+const noAppAt = ({ repo, appFile }, commit) => !!appFile && Bun.spawnSync(['git', '-C', repo, 'cat-file', '-e', `${commit}:${appFile}`]).exitCode !== 0
+
 async function taskCtx(task, taskFile) {
   const data = dataDir(), tasks = JSON.parse(readFileSync(join(data, 'tasks.json'), 'utf8')), evDir = join(data, task)
   const c = { task, data, evDir, oracleDir: join(evDir, 'oracle') }
@@ -477,8 +480,7 @@ async function taskCtx(task, taskFile) {
 async function groupsOf(c, refs) {
   const checks = manifestIn(c.oracleDir).filter((m) => m.interface !== 'none')
   if (c.ext) return [{ ref: c.end, ids: checks.map((m) => m.id), bad: [c.base], base: null }]
-  // controller ruling: a base without the task's app file holds no app, so nothing the task builds exists there
-  const noApp = !!c.appFile && Bun.spawnSync(['git', '-C', c.repo, 'cat-file', '-e', `${c.base}:${c.appFile}`]).exitCode !== 0
+  const noApp = noAppAt(c, c.base)
   const out = []
   for (const fix of [...new Set(checks.map((m) => m.fix_commit))]) {
     if (refs && !refs.includes(fix)) continue
@@ -603,7 +605,9 @@ async function sweep(taskFile, drop, { grade, agent }) {
   writeFileSync(join(so, 'manifest.json'), JSON.stringify(pre.map((p) => p.m), null, 2) + '\n')
   const commits = pre.length ? [...new Set([...order].reverse().flatMap((t) => [tasks[t].end, tasks[t].base]))] : []
   const at = new Map()
+  const app = await loadTask(taskFile)
   for (const x of commits) {
+    if (noAppAt(app, x)) { at.set(x, new Map(pre.map((p) => [p.m.id, 'precondition']))); console.log(`sweep ${x}: no app, every check precondition`); continue }
     try { await grade([taskFile, so, '--at', x, '--sealed', '--reuse']) } catch (e) { console.log(`sweep ${x}: ${String(e?.message ?? e).split('\n')[0]}`); continue } // results stay error
     at.set(x, new Map((readJson(join(sw, 'grades', `${x.slice(0, 7)}.json`))?.checks ?? []).map((r) => [r.id, r.result])))
   }
