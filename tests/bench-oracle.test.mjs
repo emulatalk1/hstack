@@ -482,6 +482,237 @@ test('write prints no check name or behaviour', async () => {
   expect(calls).toHaveLength(1)
 })
 
+// --- validate and sweep (rulings 10-13): a fake grade writes what `table(commit, id, oracle dir)` says, as the real one
+// would; fake agents edit the copy their settings grant (a fixer) or reply (a comparer) ---
+const m1Full = git('rev-parse', m1), n1Full = git('rev-parse', n1)
+const parentOf = (c) => git('rev-parse', `${c}^`)
+writeFileSync(join(data, 'briefs/fix.md'), 'FIX-BRIEF\n')
+writeFileSync(join(data, 'briefs/compare.md'), 'COMPARE-BRIEF\n')
+const freshTask = (t, entries, files = {}) => {
+  rmSync(join(data, t), { recursive: true, force: true })
+  const o = join(data, t, 'oracle')
+  mkdirSync(o, { recursive: true })
+  writeFileSync(join(o, 'manifest.json'), JSON.stringify(entries))
+  for (const [f, text] of Object.entries(files)) { mkdirSync(join(o, f, '..'), { recursive: true }); writeFileSync(join(o, f), text) }
+  return o
+}
+const entryAt = (id, fix, o = {}) => ({ id, fix_commit: fix, task: 't1', hunk: 'src/a.txt:8', origin: 'src/x.spec.ts::seven', behaviour: `SENTINEL-BEHAVIOUR ${id}`, interface: 'browser', severity: 'high', ...o })
+const flagOf = (args, k) => args[args.indexOf(k) + 1]
+// a verdict for --validate, a result for --at; a throw is the grade's
+const fakeGrade = (table, calls, events = []) => async (args) => {
+  calls.push(args)
+  const o = args[1], ev = join(o, '..'), list = JSON.parse(readFileSync(join(o, 'manifest.json'), 'utf8'))
+  if (args.includes('--at')) {
+    const c = flagOf(args, '--at')
+    events.push(`at ${c.slice(0, 7)}`)
+    mkdirSync(join(ev, 'grades'), { recursive: true })
+    writeFileSync(join(ev, 'grades', `${c.slice(0, 7)}.json`), JSON.stringify({ commit: c, checks: list.map((m) => ({ id: m.id, result: table(c, m.id, o) })) }))
+    return 0
+  }
+  const ref = flagOf(args, '--validate')
+  events.push(`grade ${ref.slice(0, 7)}`)
+  const mine = list.filter((m) => m.interface !== 'none' && m.fix_commit.slice(0, 7) === ref.slice(0, 7))
+  const checks = mine.map((m) => ({ id: m.id, verdict: table(ref, m.id, o) }))
+  writeFileSync(join(ev, `validation-${ref.slice(0, 7)}.json`), JSON.stringify({ ref, checks }))
+  return 0
+}
+// a fixer writes `edit(file)` over each check file of its copy; a comparer replies `say(id)` for every id its prompt names
+const fakeAgents = ({ edit = () => 'FIXED\n', say = () => 'same' } = {}, calls = [], events = []) => async (args) => {
+  calls.push(args)
+  const label = args[1], out = flagOf(args, '--out')
+  events.push(label.replace(/-[0-9a-f]{7}$/, ''))
+  if (label.startsWith('fix-')) {
+    const dir = JSON.parse(readFileSync(flagOf(args, '--settings'), 'utf8')).permissions.additionalDirectories[0]
+    for (const f of readdirSync(dir, { recursive: true })) if (/T\d+\.spec\.ts$|group\.ts$/.test(f)) writeFileSync(join(dir, f), edit(f))
+    writeFileSync(out, 'SENTINEL-FIXER')
+  } else {
+    const ids = [...new Set(readFileSync(flagOf(args, '--prompt'), 'utf8').match(/[0-9a-f]{7}-T\d+|runner\.json/g))]
+    writeFileSync(out, JSON.stringify(ids.map((id) => ({ id, verdict: say(id) }))))
+  }
+  writeFileSync(`${out}.run.json`, '{"code":0}')
+  return 0
+}
+const extSample = () => {
+  const ext = join(data, 'ext')
+  mkdirSync(ext, { recursive: true })
+  writeFileSync(join(ext, 'sample.tsv'), ['task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend', `s9-01\ts9\t1\t1\town/rp#7\tu\t7\t6\t${k1Full}\t${k3Full}`].join('\n') + '\n')
+  rmSync(join(ext, 'walk.tsv'), { force: true })
+  return ext
+}
+const extOracle = (s) => freshTask('s9-01', [
+  entryAt(`${s}-T1`, k3Full, { task: 's9-01', interface: 'cli', file: 'checks/group.ts' }),
+  entryAt(`${s}-T2`, k3Full, { task: 's9-01', interface: 'cli', file: 'checks/group.ts' }),
+  entryAt(`${s}-T3`, k3Full, { task: 's9-01', interface: 'none' }),
+], { 'checks/group.ts': 'BEFORE\n', 'runner.json': '{}' })
+
+test('an external task validates end against base with no base run', async () => {
+  extSample()
+  const s = k3Full.slice(0, 7), o = extOracle(s), calls = []
+  const r = await quiet(() => oracle(['validate', 's9-01'], { grade: fakeGrade(() => 'valid', calls), agent: fakeAgents() }))
+  expect(r.code).toBe(0)
+  expect(calls).toEqual([[join(data, 'env/s9-01.json'), o, '--validate', k3Full, '--bad', k1Full, '--sealed', '--reuse']])
+  expect(r.out).toContain('s9-01: checks 2, valid 2, weak 0, broken 0, error 0, pre-existing 0, absent-at-base 0, interface none 1, fixer rounds 0, changed 0, kept 0, refused 0')
+  expect(r.out).not.toContain('dropped')
+  expect(r.out).not.toContain('SENTINEL')
+})
+
+test('a real-estate fix inside the task gets no end as a bad version', async () => {
+  const o = freshTask('t1', [entryAt(`${k1}-T1`, k1Full), entryAt(`${m1}-T1`, m1Full), entryAt(`${m1}-T2`, m1Full, { interface: 'none' })])
+  const calls = []
+  const r = await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(() => 'valid', calls), agent: fakeAgents() }))
+  expect(r.code).toBe(0)
+  expect(calls).toEqual([
+    [task, o, '--validate', k1Full, '--bad', parentOf(k1Full), '--base', c0, '--sealed', '--reuse'], // k1 is inside t1 = c0..k3
+    [task, o, '--validate', m1Full, '--bad', parentOf(m1Full), '--bad', k3, '--base', c0, '--sealed', '--reuse'],
+  ])
+  expect(r.out).toContain('t1: checks 2, valid 2,')
+  expect(r.out).toContain('interface none 1,')
+})
+
+test('a fixed check the comparer calls changed stays broken', async () => {
+  const id = `${k1}-T1`, o = freshTask('t1', [entryAt(id, k1Full)], { [`${id}.spec.ts`]: 'BEFORE\n' })
+  const calls = [], agents = []
+  const r = await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(() => 'broken', calls), agent: fakeAgents({ say: () => 'changed' }, agents) }))
+  expect(r.code).toBe(0)
+  expect(readFileSync(join(o, `${id}.spec.ts`), 'utf8')).toBe('BEFORE\n')
+  expect(calls).toHaveLength(1) // nothing kept: no pass after either round
+  expect(agents.map((a) => a[1])).toEqual([`fix-1-t1-${k1}`, `compare-1-t1-${k1}`, `fix-2-t1-${k1}`, `compare-2-t1-${k1}`])
+  const cmp = agents[1]
+  expect(flagOf(cmp, '--tools')).toBe('Read')
+  expect(cmp).not.toContain('--at')
+  const prompt = readFileSync(flagOf(cmp, '--prompt'), 'utf8')
+  for (const x of ['COMPARE-BRIEF', 'BEFORE', 'FIXED', id]) expect(prompt).toContain(x)
+  expect(prompt).not.toContain('SENTINEL-BEHAVIOUR') // the comparer sees the two files only
+  expect(r.out).toContain('t1: checks 1, valid 0, weak 0, broken 1, error 0, pre-existing 0, absent-at-base 0, interface none 0, fixer rounds 2, changed 2, kept 0, refused 2')
+  expect(r.out).not.toContain('SENTINEL')
+})
+
+test('a fixer round covers every broken check before the next pass', async () => {
+  const a = `${k1}-T1`, b = `${k1}-T2`, c = `${m1}-T1`
+  const o = freshTask('t1', [entryAt(a, k1Full), entryAt(b, k1Full), entryAt(c, m1Full)], { [`${a}.spec.ts`]: 'A\n', [`${b}.spec.ts`]: 'B\n', [`${c}.spec.ts`]: 'C\n', 'run.config.ts': 'CONFIG\n' })
+  const logs = join(data, 't1/logs')
+  mkdirSync(logs)
+  for (const n of [1, 2]) writeFileSync(join(logs, `${k1}-${n}.log`), 'SENTINEL-LOG\n')
+  const events = [], calls = [], agents = []
+  // a check is valid once its file says FIXED; b is valid from the start
+  const table = (ref, id, dir) => (id === b || readFileSync(join(dir, `${id}.spec.ts`), 'utf8') === 'FIXED\n' ? 'valid' : 'broken')
+  const r = await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(table, calls, events), agent: fakeAgents({ edit: (f) => (f.endsWith(`${b}.spec.ts`) ? 'B2\n' : 'FIXED\n') }, agents, events) }))
+  expect(r.code).toBe(0)
+  expect(events).toEqual([`grade ${k1}`, `grade ${m1}`, 'fix-1-t1', 'compare-1-t1', 'fix-1-t1', 'compare-1-t1', `grade ${k1}`, `grade ${m1}`])
+  const fix = agents[0], work = join(data, 't1/work/fix-1', k1)
+  expect(flagOf(fix, '--at')).toBe(k1Full)
+  expect(flagOf(fix, '--tools')).toBe('Read,Glob,Grep,Write,Edit')
+  const perm = JSON.parse(readFileSync(flagOf(fix, '--settings'), 'utf8')).permissions
+  expect(perm.additionalDirectories).toEqual([work, logs])
+  expect(perm.allow).toEqual([`Read(/${work}/**)`, `Edit(/${work}/**)`, `Read(/${logs}/**)`])
+  const prompt = readFileSync(flagOf(fix, '--prompt'), 'utf8')
+  for (const x of ['FIX-BRIEF', a, 'src/x.spec.ts::seven', join(logs, `${k1}-2.log`), work]) expect(prompt).toContain(x)
+  expect(prompt).not.toContain(`${k1}-1.log`)
+  expect(prompt).not.toContain(`"${b}"`)
+  expect(readFileSync(join(o, `${a}.spec.ts`), 'utf8')).toBe('FIXED\n')
+  expect(readFileSync(join(o, `${b}.spec.ts`), 'utf8')).toBe('B\n') // not broken: out of scope, not copied
+  expect(readFileSync(join(o, `${c}.spec.ts`), 'utf8')).toBe('FIXED\n')
+  expect(readFileSync(join(o, 'run.config.ts'), 'utf8')).toBe('CONFIG\n')
+  expect(r.out).toContain('t1: checks 3, valid 3, weak 0, broken 0, error 0, pre-existing 0, absent-at-base 0, interface none 0, fixer rounds 1, changed 5, kept 2, refused 3') // k1's copy: a, b, c; m1's: b, c
+  expect(r.out).not.toContain('SENTINEL')
+})
+
+test('a grade that throws records error for that commit\'s checks and the task goes on', async () => {
+  freshTask('t1', [entryAt(`${k1}-T1`, k1Full), entryAt(`${m1}-T1`, m1Full)])
+  const calls = [], agents = []
+  const table = (ref) => { if (ref === k1Full) throw new Error('port 3999 busy'); return 'valid' }
+  const r = await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(table, calls), agent: fakeAgents({}, agents) }))
+  expect(r.code).toBe(0)
+  expect(calls).toHaveLength(2)
+  expect(agents).toHaveLength(0) // an error is not broken: no fixer
+  const v = JSON.parse(readFileSync(join(data, 't1', `validation-${k1}.json`), 'utf8'))
+  expect(v.checks).toEqual([{ id: `${k1}-T1`, verdict: 'error', stage: 'port 3999 busy' }])
+  expect(r.out).toContain(`validation-${k1}: error 1 (port 3999 busy)`)
+  expect(r.out).toContain('t1: checks 2, valid 1, weak 0, broken 0, error 1,')
+})
+
+test('an external task with no valid check is dropped', async () => {
+  const ext = extSample()
+  extOracle(k3Full.slice(0, 7))
+  const r = await quiet(() => oracle(['validate', 's9-01'], { grade: fakeGrade(() => 'weak', []), agent: fakeAgents() }))
+  expect(r.code).toBe(0)
+  expect(r.out).toContain('s9-01 dropped no valid check')
+  expect(readFileSync(join(ext, 'walk.tsv'), 'utf8').trim().split('\n').at(-1)).toBe('s9\t1\t1\town/rp#7\tdropped')
+})
+
+test('sweep runs each distinct boundary once and moves a pre-existing check to its introducer', async () => {
+  // t1 = c0..k3, t2 = k3..m1, t3 = m1..n1; x (owned by t2) fails at t1's end and passes at its base; y fails at both
+  const x = `${n1}-T1`, y = `${n1}-T2`
+  rmSync(join(data, 't1'), { recursive: true, force: true })
+  rmSync(join(data, 't3'), { recursive: true, force: true })
+  const o2 = freshTask('t2', [entryAt(x, n1Full, { task: 't2' }), entryAt(y, n1Full, { task: 't2' })], { [`${x}.spec.ts`]: 'X\n', [`${y}.spec.ts`]: 'Y\n' })
+  writeFileSync(join(data, 't2', `validation-${n1}.json`), JSON.stringify({ checks: [{ id: x, verdict: 'pre-existing' }, { id: y, verdict: 'pre-existing' }] }))
+  const calls = [], events = []
+  const table = (c, id) => (c.length > 7 ? 'valid' : c === k3 ? 'fail' : c === c0 ? (id === x ? 'pass' : 'fail') : 'fail')
+  const r = await quiet(() => oracle(['sweep', task, '--drop', 't3'], { grade: fakeGrade(table, calls, events), agent: fakeAgents() }))
+  expect(r.code).toBe(0)
+  expect(events).toEqual([`at ${n1}`, `at ${m1}`, `at ${k3}`, `at ${c0}`, `grade ${n1}`])
+  expect(calls[0]).toEqual([task, join(data, 'sweep/oracle'), '--at', n1, '--sealed', '--reuse'])
+  expect(calls[4]).toEqual([task, join(data, 't1/oracle'), '--validate', n1Full, '--bad', parentOf(n1Full), '--bad', k3, '--base', c0, '--sealed', '--reuse'])
+  expect(ls(join(data, 'sweep/oracle'))).toEqual([`${x}.spec.ts`, `${y}.spec.ts`, 'manifest.json', 'node_modules', 'package.json', 'run.config.ts'])
+  expect(manifestOf('t1')).toEqual([entryAt(x, n1Full, { task: 't1' })])
+  expect(ls(join(data, 't1/oracle'))).toEqual([`${x}.spec.ts`, 'manifest.json', 'node_modules', 'package.json', 'run.config.ts'])
+  expect(manifestOf('t2').map((m) => m.id)).toEqual([y])
+  expect(ls(o2)).toEqual([`${y}.spec.ts`, 'manifest.json'])
+  expect(JSON.parse(readFileSync(join(data, 't2/moves.json'), 'utf8'))).toEqual([{ id: x, to: 't1', moved: true }, { id: y, to: null, moved: false }])
+  expect(r.out).toContain(`${x} moved to t1`)
+  expect(r.out).toContain(`${y} recorded none`)
+  expect(r.out).toContain('sweep: pre-existing 2, boundaries 4, moved 1, recorded 1')
+  expect(r.out).toContain('t1: checks 1, valid 1,')
+  expect(r.out).not.toContain('SENTINEL')
+})
+
+test('a task-repo base without the app file is not run and gives precondition at the base', async () => {
+  // tests/a.test.txt is the app file here: k1 adds it, so t1's base c0 has none
+  const appTask = join(tmp, 'task-app.json')
+  writeFileSync(appTask, JSON.stringify({ ...JSON.parse(readFileSync(task, 'utf8')), appFile: 'tests/a.test.txt' }))
+  const a = `${k1}-T1`, b = `${m1}-T1`
+  freshTask('t1', [entryAt(a, k1Full), entryAt(b, m1Full)])
+  const calls = []
+  const grade = async (args) => { // as grade writes it with no --base: every check's results, base null
+    calls.push(args)
+    const ref = flagOf(args, '--validate'), id = ref === k1Full ? a : b, bad = ref === k1Full ? ['fail'] : ['fail', 'precondition']
+    writeFileSync(join(data, 't1', `validation-${ref.slice(0, 7)}.json`), JSON.stringify({ ref, bad: [], base: null, checks: [{ id, ref: 'pass', bad, base: null, verdict: 'absent-at-base' }] }))
+    return 0
+  }
+  const r = await quiet(() => oracle(['validate', appTask, 't1'], { grade, agent: fakeAgents() }))
+  expect(r.code).toBe(0)
+  expect(calls.every((x) => !x.includes('--base'))).toBe(true)
+  const v = JSON.parse(readFileSync(join(data, 't1', `validation-${k1}.json`), 'utf8'))
+  expect(v.base).toBe(c0)
+  expect(v.checks).toEqual([{ id: a, ref: 'pass', bad: ['fail'], base: 'precondition', stage: 'no app at base', verdict: 'absent-at-base' }])
+  // a precondition failure on a known-bad version stays broken: the base-run rule, not the external one
+  expect(JSON.parse(readFileSync(join(data, 't1', `validation-${m1}.json`), 'utf8')).checks[0].verdict).toBe('broken')
+  expect(r.out).toContain(`validation-${k1} (no app at base): ${a}=absent-at-base`)
+  // a base that has the app file is run as usual
+  const runs = []
+  await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(() => 'valid', runs), agent: fakeAgents() }))
+  expect(runs[0]).toContain('--base')
+})
+
+test('sweep reads a boundary without the app file as precondition for every check, with no run', async () => {
+  // as the sweep test, with tests/a.test.txt the app file: t1's base c0 has none, so y (which fails at c0) moves too
+  const appTask = join(tmp, 'task-app.json'), x = `${n1}-T1`, y = `${n1}-T2`
+  writeFileSync(appTask, JSON.stringify({ ...JSON.parse(readFileSync(task, 'utf8')), appFile: 'tests/a.test.txt' }))
+  rmSync(join(data, 't1'), { recursive: true, force: true })
+  rmSync(join(data, 't3'), { recursive: true, force: true })
+  freshTask('t2', [entryAt(x, n1Full, { task: 't2' }), entryAt(y, n1Full, { task: 't2' })], { [`${x}.spec.ts`]: 'X\n', [`${y}.spec.ts`]: 'Y\n' })
+  writeFileSync(join(data, 't2', `validation-${n1}.json`), JSON.stringify({ checks: [{ id: x, verdict: 'pre-existing' }, { id: y, verdict: 'pre-existing' }] }))
+  const events = []
+  const table = (c, id) => (c.length > 7 ? 'valid' : c === c0 ? (id === x ? 'pass' : 'fail') : 'fail')
+  const r = await quiet(() => oracle(['sweep', appTask, '--drop', 't3'], { grade: fakeGrade(table, [], events), agent: fakeAgents() }))
+  expect(r.code).toBe(0)
+  expect(events.filter((e) => e.startsWith('at '))).toEqual([`at ${n1}`, `at ${m1}`, `at ${k3}`]) // c0 is not run
+  expect(r.out).toContain(`sweep ${c0}: no app, every check precondition`)
+  expect(manifestOf('t1').map((m) => m.id)).toEqual([x, y])
+  expect(r.out).toContain('sweep: pre-existing 2, boundaries 4, moved 2, recorded 0')
+})
+
 // --- bench/oracle.mjs sheet (ruling 14) ---
 const sheetSetup = () => {
   const ext = join(data, 'ext')
@@ -754,6 +985,26 @@ test('split validates new checks that have no verdict and fails when validate th
   expect(vcalls).toEqual([[task, 'r1']])
   expect(await withData(d, () => quiet(() => oracle(['split', task, 'r1'], { agent, validate: async () => 4 })))).toMatchObject({ code: 0 }) // all validated: not called
   expect(calls.filter((a) => a[1].startsWith('split-'))).toHaveLength(1)
+})
+
+test('split validates through the validate command by default', async () => {
+  const d = clData('cl11'), e = END.slice(0, 7), id = (n) => `${e}-T${n}`, calls = [], gcalls = []
+  writeFileSync(join(d, 'ext/sample.tsv'), `task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend\nx1-01\tx1\t1\t1\town/rp#7\tu\t7\t6\t${'b'.repeat(40)}\t${END}\n`)
+  clTask(d, 'x1-01', END, [[id(1), 'valid', { file: `${id(1)}.ts` }]], { [`${id(1)}.ts`]: 'x\n' })
+  const split = (ids) => ({ 'manifest.json': JSON.stringify(ids.map((x) => ({ id: x, behaviour: 'b', severity: 'low' }))), [`${ids[0]}.ts`]: 'x\n', [`${ids[1]}.ts`]: 'x\n' })
+  const agent = fake(calls, { rate: () => 'partly', split })
+  const grade = async (a) => { // every check of the oracle is valid at the end
+    gcalls.push(a)
+    const ids = jsonAt(join(a[1], 'manifest.json')).filter((m) => !m.dropped).map((m) => m.id)
+    writeFileSync(join(a[1], '..', `validation-${a[a.indexOf('--validate') + 1].slice(0, 7)}.json`), JSON.stringify({ ref: END, checks: ids.map((x) => ({ id: x, verdict: 'valid' })) }))
+    return 0
+  }
+  await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent, grade })))
+  const s = await withData(d, () => quiet(() => oracle(['split', 'x1-01'], { agent, grade })))
+  expect(s.code).toBe(0)
+  expect(s.out.split('\n').at(-1)).toBe('x1-01 split partly=1 split=1 failed=0 stale=0 new=2 classified=2 build=0 requirement=2 disputed=0')
+  expect(gcalls).toHaveLength(1)
+  expect(argOf(gcalls[0], '--validate')).toBe(END)
 })
 
 test('split puts the new checks of a grouped external file into that file', async () => {

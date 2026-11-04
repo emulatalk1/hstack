@@ -393,7 +393,7 @@ const readTsv = (f) => {
   const [head, ...rows] = readFileSync(f, 'utf8').trim().split('\n').map((l) => l.split('\t'))
   return rows.map((r) => Object.fromEntries(head.map((k, i) => [k, r[i]])))
 }
-const appendWalk = (ext, row, result) => {
+export const appendWalk = (ext, row, result) => {
   const f = join(ext, 'walk.tsv')
   if (!existsSync(f)) writeFileSync(f, WALK.join('\t') + '\n')
   appendFileSync(f, [row.stack, row.tier, row.rank, row.id, result].join('\t') + '\n')
