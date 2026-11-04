@@ -675,15 +675,18 @@ function classReply(text, ids) {
   return { got, ok: got.size === ids.length && arr.length === ids.length }
 }
 
-// the reading a run did, counted into its record: successful Read calls, and those of a file under `dir`
+// the reading a run did, counted into its record: successful Read calls, those of a file under `dir`, and the distinct
+// files under `dir` they read
 const readCount = (dir) => (stream) => {
-  const reads = okToolInputs(stream, 'Read')
-  return { reads: reads.length, readsInFolder: reads.filter((i) => String(i.file_path ?? '').startsWith(`${dir}/`)).length }
+  const reads = okToolInputs(stream, 'Read'), mine = reads.map((i) => String(i.file_path ?? '')).filter((f) => f.startsWith(`${dir}/`))
+  return { reads: reads.length, readsInFolder: mine.length, filesInFolder: new Set(mine.map((f) => normalize(f))).size }
 }
 
-// one rater: a bad reply is run once more (`-2`); the final reply's valid labels go to `<name>-<r>.json`. { failed }: the final run did not end with code 0 or its reply
+// one rater: a bad reply, or a run that did not read every one of the folder's `files` (the reading gate of the source
+// labellers; a record with no count has not read them), is run once more (`-2`), and the rerun stands whatever it reads.
+// The final reply's valid labels go to `<name>-<r>.json`. { failed }: the final run did not end with code 0 or its reply
 // labels no check. prepare() builds the folder, the prompt and the settings, only when a run is to be made
-async function rater(agent, c, name, r, text, prompt, prepare, ids) {
+async function rater(agent, c, name, r, text, prompt, prepare, ids, files) {
   for (const n of [1, 2]) {
     const out = join(c.dir, `${name}-${r}${n === 1 ? '' : '-2'}.reply.md`), rec = `${out}.run.json`
     if (!existsSync(rec)) {
@@ -692,9 +695,9 @@ async function rater(agent, c, name, r, text, prompt, prepare, ids) {
       const x = readJson(rec)
       if (x) writeFileSync(rec, JSON.stringify({ ...x, promptSha: sha256(text) }, null, 2) + '\n')
     }
-    const res = classReply(existsSync(out) ? readFileSync(out, 'utf8') : '', ids)
-    if (res.ok || n === 2) {
-      if (!res.got.size || readJson(rec)?.code !== 0) return { failed: true }
+    const res = classReply(existsSync(out) ? readFileSync(out, 'utf8') : '', ids), x = readJson(rec)
+    if ((res.ok && (x?.filesInFolder ?? x?.readsInFolder) >= files) || n === 2) {
+      if (!res.got.size || x?.code !== 0) return { failed: true }
       writeFileSync(join(c.dir, `${name}-${r}.json`), JSON.stringify(ids.filter((id) => res.got.has(id)).map((id) => ({ id, label: res.got.get(id) })), null, 2) + '\n')
       return { got: res.got }
     }
@@ -720,7 +723,8 @@ async function classRound(agent, c, name, entries) {
   // a run whose record exists was made with another prompt: nothing runs and the prompt stays
   const recs = [1, 2].flatMap((r) => ['', '-2'].map((x) => join(c.dir, `${name}-${r}${x}.reply.md.run.json`)))
   if (recs.some((f) => existsSync(f) && readJson(f)?.promptSha !== sha256(text))) return { stale: true }
-  const rs = await Promise.all([1, 2].map((r) => rater(agent, c, name, r, text, prompt, prepare, ids)))
+  const files = 3 + new Set(entries.map((e) => clFile(c, e))).size // input, sheet, manifest and the check files
+  const rs = await Promise.all([1, 2].map((r) => rater(agent, c, name, r, text, prompt, prepare, ids, files)))
   if (rs.some((x) => x.failed)) return { failed: rs.map((x, i) => (x.failed ? i + 1 : 0)).filter(Boolean) }
   const [l1, l2] = rs.map((x) => x.got)
   const m = mergeLabels([...l1].map(([id, label]) => ({ id, label })), [...l2].map(([id, label]) => ({ id, label })))

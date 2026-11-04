@@ -810,11 +810,17 @@ const clTask = (d, t, fix, rows, files) => {
 }
 // a fake sealed agent: a classifier labels each id of its prompt by rate(rater, id) (undefined: left out); a splitter
 // writes split(ids, label) into its out/ folder, or nothing; stream(args), when given, is the transcript the record hook reads
-const fake = (calls, { rate = () => 'traceable', split = () => null, stream } = {}) => async (args, opts) => {
+// a classifier reads every file of its folder unless read(label, files) picks fewer
+const readsOf = (paths) => paths.map((f, i) => [JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: `r${i}`, name: 'Read', input: { file_path: f } }] } }),
+  JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: `r${i}` }] } })].join('\n')).join('\n')
+const filesIn = (d, at = '') => readdirSync(join(d, at), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesIn(d, join(at, e.name)) : [join(d, at, e.name)]))
+const fake = (calls, { rate = () => 'traceable', split = () => null, stream, read = (label, files) => files } = {}) => async (args, opts) => {
   calls.push(args)
   const arg = (k) => args[args.indexOf(k) + 1], out = arg('--out'), prompt = readFileSync(arg('--prompt'), 'utf8')
   const ids = [...prompt.matchAll(/`([0-9a-z]+-T\d+)`/g)].map((m) => m[1])
-  writeFileSync(`${out}.run.json`, JSON.stringify({ code: 0, ...(stream ? opts.record(stream(args)) : {}) }))
+  const folder = args[1].startsWith('classify') ? JSON.parse(readFileSync(arg('--settings'), 'utf8')).permissions.additionalDirectories[0] : null
+  const transcript = stream ? stream(args) : folder ? readsOf(read(args[1], filesIn(folder))) : null
+  writeFileSync(`${out}.run.json`, JSON.stringify({ code: 0, ...(transcript !== null && opts?.record ? opts.record(transcript) : {}) }))
   if (args[1].startsWith('split-')) {
     const files = split(ids, args[1])
     for (const [f, text] of Object.entries(files ?? {})) writeFileSync(join(out, '..', 'out', f), text)
@@ -847,7 +853,13 @@ test('classify gives the raters the manifest without fix_commit, origin, hunk or
   const r = await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate, stream }) })))
   expect(r.code).toBe(0)
   expect(r.out).toBe('x1-01 classified=3 build=2 requirement=0 partly=0 disputed=1 kappa=0.00 raw=0.67 ac1=0.61')
-  expect(jsonAt(join(d, 'x1-01/classify-1.reply.md.run.json'))).toMatchObject({ reads: 2, readsInFolder: 1 })
+  expect(jsonAt(join(d, 'x1-01/classify-1.reply.md.run.json'))).toMatchObject({ reads: 2, readsInFolder: 1, filesInFolder: 1 })
+  // the reading gate: each rater read 1 of the folder's 5 files, so each ran once more; the rerun stands whatever it reads
+  expect(calls.map((a) => a[1]).sort()).toEqual(['classify-1-x1-01', 'classify-1-x1-01-2', 'classify-2-x1-01', 'classify-2-x1-01-2'])
+  calls.splice(0)
+  for (const r of [1, 2]) for (const x of ['', '-2']) rmSync(join(d, `x1-01/classify-${r}${x}.reply.md.run.json`))
+  for (const r of [1, 2]) for (const x of ['', '-2']) rmSync(join(d, `x1-01/classify-${r}${x}.reply.md`), { force: true })
+  expect((await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate }) })))).out).toBe(r.out)
   expect(ls(folder)).toEqual([`${e}-T6.ts`, 'checks', 'input.md', 'interface.md', 'manifest.json'])
   const shown = jsonAt(join(folder, 'manifest.json'))
   expect(shown.map((m) => m.id)).toEqual([`${e}-T1`, `${e}-T2`, `${e}-T6`])
@@ -890,6 +902,23 @@ test('classify fails without labels or agreement when a rater has no labelled re
   const agent = async (args, opts) => { await fake(calls2)(args, opts); if (args[1].startsWith('classify-1')) writeFileSync(`${argOf(args, '--out')}.run.json`, '{"code":1}'); return 0 }
   expect((await withData(d2, () => quiet(() => oracle(['classify', 'x1-01'], { agent })))).out).toBe('x1-01 classify failed: rater 1 has no labelled reply (no label, or a run that failed)')
   expect(existsSync(join(d2, 'x1-01/agreement.json'))).toBe(false)
+})
+
+test('classify reruns once a rater that did not open every file of its folder, and the rerun stands', async () => {
+  const d = clData('cl12'), e = END.slice(0, 7), calls = []
+  clTask(d, 'x1-01', END, [[`${e}-T1`, 'valid'], [`${e}-T2`, 'valid']], { [`${e}-T1.ts`]: 'x\n', [`${e}-T2.ts`]: 'x\n' })
+  // rater 1 skips a check file, then its rerun skips one too; rater 2 reads all; a file read twice counts once
+  const read = (label, files) => (label.startsWith('classify-1') ? files.filter((f) => !f.endsWith('T2.ts')) : [...files, files[0]])
+  const rate = (r, id) => (r === 1 ? 'not traceable' : 'traceable')
+  const r = await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate, read }) })))
+  expect(r.code).toBe(0)
+  expect(calls.map((a) => a[1]).sort()).toEqual(['classify-1-x1-01', 'classify-1-x1-01-2', 'classify-2-x1-01'])
+  expect(jsonAt(join(d, 'x1-01/classify-1.reply.md.run.json'))).toMatchObject({ readsInFolder: 4, filesInFolder: 4 })
+  expect(jsonAt(join(d, 'x1-01/classify-2.reply.md.run.json'))).toMatchObject({ readsInFolder: 6, filesInFolder: 5 })
+  expect(jsonAt(join(d, 'x1-01/classify-1.json')).map((x) => x.label)).toEqual(['not traceable', 'not traceable'])
+  // a rerun of the command reuses both runs: the gate does not run a third time
+  await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate, read }) })))
+  expect(calls).toHaveLength(3)
 })
 
 test('classify reruns a bad reply once and leaves an id the rerun still misses disputed', async () => {
@@ -1012,9 +1041,9 @@ test('split puts the new checks of a grouped external file into that file', asyn
   clTask(d, 'x1-01', END, [[id(1), 'valid', { file: 'checks/group.ts', interface: 'cli' }], [id(2), 'valid', { file: 'checks/group.ts', interface: 'cli' }]], { 'checks/group.ts': 'OLD\n', 'runner.json': '{"run":"SENTINEL-RUN"}' })
   const rate = (r, x) => (x === id(1) ? 'partly' : 'traceable')
   const split = (ids) => ({ 'manifest.json': JSON.stringify(ids.map((x) => ({ id: x, behaviour: 'b', severity: 'low', file: 'checks/group.ts' }))) })
-  const agent = async (args) => { // the splitter rewrites the grouped file in out/
+  const agent = async (args, opts) => { // the splitter rewrites the grouped file in out/
     if (args[1].startsWith('split-')) { mkdirSync(join(argOf(args, '--out'), '..', 'out/checks'), { recursive: true }); writeFileSync(join(argOf(args, '--out'), '..', 'out/checks/group.ts'), 'NEW\n') }
-    return fake(calls, { rate, split })(args)
+    return fake(calls, { rate, split })(args, opts)
   }
   const validate = async (a) => { vcalls.push(a); const v = join(d, 'x1-01', `validation-${e}.json`), x = jsonAt(v); writeFileSync(v, JSON.stringify({ ...x, checks: [...x.checks, { id: id(3), verdict: 'absent-at-base' }, { id: id(4), verdict: 'weak' }] })); return 0 }
   await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent })))
