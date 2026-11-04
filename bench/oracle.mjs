@@ -11,7 +11,7 @@ import { okBashCommands, okToolInputs } from './lib/agent.mjs'
 import { check } from './input-check.mjs'
 import { agreement, hunkOwners, introducer, mergeLabels, queuePick, usable } from './lib/oracle.mjs'
 import { isTestPath } from './lib/replay.mjs'
-import { verdict } from './lib/score.mjs'
+import { fixMatches, verdict } from './lib/score.mjs'
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
@@ -227,6 +227,9 @@ function report(label, { how, code, runs }, entries) {
   console.log(`severity: ${SEVERITY.map((s) => `${s} ${n((x) => x.e.severity === s)}`).join(', ')}`)
 }
 
+// a runner layer of RUN lines only (a line may continue the one before)
+const runOnly = (l) => l.every((x, i) => /^RUN\s/.test(x.trim()) || (i > 0 && l[i - 1].trimEnd().endsWith('\\')))
+
 const sha256 = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
 
@@ -366,7 +369,6 @@ async function writeTask(task, agent) {
   if (!res) { console.log(`write ${task}: writer ${w.how} code ${w.code}, no manifest`); return 1 }
   let runner = null
   try { runner = parseRunner(readFileSync(join(w.dir, 'runner.json'), 'utf8')) } catch {}
-  const runOnly = (l) => l.every((x, i) => /^RUN\s/.test(x.trim()) || (i > 0 && l[i - 1].trimEnd().endsWith('\\')))
   if (!runner || !runOnly(runner.layer) || res.bad.has('runner.json')) { console.log(`write ${task}: writer ${w.how} code ${w.code}, runner.json missing or invalid`); return 1 }
   const ok = res.entries.filter((x) => !x.why), used = new Set(ok.map((x) => x.file)), refused = new Set(res.entries.filter((x) => x.why).map((x) => x.file))
   const o = join(data, task, 'oracle')
@@ -537,28 +539,49 @@ async function fixRound(c, round, g, broken, agent) {
   const w = await runWriter(agent, { taskFile: c.taskFile, label: `fix-${round}-${c.task}-${sha7}`, at: g.ref, prompt: join(work, `${sha7}.fix.prompt.md`), text,
     out: join(work, `${sha7}.fix.reply.md`), dir, settings: join(work, `${sha7}.settings.json`), reads: [logs],
     fill: (d) => cpSync(c.oracleDir, d, { recursive: true, verbatimSymlinks: true, filter: (f) => basename(f) !== 'node_modules' }) })
-  if (w.stale) { console.log(`fix ${c.task} ${sha7} round ${round}: refused a fixer run whose prompt differs from the one it ran with`); return { changed: 0, kept: 0 } }
+  const none = { changed: 0, kept: 0, comparer: 0, gate: 0, scope: 0 }
+  if (w.stale) { console.log(`fix ${c.task} ${sha7} round ${round}: refused a fixer run whose prompt differs from the one it ran with`); return none }
   const bytes = (f) => (existsSync(f) ? readFileSync(f) : null)
   const changed = [...new Set([...filesUnder(c.oracleDir), ...filesUnder(dir)])].filter((f) => { const a = bytes(join(c.oracleDir, f)), b = bytes(join(dir, f)); return !a || !b || !a.equals(b) })
   const scope = new Map() // a broken check's file -> every check it holds
   for (const id of broken) if (fileOf.get(id)) scope.set(fileOf.get(id), manifest.filter((m) => fileOf.get(m.id) === fileOf.get(id)).map((m) => m.id))
   if (c.ext) scope.set('runner.json', ['runner.json'])
   const items = changed.filter((f) => scope.has(f) && existsSync(join(c.oracleDir, f)) && existsSync(join(dir, f)))
-  if (!items.length) return { changed: changed.length, kept: 0 }
+  const scoped = changed.length - items.length // out of scope: discarded unread
+  if (!items.length) return { ...none, changed: changed.length, scope: scoped }
   const ctext = [readFileSync(join(c.data, 'briefs/compare.md'), 'utf8').trimEnd() + '\n',
     ...items.map((f) => `## Item: ${scope.get(f).join(', ')}\n\n### Before\n\n${fence(readFileSync(join(c.oracleDir, f), 'utf8'))}\n### After\n\n${fence(readFileSync(join(dir, f), 'utf8'))}`)].join('\n')
   const out = join(work, `${sha7}.compare.reply.md`)
   const cr = await once(agent, { prompt: join(work, `${sha7}.compare.prompt.md`), text: ctext, out }, [c.taskFile, `compare-${round}-${c.task}-${sha7}`, '--tools', 'Read'])
   const said = cr.stale ? new Map() : compareReply(existsSync(out) ? readFileSync(out, 'utf8') : '')
-  const keep = items.filter((f) => scope.get(f).every((id) => said.get(id) === 'same'))
+  const same = items.filter((f) => scope.get(f).every((id) => said.get(id) === 'same'))
+  const keep = same.filter((f) => !gateFails(c, f, readFileSync(join(dir, f), 'utf8'), g.ref, manifest))
   for (const f of keep) copyFileSync(join(dir, f), join(c.oracleDir, f))
-  return { changed: changed.length, kept: keep.length }
+  return { changed: changed.length, kept: keep.length, comparer: items.length - same.length, gate: same.length - keep.length, scope: scoped }
+}
+
+// the writer's gates (ruling 9) on a file a fixer changed, the reason it fails or null: `leak` (8 or more characters of
+// the fix commit's hash, or the path of an origin of that commit's checks), external runner.json `runner` (not parsed
+// or a layer that is not RUN lines), a task-repo check `import` (a module outside the rules' imports, or a computed one)
+export function gateFails(c, f, text, fix, manifest) {
+  const origins = [...new Set(manifest.filter((m) => fixMatches(m.fix_commit ?? '', fix)).map((m) => originPath(m.origin)).filter(Boolean))]
+  if (leaks(text, fix, origins)) return 'leak'
+  if (c.ext && f === 'runner.json') {
+    let r = null
+    try { r = parseRunner(text) } catch {}
+    return r && runOnly(r.layer) ? null : 'runner'
+  }
+  if (!c.ext) {
+    const rules = JSON.parse(readFileSync(join(c.data, 'briefs/oracle-re.json'), 'utf8'))
+    if (rules.imports && (computedImport(text) || imports(text).some((x) => !rules.imports.includes(x)))) return 'import'
+  }
+  return null
 }
 
 // pass 1; then at most 2 fixer rounds, each over every broken check of the task, each followed by a pass over the refs it
 // changed. refs (the sweep's receivers): only these fix commits, and no fixer round
 async function validate(c, { grade, agent, refs }) {
-  const groups = await groupsOf(c, refs), tally = { rounds: 0, changed: 0, kept: 0 }
+  const groups = await groupsOf(c, refs), tally = { rounds: 0, changed: 0, kept: 0, comparer: 0, gate: 0, scope: 0 }
   await gradePass(c, groups, grade)
   for (let round = 1; round <= 2 && !refs; round++) {
     const todo = groups.map((g) => ({ g, broken: g.ids.filter((id) => validationOf(c.evDir, g.ref)?.checks?.find((x) => x.id === id)?.verdict === 'broken') })).filter((x) => x.broken.length)
@@ -567,8 +590,7 @@ async function validate(c, { grade, agent, refs }) {
     const again = []
     for (const { g, broken } of todo) {
       const x = await fixRound(c, round, g, broken, agent)
-      tally.changed += x.changed
-      tally.kept += x.kept
+      for (const k of ['changed', 'kept', 'comparer', 'gate', 'scope']) tally[k] += x[k]
       if (x.kept) again.push(g)
     }
     if (again.length) await gradePass(c, again, grade) // nothing kept: the oracle is the same and every run would be reused
@@ -576,7 +598,7 @@ async function validate(c, { grade, agent, refs }) {
   const all = manifestIn(c.oracleDir), checks = all.filter((m) => m.interface !== 'none'), v = new Map(checks.map((m) => [m.id, verdictIn(c.evDir, m)]))
   const n = (k) => checks.filter((m) => v.get(m.id) === k).length
   const moved = readJson(join(c.evDir, 'moves.json')) ?? []
-  console.log(`${c.task}: checks ${checks.length}, ${COUNTED.map((k) => `${k} ${n(k)}`).join(', ')}, interface none ${all.length - checks.length}, fixer rounds ${tally.rounds}, changed ${tally.changed}, kept ${tally.kept}, refused ${tally.changed - tally.kept}`
+  console.log(`${c.task}: checks ${checks.length}, ${COUNTED.map((k) => `${k} ${n(k)}`).join(', ')}, interface none ${all.length - checks.length}, fixer rounds ${tally.rounds}, changed ${tally.changed}, kept ${tally.kept}, comparer changed ${tally.comparer}, gate refused ${tally.gate}, out of scope ${tally.scope}`
     + (moved.length ? `, pre-existing moved out ${moved.filter((x) => x.moved).length} (${moved.filter((x) => x.moved).map((x) => `${x.id} to ${x.to}`).join(', ')})` : ''))
   // ruling 13; a task whose validation could not run is not judged: it is said, not dropped
   if (c.ext && !checks.some((m) => SCORED.includes(v.get(m.id)))) {
