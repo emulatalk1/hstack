@@ -8,13 +8,14 @@ import { gitOut, readRows } from './bugs.mjs'
 import { appendWalk, parseRunner, removeRecorded, taskOf } from './ext.mjs'
 import { grade as gradeCmd } from './grade.mjs'
 import { okBashCommands } from './lib/agent.mjs'
+import { check } from './input-check.mjs'
 import { hunkOwners, introducer } from './lib/oracle.mjs'
 import { isTestPath } from './lib/replay.mjs'
 import { verdict } from './lib/score.mjs'
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | validate <task.json> <task> | validate <external task> | sweep <task.json> [--drop <task,...>]'
+const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | validate <task.json> <task> | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task>'
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
@@ -376,6 +377,75 @@ async function writeTask(task, agent) {
   return 0
 }
 
+// the brief's kinds (ruling 14): the real-estate sheet's twelve and eleven more
+const SHEET_KINDS = ['field label', 'option text', 'form accessible name', 'button text', 'link text', 'URL path', 'query parameter key', 'API path', 'API field name', 'heading', 'placeholder', 'column header',
+  'menu item', 'keyboard shortcut', 'setting label', 'window title', 'command', 'subcommand', 'flag', 'environment variable', 'config key', 'public API name', 'output field']
+const BULLET = new RegExp(`^- (${SHEET_KINDS.join('|')}): "(.+)"$`)
+
+// a reply as a sheet, from its title on: a `##` heading input-check flags becomes `## Unnamed section <its position>`
+// (its bullets judged as any); a line input-check flags, a bullet
+// that is not `- <kind>: "<name>"` and any other text line are `deleted`; a name `found` misses is `notfound`; a section
+// left with no bullet is dropped. null when no title or no name is left
+async function toSheet(reply, found) {
+  const lines = reply.split('\n'), at = lines.findIndex((l) => l.trim() === '# Interface sheet')
+  if (at < 0) return null
+  const body = lines.slice(at + 1).map((l) => l.trimEnd()), flagged = new Set(check(body.join('\n')).map((h) => h.line - 1))
+  const sections = []
+  let cur = null, heads = 0, deleted = 0, notfound = 0
+  for (const [i, l] of body.entries()) {
+    if (!l.trim()) continue
+    if (l.startsWith('## ')) {
+      cur = { head: flagged.has(i) ? `## Unnamed section ${heads + 1}` : l, bullets: [] }
+      sections.push(cur)
+      heads++
+      continue
+    }
+    const m = cur && !flagged.has(i) && BULLET.exec(l)
+    if (!m) deleted++
+    else if (await found(m[2])) cur.bullets.push(l)
+    else notfound++
+  }
+  const kept = sections.filter((s) => s.bullets.length), names = kept.reduce((n, s) => n + s.bullets.length, 0)
+  return names ? { text: ['# Interface sheet', ...kept.map((s) => `\n${s.head}\n${s.bullets.join('\n')}`)].join('\n') + '\n', names, deleted, notfound } : null
+}
+
+// a name is found when `git grep -F` at the commit names a file that is not a test (isTestPath or the stack's testPaths)
+const foundOutsideTests = (repo, commit, testPaths) => async (name) => {
+  const p = Bun.spawn(['git', '-C', repo, 'grep', '-F', '-l', '-z', '-e', name, commit, '--'], { stdout: 'pipe', stderr: 'ignore' })
+  const [out, code] = [await new Response(p.stdout).text(), await p.exited]
+  if (code > 1) throw new Error(`git grep failed (exit ${code})`)
+  return out.split('\0').filter(Boolean).map((f) => f.slice(commit.length + 1)).some((f) => !isTestPath(f) && !testPaths.some((r) => new RegExp(r).test(f)))
+}
+
+// an external task's interface sheet (ruling 14): one sealed agent at the end, read-only, given the brief and the input
+// only; a reply that is not a sheet is run once more (`-2`), and a run whose record exists is reused
+async function sheet(task, agent) {
+  const data = dataDir(), ext = join(data, 'ext'), t = taskOf(ext, task), dir = join(data, task), prompt = join(dir, 'work', 'interface.prompt.md')
+  const text = `${readFileSync(join(ext, 'briefs/interface.md'), 'utf8').trimEnd()}\n\n## The input\n\n${fence(readFileSync(join(dir, 'input.md'), 'utf8'), 'markdown')}`
+  const taskFile = join(ext, 'env', `${t.key}.json`), { repo } = await loadTask(taskFile)
+  const group = JSON.parse(readFileSync(join(ext, 'groups.json'), 'utf8')).groups.find((g) => g.id === t.stack)
+  const found = foundOutsideTests(repo, t.end, group?.testPaths ?? [])
+  for (const [name, label] of [['interface', `sheet-${task}`], ['interface-2', `sheet-${task}-2`]]) {
+    const out = join(dir, `${name}.reply.md`), rec = `${out}.run.json`
+    if (!existsSync(rec)) {
+      rmSync(out, { force: true })
+      mkdirSync(dirname(prompt), { recursive: true })
+      writeFileSync(prompt, text)
+      await agent([taskFile, label, '--prompt', prompt, '--out', out, '--at', t.end, '--tools', 'Read,Glob,Grep'])
+      const r = readJson(rec)
+      if (r) writeFileSync(rec, JSON.stringify({ ...r, promptSha: sha256(text) }, null, 2) + '\n')
+    } else if (readJson(rec)?.promptSha !== sha256(text)) { console.log(`${task} sheet refused a run whose prompt differs from the one it ran with`); return 1 }
+    const s = existsSync(out) ? await toSheet(readFileSync(out, 'utf8'), found) : null
+    if (!s) continue
+    if (check(s.text).length) throw new Error(`${task} sheet still fails input-check`)
+    writeFileSync(join(dir, 'interface.md'), s.text)
+    console.log(`${task} sheet names=${s.names} deleted=${s.deleted} notfound=${s.notfound} input-check=PASS`)
+    return 0
+  }
+  console.log(`${task} sheet failed`)
+  return 1
+}
+
 // --- validate (rulings 10, 11, 13) and sweep (ruling 12). Prints ids, verdicts and counts only ---
 const COUNTED = ['valid', 'weak', 'broken', 'error', 'pre-existing', 'absent-at-base']
 const SCORED = ['valid', 'absent-at-base']
@@ -574,6 +644,7 @@ export async function oracle(args, { agent = sealedAgent, grade = gradeCmd } = {
   if (cmd === 'write' && taskPath && rest.length <= 1) return rest.length ? writeSource(taskPath, rest[0], agent) : writeTask(taskPath, agent)
   if (cmd === 'validate' && taskPath && rest.length <= 1) return validate(await (rest.length ? taskCtx(rest[0], taskPath) : taskCtx(taskPath)), { grade, agent })
   if (cmd === 'sweep' && taskPath && (rest.length === 0 || (rest.length === 2 && rest[0] === '--drop'))) return sweep(taskPath, rest.length ? rest[1].split(',') : [], { grade, agent })
+  if (cmd === 'sheet' && taskPath && rest.length === 0) return sheet(taskPath, agent)
   throw new Error(USAGE)
 }
 

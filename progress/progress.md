@@ -1549,3 +1549,62 @@ Pass 3 (driver, 20:40:40Z-20:49:28Z, 8.8 min, 76 of 76 exit 0, logs `re-work/log
 Totals after pass 3. Task repo: entries 205, written 204, refused 1 (import), `interface: none` 48, high 72 / medium 93 / low 39; three commits with no check (58e8819, 730509b, edf7c3a). Per task (entries / none / scorable before validation): p1 13/12/1, p2 30/3/27, p3 13/0/13, p4 19/0/19, p5 4/0/4, p6a 9/2/7, p6b 17/11/6, p6c 30/5/25, p7b 2/0/2, p7c 6/1/5, p8a 10/0/10, p8c 19/4/15, p8d 20/9/11, p8e 12/1/11 (p1 and p7b below rule (b)'s 3 before validation). External, 22 tasks: entries 145, written 145, `interface: none` 23, high 87 / medium 54 / low 4; s1-08 5/5 and s2-04 10/10 still hold only `interface: none`; s2-05 2/0, s2-07 13/4, the others as above. Skipped: s2-06 (dropped not servable), s2-08 (no verdict yet).
 
 Usage of pass 3's new runs: 8 task-repo reruns 106/34431/1009556/145685; 4 external runs (s1-08-2, s2-04-2, s2-05, s2-07) 112/64352/2658697/239090. Writer totals for the task, superseded s2-05 run included: task repo 60 runs 942/412924/12018119/1615280 (67.8 agent-min), external 25 runs 855/445968/29848032/1622889 (74.1 agent-min); all claude-opus-5-5, all exit 0.
+
+### Task 6
+
+Step 5 serve check of the external tasks, run 2026-11-03 18:05Z–21:00Z (UTC) from this worktree (code bac5d8d; commits by other tasks landed on the branch during the run and touched `bench/sealed-agent.mjs` and `bench/lib/agent.mjs` additively, adding `toolUses` to `.run.json`, and did not touch `bench/ext.mjs`). Drivers: `<data>/ext/step5-serve.sh` (serve, one task at a time, pgsnap around each batch, stop on an error, a non-zero exit, or the first 4 tasks of a stack all `dropped not servable`) and `<data>/ext/step5-walk.sh` (the walk between two pgsnap snapshots). Logs in `<data>/ext/step5-logs/`.
+
+- **Recipes.** `<data>/ext/step5-recipes.tsv` (`task slug reply sha256`, 24 rows) was taken from the table "The recipe of each sampled task" in `progress/step4-lock.md` and its hash block. s2-02 uses `ext/recipes/coder__xum/rounds/1.reply.md`. All 24 reply hashes matched (`shasum -c`) before `task-env` ran, and `task-env` itself checked each one.
+- **input-check hits** (recorded, not enforced): s1-01 0, s1-02 0, s1-03 1, s1-04 1, s1-05 26, s1-06 8, s1-07 6, s1-08 3; s2-01 0, s2-02 3, s2-03 0, s2-04 6, s2-05 2, s2-06 6, s2-07 2, s2-08 2; s3-01 2, s3-02 19, s3-03 4, s3-04 9, s3-05 14, s3-06 23, s3-07 17, s3-08 5; replacement s2-09 6.
+- **Serve verdicts** (`rounds` = this task's rows in its repo's `serve/<key>/rounds.tsv`; 0 for the second task of a repo means the saved serve recipe was reused):
+
+| task | verdict | wall clock (UTC) |
+|---|---|---|
+| s1-01 | servable rounds=1 | 18:13:16 – 18:18:17 |
+| s1-02 | servable rounds=1 | 18:18:17 – 18:30:31 |
+| s1-03 | servable rounds=1 | 18:30:31 – 18:41:14 |
+| s1-04 | servable rounds=1 | 18:41:14 – 18:57:28 |
+| s1-05 | servable rounds=1 | 18:57:28 – 19:07:50 |
+| s1-06 | servable rounds=1 | 19:07:50 – 19:17:18 |
+| s1-07 | servable rounds=0 (netbox, reused) | 19:17:18 – 19:25:53 |
+| s1-08 | servable rounds=0 (OpenContracts, reused) | 19:25:53 – 19:37:40 |
+| s2-01 | servable rounds=1 | 19:37:40 – 19:43:47 |
+| s2-02 | servable rounds=1 | 19:43:47 – 19:50:44 |
+| s2-03 | servable rounds=1 | 19:50:44 – 19:58:00 |
+| s2-04 | servable rounds=0 (xum, reused) | 19:58:00 – 20:02:54 |
+| s2-05 | servable rounds=0 (cherry-studio, reused) | 20:02:54 – 20:08:08 |
+| s2-06 | **dropped not servable** (3 rounds, each `build failed` at the base) | 20:08:08 – 20:13:15 |
+| s2-07 | servable rounds=3 (`serve failed`, `serve failed`, `pass`) | 20:13:15 – 20:42:03 |
+| s2-08 | servable rounds=1 | 20:42:03 – 20:48:24 |
+| s2-09 | servable rounds=1 (replacement) | 20:54:38 – 20:59:46 |
+| s3-01 … s3-08 | servable rounds=0 (empty serve recipe, no Docker) | 18:13:11 |
+
+- **Drop and replacement.** s2-06 (OpenWhispr/openwhispr#2643) was `dropped not servable`. The three base build logs (readable) all fail at a layer step that the serve agent added to fetch or verify the app's desktop runtime binary. Round 1's installer exited 1. In round 2 the download finished but the step after it failed. In round 3 the binary was present, but the check resolved its path in the wrong directory. These are recipe mistakes, not network or disk signatures, so the drop stands. The guard did not fire, because the stack's first 4 tasks were served. Ruling 14: `walk s2 --remove-out` (20:48:47–20:54:23Z; 1 check, 1 recipe round) accepted kizuna-ai-lab/sokuji#361 (rank 14; `ok f2p=81 p2p=26`; `s2 tier 1: accepted 8, checked 1, list end no`). `sample` then gave it id s2-09, retired s2-06, and left every other id unchanged. `task-env --from-meta` and `serve` followed. Kept per stack: s1 8, s2 8, s3 8. `progress/step5/sample.tsv` (7cb47653…) and `progress/step5/walk.tsv` (4b8056dc…) are copies of the live `<data>/ext/` files; `progress/step4/*` is unchanged. The full rows differ from step 4 in one more place: `cold_setup` for s2 moved from s2-08 (super-productivity) to s2-09 (kizuna-ai-lab/sokuji). That is `coldSetup` read over the kept tasks: the repo whose best rank is the highest, now rank 14. s1 and s3 are unchanged (s1-06; s3-07 and s3-08).
+- **Usage.** Serve agents: 17 runs (`ext/serve/*/rounds/*.run.json`, all code 0, all claude-opus-5-5), input 344, output 134,348, cacheRead 5,894,702, cacheWrite 831,145; 23.8 agent-minutes. Recipe agent of the walk: 1 run (`recipes/kizuna-ai-lab__sokuji/rounds/1.reply.md.run.json`, claude-opus-5-5), input 24, output 9,991, cacheRead 271,818, cacheWrite 33,363; 1.7 min.
+- **Wall clock.** About 2 h 55 min in all: task-env 1 min, S3 serve under 1 s, S1+S2 serve 2 h 35 min, walk 5.6 min, s2-09 serve 5.1 min.
+- **pgsnap equal** around every batch: s3, s12 (s1-01…s2-08), walk s2, s2r1 (s2-09). Each list was `postgres real_estate real_estate_hstack real_estate_hstack_test template0 template1`.
+- **Docker.** Before and after: 330 container names and 174 image tags, with no difference in either list. All of them are leftovers from earlier fixture and step 4 runs plus the real-estate containers. Every `-serve` image and container was removed by recorded name (66 `-serve` names in `ext/removed.txt`; the walk's `--remove-out` removed the sokuji check's 10 names). No prune was run by hand. No serve run printed a prune or disk-low line (all stderr files are empty). BuildKit's cache went from 780 entries (23.6 GB) to 190 (28.8 GB), which suggests BuildKit's own garbage collection; it was not checked further.
+
+### Task 10
+
+External interface sheets (ruling 14), branch `worktree-agent-ae7e9651c5862a778`; code commit d3e4e3b (`oracle.mjs sheet`). Brief `<data>/ext/briefs/interface.md`: the real-estate brief's rules and reply format, stack-neutral (no stack, tool, repo or task named), with ruling 14's 23 kinds, one `##` section per page, window, command or API, no nested or indented bullets, and "read names from the product's code, never from a test, spec or fixture file". No database and no Docker in this task; pgsnap not run (it calls `docker exec`, and no run touches a database).
+
+Runs (driver `<data>/ext/step5-sheet.sh`, `xargs -P 3`, logs `<data>/ext/step5-logs/sheet-<task>.log`, counts only): trial s1-01 21:13:39Z-21:13:49Z (0.2 min); the other 23 (s1-01 reused) 21:14:13Z-21:16:37Z (2.4 min). 24 of 24 exit 0, 24 sheets written, 0 failed, 0 reruns (`-2`), 0 refused for a changed prompt; each `interface.md` passes `bun bench/input-check.mjs` (24 PASS).
+
+Per task, names (bullets kept) / deleted (lines `input-check` flagged): s1-01 11/0, s1-02 5/0, s1-03 15/0, s1-04 27/0, s1-05 26/0, s1-06 8/0, s1-07 16/0, s1-08 11/0; s2-01 33/0, s2-02 17/0, s2-03 15/0, s2-04 7/0, s2-05 31/0, s2-07 3/0, s2-08 10/0, s2-09 27/0; s3-01 8/1, s3-02 11/0, s3-03 3/0, s3-04 16/1, s3-05 49/0, s3-06 35/0, s3-07 15/0, s3-08 9/0. Totals: names 408 (s1 119, s2 143, s3 146), deleted 2.
+
+Sheet agents' usage (24 `<task>/interface.reply.md.run.json`, all code 0, all claude-opus-5-5): input 201, output 22181, cache read 1548206, cache write 461666; 7.0 agent-minutes. Reading depth (`toolUses`): 1 to 10 tool calls per run (median about 4), 0.16-0.46 min per run; s1-01 1 Read, s1-07, s3-01 and s3-08 Grep only. No reading gate checks a sheet agent's reading, and `toolUses` holds counts, not paths, so whether an agent opened a test file at the end commit is not recorded.
+
+Grounding check (counts only, `/tmp/hstack-bench/t10/names.mjs`): each parsed name looked up verbatim (`git grep -F` in the bare clone at the end) and in the task's input. Found in the end tree 375 of 408 (92%), in the input 180 of 408 (44%). Per task (in end tree / in input / names): s1-01 8/1/11, s1-02 5/3/5, s1-03 12/1/15, s1-04 27/7/27, s1-05 26/23/26, s1-06 8/2/8, s1-07 10/11/16, s1-08 11/6/11; s2-01 33/22/33, s2-02 17/12/17, s2-03 15/2/15, s2-04 7/5/7, s2-05 31/2/31, s2-07 3/1/3, s2-08 10/0/10, s2-09 27/1/27; s3-01 8/5/8, s3-02 9/7/11, s3-03 3/3/3, s3-04 16/4/16, s3-05 47/35/49, s3-06 18/14/35, s3-07 15/8/15, s3-08 9/5/9. Lowest in the end tree: s3-06 (18 of 35) and s1-07 (10 of 16); a name not found verbatim may be a qualified API name or a name the code builds, so these are flags, not failures. Brief sha256 996c00dc… (`ext/briefs/interface.md`, the brief every run's `promptSha` derives from).
+
+Usage: implementer opus (this session), tokens and minutes recorded by the controller.
+
+Fix round 1 (controller ruling and review; code commit b7a9da2): `sheet` now keeps a name only when it is verbatim in a non-test file at the end (`git grep -F -l` in the bare clone; a file `isTestPath` or the stack's `testPaths` match does not count), parses each bullet as `- <kind>: "<name>"` with one of the brief's 23 kinds (else deleted), deletes a whole section when input-check flags its `##` heading, drops a section left with no bullet, and prints `notfound=<k>` beside `deleted=<m>`. The 24 sheets were rebuilt from their saved replies (`/tmp/hstack-bench/t10/reapply.mjs`, an agent that throws if called; no new agent run, no `-2` file, no run record changed; log `<data>/ext/step5-logs/sheet-fix1.log`); each passes `input-check` (24 PASS).
+
+Per task after fix round 1, names / deleted / notfound: s1-01 8/0/3, s1-02 5/0/0, s1-03 12/0/3, s1-04 27/0/0, s1-05 26/0/0, s1-06 8/0/0, s1-07 10/0/6, s1-08 11/0/0; s2-01 33/0/0, s2-02 17/0/0, s2-03 15/0/0, s2-04 7/0/0, s2-05 31/0/0, s2-07 3/0/0, s2-08 10/0/0, s2-09 27/0/0; s3-01 2/7/0, s3-02 9/0/2, s3-03 3/0/0, s3-04 8/9/0, s3-05 46/0/3, s3-06 18/0/17, s3-07 15/0/0, s3-08 9/0/0. Totals: names 360 (s1 107, s2 143, s3 110), deleted 16, notfound 34 (360 + 16 + 34 = the 410 bullets of the replies). s3-01 and s3-04 each lost a section whose heading input-check flags (6 and 8 bullets). Sheet agents' usage unchanged (no new run).
+
+Fix round 2 (controller ruling): a `##` heading input-check flags is no longer deleted with its section. It becomes `## Unnamed section <n>` (`n` its position among the reply's `##` headings), and its bullets are judged like any other bullet. The 24 sheets were rebuilt from their saved replies again (same script, no agent run, no `-2` file, no run record changed; log `<data>/ext/step5-logs/sheet-fix2.log`); all 24 pass `input-check`.
+
+Per task after fix round 2, names / deleted / notfound: s1-01 8/0/3, s1-02 5/0/0, s1-03 12/0/3, s1-04 27/0/0, s1-05 26/0/0, s1-06 8/0/0, s1-07 10/0/6, s1-08 11/0/0; s2-01 33/0/0, s2-02 17/0/0, s2-03 15/0/0, s2-04 7/0/0, s2-05 31/0/0, s2-07 3/0/0, s2-08 10/0/0, s2-09 27/0/0; s3-01 8/0/0, s3-02 9/0/2, s3-03 3/0/0, s3-04 16/0/0, s3-05 46/0/3, s3-06 18/0/17, s3-07 15/0/0, s3-08 9/0/0. Totals: names 374 (s1 107, s2 143, s3 124), deleted 0, notfound 34. Correction to fix round 1's sum: the replies hold 408 bullets (374 + 34), not 410. The "deleted=1" lines of s3-01 and s3-04 in the first run were section headings, not bullets, so fix round 1's deleted 16 counted those 2 headings plus 14 bullets.
+
+Replacement external tasks' sheets (s1-09 replaces s1-08, s2-10 replaces s2-04), built with the verbatim name check, one sealed agent each, 0 reruns (`-2`): s1-09 names 14, deleted 0, notfound 9, input-check PASS (usage input 6, output 1205, cache read 25167, cache write 10694); s2-10 names 22, deleted 0, notfound 0, input-check PASS (usage input 20, output 2207, cache read 227074, cache write 26773). Sum: input 26, output 3412, cache read 252241, cache write 37467; model claude-opus-5-5 for both.

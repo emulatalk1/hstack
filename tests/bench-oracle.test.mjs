@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick } from '../bench/lib/oracle.mjs'
 import { oracle } from '../bench/oracle.mjs'
+import { check } from '../bench/input-check.mjs'
 
 const order = ['p1', 'p2', 'p3']
 
@@ -495,7 +496,7 @@ const freshTask = (t, entries, files = {}) => {
   for (const [f, text] of Object.entries(files)) { mkdirSync(join(o, f, '..'), { recursive: true }); writeFileSync(join(o, f), text) }
   return o
 }
-const check = (id, fix, o = {}) => ({ id, fix_commit: fix, task: 't1', hunk: 'src/a.txt:8', origin: 'src/x.spec.ts::seven', behaviour: `SENTINEL-BEHAVIOUR ${id}`, interface: 'browser', severity: 'high', ...o })
+const entryAt = (id, fix, o = {}) => ({ id, fix_commit: fix, task: 't1', hunk: 'src/a.txt:8', origin: 'src/x.spec.ts::seven', behaviour: `SENTINEL-BEHAVIOUR ${id}`, interface: 'browser', severity: 'high', ...o })
 const flagOf = (args, k) => args[args.indexOf(k) + 1]
 // a verdict for --validate, a result for --at; a throw is the grade's
 const fakeGrade = (table, calls, events = []) => async (args) => {
@@ -539,9 +540,9 @@ const extSample = () => {
   return ext
 }
 const extOracle = (s) => freshTask('s9-01', [
-  check(`${s}-T1`, k3Full, { task: 's9-01', interface: 'cli', file: 'checks/group.ts' }),
-  check(`${s}-T2`, k3Full, { task: 's9-01', interface: 'cli', file: 'checks/group.ts' }),
-  check(`${s}-T3`, k3Full, { task: 's9-01', interface: 'none' }),
+  entryAt(`${s}-T1`, k3Full, { task: 's9-01', interface: 'cli', file: 'checks/group.ts' }),
+  entryAt(`${s}-T2`, k3Full, { task: 's9-01', interface: 'cli', file: 'checks/group.ts' }),
+  entryAt(`${s}-T3`, k3Full, { task: 's9-01', interface: 'none' }),
 ], { 'checks/group.ts': 'BEFORE\n', 'runner.json': '{}' })
 
 test('an external task validates end against base with no base run', async () => {
@@ -556,7 +557,7 @@ test('an external task validates end against base with no base run', async () =>
 })
 
 test('a real-estate fix inside the task gets no end as a bad version', async () => {
-  const o = freshTask('t1', [check(`${k1}-T1`, k1Full), check(`${m1}-T1`, m1Full), check(`${m1}-T2`, m1Full, { interface: 'none' })])
+  const o = freshTask('t1', [entryAt(`${k1}-T1`, k1Full), entryAt(`${m1}-T1`, m1Full), entryAt(`${m1}-T2`, m1Full, { interface: 'none' })])
   const calls = []
   const r = await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(() => 'valid', calls), agent: fakeAgents() }))
   expect(r.code).toBe(0)
@@ -569,7 +570,7 @@ test('a real-estate fix inside the task gets no end as a bad version', async () 
 })
 
 test('a fixed check the comparer calls changed stays broken', async () => {
-  const id = `${k1}-T1`, o = freshTask('t1', [check(id, k1Full)], { [`${id}.spec.ts`]: 'BEFORE\n' })
+  const id = `${k1}-T1`, o = freshTask('t1', [entryAt(id, k1Full)], { [`${id}.spec.ts`]: 'BEFORE\n' })
   const calls = [], agents = []
   const r = await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(() => 'broken', calls), agent: fakeAgents({ say: () => 'changed' }, agents) }))
   expect(r.code).toBe(0)
@@ -588,7 +589,7 @@ test('a fixed check the comparer calls changed stays broken', async () => {
 
 test('a fixer round covers every broken check before the next pass', async () => {
   const a = `${k1}-T1`, b = `${k1}-T2`, c = `${m1}-T1`
-  const o = freshTask('t1', [check(a, k1Full), check(b, k1Full), check(c, m1Full)], { [`${a}.spec.ts`]: 'A\n', [`${b}.spec.ts`]: 'B\n', [`${c}.spec.ts`]: 'C\n', 'run.config.ts': 'CONFIG\n' })
+  const o = freshTask('t1', [entryAt(a, k1Full), entryAt(b, k1Full), entryAt(c, m1Full)], { [`${a}.spec.ts`]: 'A\n', [`${b}.spec.ts`]: 'B\n', [`${c}.spec.ts`]: 'C\n', 'run.config.ts': 'CONFIG\n' })
   const logs = join(data, 't1/logs')
   mkdirSync(logs)
   for (const n of [1, 2]) writeFileSync(join(logs, `${k1}-${n}.log`), 'SENTINEL-LOG\n')
@@ -617,7 +618,7 @@ test('a fixer round covers every broken check before the next pass', async () =>
 })
 
 test('a grade that throws records error for that commit\'s checks and the task goes on', async () => {
-  freshTask('t1', [check(`${k1}-T1`, k1Full), check(`${m1}-T1`, m1Full)])
+  freshTask('t1', [entryAt(`${k1}-T1`, k1Full), entryAt(`${m1}-T1`, m1Full)])
   const calls = [], agents = []
   const table = (ref) => { if (ref === k1Full) throw new Error('port 3999 busy'); return 'valid' }
   const r = await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(table, calls), agent: fakeAgents({}, agents) }))
@@ -644,7 +645,7 @@ test('sweep runs each distinct boundary once and moves a pre-existing check to i
   const x = `${n1}-T1`, y = `${n1}-T2`
   rmSync(join(data, 't1'), { recursive: true, force: true })
   rmSync(join(data, 't3'), { recursive: true, force: true })
-  const o2 = freshTask('t2', [check(x, n1Full, { task: 't2' }), check(y, n1Full, { task: 't2' })], { [`${x}.spec.ts`]: 'X\n', [`${y}.spec.ts`]: 'Y\n' })
+  const o2 = freshTask('t2', [entryAt(x, n1Full, { task: 't2' }), entryAt(y, n1Full, { task: 't2' })], { [`${x}.spec.ts`]: 'X\n', [`${y}.spec.ts`]: 'Y\n' })
   writeFileSync(join(data, 't2', `validation-${n1}.json`), JSON.stringify({ checks: [{ id: x, verdict: 'pre-existing' }, { id: y, verdict: 'pre-existing' }] }))
   const calls = [], events = []
   const table = (c, id) => (c.length > 7 ? 'valid' : c === k3 ? 'fail' : c === c0 ? (id === x ? 'pass' : 'fail') : 'fail')
@@ -654,7 +655,7 @@ test('sweep runs each distinct boundary once and moves a pre-existing check to i
   expect(calls[0]).toEqual([task, join(data, 'sweep/oracle'), '--at', n1, '--sealed', '--reuse'])
   expect(calls[4]).toEqual([task, join(data, 't1/oracle'), '--validate', n1Full, '--bad', parentOf(n1Full), '--bad', k3, '--base', c0, '--sealed', '--reuse'])
   expect(ls(join(data, 'sweep/oracle'))).toEqual([`${x}.spec.ts`, `${y}.spec.ts`, 'manifest.json', 'node_modules', 'package.json', 'run.config.ts'])
-  expect(manifestOf('t1')).toEqual([check(x, n1Full, { task: 't1' })])
+  expect(manifestOf('t1')).toEqual([entryAt(x, n1Full, { task: 't1' })])
   expect(ls(join(data, 't1/oracle'))).toEqual([`${x}.spec.ts`, 'manifest.json', 'node_modules', 'package.json', 'run.config.ts'])
   expect(manifestOf('t2').map((m) => m.id)).toEqual([y])
   expect(ls(o2)).toEqual([`${y}.spec.ts`, 'manifest.json'])
@@ -671,7 +672,7 @@ test('a task-repo base without the app file is not run and gives precondition at
   const appTask = join(tmp, 'task-app.json')
   writeFileSync(appTask, JSON.stringify({ ...JSON.parse(readFileSync(task, 'utf8')), appFile: 'tests/a.test.txt' }))
   const a = `${k1}-T1`, b = `${m1}-T1`
-  freshTask('t1', [check(a, k1Full), check(b, m1Full)])
+  freshTask('t1', [entryAt(a, k1Full), entryAt(b, m1Full)])
   const calls = []
   const grade = async (args) => { // as grade writes it with no --base: every check's results, base null
     calls.push(args)
@@ -692,4 +693,71 @@ test('a task-repo base without the app file is not run and gives precondition at
   const runs = []
   await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(() => 'valid', runs), agent: fakeAgents() }))
   expect(runs[0]).toContain('--base')
+})
+
+// --- bench/oracle.mjs sheet (ruling 14) ---
+const sheetSetup = () => {
+  const ext = join(data, 'ext')
+  for (const d of ['env', 'briefs']) mkdirSync(join(ext, d), { recursive: true })
+  const cols = 'task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend'
+  writeFileSync(join(ext, 'sample.tsv'), [cols, `s9-01\ts9\t1\t1\town/rp#7\tu\t7\t6\t${k1Full}\t${k3Full}`, `s9-02\ts9\t1\t2\town/rp#8\tu\t8\t5\t${k1Full}\t${k3Full}`].join('\n') + '\n')
+  writeFileSync(join(ext, 'env/own__rp.json'), JSON.stringify({ name: 'own__rp', repo, db: null, port: 3998, start: 'true', ready: 'http://127.0.0.1:3998/', oracle: 'true', junit: 'r.xml' }))
+  writeFileSync(join(ext, 'briefs/interface.md'), 'SHEET-BRIEF\n')
+  writeFileSync(join(ext, 'groups.json'), JSON.stringify({ groups: [{ id: 's9', testPaths: ['\\.spec\\.ts$'] }] }))
+  for (const t of ['s9-01', 's9-02']) { mkdirSync(join(data, t), { recursive: true }); writeFileSync(join(data, t, 'input.md'), '# INPUT-TITLE\n\nINPUT-BODY\n') }
+  return ext
+}
+const replier = (replies, calls) => async (args) => {
+  calls.push(args)
+  const out = args[args.indexOf('--out') + 1]
+  writeFileSync(`${out}.run.json`, '{"code":0}')
+  writeFileSync(out, replies[calls.length - 1])
+  return 0
+}
+// at k3: A7 and A3 are in src/a.txt (a source file); `spec` only in src/x.spec.ts (the stack's testPaths); `one` only in
+// tests/a.test.txt (isTestPath); SENTINEL-ABSENT nowhere
+const SHEET_REPLY = ['Here is the sheet.', '# Interface sheet', '',
+  '## /SENTINEL-PAGE', '- button text: "A7"', '- URL path: "src/SENTINEL.ts"', '- heading: "spec"', '- heading: "one"', '- heading: "SENTINEL-ABSENT"', '- SENTINEL kind: "A3"', 'SENTINEL prose', '',
+  '## src/SENTINEL.ts', '- heading: "A3"', '',
+  '## SENTINEL-CMD', '- flag: "A3"', '    - nested: "SENTINEL-X"', '',
+  '## SENTINEL-EMPTY', '- heading: "SENTINEL-ABSENT-2"', ''].join('\n')
+
+test('sheet deletes flagged lines and then passes input-check', async () => {
+  const ext = sheetSetup(), calls = []
+  const r = await quiet(() => oracle(['sheet', 's9-01'], { agent: replier([SHEET_REPLY], calls) }))
+  expect(r.code).toBe(0)
+  // deleted: a flagged bullet, a bad kind, prose, a nested bullet; notfound: spec, one, the two absent
+  expect(r.out).toBe('s9-01 sheet names=3 deleted=4 notfound=4 input-check=PASS')
+  const sheet = readFileSync(join(data, 's9-01/interface.md'), 'utf8')
+  expect(check(sheet)).toEqual([])
+  // the preamble is dropped, a flagged heading is renamed by its position and keeps its bullet, and the section every
+  // name of which was not found is dropped
+  expect(sheet).toBe('# Interface sheet\n\n## /SENTINEL-PAGE\n- button text: "A7"\n\n## Unnamed section 2\n- heading: "A3"\n\n## SENTINEL-CMD\n- flag: "A3"\n')
+  const a = calls[0], arg = (k) => a[a.indexOf(k) + 1]
+  expect(a[0]).toBe(join(ext, 'env/own__rp.json'))
+  expect(arg('--at')).toBe(k3Full)
+  expect(arg('--tools')).toBe('Read,Glob,Grep')
+  expect(arg('--out')).toBe(join(data, 's9-01/interface.reply.md'))
+  expect(a).not.toContain('--settings')
+  const prompt = readFileSync(arg('--prompt'), 'utf8')
+  expect(prompt).toStartWith('SHEET-BRIEF\n')
+  expect(prompt).toContain('INPUT-BODY')
+  expect(JSON.parse(readFileSync(join(data, 's9-01/interface.reply.md.run.json'), 'utf8')).promptSha).toHaveLength(64)
+  // an existing sheet with its run record is reused, not rerun
+  const again = await quiet(() => oracle(['sheet', 's9-01'], { agent: replier([SHEET_REPLY], calls) }))
+  expect(again.out).toBe(r.out)
+  expect(calls).toHaveLength(1)
+})
+
+test('sheet prints no name', async () => {
+  sheetSetup()
+  const calls = []
+  const r = await quiet(() => oracle(['sheet', 's9-02'], { agent: replier(['SENTINEL-NOT-A-SHEET\n', '# Interface sheet\n\n## SENTINEL\n- URL path: "src/SENTINEL.ts"\n- heading: "SENTINEL-ABSENT"\n'], calls) }))
+  expect(r.code).toBe(1)
+  expect(r.out).toBe('s9-02 sheet failed') // a title with no bullet left (deleted or not found) is not a sheet either
+  expect(calls.map((a) => a[a.indexOf('--out') + 1])).toEqual([join(data, 's9-02/interface.reply.md'), join(data, 's9-02/interface-2.reply.md')])
+  expect(existsSync(join(data, 's9-02/interface.md'))).toBe(false)
+  const reused = await quiet(() => oracle(['sheet', 's9-01'], { agent: replier([], calls) }))
+  expect(reused.out).not.toContain('SENTINEL')
+  expect(calls).toHaveLength(2)
 })
