@@ -665,3 +665,31 @@ test('sweep runs each distinct boundary once and moves a pre-existing check to i
   expect(r.out).toContain('t1: checks 1, valid 1,')
   expect(r.out).not.toContain('SENTINEL')
 })
+
+test('a task-repo base without the app file is not run and gives precondition at the base', async () => {
+  // tests/a.test.txt is the app file here: k1 adds it, so t1's base c0 has none
+  const appTask = join(tmp, 'task-app.json')
+  writeFileSync(appTask, JSON.stringify({ ...JSON.parse(readFileSync(task, 'utf8')), appFile: 'tests/a.test.txt' }))
+  const a = `${k1}-T1`, b = `${m1}-T1`
+  freshTask('t1', [check(a, k1Full), check(b, m1Full)])
+  const calls = []
+  const grade = async (args) => { // as grade writes it with no --base: every check's results, base null
+    calls.push(args)
+    const ref = flagOf(args, '--validate'), id = ref === k1Full ? a : b, bad = ref === k1Full ? ['fail'] : ['fail', 'precondition']
+    writeFileSync(join(data, 't1', `validation-${ref.slice(0, 7)}.json`), JSON.stringify({ ref, bad: [], base: null, checks: [{ id, ref: 'pass', bad, base: null, verdict: 'absent-at-base' }] }))
+    return 0
+  }
+  const r = await quiet(() => oracle(['validate', appTask, 't1'], { grade, agent: fakeAgents() }))
+  expect(r.code).toBe(0)
+  expect(calls.every((x) => !x.includes('--base'))).toBe(true)
+  const v = JSON.parse(readFileSync(join(data, 't1', `validation-${k1}.json`), 'utf8'))
+  expect(v.base).toBe(c0)
+  expect(v.checks).toEqual([{ id: a, ref: 'pass', bad: ['fail'], base: 'precondition', stage: 'no app at base', verdict: 'absent-at-base' }])
+  // a precondition failure on a known-bad version stays broken: the base-run rule, not the external one
+  expect(JSON.parse(readFileSync(join(data, 't1', `validation-${m1}.json`), 'utf8')).checks[0].verdict).toBe('broken')
+  expect(r.out).toContain(`validation-${k1} (no app at base): ${a}=absent-at-base`)
+  // a base that has the app file is run as usual
+  const runs = []
+  await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(() => 'valid', runs), agent: fakeAgents() }))
+  expect(runs[0]).toContain('--base')
+})

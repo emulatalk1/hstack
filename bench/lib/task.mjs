@@ -31,13 +31,14 @@ export function parseTask(t, machine) {
   }
   // no host app: the oracle command builds and runs everything itself
   if ((t.start === null) !== (t.ready === null)) bad('start', 'and ready must both be null or both be set')
+  if (t.appFile !== undefined && (typeof t.appFile !== 'string' || t.appFile === '' || isAbsolute(t.appFile))) bad('appFile', 'must be a relative path')
   const layers = t.layers ?? {}
   if (typeof layers !== 'object' || Array.isArray(layers)) bad('layers', 'must be an object')
   return {
     name: t.name, repo: t.repo, db: t.db, port: t.port,
     setup: list(t, 'setup'), start: t.start === null ? null : str(t, 'start'), ready: t.ready === null ? null : str(t, 'ready'),
     oracle: str(t, 'oracle'), junit: str(t, 'junit'), teardown: list(t, 'teardown'),
-    testTitle: t.testTitle, layers, timeoutSec,
+    testTitle: t.testTitle, layers, timeoutSec, appFile: t.appFile ?? null,
   }
 }
 

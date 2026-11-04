@@ -10,6 +10,7 @@ import { grade as gradeCmd } from './grade.mjs'
 import { okBashCommands } from './lib/agent.mjs'
 import { hunkOwners, introducer } from './lib/oracle.mjs'
 import { isTestPath } from './lib/replay.mjs'
+import { verdict } from './lib/score.mjs'
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
@@ -394,7 +395,8 @@ async function taskCtx(task, taskFile) {
   const c = { task, data, evDir, oracleDir: join(evDir, 'oracle') }
   if (tasks[task]) {
     if (!taskFile) throw new Error(`${task} is a task of tasks.json: give its task file (validate <task.json> <task>)`)
-    return { ...c, ext: false, taskFile, repo: (await loadTask(taskFile)).repo, base: tasks[task].base, end: tasks[task].end }
+    const { repo, appFile } = await loadTask(taskFile)
+    return { ...c, ext: false, taskFile, repo, appFile, base: tasks[task].base, end: tasks[task].end }
   }
   if (taskFile) throw new Error(USAGE)
   const t = taskOf(join(data, 'ext'), task)
@@ -405,13 +407,15 @@ async function taskCtx(task, taskFile) {
 async function groupsOf(c, refs) {
   const checks = manifestIn(c.oracleDir).filter((m) => m.interface !== 'none')
   if (c.ext) return [{ ref: c.end, ids: checks.map((m) => m.id), bad: [c.base], base: null }]
+  // controller ruling: a base without the task's app file holds no app, so nothing the task builds exists there
+  const noApp = !!c.appFile && Bun.spawnSync(['git', '-C', c.repo, 'cat-file', '-e', `${c.base}:${c.appFile}`]).exitCode !== 0
   const out = []
   for (const fix of [...new Set(checks.map((m) => m.fix_commit))]) {
     if (refs && !refs.includes(fix)) continue
     const parent = (await gitOut(c.repo, 'rev-parse', `${fix}^`)).trim()
     const inTask = Bun.spawnSync(['git', '-C', c.repo, 'merge-base', '--is-ancestor', fix, c.end]).exitCode
     if (inTask > 1) throw new Error(`git merge-base --is-ancestor ${fix} ${c.end} failed`)
-    out.push({ ref: fix, ids: checks.filter((m) => m.fix_commit === fix).map((m) => m.id), bad: inTask === 0 ? [parent] : [parent, c.end], base: c.base })
+    out.push({ ref: fix, ids: checks.filter((m) => m.fix_commit === fix).map((m) => m.id), bad: inTask === 0 ? [parent] : [parent, c.end], base: c.base, noApp })
   }
   return out
 }
@@ -419,9 +423,15 @@ async function groupsOf(c, refs) {
 // a grade that throws or exits non-zero gives `error` for that ref's checks, with the stage, and the task goes on
 async function gradePass(c, groups, grade) {
   for (const g of groups) {
-    const args = [c.taskFile, c.oracleDir, '--validate', g.ref, ...g.bad.flatMap((b) => ['--bad', b]), ...(g.base ? ['--base', g.base] : []), '--sealed', '--reuse']
+    const args = [c.taskFile, c.oracleDir, '--validate', g.ref, ...g.bad.flatMap((b) => ['--bad', b]), ...(g.base && !g.noApp ? ['--base', g.base] : []), '--sealed', '--reuse']
     let stage = null
     try { const code = await grade(args); if (code !== 0) stage = `grade exit ${code}` } catch (e) { stage = String(e?.message ?? e).split('\n')[0].slice(0, 300) }
+    if (stage === null && g.noApp) { // the base is not run: its result is `precondition` for every check
+      const f = join(c.evDir, `validation-${g.ref.slice(0, 7)}.json`), v = JSON.parse(readFileSync(f, 'utf8')), why = 'no app at base'
+      const checks = v.checks.map((x) => ({ ...x, base: 'precondition', stage: why, verdict: verdict({ ref: x.ref, bad: x.bad, base: 'precondition' }) }))
+      writeFileSync(f, JSON.stringify({ ...v, base: g.base, stage: why, checks }, null, 2) + '\n')
+      console.log(`validation-${g.ref.slice(0, 7)} (${why}): ${checks.map((x) => `${x.id}=${x.verdict}`).join(' ')}`)
+    }
     if (stage === null) continue
     writeFileSync(join(c.evDir, `validation-${g.ref.slice(0, 7)}.json`), JSON.stringify({ ref: g.ref, bad: g.bad, base: g.base, at: new Date().toISOString(), stage,
       checks: g.ids.map((id) => ({ id, verdict: 'error', stage })) }, null, 2) + '\n')
