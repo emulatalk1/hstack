@@ -1670,3 +1670,157 @@ Fix round 1 (task review; code commit 93dcc76):
 - The script that applied the no-app rule to the sweep's saved results is `<data>/logs/task9/drivers/sweep-saved.mjs`. The lane drivers (`re*.sh`, `ext*.sh`, `repl*.sh`, `val1.sh`) and the counting scripts (`usage.mjs`, `tally.mjs`) are in the same folder.
 - Controller ruling: s1's cold-setup repo moved from paperless-ngx (s1-06) to we-promise/sure (s1-09). Ruling 13 is read over the kept tasks: `sample` marks s1-09 `cold_setup yes`. The other `yes` rows are s2-09, s3-07 and s3-08.
 - Controller rulings recorded: an external task with no scored check but some `error` checks is `not judged` (rerun), not dropped, because a machine failure is never an out. A check moved by the sweep gets no fixer round at its receiver (ruling 12's partial revalidation), so a moved check that is broken there stays broken.
+
+### Task 11
+
+Two classifiers, split, and the step 9 queue (rulings 15 and 16; prereg 6.3 and 7.2). Branch `worktree-agent-a0df6cafb343865d6`. Code commits:
+- 27cb84f: `oracle.mjs classify`, `split`, `queue`
+- 04c38d6: test helper renamed
+- 1ddae5f: fix round 1 (split ids kept in the run record, validation of every new check without a verdict, a round fails when a rater leaves nothing labelled, 7.2 sample from agreed labels only, read counts in the run record)
+- 03dc4c2: merge of Task 9's branch; split validates through the `validate` command
+- de9ef2c: reading gate
+- e24d116: merge of main c3f4d32
+
+Briefs, data, in English, naming no repo, task or stack: `<data>/briefs/classify.md` (the 6.3 rule verbatim, the sheet clause, label definitions that name selectors and setup values too, reply `[{ id, label, quotes, steps }]`) and `<data>/briefs/split.md`. Drivers: `/tmp/t11-briefs/drive.mjs` (at most N tasks at a time) and `batch.sh` (one task at a time, real-estate batch ends with pgsnap). Their printed lines are in `/tmp/t11-briefs/logs/`; counting scripts `runs.mjs`, `splitv.mjs`, `final.mjs` and `fixruns.mjs` read only run records, `validation-*.json`, and labels or agreement files as counts.
+
+Command forms: `classify|split <data>/env/real-estate.json <task>` for a task of `tasks.json`, and `classify|split <task>` for an external task. The set names `queue` prints are `task-repo` and `external`.
+
+Kept tasks: real-estate p1, p2, p3, p4, p5, p6a, p6b, p6c, p7b, p7c, p8a, p8c, p8d, p8e; external, the 24 rows of the live `ext/sample.tsv`. Skipped with no scored check: 3 (p5, p7b, p7c). Classified: 35 (11 real-estate, 24 external).
+
+Classify (2026-11-04). p1 ran alone first, 15:21:54Z–15:22:21Z; both raters read only inside the folder (`readsInFolder` = `reads`). The other 34 tasks plus the 3 skipped ones ran 3 at a time, 15:23:04Z–15:28:03Z. 70 rater runs, all code 0, 0 bad-reply reruns.
+
+Reading gate (controller ruling: the source labellers' gate; trigger only the count, never the labels). A rater run that read fewer of its folder's files than the folder holds is run once more, and the rerun stands. 10 of 70 first runs were under the count:
+- p1 r2 7/13
+- p2 r1 15/41 and r2 23/41
+- p3 r1 12/16
+- p4 r1 9/23 and r2 7/23
+- p6a r2 9/14
+- p8c r2 7/10
+- s1-04 r1 21/26
+- s3-05 r1 6/11
+
+Their reruns ran 15:33:20Z–15:35:11Z. Rerun reads:
+- p1 6/13
+- p2 19/41 and 17/41
+- p3 11/16
+- p4 7/23 and 7/23
+- p6a 14/14
+- p8c 10/10
+- s1-04 26/26
+- s3-05 6/11
+
+So 4 reruns read every file and 6 still under-read; those stand by the ruling.
+
+Per task, before the gate → after it (classified / build / requirement / partly / disputed, κ / raw / AC1). Only these changed:
+- p1: 10/0/9/1/0, 1.00/1.00/1.00 → 10/0/9/0/1, 0.00/0.90/0.90
+- p2: 38/2/29/4/3, 0.76/0.92/0.91 → 38/3/30/3/2, 0.83/0.95/0.94
+- p3: 13/0/9/3/1, 0.81/0.92/0.90 → 13/0/7/3/3, 0.49/0.77/0.70
+- p4: 20/0/19/1/0, 1.00 → 20/0/19/0/1, 0.00/0.95/0.95
+- p6a: 11/0/9/1/1, 0.62/0.91/0.90 → 11/0/9/0/2, 0.00/0.82/0.80
+- s1-04: 23/2/13/4/4, 0.68/0.83/0.76 → 23/2/13/6/2, 0.85/0.91/0.88
+
+The rest, as classified (κ / raw / AC1 1.00 unless given):
+- p6b 2/1/1/0/0
+- p6c 2/0/1/1/0
+- p8a 5/0/2/3/0
+- p8c 7/0/7/0/0
+- p8d 5/0/5/0/0
+- p8e 6/0/5/1/0
+- s1-01 2/0/2/0/0
+- s1-02 1/1/0/0/0
+- s1-03 21/4/11/5/1, 0.92/0.95/0.93
+- s1-05 3/0/2/1/0
+- s1-06 2/0/1/1/0
+- s1-07 2/1/0/1/0
+- s1-09 4/2/0/2/0
+- s2-01 10/3/7/0/0
+- s2-02 1/1/0/0/0
+- s2-03 1/0/0/1/0
+- s2-05 2/1/1/0/0
+- s2-07 7/5/2/0/0
+- s2-08 2/0/1/1/0
+- s2-09 17/2/12/2/1, 0.86/0.94/0.93
+- s2-10 5/1/3/1/0
+- s3-01 6/0/5/1/0
+- s3-02 5/5/0/0/0
+- s3-03 1/1/0/0/0
+- s3-04 2/1/0/1/0
+- s3-05 8/1/5/1/1, 0.74/0.88/0.84
+- s3-06 13/4/2/5/2, 0.76/0.85/0.77
+- s3-07 1/1/0/0/0
+- s3-08 3/2/0/0/1, 0.40/0.67/0.56
+
+(A κ of 0.00 with raw 0.90 or more is one disagreement on a task whose labels are almost all one class.)
+
+Pooled interim `queue`:
+
+| set | checks | before the gate: κ / raw / AC1 | after the gate: κ / raw / AC1 | usable |
+|---|---|---|---|---|
+| task-repo | 119 | 0.86 / 0.96 / 0.95 | 0.73 / 0.92 / 0.91 | yes |
+| external | 142 | 0.89 / 0.93 / 0.90 | 0.91 / 0.94 / 0.92 | yes |
+
+Merge of main c3f4d32 (Task 9 complete, no task to reclassify): conflicts only in the README. `bun test ./tests`: 343 pass, 21 skip, 0 fail, output clean.
+
+Split: one task at a time, 40 agreed partly checks in 19 tasks (task-repo 11 in 5 tasks; external 29 in 14). 40 splitter runs, all code 0, 0 `cannot split`, 0 refused by the writer rules, 0 stale. Each made 2 new checks, 80 in all. They were validated by Task 9's `validate`; the 10 fixer/comparer runs it made are counted in the usage below.
+
+Real-estate lane, on bench_re. pgsnap before, after the kill's cleanup, and after the lane: all equal (`postgres real_estate real_estate_hstack real_estate_hstack_test template0 template1`).
+- The first attempt started about 15:37Z and was stopped at 17:38Z by the agent shell's 2 h limit while `validate` graded p2. It left the worktree `/tmp/hstack-bench/re-grade-090f6f2` and the databases bench_re and bench_re_test. I removed the worktree with `git worktree remove --force` and `prune` in the copy, dropped both databases with the task's `teardown.sh`, and pgsnap was then equal again.
+- The restart ran detached (`nohup`), 17:40:46Z–20:00:35Z: p2 0.4 min (its 6 new checks already had verdicts, so `validate` was not run again), p3 90.5 min, p6c 16.0 min, p8a 15.1 min, p8e 17.9 min.
+
+External lane, Docker. Before it, `docker builder prune -f` (build cache 23.4 GB; 21.06 GB reclaimed; controller ruling). The lane ran 20:02:20Z–23:24:40Z (3.4 h). Afterwards images 35 and containers 330 were as before, and the build cache was 22.2 GB.
+
+Per task, new checks by verdict and the split round (classified / build / requirement / disputed):
+- p2 6 (absent-at-base 4, weak 2): 4 / 1 / 3 / 0
+- p3 6 (absent 3, weak 3): 3 / 0 / 2 / 1
+- p6c 2 (absent 1, weak 1): 1 / 0 / 1 / 0
+- p8a 6 (absent 3, weak 3): 3 / 0 / 3 / 0
+- p8e 2 (absent 1, weak 1): 1 / 0 / 0 / 1
+- s1-03 10 (absent 7, broken 3): 7 / 4 / 3 / 0
+- s1-04 12 (absent 11, broken 1): 11 / 2 / 8 / 1
+- s1-05 2 (valid 2): 2 / 1 / 1 / 0
+- s1-06 2 (broken 2): 0
+- s1-07 2 (valid 2): 2 / 1 / 1 / 0
+- s1-09 4 (valid 2, weak 2): 2 / 2 / 0 / 0
+- s2-03 2 (valid 1, weak 1): 1 / 1 / 0 / 0
+- s2-08 2 (valid 2): 2 / 1 / 1 / 0
+- s2-09 4 (broken 4): 0
+- s2-10 2 (absent 2): 2 / 1 / 1 / 0
+- s3-01 2 (broken 2): 0
+- s3-04 2 (valid 1, weak 1): 1 / 1 / 0 / 0
+- s3-05 2 (valid 2): 2 / 1 / 1 / 0
+- s3-06 10 (broken 10): 0
+
+Totals for the new checks: valid 12, absent-at-base 32, weak 14, broken 22; 44 scored and classified (30 rater runs, 0 reruns), 3 disputed.
+
+Final labels (`labels.json`, counts):
+- task-repo: build 5, requirement 104, disputed 11
+- external: build 53, requirement 83, disputed 9
+
+Per task (build / requirement / disputed):
+- p1 0/9/1, p2 4/33/2, p3 0/9/4, p4 0/19/1, p6a 0/9/2, p6b 1/1/0, p6c 0/2/0, p8a 0/5/0, p8c 0/7/0, p8d 0/5/0, p8e 0/5/1
+- s1-01 0/2/0, s1-02 1/0/0, s1-03 8/14/1, s1-04 4/21/3, s1-05 1/3/0, s1-06 0/1/0, s1-07 2/1/0, s1-09 4/0/0
+- s2-01 3/7/0, s2-02 1/0/0, s2-03 1/0/0, s2-05 1/1/0, s2-07 5/2/0, s2-08 1/2/0, s2-09 2/12/1, s2-10 2/4/0
+- s3-01 0/5/0, s3-02 5/0/0, s3-03 1/0/0, s3-04 2/0/0, s3-05 2/6/1, s3-06 4/2/2, s3-07 1/0/0, s3-08 2/0/1
+
+Final `queue`, exit 0: labels 12, classify 20, sample-7.1 40 (task-repo 10, s1 10, s2 10, s3 10), sample-7.2 40 (20 per set), inputs 4 (2 per set). Pooled over the first rounds:
+- task-repo: 11 tasks, 119 checks, κ 0.73, raw 0.92, AC1 0.91, usable yes
+- external: 24 tasks, 142 checks, κ 0.91, raw 0.94, AC1 0.92, usable yes
+
+Usage (`.run.json`, all code 0, all claude-opus-5-5):
+- Classify, 80 rater runs including the 10 gate reruns: input 620, output 184,087, cache read 2,743,912, cache write 1,238,741.
+- Splitters and split-round raters, 70 runs: input 528, output 184,239, cache read 2,258,336, cache write 877,127.
+- Fixer and comparer runs made by `validate` during the split lanes, 10 (s1-05 2, s1-07 3, s2-03 2, s2-09 2, s3-06 1): input 96, output 17,682, cache read 782,303, cache write 172,924; 4.0 agent-minutes.
+
+Wall clock (2026-11-04, UTC):
+- classify 15:21:54–15:28:03
+- gate reruns 15:33:20–15:35:11
+- real-estate split about 15:37–17:38 (stopped) and 17:40:46–20:00:35
+- external split 20:02:20–23:24:40
+
+Concerns:
+1. Of the 40 split checks, 9 now have no scored half: s1-06 1, s2-09 2, s3-01 1, s3-06 5 (all 10 of s3-06's new checks are `broken`). Each original was an agreed `partly` check, and it is now `dropped` with `split_into`. So those behaviours left both buckets, where 6.3's "if not [splittable], it goes to the requirement bucket" would have kept them as `requirement`. This is likely the noted risk for external runners: a check file that the runner does not pick up, or a target that does not build. The controller may want such an original restored as `requirement`.
+2. Splitting made 14 `weak` halves (10 of them task-repo), most likely the half whose assertions the known-bad version already meets.
+3. Six gate reruns still read only part of their folder (p1, p2 ×2, p3, p4 ×2, s3-05). They stand by the ruling.
+4. Task-repo build checks remain few: 5 of 109 labelled.
+
+Usage: implementer opus (this session); tokens and minutes are recorded by the controller.
