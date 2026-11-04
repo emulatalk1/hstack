@@ -1824,3 +1824,17 @@ Concerns:
 4. Task-repo build checks remain few: 5 of 109 labelled.
 
 Usage: implementer opus (this session); tokens and minutes are recorded by the controller.
+
+Controller ruling on concern 1 (prereg 6.3: "split into two checks at assertion level when possible; if not, it goes to the requirement bucket"): a split none of whose new checks is scored (`valid` or `absent-at-base`) did not split the check. `split` restores the original: `dropped` and `split_into` are cleared, it gets `restored_from_split` with its new ids so it is never split again, it keeps its earlier verdict, and it gets `requirement` in `labels.json`. Its new checks get `dropped: true`, `drop_reason: "split gave no scored half"`. A split with at least one scored half stands. Code commit c7bed6a, with test 'a split none of whose new checks is scored restores the original as requirement'. `bun test ./tests`: 344 pass, 21 skip, 0 fail, output clean.
+
+Applied by rerunning `split` on the 19 split tasks one at a time. No agent ran and no validation ran; pgsnap was equal before and after. Restored 9 originals: s1-06 1, s2-09 2, s3-01 1, s3-06 5. Their 18 new checks were dropped. The other 31 splits stand.
+
+Labels before → after:
+- external: build 53 → 53, requirement 83 → 92, disputed 9 → 9
+- s1-06: requirement 1 → 2
+- s2-09: requirement 12 → 14
+- s3-01: requirement 5 → 6
+- s3-06: requirement 2 → 7
+- task-repo: unchanged (build 5, requirement 104, disputed 11)
+
+`queue` after the restore, exit 0: labels 12, classify 20, sample-7.1 40, sample-7.2 40, inputs 4. Pooled agreement is unchanged (it is taken over the first rounds): task-repo κ 0.73, raw 0.92, AC1 0.91, usable yes; external κ 0.91, raw 0.94, AC1 0.92, usable yes.
