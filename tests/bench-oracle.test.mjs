@@ -551,7 +551,7 @@ test('an external task validates end against base with no base run', async () =>
   const r = await quiet(() => oracle(['validate', 's9-01'], { grade: fakeGrade(() => 'valid', calls), agent: fakeAgents() }))
   expect(r.code).toBe(0)
   expect(calls).toEqual([[join(data, 'env/s9-01.json'), o, '--validate', k3Full, '--bad', k1Full, '--sealed', '--reuse']])
-  expect(r.out).toContain('s9-01: checks 2, valid 2, weak 0, broken 0, error 0, pre-existing 0, absent-at-base 0, interface none 1, fixer rounds 0, changed 0, kept 0, refused 0')
+  expect(r.out).toContain('s9-01: checks 2, valid 2, weak 0, broken 0, error 0, pre-existing 0, absent-at-base 0, interface none 1, fixer rounds 0, changed 0, kept 0, comparer changed 0, gate refused 0, out of scope 0')
   expect(r.out).not.toContain('dropped')
   expect(r.out).not.toContain('SENTINEL')
 })
@@ -583,7 +583,7 @@ test('a fixed check the comparer calls changed stays broken', async () => {
   const prompt = readFileSync(flagOf(cmp, '--prompt'), 'utf8')
   for (const x of ['COMPARE-BRIEF', 'BEFORE', 'FIXED', id]) expect(prompt).toContain(x)
   expect(prompt).not.toContain('SENTINEL-BEHAVIOUR') // the comparer sees the two files only
-  expect(r.out).toContain('t1: checks 1, valid 0, weak 0, broken 1, error 0, pre-existing 0, absent-at-base 0, interface none 0, fixer rounds 2, changed 2, kept 0, refused 2')
+  expect(r.out).toContain('t1: checks 1, valid 0, weak 0, broken 1, error 0, pre-existing 0, absent-at-base 0, interface none 0, fixer rounds 2, changed 2, kept 0, comparer changed 2, gate refused 0, out of scope 0')
   expect(r.out).not.toContain('SENTINEL')
 })
 
@@ -613,8 +613,38 @@ test('a fixer round covers every broken check before the next pass', async () =>
   expect(readFileSync(join(o, `${b}.spec.ts`), 'utf8')).toBe('B\n') // not broken: out of scope, not copied
   expect(readFileSync(join(o, `${c}.spec.ts`), 'utf8')).toBe('FIXED\n')
   expect(readFileSync(join(o, 'run.config.ts'), 'utf8')).toBe('CONFIG\n')
-  expect(r.out).toContain('t1: checks 3, valid 3, weak 0, broken 0, error 0, pre-existing 0, absent-at-base 0, interface none 0, fixer rounds 1, changed 5, kept 2, refused 3') // k1's copy: a, b, c; m1's: b, c
+  expect(r.out).toContain('t1: checks 3, valid 3, weak 0, broken 0, error 0, pre-existing 0, absent-at-base 0, interface none 0, fixer rounds 1, changed 5, kept 2, comparer changed 0, gate refused 0, out of scope 3') // k1's copy: a, b, c; m1's: b, c
   expect(r.out).not.toContain('SENTINEL')
+})
+
+test('a fixed file the comparer calls same is still refused when it fails the writer\'s gates', async () => {
+  // task repo: a, b and c broken; a's fix imports a module the rules do not allow, b's names the fix hash, c's is clean
+  const a = `${k1}-T1`, b = `${k1}-T2`, c = `${k1}-T3`
+  const o = freshTask('t1', [entryAt(a, k1Full), entryAt(b, k1Full), entryAt(c, k1Full)], { [`${a}.spec.ts`]: 'A\n', [`${b}.spec.ts`]: 'B\n', [`${c}.spec.ts`]: 'C\n' })
+  const edit = (f) => (f.startsWith(a) ? "import x from 'other-lib'\n" : f.startsWith(b) ? `// ${k1Full.slice(0, 9)}\n` : "import { test } from 'runner-lib'\n")
+  const r = await quiet(() => oracle(['validate', task, 't1'], { grade: fakeGrade(() => 'broken', []), agent: fakeAgents({ edit }) }))
+  expect(readFileSync(join(o, `${a}.spec.ts`), 'utf8')).toBe('A\n')
+  expect(readFileSync(join(o, `${b}.spec.ts`), 'utf8')).toBe('B\n')
+  expect(readFileSync(join(o, `${c}.spec.ts`), 'utf8')).toBe("import { test } from 'runner-lib'\n")
+  expect(r.out).toContain('fixer rounds 2, changed 5, kept 1, comparer changed 0, gate refused 4, out of scope 0') // round 2: a and b again
+  // external: runner.json must still parse with a RUN-only layer, and no file may name an origin's path
+  extSample()
+  const s = k3Full.slice(0, 7), eo = extOracle(s)
+  writeFileSync(join(eo, 'runner.json'), JSON.stringify({ layer: ['RUN true'], run: 'run' }))
+  const agent = async (args) => {
+    const label = args[1], out = flagOf(args, '--out')
+    if (label.startsWith('fix-')) {
+      const dir = JSON.parse(readFileSync(flagOf(args, '--settings'), 'utf8')).permissions.additionalDirectories[0]
+      writeFileSync(join(dir, 'runner.json'), JSON.stringify({ layer: ['COPY . /x'], run: 'run' }))
+      writeFileSync(join(dir, 'checks/group.ts'), '// see src/x.spec.ts\n')
+    } else writeFileSync(out, JSON.stringify([`${s}-T1`, `${s}-T2`, 'runner.json'].map((id) => ({ id, verdict: 'same' }))))
+    writeFileSync(`${out}.run.json`, '{"code":0}')
+    return 0
+  }
+  const x = await quiet(() => oracle(['validate', 's9-01'], { grade: fakeGrade(() => 'broken', []), agent }))
+  expect(readFileSync(join(eo, 'checks/group.ts'), 'utf8')).toBe('BEFORE\n')
+  expect(JSON.parse(readFileSync(join(eo, 'runner.json'), 'utf8')).layer).toEqual(['RUN true'])
+  expect(x.out).toContain('kept 0, comparer changed 0, gate refused 4, out of scope 0')
 })
 
 test('a grade that throws records error for that commit\'s checks and the task goes on', async () => {
