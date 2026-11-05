@@ -2062,3 +2062,16 @@ Usage: implementer opus, 197.6k tokens / 13.1 min (from the controller); reviewe
     Task 12: review sonnet: spec ❌ (Important: /tmp/t12 citations); tables, medians, rule (b), rulings (44), hashes (24 random + all env/step9/briefs lines verified), Docker all reconcile. Fix round 1 sent (paths, identity term, wording, usage line, rulings 1–16 pointer).
     Task 12: fix round 1/5 (5 addressed, 0 open; commit a697d86, text only, no hash or count changed); re-review haiku 76.0k. <data>/logs/task12/ existence confirmed by the first reviewer.
     Task 12: complete (commits eba44d1..a697d86, review clean)
+
+### Final fix wave
+
+The fixes the final whole-branch review asked for (commits 6b5a892, d97e82c). No data under `<data>` changed and no validation was rerun.
+
+- **Not ready reads `error`.** `oracle validate`, after an external grade, reads the last line of `<task>/build/readiness.tsv` for the end and the base; `not ready` or `timeout` turns that validation's checks into `verdict: error, stage: not ready at <sha7>` and deletes that commit's `grades/<sha7>.json`, so `--reuse` runs it again. `grade` and `verdict` are unchanged (steps 7 and 8 still score a product that does not serve as 0). Such a task now prints `not judged` instead of being dropped.
+- **Classifier fields.** The raters' manifest and the splitter's `entry.json` keep only `id`, `behaviour`, `interface`, `severity` and `file` (an allow-list instead of a deny-list).
+- **`diffHunks`.** `---` and `+++` count as headers only between a `diff --git` line and that file's first `@@`, so a deleted line `-- x` is no longer read as a file name.
+- **split.** The dead non-zero branch after `validate` is gone (it returns 0 or throws); behaviour is the same.
+- **README.** grade also leaves out `error`; split's other stdout lines; the step 7 and 8 drivers must pass `--sealed`; the readiness rule; the classifier allow-list.
+- **Lock.** `step5-lock.md` hashes `logs/task12/count.mjs` and `logs/task9/drivers/sweep-saved.mjs` in a second block and names what each gives. No other hash or count changed.
+- **Tests.** New: the readiness rewrite with a fake grade and a readiness file; `diffHunks` with a `-- ` line; an unknown manifest field kept from the raters and the splitter. The gated Docker test of a run that never gets ready now runs `oracle validate` after grade and checks `error`, the stage, `not judged` and that both grade files are gone. `bun test ./tests`: 347 pass, 21 skip, 0 fail. `BENCH_EXT_DOCKER=1 bun test tests/bench-ext-check.test.mjs`: 48 pass, 0 fail.
+- **Usage.** Implementer opus: tokens and minutes left to the controller. No sealed agent ran.
