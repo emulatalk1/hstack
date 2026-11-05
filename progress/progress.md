@@ -2086,3 +2086,29 @@ The fixes the final whole-branch review asked for (commits 6b5a892, d97e82c). No
     Final: parked — README split paragraph omits `split refused: not classified` and calls `classify failed` a refusal; failure lines replace the summary line — Ruling: text only, no second fix wave (SDD) — cost if wrong: a reader of split's README misses one failure line.
     Final: parked — <data>/logs/task9/drivers/sweep-saved.mjs imports bench code from a worktree path that will be removed; it is hashed as a provenance record, not rerunnable — Ruling: keep as record — cost if wrong: re-deriving p1's moves needs the code at c3f4d32.
     Final review: complete (with fixes applied; residuals parked).
+
+## 2026-11-05 — step oracle plan (`docs/plans/2026-11-05-bench-step-oracles.md`), draft
+
+### Task 3
+
+p8b's scored checks reclassified under the step 5 rules (ruling 8). No code changed and no Docker or database command ran. `oracle split` was not run (an agreed `partly` stays `partly`), and `oracle queue` was not run.
+
+- **Count check.** `<data>/logs/step6/p8b-scored.mjs` printed verdict counts only: 25 live entries, 5 with interface `none`, and of the other 20: 9 `absent-at-base`, 8 `pre-existing`, 3 `weak`. This is the expected count, so the 9 scored checks are the `absent-at-base` ones.
+- **Trial files.** `p8b/classify-1.json` and `classify-2.json` were moved with `mv` (not opened) to `p8b/superseded/trial-classify-1.json` and `trial-classify-2.json`.
+- **Classify line.** `bun bench/oracle.mjs classify <data>/env/real-estate.json p8b` printed:
+  `p8b classified=9 build=0 requirement=5 partly=3 disputed=1 kappa=0.80 raw=0.89 ac1=0.85`
+  Both raters ran once (code 0) and opened all 7 files of the folder, so neither needed a rerun. `agreement.json`: n 9, agree 8, usable.
+- **Next to section 14's trial.**
+
+  | | trial (2026-10-27, 25 checks) | now (9 scored checks) |
+  |---|---|---|
+  | traceable / build | 1 | 0 |
+  | partly | 2 vs 3 (per rater) | 3 agreed |
+  | not traceable / requirement | 22 each | 5 agreed |
+  | disputed | not recorded here | 1 |
+  | κ / raw / AC1 | 0.44 / 0.88 / 0.87 | 0.80 / 0.89 / 0.85 |
+
+  The trial classified all 25 checks; the 8 `pre-existing`, 3 `weak` and 5 `interface: none` ones are not classified now, so the two sets of numbers do not cover the same checks. The 3 `partly` stay `partly` (no split) and p8b's labels feed no score (ruling 7).
+- **Step 9.** `<data>/step9/p8b-classify.tsv` (header `task\tid`) has 1 row, written by `<data>/logs/step6/p8b-classify-tsv.mjs`, which printed only the row count. No other file in `step9/` was touched.
+
+Usage (sum of the two raters' `classify-*.reply.md.run.json`): input 12, output 5217, cache read 33970, cache write 40954; model claude-opus-5-5. Wall clock 2026-11-05 07:58:28Z–07:59:00Z (about 32 s; the two raters ran in parallel).
