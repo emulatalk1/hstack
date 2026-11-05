@@ -2151,3 +2151,13 @@ s3-08 step candidates=2 f2p=3 p2p=0 unknown=0 ids=2 resolver=none
 - **Resolver reading (from `toolUses`).** Each run made one `Grep` call and no `Read` (s2-02 also one attempted `json_output` call); the s3-01 run made no tool call and answered its 4 origins `unknown`. s3-01 has no `build` check, so its verdicts change no id. The verdicts that do move ids (s2-02, s2-10, s3-06 f2p; s3-05, s3-07 unknown) rest on one search each.
 
 Usage (sum of the 7 `f2p*.reply.md.run.json` `usage`): input 28, output 3690, cache read 173782, cache write 183914; model claude-opus-5-5; summed run time 80.4 s. Batch wall clock 2026-11-05 08:11:27Z–08:12:48Z (81 s).
+
+#### Rerun after the resolver reading gate (controller ruling)
+
+The controller added the reading gate of the step 5 labellers and raters to the resolver (commit 1734911): a run whose record shows no `Read` call is run once more as `-2`, the first record stays, the rerun stands whatever it reads, and there is no third run. The gate and the bad-reply / non-zero-code rerun share that one rerun. None of the 7 first-run records was deleted. `step` ran again for the 24 tasks, one at a time, all exit 0, 2026-11-05 08:18:58Z–08:19:58Z (60 s).
+
+- **Lines.** All 24 lines are the same as above except s3-05, which now prints `resolver=reused` (its `-2` run from the first batch stands). s2-02, s2-10, s3-01, s3-06 and s3-07 print `resolver=ran`.
+- **Totals.** Unchanged: 159 scored checks (exact 134, segment 7, resolver 18); f2p 142, p2p 7, unknown 10; candidates 51, ids 51.
+- **`-2` runs.** 5 new ones: s2-02, s2-10, s3-01, s3-06 and s3-07, because none of the 6 first runs made a `Read`. All ended with code 0. Only s2-02's rerun made a `Read` (1). The other four again made none (s2-10, s3-07: 1 `Grep`; s3-06: 2 `Grep`; s3-01: no tool call), and they stand under the rule. Usage of the 5 new runs: input 22, output 3203, cache read 142892, cache write 155315; model claude-opus-5-5; summed run time 59.7 s. With the first batch, the resolver has 12 records in total: 7 first-batch runs and 5 new ones.
+- **Tasks with 0 ids.** The same 4: s1-01, s3-01, s1-06 and s3-07.
+- **Ids changed versus the first run.** 0 in every task. No `step-f2p.json` verdict changed either.
