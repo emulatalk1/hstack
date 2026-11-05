@@ -1340,16 +1340,17 @@ const stData = (name, rows, cases) => {
   writeFileSync(join(sealed, 'f2p.json'), JSON.stringify(cases))
   return d
 }
-// a fake resolver: answers each origin of the prompt's json fence with say(origin) (undefined: left out)
-const resolver = (calls, say = () => 'f2p') => async (args) => {
+// a fake resolver: answers each origin of the prompt's json fence with say(origin) (undefined: left out); its record
+// counts reads(label) Read calls
+const resolver = (calls, say = () => 'f2p', reads = () => 1) => async (args) => {
   calls.push(args)
   const out = argOf(args, '--out'), prompt = readFileSync(argOf(args, '--prompt'), 'utf8')
   const origins = JSON.parse(prompt.match(/````json\n([\s\S]*?)\n````/)[1])
-  writeFileSync(`${out}.run.json`, '{"code":0}')
+  writeFileSync(`${out}.run.json`, JSON.stringify({ code: 0, toolUses: reads(args[1]) ? { Read: reads(args[1]) } : {} }))
   writeFileSync(out, `SENTINEL-REPLY\n${JSON.stringify(origins.map((origin) => ({ origin, verdict: say(origin, args[1]) })).filter((x) => x.verdict))}`)
   return 0
 }
-const step = (d, calls, say) => withData(d, () => quiet(() => oracle(['step', 'x1-01'], { agent: resolver(calls, say) })))
+const step = (d, calls, say, reads) => withData(d, () => quiet(() => oracle(['step', 'x1-01'], { agent: resolver(calls, say, reads) })))
 const STEP_ROWS = [[1, 'valid', 'adds one', 'build'], [2, 'absent-at-base', 'keeps two', 'build'], [3, 'valid', 'SENTINEL-ASK', 'build'], [4, 'broken', 'adds one', 'build'],
   [5, 'valid', 'adds one', 'requirement'], [6, 'valid', 'renders six[x]', 'build'], [7, 'valid', 'SENTINEL-ASK', 'requirement'], [8, 'valid', 'SENTINEL-OTHER', undefined]]
 const STEP_CASES = { f2p: ['SENTINEL-FILE.spec.ts::adds one', { classname: 'SENTINEL-CLS', name: 'renders six' }, 'a::SENTINEL-ASK'], p2p: ['SENTINEL-FILE.spec.ts::keeps two', 'b::SENTINEL-ASK'] }
@@ -1447,4 +1448,23 @@ test('step prints no origin or case name', async () => {
     expect(r.out).not.toContain('SENTINEL')
     expect(r.out).toMatch(/^x1-01 step candidates=\d+ f2p=\d+ p2p=\d+ unknown=\d+ ids=\d+ resolver=(ran|reused|none)$/)
   }
+})
+
+test('a resolver run that made no Read is rerun once and the rerun stands', async () => {
+  const d = stData('st8', STEP_ROWS, STEP_CASES), calls = []
+  // the first run reads nothing and answers p2p; the rerun, which reads nothing either, stands with its f2p
+  const say = (o, label) => (label.endsWith('-2') ? 'f2p' : 'p2p')
+  expect((await step(d, calls, say, () => 0)).out).toBe('x1-01 step candidates=3 f2p=6 p2p=1 unknown=0 ids=3 resolver=ran')
+  expect(calls.map((a) => a[1])).toEqual(['f2p-x1-01', 'f2p-x1-01-2'])
+  expect(jsonAt(join(d, 'x1-01/f2p.reply.md.run.json')).toolUses).toEqual({})
+  // no third run: both records are reused
+  expect((await step(d, calls, say, () => 0)).out).toBe('x1-01 step candidates=3 f2p=6 p2p=1 unknown=0 ids=3 resolver=reused')
+  expect(calls).toHaveLength(2)
+  // an existing first record that read nothing gets its -2 run now, and a first run that read stands alone
+  const d2 = stData('st9', STEP_ROWS, STEP_CASES), calls2 = []
+  await step(d2, calls2, say, (label) => (label.endsWith('-2') ? 1 : 0))
+  expect(calls2.map((a) => a[1])).toEqual(['f2p-x1-01', 'f2p-x1-01-2'])
+  const d3 = stData('st10', STEP_ROWS, STEP_CASES), calls3 = []
+  expect((await step(d3, calls3, say)).out).toBe('x1-01 step candidates=2 f2p=3 p2p=4 unknown=0 ids=2 resolver=ran')
+  expect(calls3).toHaveLength(1)
 })

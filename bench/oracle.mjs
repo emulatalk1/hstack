@@ -1053,7 +1053,8 @@ async function step(c, agent) {
     const text = `${readFileSync(join(ext, 'briefs/f2p.md'), 'utf8').trimEnd()}\n\n## The tests (${asks.length})\n\n${fence(JSON.stringify(asks, null, 2), 'json')}\n` +
       `## The fail-to-pass cases (${f2p.length})\n\n${fence(f2p.join('\n'))}\n## The pass-to-pass cases (${p2p.length})\n\n${fence(p2p.join('\n'))}`
     resolver = 'reused'
-    // a reply that does not answer every origin is run once more (-2), and the rerun stands
+    // a run that read no file (no Read in its record: the reading gate, content-independent), ended with a code other than 0,
+    // or whose reply does not answer every origin is run once more (-2), and the rerun stands whatever it reads
     for (const n of ['', '-2']) {
       const out = join(c.dir, `f2p${n}.reply.md`)
       const r = await once(agent, { prompt: join(c.dir, 'work', 'f2p.prompt.md'), text, out }, [c.taskFile, `f2p-${c.task}${n}`, '--at', t.end, '--tools', 'Read,Glob,Grep'])
@@ -1061,7 +1062,7 @@ async function step(c, agent) {
       if (r.how === 'ran') resolver = 'ran'
       const res = f2pReply(existsSync(out) ? readFileSync(out, 'utf8') : '', asks)
       got = res.got
-      if (res.ok && r.code === 0) break
+      if (res.ok && r.code === 0 && readJson(`${out}.run.json`)?.toolUses?.Read > 0) break
     }
   }
   const decided = scored.map((e) => { const m = by.get(e.id); return m.verdict === 'ask' ? { id: e.id, by: 'resolver', verdict: got.get(e.origin) ?? 'unknown' } : { id: e.id, ...m } })
