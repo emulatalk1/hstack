@@ -1723,3 +1723,23 @@ test('a writer rerun\'s prompt names its own folder', async () => {
   expect(JSON.parse(readFileSync(argOf(calls[2], '--settings'), 'utf8')).permissions.additionalDirectories[0]).toBe(w2)
   expect(r.out.split('\n').at(-1)).toMatch(/ written=2 refused=0 none=0 valid=2 .* ids=2$/)
 })
+
+test('a writer folder reached through a symlink is granted by its real path', async () => {
+  // the task folder is a link (as <data>/p8b -> 8b): the writer's and the fixer's folders are granted by both paths
+  const d = reData('re11'), calls = []
+  const { renameSync, symlinkSync } = await import('node:fs')
+  renameSync(join(d, 'r1'), join(d, 'r1-real'))
+  symlinkSync(join(d, 'r1-real'), join(d, 'r1'))
+  mkdirSync(join(d, 'r1-real/step/logs'), { recursive: true }) // grade's sealed logs (the fake grade writes none)
+  await reStep(d, 'r1', calls, { fix: { say: () => 'changed' } }, [], () => 'broken')
+  for (const a of calls.filter((x) => /^(step|fix)-/.test(x[1]))) {
+    const label = a[1], sub = label.startsWith('step-') ? 'write' : `fix-step-${label.split('-')[2]}/${E7}`
+    const link = join(d, 'r1/step/work', sub), real = join(d, 'r1-real/step/work', sub)
+    const { permissions: p } = JSON.parse(readFileSync(argOf(a, '--settings'), 'utf8'))
+    expect(p.additionalDirectories.slice(0, 2)).toEqual([link, real])
+    for (const x of [link, real]) expect(p.allow).toContain(`Edit(/${x}/**)`)
+    if (label.startsWith('fix-')) expect(p.additionalDirectories).toContain(join(d, 'r1-real/step/logs'))
+    expect(readFileSync(argOf(a, '--prompt'), 'utf8')).not.toContain(real) // the prompt names the folder as the tool gives it
+  }
+  expect(calls.map((a) => a[1])).toContain(`fix-step-1-r1-${E7}`)
+})

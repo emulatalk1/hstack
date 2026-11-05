@@ -2,7 +2,7 @@
 // Oracle preparation of the task repo (step 5, ruling 7): pair each source commit with its owner task, label each
 // pair twice by sealed agents, merge the labels; then rewrite each source's tests as black-box checks by sealed writers
 // (ruling 9). Prints counts only: a reply, a manifest and a check are sealed.
-import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, normalize, resolve } from 'node:path'
 import { gitOut, readRows } from './bugs.mjs'
 import { appendWalk, parseRunner, removeRecorded, taskOf } from './ext.mjs'
@@ -244,7 +244,9 @@ async function runWriter(agent, { taskFile, label, at, prompt, text, out, dir, s
     rmSync(dir, { recursive: true, force: true })
     for (const d of [dir, dirname(settings)]) mkdirSync(d, { recursive: true })
     fill?.(dir)
-    writeFileSync(settings, JSON.stringify({ permissions: { additionalDirectories: [dir, ...reads], allow: [`Read(/${dir}/**)`, `Edit(/${dir}/**)`, ...reads.map((r) => `Read(/${r}/**)`)] } }, null, 2) + '\n')
+    // controller ruling: the agent's Write resolves a symlinked folder to its real path, so each folder is granted by both
+    const both = (p) => [...new Set([p, existsSync(p) ? realpathSync(p) : p])], dirs = both(dir), rs = reads.flatMap(both)
+    writeFileSync(settings, JSON.stringify({ permissions: { additionalDirectories: [...dirs, ...rs], allow: [...dirs.flatMap((d) => [`Read(/${d}/**)`, `Edit(/${d}/**)`]), ...rs.map((r) => `Read(/${r}/**)`)] } }, null, 2) + '\n')
   }
   return once(agent, { prompt, text, out, prepare }, [taskFile, label, '--at', at, '--tools', 'Read,Glob,Grep,Write,Edit', '--settings', settings])
 }
