@@ -1838,3 +1838,29 @@ Labels before → after:
 - task-repo: unchanged (build 5, requirement 104, disputed 11)
 
 `queue` after the restore, exit 0: labels 12, classify 20, sample-7.1 40, sample-7.2 40, inputs 4. Pooled agreement is unchanged (it is taken over the first rounds): task-repo κ 0.73, raw 0.92, AC1 0.91, usable yes; external κ 0.91, raw 0.94, AC1 0.92, usable yes.
+
+Phase B fix round 1, from the review (code commits 1b09558 and 1864c9f):
+1. Stale fixer runs. Split validation had refused 13 fixer runs as stale, because Task 9's `work/fix-<round>/<ref7>` records existed under the same labels. The refused runs, by ref and round: p3 b4b701e 1 and 2, p6c 042d3a6 1 and 2, s1-03 3ddc164 1 and 2, s1-04 ed73235 1 and 2, s1-06 a564539 1 and 2, s3-01 a3035cf 1 and 2, s3-06 73d4686 1. Controller ruling: ruling 11 applies to split checks like any check. Split's validation now has its own fixer folders and labels (`work/fix-split-<round>/`, `fix-split-<round>-<task>-<ref7>`, `compare-split-<round>-...`). Its fixer rounds cover only the split's new `broken` checks, at most 2 rounds, with comparer and gates as in `validate`. The refs are the split originals' fix commits.
+2. The split pass now runs once per original (`agreement.json` `splitDone`). An original with a new check that has no verdict or is `error` is not judged, so it is neither restored nor decided. A restore first undoes an earlier one: the split's files and entries are put back, so its new checks are validated and fixed too. A restore takes the split's files out of the oracle: new checks' own files are removed, and a shared (grouped) file goes back to its `in/` copy from before the first split of it. The original is then graded again (`validate` on its fix commit, no fixer rounds) for its own verdict. The cause, as the review found: the split's validation had rewritten `validation-<ref7>.json` without the then-dropped original, and in s3-06 the restored originals' code was no longer in their shared file, so they were `broken`. Tests:
+   - 'a split none of whose new checks is scored restores the original as requirement, through validate and grade' (real `validate`, a fake `grade`)
+   - 'restoring a split of a shared file puts the file back as it was before the split'
+
+   `bun test ./tests`: 345 pass, 21 skip, 0 fail, output clean.
+3. Applied to the 19 split tasks one at a time.
+   - Real-estate (2026-11-04 23:46Z, pgsnap equal before and after): every grade was reused, there were no fixer rounds (no split check `broken`), and nothing changed. The p3 and p6c refusals were for `broken` checks that are not split checks, which split's rounds do not cover.
+   - External, 23:47Z–01:37Z (`docker builder prune -f` first, 19.89 GB): s1-03 kept 3 fixes, s1-04 kept 1 and s1-06 kept 1. s1-06's earlier restore was undone, because its split now has a scored half. s2-09 (2), s3-01 (1) and s3-06 (5) were restored again (fixes kept 0).
+   - Settle pass, 01:43Z–02:36Z (prune first, 22.79 GB): the 8 restored originals' files were taken out (s3-06's shared files back to their first version) and the originals graded again. Their verdicts: s2-09 valid 1 and absent-at-base 1, s3-01 valid 1, s3-06 absent-at-base 4 and valid 1. All 8 are scored, so 0 restored originals are `broken`.
+   - A last `split` over all 19 tasks did nothing (split 0, restored 0, settled 0, nothing classified).
+
+New checks after the round: valid 14, absent-at-base 36, weak 14, and 16 dropped with their 8 restored originals (before: valid 12, absent-at-base 32, weak 14, broken 22). Split-round classification: s1-03 `classify-split2` (3 checks), s1-04 `classify-split2` (1), s1-06 `classify-split` (2).
+
+Labels before → after:
+- external: build 53 → 55, requirement 92 → 95, disputed 9 → 9
+- s1-03: build 8/14 → 9/16 (build/requirement)
+- s1-04: requirement 21 → 22
+- s1-06: build 0/2 → 1/2 (build/requirement)
+- task-repo: unchanged (build 5, requirement 104, disputed 11)
+
+`queue` (exit 0): labels 12, classify 20, sample-7.1 40, sample-7.2 40, inputs 4. Pooled agreement unchanged: task-repo κ 0.73, raw 0.92, AC1 0.91, usable yes; external κ 0.91, raw 0.94, AC1 0.92, usable yes.
+
+Usage of this round (claude-opus-5-5): 14 fixer/comparer runs (s1-03 2, s1-04 2, s1-06 3, s2-09 2, s3-01 2, s3-06 3): input 146, output 30,363, cache read 1,196,969, cache write 249,262; 6.7 agent-minutes. 6 split-round rater runs: input 36, output 6,384, cache read 102,646, cache write 39,230.
