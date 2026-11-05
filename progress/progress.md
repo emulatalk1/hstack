@@ -1864,3 +1864,16 @@ Labels before → after:
 `queue` (exit 0): labels 12, classify 20, sample-7.1 40, sample-7.2 40, inputs 4. Pooled agreement unchanged: task-repo κ 0.73, raw 0.92, AC1 0.91, usable yes; external κ 0.91, raw 0.94, AC1 0.92, usable yes.
 
 Usage of this round (claude-opus-5-5): 14 fixer/comparer runs (s1-03 2, s1-04 2, s1-06 3, s2-09 2, s3-01 2, s3-06 3): input 146, output 30,363, cache read 1,196,969, cache write 249,262; 6.7 agent-minutes. 6 split-round rater runs: input 36, output 6,384, cache read 102,646, cache write 39,230.
+
+### Task 12
+
+The lock, `progress/step5-lock.md` (2026-11-05). This task ran no sealed agent, no Docker command other than the two listings, and no database command.
+
+- **Env files.** `/tmp/t12/env-oracle.mjs` rewrote the `oracle` field of the 27 external `env/s*.json` files to the main checkout's `bench/ext.mjs`. No other field changed: `changed 27, already main 0`.
+- **Checks.** Every kept task has an oracle and validations. The 35 classified tasks have both classifications; p5, p7b and p7c were skipped, with no scored check. No `-serve` or `-grade` name is left in the Docker listings: 328 fixture containers and 162 fixture images remain. `git status --short bench` is empty, and the tree has no conflict marker.
+- **Counts.** `labels` and `queue` were run again. Their files had the same SHA-256 before and after. A counts-only script read the manifests, and its totals reconcile with the Task 9 and Task 11 records.
+  - Real-estate: 167 checks with an interface, 120 scored.
+  - External: 171 checks with an interface, 159 scored.
+- **Hashes.** 1367 files.
+
+Usage: implementer opus (this session), with tokens recorded by the controller. Sealed agents: none. Wall clock of the task: about 02:30Z–02:55Z.

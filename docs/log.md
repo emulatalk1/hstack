@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-11-05
+* **Creation**: Locked step 5 of the [oracle preparation plan](/plans/2026-11-03-bench-oracles.md) in `progress/step5-lock.md`. The lock records, per task: the sources, the checks written, the validation verdicts, the pre-existing moves, the splits and the classifications. Per set, it records the pooled agreement (task-repo κ 0.73, external κ 0.91; both usable) and the median `build` checks per task (0 and 2). It also records the rule (b) result (9 of 14 real-estate tasks meet it now), the drops (p8b1, s2-06, s1-08 and s2-04) and their replacements (s2-09, s1-09 and s2-10), the cold-setup repos and canary tasks, the step 9 queue counts, the controller's rulings and incidents during the build, and the SHA-256 of 1367 records. Every external env file now points at the main checkout's `bench/ext.mjs`.
+
 ## 2026-11-03
 * **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 7.1) the rulings of the [oracle preparation plan](/plans/2026-11-03-bench-oracles.md) for step 5 before any oracle run: scope, task ids, the serve check, the owners of real-estate hunks, the label, rewrite, validation and keep rules, the classifiers and the human queue, and the user's decisions of 2026-11-03 on Docker removal and on label disagreements.
 * **Approve**: the built [external task selection plan](/plans/2026-11-02-bench-external.md) (status `stable`): 24 external tasks, 8 per stack, locked in `progress/step4-lock.md` with the hashes of their records. Two candidates were `out of memory` at Docker's 7.6 GB (datafusion#24211, swc#12010) and eventyay#4509 stays out under the stop rule; the lock now also lists the cargo#17562 build interrupted at 06:38Z.
