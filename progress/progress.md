@@ -2112,3 +2112,42 @@ p8b's scored checks reclassified under the step 5 rules (ruling 8). No code chan
 - **Step 9.** `<data>/step9/p8b-classify.tsv` (header `task\tid`) has 1 row, written by `<data>/logs/step6/p8b-classify-tsv.mjs`, which printed only the row count. No other file in `step9/` was touched.
 
 Usage (sum of the two raters' `classify-*.reply.md.run.json`): input 12, output 5217, cache read 33970, cache write 40954; model claude-opus-5-5. Wall clock 2026-11-05 07:58:28Z–07:59:00Z (about 32 s; the two raters ran in parallel).
+
+### Task 4
+
+`bun bench/oracle.mjs step <task>` (commit 8ac563a) ran once for each of the 24 kept external tasks of `<data>/ext/sample.tsv` (s1-08, s2-04 and s2-06 are retired and not in it), one at a time, all exit 0. No Docker or database command ran. The brief `<data>/ext/briefs/f2p.md` was written first (it names no repo, stack, task or customer). Every line printed:
+
+```
+s1-01 step candidates=0 f2p=2 p2p=0 unknown=0 ids=0 resolver=none
+s1-02 step candidates=1 f2p=1 p2p=0 unknown=0 ids=1 resolver=none
+s1-03 step candidates=9 f2p=26 p2p=0 unknown=0 ids=9 resolver=none
+s1-04 step candidates=4 f2p=29 p2p=0 unknown=0 ids=4 resolver=none
+s1-05 step candidates=1 f2p=3 p2p=1 unknown=0 ids=1 resolver=none
+s1-06 step candidates=0 f2p=1 p2p=2 unknown=0 ids=0 resolver=none
+s1-07 step candidates=2 f2p=3 p2p=0 unknown=0 ids=2 resolver=none
+s1-09 step candidates=4 f2p=4 p2p=0 unknown=0 ids=4 resolver=none
+s2-01 step candidates=3 f2p=8 p2p=2 unknown=0 ids=3 resolver=none
+s2-02 step candidates=1 f2p=1 p2p=0 unknown=0 ids=1 resolver=ran
+s2-03 step candidates=1 f2p=1 p2p=0 unknown=0 ids=1 resolver=none
+s2-05 step candidates=1 f2p=1 p2p=1 unknown=0 ids=1 resolver=none
+s2-07 step candidates=5 f2p=7 p2p=0 unknown=0 ids=5 resolver=none
+s2-08 step candidates=1 f2p=3 p2p=0 unknown=0 ids=1 resolver=none
+s2-09 step candidates=2 f2p=17 p2p=0 unknown=0 ids=2 resolver=none
+s2-10 step candidates=2 f2p=6 p2p=0 unknown=0 ids=2 resolver=ran
+s3-01 step candidates=0 f2p=2 p2p=0 unknown=4 ids=0 resolver=ran
+s3-02 step candidates=5 f2p=5 p2p=0 unknown=0 ids=5 resolver=none
+s3-03 step candidates=1 f2p=1 p2p=0 unknown=0 ids=1 resolver=none
+s3-04 step candidates=1 f2p=1 p2p=1 unknown=0 ids=1 resolver=none
+s3-05 step candidates=1 f2p=8 p2p=0 unknown=1 ids=1 resolver=ran
+s3-06 step candidates=4 f2p=9 p2p=0 unknown=4 ids=4 resolver=ran
+s3-07 step candidates=0 f2p=0 p2p=0 unknown=1 ids=0 resolver=ran
+s3-08 step candidates=2 f2p=3 p2p=0 unknown=0 ids=2 resolver=none
+```
+
+- **Totals.** 159 scored checks: 134 decided by exact match, 7 by last segment, 18 by the resolver. Verdicts: f2p 142, p2p 7, unknown 10. Candidates 51, ids 51 (no task has more than 9, so the cap of 15 binds nowhere).
+- **Tasks with 0 ids: 4.** s1-01 and s3-01 have no `build` check (as the plan said). s1-06's only `build` check is `p2p` by the last-segment rule. s3-07's only `build` check is `unknown` from the resolver. So H1 has 20 external tasks with a step oracle, not the 22 the plan counted on; the user's N rule (the step 11 walk tops it up) covers this.
+- **Build checks the f2p rule removed.** `labels.json` has 55 `build` checks among the scored ones; 51 are candidates, so 4 are out: s1-06 1 (segment `p2p`), s3-04 1 (exact `p2p`), s3-05 1 (resolver `unknown`), s3-07 1 (resolver `unknown`). Every other task's ids are all its scored `build` checks (candidates equal its `build` count).
+- **Resolver runs: 7**, in 6 tasks (s2-02, s2-10, s3-01, s3-05, s3-05 `-2`, s3-06, s3-07), all code 0, model claude-opus-5-5, `--at` the end, tools `Glob,Grep,Read`. s3-05's first reply did not answer its one origin validly, so it ran once more and the `-2` reply stands. Per-check resolver outcomes: s2-02 1 f2p; s2-10 5 f2p; s3-01 4 unknown; s3-05 1 unknown; s3-06 2 f2p, 4 unknown; s3-07 1 unknown.
+- **Resolver reading (from `toolUses`).** Each run made one `Grep` call and no `Read` (s2-02 also one attempted `json_output` call); the s3-01 run made no tool call and answered its 4 origins `unknown`. s3-01 has no `build` check, so its verdicts change no id. The verdicts that do move ids (s2-02, s2-10, s3-06 f2p; s3-05, s3-07 unknown) rest on one search each.
+
+Usage (sum of the 7 `f2p*.reply.md.run.json` `usage`): input 28, output 3690, cache read 173782, cache write 183914; model claude-opus-5-5; summed run time 80.4 s. Batch wall clock 2026-11-05 08:11:27Z–08:12:48Z (81 s).
