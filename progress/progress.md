@@ -2327,3 +2327,95 @@ The step 9 sample of step checks and the step 6 lock, `progress/step6-lock.md`. 
 - **`git status --short bench`** is empty. `bench/` is at e97944495f4c2a270295bd2dd787ab355999c70e.
 
 Usage: no sealed agent ran (0 tokens of sealed runs). Each script ran in under a few seconds. Implementer tokens are left to the controller's ledger.
+
+### SDD ledger of step 6 (copied before the final review)
+
+    # SDD ledger — plan: docs/plans/2026-11-05-bench-step-oracles.md
+    
+    Spec: docs/plans/2026-10-27-benchmark-prereg.md (stable). Branch worktree-bridge-cse_01LckcHdPjiRPz5DvPEJXEaJ, plan head 76221d7. User approved the plan and chose option 1 for H1's N on 2026-11-05 ("1", then "subagent-driv").
+    
+    ## Preflight scan
+    
+    | rows | produces / consumes | found |
+    |---|---|---|
+    | T1 ↔ all | T1 edits prereg §2 (+§9.1 pointer), index, log; no code | none |
+    | T2 → T4 | f2pOf(origin, f2p, p2p) -> { verdict, by } | consistent |
+    | T2 → T5 | nextNumber(ids, sha7); highestOf rewritten over it and reading step/oracle | consistent |
+    | T2 → T6/steps 7-14 | floorScore, `oracle score <task> <sha>` reads step.json written by T4/T5 | T2 tests need fixture step.json; fine |
+    | T4 ↔ T5 | both add `step` to bench/oracle.mjs (two arities), README, tests/bench-oracle.test.mjs | sequential; arity split: `step <task>` external vs `step <task.json> <task>` — same convention as validate/classify |
+    | T3 ↔ T5 | T3 reclassifies p8b (labels/agreement); T5 builds p8b/step | disjoint files |
+    | T5 ↔ T6 | T6 samples scored real-estate step ids from step/validation-<end7>.json | consistent |
+    | T1 self | rulings 1–9 + decision; "as decided" now = option 1 | ok |
+    | T2 self | tests list matches interfaces | ok |
+    | T3 self | data-only, uses existing classify; moves trial classify files first | ok |
+    | T4 self | step-f2p.json for every scored check, ids from build+f2p; test 'rerun reuses resolver' | ok after d47fa1b |
+    | T5 self | lister → resolve → pick → writer → validate → labels/step.json; no-app base | ok |
+    | T6 self | check that step 5 hashes still match except p8b classify files and new step9 files | ok |
+    
+    - Ruling: tasks run strictly sequentially in this worktree (T3/T4 runs beside T5 allowed by the plan but not needed) — the skill forbids parallel implementers and progress/progress.md would conflict — cost if wrong: an hour or two of wall clock.
+    - Ruling: implementers record sealed-agent usage and run wall clock in progress/progress.md under a new section "2026-11-05 — step oracle plan"; the controller records implementer/reviewer usage in this ledger and copies it there before the final review — cost if wrong: none.
+    Task 1: dispatched implementer (sonnet), base 76221d7
+    Task 1: implementer done 3152f47 (sonnet 70.4k tokens, 1.2 min); reviewer dispatched (sonnet)
+    Task 1: review approved (sonnet), spec ✅
+    Task 1: minor (deferred): prereg ruling 2 drops "so its record is reused"; ruling 4 drops "(step 5 build ruling 19)"; ruling 5 drops "since a setup there throws"; user decision omits that ruling 14 reopened the walk only for a dropped task (this decision extends it to an empty step oracle); probe count 47/55 omitted
+    Task 1: complete (commits 76221d7..3152f47, review clean)
+    Task 1: reviewer sonnet 66.3k tokens, 1.1 min
+    Task 2: dispatched implementer (sonnet), base 3152f47
+    - Ruling: f2pOf — an origin name exact in both f2p and p2p lists is `ask` (not f2p) — the plan's exact rule is silent on a name in both lists; asking the resolver is the conservative reading — cost if wrong: a few extra resolver origins.
+    - Ruling: floorScore — a step id missing from the grade's checks counts as not passed — a missing case is an error in grade's own contract — cost if wrong: none (step ids always come from the graded manifest).
+    Task 2: implementer done b162d56 (354 pass); concerns: missing id weighted high & not passed; exact-only-in-p2p → p2p; score ignores step grade's excluded
+    Task 2: implementer sonnet 90.1k tokens, 7.5 min; reviewer dispatched (sonnet)
+    Task 2: review approved (sonnet), spec ✅
+    Task 2: minor (deferred): score treats any step.oracle other than "step/oracle" as "oracle" and a non-array ids throws a bare TypeError; f2pOf exact-only-in-p2p returns p2p before the segment rule (undocumented); floorScore ignores the step grade's own excluded (comment would help); an absent id silently lowers the score; segment split on '.' can collide names
+    - Ruling: accept f2pOf "exact in p2p only → p2p" — it is the symmetric reading of the exact rule and only drops a check (safe direction) — cost if wrong: a true f2p check out of H1 for a task.
+    Task 2: complete (commits 3152f47..b162d56, review clean)
+    Task 2: reviewer sonnet 87.1k tokens, 1.8 min
+    Task 3: dispatched implementer (sonnet), base b162d56
+    Task 3: implementer done 771a364; p8b classified=9 build=0 requirement=5 partly=3 disputed=1 κ .80 raw .89 AC1 .85
+    Task 3: implementer sonnet 59.6k tokens, 2.0 min; reviewer dispatched (sonnet)
+    Task 3: review approved (sonnet), spec ✅
+    Task 3: minor (deferred): progress.md p8b table says trial traceable "1" (should be "1 vs 0" per rater) and disputed "not recorded" (section 14 records 3; 730509b-T1 disputed in both)
+    Task 3: complete (commits b162d56..771a364, review clean)
+    Task 3: reviewer sonnet 62.7k tokens, 1.0 min
+    Task 4: dispatched implementer (opus), base 771a364
+    - Ruling: Tasks 4 and 5 use opus implementers — real sealed runs and multi-file integration, as step 5 did — cost if wrong: tokens only.
+    Task 4: implementer done 8ac563a (code) c130318 (record); 24 tasks, 159 scored, f2p 142/p2p 7/unknown 10; candidates 51, ids 51; 0 ids: s1-01 s3-01 s1-06 s3-07 → H1 N 20; concern: resolvers barely read (1 Grep, 0 Read)
+    - Ruling: add a resolver reading gate — a resolver run whose record shows no Read call is rerun once as -2 (first record kept) and the rerun stands, whatever it reads — same content-independent gate as step 5 rulings 12 and 40, and the brief tells the resolver to open the listed tests — cost if wrong: ~80 s and a few hundred k tokens; verdicts of up to 6 checks may change.
+    Task 4: implementer opus 142.2k tokens, 14.2 min (first pass); resumed with the reading-gate ruling (pre-review concern fix)
+    Task 4: gate added 1734911, record f442271; 5 -2 reruns, 4 still made no Read; ids and verdicts unchanged (ids 51, 0-id tasks s1-01 s3-01 s1-06 s3-07)
+    - Ruling: no brief change and no further rerun — the gate's rerun stands, as step 5 ruling 14 decided for the labellers (changing the measure after seeing its effect would be tuning); the resolver gets the case lists in its prompt, so a Grep-only decision is possible; under-reading is a known limit for the lock — cost if wrong: up to 6 checks (s2-02, s2-10, s3-06 kept; s3-05, s3-07 out) with a thinly read f2p verdict; step 9 could add a human read of them.
+    Task 4: implementer opus total 152.3k tokens, 18.9 min; reviewer dispatched (opus)
+    Task 4: review approved (opus), spec ✅
+    Task 4: minor (deferred): no test for the non-zero-code resolver rerun; step-f2p.json key order differs by source; f2pReply cuts first '[' to last ']' (same as classReply); f2pReply repeats ~6 lines of classReply; progress.md gives resolver usage as batch sums, not per task (brief asked per task); two refusal lines also go to stdout (documented)
+    Task 4: complete (commits 771a364..f442271, review clean)
+    Task 4: reviewer opus 87.3k tokens, 1.5 min
+    Task 5: dispatched implementer (opus), base f442271
+    - Ruling: no reading gate for the real-estate lister — the tool verifies every listed title against the end's test files, so an unread listing cannot add a wrong test — cost if wrong: fewer resolved steps for a task.
+    - Ruling: the writer's given ids are stored in its run record (as split does) and an entry with an id not given or an origin not its given test is refused — keeps ids stable across reruns and pins each check to its picked test — cost if wrong: none.
+    Task 5: implementer done f498b3c (code) c789df3 (record); 15 tasks: listed 285, resolved 204, picked 112, written 97, scored ids 68; p1–p5 0 ids (listers replied [] with no tool call in 3–6 s), p8b 0 ids (writer and -2 left no file); opus 273.8k tokens, 119.4 min
+    - Ruling: p1–p5's [] is a lister failure, not a fact — probe-titles2 (logs/step6) finds 9–15 quoted strings per task that are exact it()/test() titles at the end, and prereg §5 keeps plans 1–6c's pointer-only steps as test titles; amend steps.md (a step names a test when it quotes its title, with or without its file; open the end's test files before replying), reverse my no-gate ruling and add the resolver's gate to the lister (a record with no Read reruns once as -2, the rerun stands), void all 15 step/ folders and step.json unread (mv to <task>/step-v1/, superseded spend) and rerun all 15 under one brief — same move as step 5 ruling 11; candidates drawn under one brief keep "chosen by seed" — cost if wrong: ~100 min and ~3M tokens.
+    - Ruling: fix writer(): the -2 rerun's prompt named the first run's folder while its settings grant only <dir>-2 (bug since step 5); text.replaceAll(o.dir, two.dir), test 'a writer rerun's prompt names its own folder' — content-independent instrument fix — cost if wrong: the 13 step 5 -2 writer records now hash stale, so a later `write` rerun on them refuses loudly (step 5 is locked; all 13 step 5 -2 folders hold a manifest, so step 5 outcomes stand; only p8b's step writer was bitten).
+    - Ruling: `p8b` is a symlink to `8b` (since 2026-10-27); scans over <data> see both names; Task 6 hashes through `p8b` only and the lock says so — cost if wrong: none.
+    Task 5: fix round (pre-review) done 232bf05 (code) 7219a59 (record); v2: listed 288, resolved 207, picked 115, written 100, validated 84 (valid 35, absent 40, weak 8, broken 1), ids 75; p1–p5 still 0 (my probe-titles2 overcounted: its quoted strings spanned line breaks, git grep -e split them; per-line probe-titles3 finds 0 titles in p1–p4); p8b writer and fixed -2 again 0 files; lister gate fired in 9 tasks, reruns also made no Read
+    - Ruling: accept p1–p5 with no step oracle — their kept steps name no test (per-line probe and two lister briefs agree); my overcount cost one rerun (~100 min, ~3M tokens), recorded as such — cost if wrong: H1 has no real-estate score for p1–p5 (secondary set, reported only).
+    - Ruling: p8b's empty writer is suspected to be the p8b→8b symlink: the writer's settings grant Edit under the symlink path while the Write tool resolves to the real path; fix runWriter to grant its folder by its real path as well, verify with a tiny probe, void p8b's writer records unread and rerun step for p8b only — content-independent instrument fix — cost if wrong: one more p8b writer run.
+    Task 5: p8b fix done 865f6bb (code) 598d5aa (record); probe confirmed (symlink-only grant: no file; real-path grant: file); p8b ids 12 (written 13, refused 2, none 1); real-estate total 87 ids; under 5: p1–p5 0, p6b 4, p7b 2, p7c 1
+    - Ruling: no symlink probe for classify/split — Task 3's p8b rater records show filesInFolder 7/7, which readCount counts only from successful Read results under the folder, so the reads under the symlinked grant worked — cost if wrong: none for scores (p8b labels feed no score).
+    Task 5: implementer opus total 322.6k+ tokens across three rounds (~110+109 min first two rounds; third round short)
+    Task 5: implementer opus total 339.8k tokens (all rounds), ~240 min wall incl. runs; reviewer dispatched (opus) over f442271..598d5aa
+    Task 5: review needs fixes (opus): I1 fixer folder copy holds manifest.json with the step text; I2 rerun prints fixer rounds=0 / may print a stale-fixer line; I3 README should say step 5's -2 write records now refuse on rerun; minors: title with \n can resolve falsely (fix now, cheap), grade prints setup output on stdout (pre-existing), voided v1 ids reuse numbers, missing check at end is broken
+    - Ruling: I1 — strip `step` from the fixer folder's manifest copy from now on; do NOT void p6a's and p7c's v2 fixer runs — the comparer keeps a fixer change only when it calls every assertion `same`, so step text in the fixer's folder cannot change what a kept check asserts — cost if wrong: up to 2 rounds of fixes in p6a/p7c that a step-text-blind fixer might have made differently (mechanics only).
+    - Ruling: I2 — document that the counts line's `fixer rounds` counts the rounds run in that invocation (same as step 5 validate); data files are idempotent — cost if wrong: a reader misreads a rerun's line.
+    Task 5: reviewer opus (tokens in notification)
+    Task 5: reviewer opus 149.9k tokens, 7.7 min; fix round 1 dispatched (resume implementer)
+    Task 5: fix round 1/5 (4 addressed, 0 open — fixer copy step text, rounds doc, write -2 stale doc, newline title; commits 598d5aa..e979444); re-review sonnet
+    Task 5: minor (deferred): grade prints product setup output on stdout before counts lines (pre-existing, grade.mjs); voided step-v1/ and step-v2-writer/ reuse id numbers of live step oracles (unread, harmless); a check missing from the end grade reads broken and spends fixer rounds
+    Task 5: complete (commits f442271..e979444, review clean after 1 round)
+    Task 5: implementer fix round sonnet? no — opus resumed, total 346.4k tokens; re-review sonnet 66.6k tokens, 0.5 min
+    Task 6: dispatched implementer (opus), base e979444
+    - Ruling: sample-7.1-step.tsv draws from the 14 kept tasks only, p8b excluded (trial-only, never scored) — cost if wrong: one p8b check missing from the human read.
+    Task 6: implementer done e821cb7; step 5 hashes 1369/1369 equal; sample 10 rows of 75; external ids 51, H1 N 20; real-estate 87 ids
+    Task 6: implementer opus 156.3k tokens, 11.0 min; reviewer dispatched (sonnet)
+    Task 6: review approved (sonnet), spec ✅
+    Task 6: minor (deferred): lock's rulings drop the "cost if wrong" clauses and add editorial text; plan-ruling and lock-ruling numbers mix ("ruling 8"); preface points to the gitignored SDD ledger path; no per-task "out" column for external tasks (derivable); line on resolver verdicts says "one or two searches each" though s2-02's rerun read
+    Task 6: complete (commits e979444..e821cb7, review clean)
