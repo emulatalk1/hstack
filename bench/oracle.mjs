@@ -15,7 +15,7 @@ import { fixMatches, floorScore, verdict } from './lib/score.mjs'
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | validate <task.json> <task> | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | split [<task.json>] <task> | queue | score <task> <sha> | step <external task>'
+const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | validate <task.json> <task> | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | split [<task.json>] <task> | queue | score <task> <sha> | step <external task> | step <task.json> <task>'
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
@@ -551,7 +551,7 @@ async function fixRound(c, round, g, broken, agent, tag = '') {
   const runs = [g.ref, ...g.bad, ...(g.base ? [g.base] : [])].map((x) => lastLog(logs, x.slice(0, 7))).filter(Boolean)
   const text = [
     readFileSync(join(c.data, 'briefs/fix.md'), 'utf8').trimEnd() + '\n',
-    `## The broken checks and their manifest entries\n\n${fence(JSON.stringify(manifest.filter((m) => broken.includes(m.id)), null, 2), 'json')}`,
+    `## The broken checks and their manifest entries\n\n${fence(JSON.stringify(manifest.filter((m) => broken.includes(m.id)).map(({ step, ...m }) => m), null, 2), 'json')}`,
     `## The logs of the runs that broke them\n\n${runs.length ? runs.map((f) => `- \`${f}\``).join('\n') : 'none'}\n`,
     `## Your folder\n\n\`${dir}\`: a copy of the oracle folder. Fix the checks there; nothing else is read back.\n`,
   ].join('\n')
@@ -1040,7 +1040,6 @@ function f2pReply(text, origins) {
 // the origin of every scored check (whatever its label, so the resolver's prompt does not move with labels.json) by f2pOf,
 // and the `ask` ones by one sealed resolver at the end; the build-labelled f2p ones are the candidates
 async function step(c, agent) {
-  if (!c.ext) throw new Error(`${c.task}: a real-estate step oracle is not built yet`)
   const ext = join(c.data, 'ext'), t = taskOf(ext, c.task), seed = readJson(join(ext, 'groups.json'))?.seed
   if (!seed) throw new Error('no seed in ext/groups.json')
   const cases = readJson(join(ext, 'sealed', t.slug, 'f2p.json')), labels = readJson(join(c.dir, 'labels.json'))
@@ -1071,6 +1070,131 @@ async function step(c, agent) {
   writeFileSync(join(c.dir, 'step.json'), JSON.stringify({ oracle: 'oracle', ids, candidates: candidates.length, seed }, null, 2) + '\n')
   const n = (v) => decided.filter((x) => x.verdict === v).length
   console.log(`${c.task} step candidates=${candidates.length} f2p=${n('f2p')} p2p=${n('p2p')} unknown=${n('unknown')} ids=${ids.length} resolver=${resolver}`)
+  return 0
+}
+
+// --- step <task.json> <task> (rulings 3-6 of step 6): a real-estate task's step oracle. Prints counts only ---
+// the lister's entries with a string step, file and title; ok when the reply is such an array and every entry is one
+function stepsReply(text) {
+  let arr = null
+  try { arr = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)) } catch {}
+  if (!Array.isArray(arr)) return { list: [], ok: false }
+  const list = arr.filter((e) => ['step', 'file', 'title'].every((k) => typeof e?.[k] === 'string' && e[k].trim())).map(({ step, file, title }) => ({ step, file, title }))
+  return { list, ok: list.length === arr.length }
+}
+
+// the test files at the commit whose text holds the title verbatim
+async function testFilesWith(repo, commit, title) {
+  const p = Bun.spawn(['git', '-C', repo, 'grep', '-F', '-l', '-z', '-e', title, commit, '--'], { stdout: 'pipe', stderr: 'ignore' })
+  const [out, code] = [await new Response(p.stdout).text(), await p.exited]
+  if (code > 1) throw new Error(`git grep failed (exit ${code})`)
+  return out.split('\0').filter(Boolean).map((f) => f.slice(commit.length + 1)).filter(isTestPath)
+}
+
+// the end graded alone when the base holds no app: every check's bad result is `precondition` (ruling 5)
+async function noAppPass(c, g, grade) {
+  const why = 'no app at base', f = join(c.evDir, `validation-${g.ref.slice(0, 7)}.json`)
+  let stage = null
+  try { const code = await grade([c.taskFile, c.oracleDir, '--at', g.ref, '--sealed', '--reuse']); if (code !== 0) stage = `grade exit ${code}` } catch (e) { stage = String(e?.message ?? e).split('\n')[0].slice(0, 300) }
+  const res = stage === null ? readJson(join(c.evDir, 'grades', `${g.ref.slice(0, 7)}.json`)) : null
+  const checks = g.ids.map((id) => {
+    if (stage !== null) return { id, verdict: 'error', stage }
+    const ref = res?.checks?.find((x) => x.id === id)?.result ?? 'error'
+    return { id, ref, bad: ['precondition'], base: null, verdict: verdict({ ref, bad: ['precondition'] }), stage: why }
+  })
+  writeFileSync(f, JSON.stringify({ ref: g.ref, bad: g.bad, base: null, at: new Date().toISOString(), stage: stage ?? why, checks }, null, 2) + '\n')
+}
+
+async function stepRe(c0, { agent, grade }) {
+  const c = { ...c0, evDir: join(c0.evDir, 'step'), oracleDir: join(c0.evDir, 'step', 'oracle') }, sd = c.evDir, work = join(sd, 'work')
+  const seed = readJson(join(c.data, 'ext/groups.json'))?.seed
+  if (!seed) throw new Error('no seed in ext/groups.json')
+  const end = (await gitOut(c.repo, 'rev-parse', `${c.end}^{commit}`)).trim(), base = (await gitOut(c.repo, 'rev-parse', `${c.base}^{commit}`)).trim(), end7 = end.slice(0, 7)
+  const stale = () => { console.log(`${c.task} step refused a run whose prompt differs from the one it ran with`); return 1 }
+  const n = { listed: 0, resolved: 0, picked: 0, written: 0, refused: 0, none: 0, rounds: 0 }
+  // 1. the lister; a reply that is not the list, or a run with a code other than 0, is run once more (-2), which stands
+  const read = (f) => readFileSync(join(c0.evDir, f), 'utf8')
+  const ltext = `${readFileSync(join(c.data, 'briefs/steps.md'), 'utf8').trimEnd()}\n\n## The plan text\n\n${fence(read('filter-source.md'), 'markdown')}\n## The filtered input\n\n${fence(read('input.md'), 'markdown')}`
+  let listed = []
+  for (const k of ['', '-2']) {
+    const out = join(sd, `steps${k}.reply.md`)
+    const r = await once(agent, { prompt: join(work, 'steps.prompt.md'), text: ltext, out }, [c.taskFile, `steps-${c.task}${k}`, '--at', end, '--tools', 'Read,Glob,Grep'])
+    if (r.stale) return stale()
+    const res = stepsReply(existsSync(out) ? readFileSync(out, 'utf8') : '')
+    listed = res.list
+    if (res.ok && r.code === 0) break
+  }
+  // resolution: the named file when it matches, else the one test file that does; deduplicated by <file>::<title>
+  const steps = [], seen = new Set()
+  for (const e of listed) {
+    const hits = await testFilesWith(c.repo, end, e.title)
+    const file = hits.includes(e.file) ? e.file : hits.length === 1 ? hits[0] : null
+    const x = { step: e.step, file: file ?? e.file, title: e.title, resolved: file !== null }
+    if (!seen.has(`${x.file}::${x.title}`)) { seen.add(`${x.file}::${x.title}`); steps.push(x) }
+  }
+  mkdirSync(sd, { recursive: true })
+  writeFileSync(join(sd, 'steps.json'), JSON.stringify(steps, null, 2) + '\n')
+  const resolved = steps.filter((x) => x.resolved), byKey = new Map(resolved.map((x) => [`${c.task}:${x.file}::${x.title}`, x]))
+  // 2. the pick, before any writing
+  const picked = queuePick([...byKey.keys()], 15, seed).map((k) => byKey.get(k))
+  Object.assign(n, { listed: listed.length, resolved: resolved.length, picked: picked.length })
+  // 3. the writer; its ids number after the highest of the prefix when it first runs, and its record keeps them
+  const outW = join(work, 'write.reply.md'), dir = join(work, 'write'), scaffold = join(c.data, 'oracle-scaffold')
+  const recIds = readJson(`${outW}.run.json`)?.ids
+  const ids = recIds?.length === picked.length ? recIds : picked.map((_, i) => `${end7}-T${highestOf(c.data, end7) + i + 1}`)
+  const given = new Map(picked.map((x, i) => [ids[i], { ...x, origin: `${x.file}::${x.title}` }]))
+  let scored = []
+  if (picked.length) {
+    const files = [...new Set(picked.map((x) => x.file))]
+    const scaffoldFiles = readdirSync(scaffold, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name)
+    const text = [
+      readFileSync(join(c.data, 'briefs/step-re.md'), 'utf8').trimEnd() + '\n',
+      readFileSync(join(c.data, 'briefs/oracle-re.md'), 'utf8').trimEnd() + '\n',
+      `## The check ids and their tests\n\n${[...given].map(([id, x]) => `- \`${id}\`: \`${x.origin}\``).join('\n')}\n`,
+      `## The test files\n\n${(await Promise.all(files.map(async (f) => `### ${f}\n\n${fence(await gitOut(c.repo, 'show', `${end}:${f}`))}`))).join('\n')}`,
+      `## The scaffold\n\nEach check runs from an oracle folder that holds these files beside it, with their packages installed.\n\n${scaffoldFiles.map((f) => `### ${f}\n\n${fence(readFileSync(join(scaffold, f), 'utf8'))}`).join('\n')}`,
+      `## Your output folder\n\n\`${dir}\`\n`,
+    ].join('\n')
+    const w = await writer(agent, { taskFile: c.taskFile, label: `step-${c.task}`, at: end, prompt: join(work, 'write.prompt.md'), text, out: outW, dir, settings: join(work, 'write-settings.json') })
+    if (w.stale) return stale()
+    for (const rec of [`${outW}.run.json`, outW.replace(/\.reply\.md$/, '-2.reply.md.run.json')]) { const r = readJson(rec); if (r && !r.ids) writeFileSync(rec, JSON.stringify({ ...r, ids }, null, 2) + '\n') }
+    const rules = JSON.parse(readFileSync(join(c.data, 'briefs/oracle-re.json'), 'utf8')), paths = files
+    const res = judge(w.dir, end, () => c.task, false, rules)
+    const entries = (res?.entries ?? []).map((x) => ({ ...x, why: x.why ?? (!given.has(x.e.id) ? 'id' : x.e.origin !== given.get(x.e.id).origin ? 'origin'
+      : x.file && leaks(readFileSync(join(w.dir, x.file), 'utf8'), end, paths) ? 'leak' : null) }))
+    const ok = entries.filter((x) => !x.why)
+    Object.assign(n, { written: ok.length, refused: entries.length - ok.length, none: ok.filter((x) => x.e.interface === 'none').length })
+    // the oracle is written when the writer ran or none is there yet, so a rerun keeps what a fixer kept
+    if (w.how === 'ran' || !existsSync(join(c.oracleDir, 'manifest.json'))) {
+      rmSync(c.oracleDir, { recursive: true, force: true })
+      mkdirSync(c.oracleDir, { recursive: true })
+      scaffoldInto(scaffold, c.oracleDir)
+      for (const x of ok) if (x.file) copyFileSync(join(w.dir, x.file), join(c.oracleDir, basename(x.file)))
+      const order = [...given.keys()], sorted = [...ok].sort((a, b) => order.indexOf(a.e.id) - order.indexOf(b.e.id))
+      writeFileSync(join(c.oracleDir, 'manifest.json'), JSON.stringify(sorted.map(({ e }) => ({ id: e.id, fix_commit: end, task: c.task, step: given.get(e.id).step, origin: e.origin, behaviour: e.behaviour, interface: e.interface, severity: e.severity })), null, 2) + '\n')
+    }
+    // 4. validation at the end against the base, then at most 2 fixer rounds over the broken checks (ruling 11)
+    const checks = existsSync(join(c.oracleDir, 'manifest.json')) ? manifestIn(c.oracleDir).filter((m) => m.interface !== 'none').map((m) => m.id) : []
+    if (checks.length) {
+      const g = { ref: end, ids: checks, bad: [base], base: null, noApp: noAppAt(c, base) }
+      const pass = () => (g.noApp ? noAppPass(c, g, grade) : gradePass(c, [g], grade))
+      const vOf = (id) => validationOf(c.evDir, end)?.checks?.find((x) => x.id === id)?.verdict
+      await pass()
+      for (let round = 1; round <= 2; round++) {
+        const broken = checks.filter((id) => vOf(id) === 'broken')
+        if (!broken.length) break
+        n.rounds = round
+        if ((await fixRound(c, round, g, broken, agent, 'step-')).kept) await pass()
+      }
+      for (const id of checks) n[vOf(id) ?? 'unknown'] = (n[vOf(id) ?? 'unknown'] ?? 0) + 1
+      scored = [...given.keys()].filter((id) => checks.includes(id) && SCORED.includes(vOf(id)))
+    }
+  }
+  // 5. labels and step.json
+  writeFileSync(join(sd, 'labels.json'), JSON.stringify(Object.fromEntries(scored.map((id) => [id, 'build'])), null, 2) + '\n')
+  writeFileSync(join(c0.evDir, 'step.json'), JSON.stringify({ oracle: 'step/oracle', ids: scored, candidates: resolved.length, seed }, null, 2) + '\n')
+  const v = (k) => n[k] ?? 0
+  console.log(`${c.task} step listed=${n.listed} resolved=${n.resolved} picked=${n.picked} written=${n.written} refused=${n.refused} none=${n.none} valid=${v('valid')} absent-at-base=${v('absent-at-base')} weak=${v('weak')} broken=${v('broken')} error=${v('error')} fixer rounds=${n.rounds} ids=${scored.length}`)
   return 0
 }
 
@@ -1111,7 +1235,8 @@ export async function oracle(args, inj = {}) {
   }
   if (cmd === 'queue' && args.length === 1) return queue()
   if (cmd === 'score' && taskPath && rest.length === 1) return scoreCmd(taskPath, rest[0])
-  if (cmd === 'step' && taskPath && rest.length <= 1) return step(rest.length ? clCtx(rest[0], taskPath) : clCtx(taskPath), agent)
+  if (cmd === 'step' && taskPath && rest.length === 1) return stepRe(await taskCtx(rest[0], taskPath), { agent, grade })
+  if (cmd === 'step' && taskPath && rest.length === 0) return step(clCtx(taskPath), agent)
   throw new Error(USAGE)
 }
 

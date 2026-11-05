@@ -1416,8 +1416,6 @@ test('the resolver runs only for ask origins and unknown is out', async () => {
   expect(await step(d, calls, say)).toEqual({ code: 1, out: 'x1-01 step refused a run whose prompt differs from the one it ran with' })
   expect(calls).toHaveLength(2)
   expect(readFileSync(join(d, 'x1-01/step.json'), 'utf8')).toBe(kept)
-  // a task of tasks.json is Task 5's; the two-argument form is not built yet
-  await withData(d, () => expect(oracle(['step', 'task.json', 'r1'], { agent: resolver(calls) })).rejects.toThrow('not built yet'))
 })
 
 test('ids are the first 15 by seed', async () => {
@@ -1467,4 +1465,219 @@ test('a resolver run that made no Read is rerun once and the rerun stands', asyn
   const d3 = stData('st10', STEP_ROWS, STEP_CASES), calls3 = []
   expect((await step(d3, calls3, say)).out).toBe('x1-01 step candidates=2 f2p=3 p2p=4 unknown=0 ids=2 resolver=ran')
   expect(calls3).toHaveLength(1)
+})
+
+// --- step 6 task 5: a real-estate task's step oracle (rulings 3-6) ---
+// one repo: R0 has no app file, R1 adds it, RE (the end) holds the tests; r1 = R1..RE (app at base), r2 = R0..RE (none)
+const reRepo = join(tmp, 're-repo')
+const rgit = (...a) => Bun.spawnSync(['git', '-C', reRepo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
+const rput = (files, msg) => {
+  for (const [f, text] of Object.entries(files)) { mkdirSync(join(reRepo, f, '..'), { recursive: true }); writeFileSync(join(reRepo, f), text) }
+  rgit('add', '-A'); rgit('commit', '-qm', msg)
+  return rgit('rev-parse', 'HEAD')
+}
+mkdirSync(reRepo, { recursive: true }); rgit('init', '-q')
+const R0 = rput({ 'src/a.txt': 'a\n' }, 'no app'), R1 = rput({ 'package.json': '{}\n' }, 'app')
+const RE = rput({
+  'tests/a.spec.ts': Array.from({ length: 20 }, (_, i) => `test('SENTINEL-TITLE ${i + 1}', () => {})`).join('\n') + '\n',
+  'tests/b.spec.ts': "test('SENTINEL-SHARED', () => {})\n", 'tests/c.spec.ts': "test('SENTINEL-SHARED', () => {})\n",
+  'src/doc.txt': 'SENTINEL-NOTTEST\n',
+}, 'tests')
+const E7 = RE.slice(0, 7)
+const reData = (name) => {
+  const d = join(tmp, name)
+  for (const x of ['briefs', 'ext', 'env', 'r1', 'r2', 'oracle-scaffold/node_modules']) mkdirSync(join(d, x), { recursive: true })
+  writeFileSync(join(d, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
+  writeFileSync(join(d, 'tasks.json'), JSON.stringify({ r1: { base: R1.slice(0, 7), end: E7 }, r2: { base: R0.slice(0, 7), end: E7 } }))
+  writeFileSync(join(d, 'ext/groups.json'), JSON.stringify({ seed: SEED, groups: [] }))
+  writeFileSync(join(d, 'env/re.json'), JSON.stringify({ name: 'rr', repo: reRepo, db: null, port: 3999, start: 'true', ready: 'http://127.0.0.1:3999/', oracle: 'true', junit: 'r.xml', appFile: 'package.json' }))
+  for (const [f, text] of [['steps.md', 'STEPS-BRIEF'], ['step-re.md', 'STEP-RE-BRIEF'], ['oracle-re.md', 'RE-RULES'], ['fix.md', 'FIX-BRIEF'], ['compare.md', 'COMPARE-BRIEF']]) writeFileSync(join(d, 'briefs', f), `${text}\n`)
+  writeFileSync(join(d, 'briefs/oracle-re.json'), JSON.stringify({ suffix: '.spec.ts', imports: ['@playwright/test'], kinds: ['browser', 'http', 'api', 'none'] }))
+  writeFileSync(join(d, 'oracle-scaffold/run.config.ts'), 'SCAFFOLD-CONFIG\n')
+  for (const t of ['r1', 'r2']) { writeFileSync(join(d, t, 'filter-source.md'), 'SENTINEL-SOURCE\n'); writeFileSync(join(d, t, 'input.md'), 'SENTINEL-INPUT\n') }
+  return d
+}
+const titled = (n) => ({ step: `SENTINEL-STEP ${n}`, file: 'tests/a.spec.ts', title: `SENTINEL-TITLE ${n}` })
+// one fake agent: a lister replies list(label) (a string as it is); a writer writes a check per listed id (write(given)
+// may change the entries); a fixer or comparer is fakeAgents'
+const reAgent = (calls, { list = () => [titled(1), titled(2)], write = (g) => g.map(({ id, origin }) => ({ id, origin })), fix = {} } = {}) => {
+  const fa = fakeAgents(fix, calls)
+  return async (args) => {
+    const label = args[1], out = argOf(args, '--out')
+    if (/^(fix|compare)-/.test(label)) return fa(args)
+    calls.push(args)
+    if (label.startsWith('steps-')) {
+      const r = list(label)
+      writeFileSync(out, typeof r === 'string' ? r : `SENTINEL-REPLY\n${JSON.stringify(r)}`)
+    } else {
+      const dir = JSON.parse(readFileSync(argOf(args, '--settings'), 'utf8')).permissions.additionalDirectories[0]
+      const given = [...readFileSync(argOf(args, '--prompt'), 'utf8').matchAll(/^- `([0-9a-f]{7}-T\d+)`: `(.+)`$/gm)].map((m) => ({ id: m[1], origin: m[2] }))
+      const entries = write(given).map((e) => ({ behaviour: `SENTINEL-BEHAVIOUR ${e.id}`, interface: 'browser', severity: 'high', ...e }))
+      for (const e of entries) if (e.interface !== 'none') writeFileSync(join(dir, `${e.id}.spec.ts`), "import { test } from '@playwright/test'\n")
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify(entries))
+      writeFileSync(out, 'SENTINEL-REPLY')
+    }
+    writeFileSync(`${out}.run.json`, '{"code":0}')
+    return 0
+  }
+}
+const reStep = (d, t, calls, opts, gradeCalls = [], table = () => 'valid') =>
+  withData(d, () => quiet(() => oracle(['step', join(d, 'env/re.json'), t], { agent: reAgent(calls, opts), grade: fakeGrade(table, gradeCalls) })))
+const LINE = /^r[12] step listed=\d+ resolved=\d+ picked=\d+ written=\d+ refused=\d+ none=\d+ valid=\d+ absent-at-base=\d+ weak=\d+ broken=\d+ error=\d+ fixer rounds=\d+ ids=\d+$/
+
+test('real-estate step writes only under step and step.json', async () => {
+  const d = reData('re1'), calls = [], grades = []
+  const before = new Map(filesIn(d).map((f) => [f, readFileSync(f, 'utf8')]))
+  const r = await reStep(d, 'r1', calls, {}, grades)
+  expect(r.code).toBe(0)
+  expect(r.out.split('\n').at(-1)).toBe('r1 step listed=2 resolved=2 picked=2 written=2 refused=0 none=0 valid=2 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=2')
+  const after = filesIn(d)
+  for (const [f, text] of before) expect(readFileSync(f, 'utf8')).toBe(text)
+  expect(after.filter((f) => !before.has(f)).every((f) => f.startsWith(join(d, 'r1/step/')) || f === join(d, 'r1/step.json'))).toBe(true)
+  // the lister at the end, read only, given its brief, the plan text and the input
+  const [l, w] = calls
+  expect([l[0], l[1], argOf(l, '--at'), argOf(l, '--tools'), argOf(l, '--out')]).toEqual([join(d, 'env/re.json'), 'steps-r1', RE, 'Read,Glob,Grep', join(d, 'r1/step/steps.reply.md')])
+  expect(argOf(l, '--prompt')).toBe(join(d, 'r1/step/work/steps.prompt.md'))
+  const lp = readFileSync(argOf(l, '--prompt'), 'utf8')
+  expect(lp).toStartWith('STEPS-BRIEF\n')
+  for (const x of ['SENTINEL-SOURCE', 'SENTINEL-INPUT']) expect(lp).toContain(x)
+  expect(jsonAt(join(d, 'r1/step/steps.json'))).toEqual([1, 2].map((n) => ({ ...titled(n), resolved: true })))
+  // the writer at the end, its prompt the two briefs, the ids with their tests, the test file and the scaffold; never the step text or the input
+  expect([w[1], argOf(w, '--at')]).toEqual(['step-r1', RE])
+  const wp = readFileSync(argOf(w, '--prompt'), 'utf8')
+  expect(wp).toStartWith('STEP-RE-BRIEF\n')
+  expect(wp.indexOf('RE-RULES')).toBeGreaterThan(0)
+  const ids = queuePick([1, 2].map((n) => `r1:tests/a.spec.ts::SENTINEL-TITLE ${n}`), 15, SEED).map((k, i) => [`${E7}-T${i + 1}`, k.slice(3)])
+  for (const [id, o] of ids) expect(wp).toContain(`- \`${id}\`: \`${o}\``)
+  for (const x of ["test('SENTINEL-TITLE 20'", 'SCAFFOLD-CONFIG', join(d, 'r1/step/work/write')]) expect(wp).toContain(x)
+  for (const x of ['SENTINEL-STEP', 'SENTINEL-SOURCE', 'SENTINEL-INPUT']) expect(wp).not.toContain(x)
+  const o = join(d, 'r1/step/oracle'), stepOf = (o) => `SENTINEL-STEP ${o.split(' ').at(-1)}`
+  expect(jsonAt(join(o, 'manifest.json'))).toEqual(ids.map(([id, origin]) => ({ id, fix_commit: RE, task: 'r1', step: stepOf(origin), origin, behaviour: `SENTINEL-BEHAVIOUR ${id}`, interface: 'browser', severity: 'high' })))
+  expect(ls(o)).toEqual([...ids.map(([id]) => `${id}.spec.ts`), 'manifest.json', 'node_modules', 'run.config.ts'].sort())
+  expect(grades).toEqual([[join(d, 'env/re.json'), o, '--validate', RE, '--bad', R1, '--sealed', '--reuse']])
+  expect(jsonAt(join(d, 'r1/step/labels.json'))).toEqual(Object.fromEntries(ids.map(([id]) => [id, 'build'])))
+  expect(jsonAt(join(d, 'r1/step.json'))).toEqual({ oracle: 'step/oracle', ids: ids.map(([id]) => id), candidates: 2, seed: SEED })
+  // a rerun reuses every record and grades with --reuse
+  const tree = filesIn(d).filter((f) => !f.includes('/work/') && !f.endsWith('node_modules')).map((f) => [f, readFileSync(f, 'utf8')])
+  const again = await reStep(d, 'r1', calls, {}, grades)
+  expect(again.out.split('\n').at(-1)).toBe(r.out.split('\n').at(-1))
+  expect(calls).toHaveLength(2)
+  expect(grades[1]).toEqual(grades[0])
+  expect(filesIn(d).filter((f) => !f.includes('/work/') && !f.endsWith('node_modules')).map((f) => [f, readFileSync(f, 'utf8')])).toEqual(tree)
+})
+
+test('a title that matches no test file, or two, is unresolved', async () => {
+  const d = reData('re2'), calls = []
+  const list = (label) => (label.endsWith('-2') ? [
+    titled(1),
+    { step: 'S2', file: 'a.spec.ts', title: 'SENTINEL-TITLE 1' }, // abbreviated: resolves to the same test, deduplicated
+    { step: 'S3', file: 'tests/c.spec.ts', title: 'SENTINEL-SHARED' }, // two matches, the named file wins
+    { step: 'S4', file: 'x.spec.ts', title: 'SENTINEL-SHARED' }, // two matches, neither named
+    { step: 'S5', file: 'src/doc.txt', title: 'SENTINEL-NOTTEST' }, // not a test file
+    { step: 'S6', file: 'tests/a.spec.ts', title: 'SENTINEL-NOWHERE' },
+  ] : 'SENTINEL-NOT-JSON')
+  const r = await reStep(d, 'r1', calls, { list })
+  expect(r.out.split('\n').at(-1)).toBe('r1 step listed=6 resolved=2 picked=2 written=2 refused=0 none=0 valid=2 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=2')
+  // the first reply did not parse: run once more as -2, and the rerun stands
+  expect(calls.map((a) => a[1])).toEqual(['steps-r1', 'steps-r1-2', 'step-r1'])
+  expect(argOf(calls[1], '--out')).toBe(join(d, 'r1/step/steps-2.reply.md'))
+  expect(jsonAt(join(d, 'r1/step/steps.json'))).toEqual([
+    { ...titled(1), resolved: true },
+    { step: 'S3', file: 'tests/c.spec.ts', title: 'SENTINEL-SHARED', resolved: true },
+    { step: 'S4', file: 'x.spec.ts', title: 'SENTINEL-SHARED', resolved: false },
+    { step: 'S5', file: 'src/doc.txt', title: 'SENTINEL-NOTTEST', resolved: false },
+    { step: 'S6', file: 'tests/a.spec.ts', title: 'SENTINEL-NOWHERE', resolved: false },
+  ])
+  // nothing resolved: no writer, no grade, no ids
+  const d2 = reData('re2b'), calls2 = [], grades2 = []
+  const r2 = await reStep(d2, 'r1', calls2, { list: () => [] }, grades2)
+  expect(r2).toEqual({ code: 0, out: 'r1 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0' })
+  expect(calls2.map((a) => a[1])).toEqual(['steps-r1'])
+  expect(grades2).toHaveLength(0)
+  expect(jsonAt(join(d2, 'r1/step.json'))).toEqual({ oracle: 'step/oracle', ids: [], candidates: 0, seed: SEED })
+})
+
+test('the pick happens before the writer and takes 15 by seed', async () => {
+  const d = reData('re3'), calls = []
+  const all = Array.from({ length: 20 }, (_, i) => titled(i + 1))
+  const r = await reStep(d, 'r1', calls, { list: () => all })
+  expect(r.out.split('\n').at(-1)).toBe('r1 step listed=20 resolved=20 picked=15 written=15 refused=0 none=0 valid=15 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=15')
+  const picked = queuePick(all.map((x) => `r1:${x.file}::${x.title}`), 15, SEED).map((k) => k.slice(3))
+  const wp = readFileSync(argOf(calls[1], '--prompt'), 'utf8')
+  expect([...wp.matchAll(/^- `([0-9a-f]{7}-T\d+)`: `(.+)`$/gm)].map((m) => [m[1], m[2]])).toEqual(picked.map((o, i) => [`${E7}-T${i + 1}`, o]))
+  expect(jsonAt(join(d, 'r1/step.json')).ids).toEqual(picked.map((_, i) => `${E7}-T${i + 1}`))
+  expect(jsonAt(join(d, 'r1/step.json')).candidates).toBe(20)
+})
+
+test('step ids number after the highest of that prefix', async () => {
+  const d = reData('re4'), calls = []
+  for (const [f, id] of [['x1/oracle', `${E7}-T4`], ['x2/step/oracle', `${E7}-T6`], ['x3/oracle', 'abcdef0-T40']]) {
+    mkdirSync(join(d, f), { recursive: true })
+    writeFileSync(join(d, f, 'manifest.json'), JSON.stringify([{ id, dropped: true }]))
+  }
+  // the writer adds an id it was not given and gives one check another test as origin: both refused
+  const write = (g) => [{ id: g[0].id, origin: g[0].origin }, { id: g[1].id, origin: 'tests/a.spec.ts::SENTINEL-TITLE 9' }, { id: `${E7}-T99`, origin: g[0].origin }, { id: g[2].id, origin: g[2].origin, interface: 'none' }]
+  const r = await reStep(d, 'r1', calls, { list: () => [titled(1), titled(2), titled(3)], write })
+  expect(r.out.split('\n').at(-1)).toBe('r1 step listed=3 resolved=3 picked=3 written=2 refused=2 none=1 valid=1 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=1')
+  const given = [...readFileSync(argOf(calls[1], '--prompt'), 'utf8').matchAll(/^- `([0-9a-f]{7}-T\d+)`/gm)].map((m) => m[1])
+  expect(given).toEqual([7, 8, 9].map((n) => `${E7}-T${n}`))
+  expect(jsonAt(join(d, 'r1/step/work/write.reply.md.run.json')).ids).toEqual(given)
+  expect(jsonAt(join(d, 'r1/step/oracle/manifest.json')).map((m) => m.id)).toEqual([given[0], given[2]])
+  // a rerun keeps the ids its record holds, though the step oracle now holds them
+  expect((await reStep(d, 'r1', calls, { list: () => [titled(1), titled(2), titled(3)], write })).out.split('\n').at(-1)).toBe(r.out.split('\n').at(-1))
+  expect(calls).toHaveLength(2)
+})
+
+test('a base with no app is not run and every step check reads precondition there', async () => {
+  const d = reData('re5'), calls = [], grades = []
+  const r = await reStep(d, 'r2', calls, {}, grades, (c, id) => (id.endsWith('-T2') ? 'fail' : 'pass'))
+  const o = join(d, 'r2/step/oracle')
+  // the end alone, again after each round that kept a fix
+  for (const g of grades) expect(g).toEqual([join(d, 'env/re.json'), o, '--at', RE, '--sealed', '--reuse'])
+  const v = jsonAt(join(d, `r2/step/validation-${E7}.json`))
+  expect({ ...v, at: 'x' }).toEqual({ ref: RE, bad: [R0], base: null, at: 'x', stage: 'no app at base', checks: [
+    { id: `${E7}-T1`, ref: 'pass', bad: ['precondition'], base: null, verdict: 'absent-at-base', stage: 'no app at base' },
+    { id: `${E7}-T2`, ref: 'fail', bad: ['precondition'], base: null, verdict: 'broken', stage: 'no app at base' },
+  ] })
+  expect(r.out.split('\n').at(-1)).toMatch(/^r2 step .* valid=0 absent-at-base=1 weak=0 broken=1 error=0 fixer rounds=2 ids=1$/)
+  expect(jsonAt(join(d, 'r2/step.json')).ids).toEqual([`${E7}-T1`])
+  // a grade that throws gives error with its stage
+  const d2 = reData('re5b')
+  const boom = async () => { throw new Error('setup failed at the end\nmore') }
+  const r2 = await withData(d2, () => quiet(() => oracle(['step', join(d2, 'env/re.json'), 'r2'], { agent: reAgent([]), grade: boom })))
+  expect(jsonAt(join(d2, `r2/step/validation-${E7}.json`)).checks.map((x) => [x.verdict, x.stage])).toEqual([['error', 'setup failed at the end'], ['error', 'setup failed at the end']])
+  expect(r2.out.split('\n').at(-1)).toMatch(/ error=2 fixer rounds=0 ids=0$/)
+})
+
+test('a broken step check gets a fixer round and a changed one stays broken', async () => {
+  const d = reData('re6'), calls = [], grades = []
+  const r = await reStep(d, 'r1', calls, { fix: { say: () => 'changed' } }, grades, () => 'broken')
+  expect(r.out.split('\n').at(-1)).toBe('r1 step listed=2 resolved=2 picked=2 written=2 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=2 error=0 fixer rounds=2 ids=0')
+  expect(calls.map((a) => a[1])).toEqual(['steps-r1', 'step-r1', `fix-step-1-r1-${E7}`, `compare-step-1-r1-${E7}`, `fix-step-2-r1-${E7}`, `compare-step-2-r1-${E7}`])
+  expect(grades).toHaveLength(1) // nothing kept: no pass after a round
+  const fixer = calls[2]
+  expect(argOf(fixer, '--out')).toBe(join(d, `r1/step/work/fix-step-1/${E7}.fix.reply.md`))
+  expect(readFileSync(argOf(fixer, '--prompt'), 'utf8')).not.toContain('SENTINEL-STEP') // a fixer never sees the step text
+  for (const f of readdirSync(join(d, 'r1/step/oracle')).filter((f) => f.endsWith('.spec.ts'))) expect(readFileSync(join(d, 'r1/step/oracle', f), 'utf8')).not.toBe('FIXED\n')
+  expect(jsonAt(join(d, 'r1/step/labels.json'))).toEqual({})
+  // a fixed one the comparer calls same is kept and validated again
+  const d2 = reData('re6b'), calls2 = [], grades2 = []
+  const table = (c, id, o) => (readFileSync(join(o, `${id}.spec.ts`), 'utf8') === 'FIXED\n' ? 'valid' : 'broken')
+  const r2 = await reStep(d2, 'r1', calls2, {}, grades2, table)
+  expect(r2.out.split('\n').at(-1)).toMatch(/ valid=2 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=1 ids=2$/)
+  expect(grades2).toHaveLength(2)
+})
+
+test('step prints no title, file or behaviour', async () => {
+  const d = reData('re7'), calls = []
+  const r = await reStep(d, 'r1', calls, { list: () => [titled(1), titled(2), { step: 'S', file: 'x.spec.ts', title: 'SENTINEL-SHARED' }] }, [], (c, id) => (id.endsWith('-T1') ? 'broken' : 'valid'))
+  expect(r.out).not.toContain('SENTINEL')
+  expect(r.out).not.toContain('spec.ts')
+  expect(r.out.split('\n')).toHaveLength(1)
+  expect(r.out).toMatch(LINE)
+  // a lister prompt that changed since its run is refused, and nothing is rewritten
+  writeFileSync(join(d, 'briefs/steps.md'), 'STEPS-BRIEF-2\n')
+  const kept = readFileSync(join(d, 'r1/step.json'), 'utf8')
+  expect(await reStep(d, 'r1', calls)).toEqual({ code: 1, out: 'r1 step refused a run whose prompt differs from the one it ran with' })
+  expect(readFileSync(join(d, 'r1/step.json'), 'utf8')).toBe(kept)
 })
