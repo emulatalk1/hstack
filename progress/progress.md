@@ -2161,3 +2161,59 @@ The controller added the reading gate of the step 5 labellers and raters to the 
 - **`-2` runs.** 5 new ones: s2-02, s2-10, s3-01, s3-06 and s3-07, because none of the 6 first runs made a `Read`. All ended with code 0. Only s2-02's rerun made a `Read` (1). The other four again made none (s2-10, s3-07: 1 `Grep`; s3-06: 2 `Grep`; s3-01: no tool call), and they stand under the rule. Usage of the 5 new runs: input 22, output 3203, cache read 142892, cache write 155315; model claude-opus-5-5; summed run time 59.7 s. With the first batch, the resolver has 12 records in total: 7 first-batch runs and 5 new ones.
 - **Tasks with 0 ids.** The same 4: s1-01, s3-01, s1-06 and s3-07.
 - **Ids changed versus the first run.** 0 in every task. No `step-f2p.json` verdict changed either.
+
+### Task 5
+
+`bun bench/oracle.mjs step <data>/env/real-estate.json <task>` (commit f498b3c) ran for the 14 kept real-estate tasks and p8b, one at a time, each detached with its log in `<data>/logs/step6/task5-<task>.log`, all exit 0, 2026-11-05 08:40:54Z–10:17:46Z (97 min). The briefs `<data>/briefs/steps.md` and `<data>/briefs/step-re.md` were written first (they name no repo, stack, customer or task). Every final line:
+
+```
+p1 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p2 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p3 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p4 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p5 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p6a step listed=4 resolved=4 picked=4 written=4 refused=0 none=0 valid=0 absent-at-base=4 weak=0 broken=0 error=0 fixer rounds=2 ids=4
+p6b step listed=6 resolved=6 picked=6 written=6 refused=0 none=3 valid=1 absent-at-base=2 weak=0 broken=0 error=0 fixer rounds=0 ids=3
+p6c step listed=9 resolved=9 picked=9 written=9 refused=0 none=1 valid=7 absent-at-base=0 weak=1 broken=0 error=0 fixer rounds=1 ids=7
+p7b step listed=14 resolved=7 picked=7 written=7 refused=0 none=4 valid=2 absent-at-base=0 weak=1 broken=0 error=0 fixer rounds=0 ids=2
+p7c step listed=12 resolved=11 picked=11 written=11 refused=0 none=2 valid=0 absent-at-base=1 weak=4 broken=4 error=0 fixer rounds=2 ids=1
+p8a step listed=49 resolved=28 picked=15 written=15 refused=0 none=1 valid=9 absent-at-base=5 weak=0 broken=0 error=0 fixer rounds=0 ids=14
+p8c step listed=40 resolved=30 picked=15 written=15 refused=0 none=3 valid=1 absent-at-base=11 weak=0 broken=0 error=0 fixer rounds=0 ids=12
+p8d step listed=70 resolved=45 picked=15 written=15 refused=0 none=1 valid=5 absent-at-base=7 weak=2 broken=0 error=0 fixer rounds=0 ids=12
+p8e step listed=40 resolved=31 picked=15 written=15 refused=0 none=2 valid=6 absent-at-base=7 weak=0 broken=0 error=0 fixer rounds=0 ids=13
+p8b step listed=41 resolved=33 picked=15 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+```
+
+- **Totals.** listed 285, resolved 204, picked 112, written 97 (refused 0, interface none 17), validated 80: valid 31, absent-at-base 37, weak 8, broken 4, error 0. Scored ids 68 (`step.json` of each task holds them; `candidates` = resolved). Fixer rounds in p6a (2), p6c (1), p7c (2).
+- **Tasks with fewer than 5 ids: 10.** p1, p2, p3, p4, p5 (0: no feature step of the kept groups names a test; a count-only probe of `filter-source.md` finds every test path of p1–p5 outside the feature steps in the plan's Review Focus section (5 lines each; p5 one more in another section), none with a feature or step id, and p5's 3 step lines with a test path among the steps the filter dropped), p8b (0, see below), p6a (4), p6b (3), p7b (2), p7c (1). Tasks with 5 or more: p6c 7, p8a 14, p8c 12, p8d 12, p8e 13.
+- **p8b: writer left no file.** The writer ran (code 0, 1 `Write`, 9 `Read`) and left no manifest and no file in `step/work/write/`; the `-2` rerun (code 0, 2 `Write`) left none in `write-2/` either. Under the rerun rule the second run stands, so p8b has no step oracle and 0 ids. Not rerun; flagged for the controller (p8b's build score for the trial's σ_d comes from its step oracle).
+- **Ids.** Each task's step ids carry its end's prefix and number after the highest of that prefix in every oracle manifest (p7b's start at T3, after step 5's T2; every other prefix had none). No id collides with another manifest.
+- **Grade runs: 24** (p6a 6, p6c 4, the other 7 graded tasks 2 each; no task hit the no-app case, since only p1's base lacks the app file and p1 has no check). Wall clock of the 9 graded tasks minus their agents' run time: 3371 s (56 min) for the 24 runs and the tool around them.
+- **Idempotency.** `step` rerun on p6b: no agent ran, both grades `reused`, the same final line.
+- **pgsnap.** Before and after the batch (`<data>/logs/step6/pgsnap-task5-{before,after}.txt`): equal, 6 databases, no `bench_re`. No `/tmp/hstack-bench/re-grade-*` worktree left.
+
+Usage (sum of every `.run.json` under `<task>/step/`: listers, writers, fixers, comparers; all code 0, model claude-opus-5-5):
+
+| task | runs | input | output | cache read | cache write | agent s |
+|---|---|---|---|---|---|---|
+| p1 | 1 lister | 2 | 95 | 4865 | 11534 | 4 |
+| p2 | 1 lister | 2 | 106 | 3223 | 17044 | 4 |
+| p3 | 1 lister | 2 | 95 | 3223 | 19081 | 3 |
+| p4 | 1 lister | 2 | 162 | 3223 | 20988 | 5 |
+| p5 | 1 lister | 2 | 86 | 3223 | 19376 | 6 |
+| p6a | lister, writer, 2 fixers, 2 comparers | 72 | 25989 | 1039532 | 191427 | 270 |
+| p6b | lister, writer | 32 | 12957 | 629150 | 81289 | 133 |
+| p6c | lister, writer, fixer, comparer | 70 | 31042 | 1682291 | 173690 | 310 |
+| p7b | lister, writer | 22 | 11380 | 211127 | 52190 | 106 |
+| p7c | lister, writer, 2 fixers | 62 | 24442 | 833995 | 141710 | 232 |
+| p8a | lister, writer | 14 | 18799 | 214906 | 101302 | 146 |
+| p8c | lister, writer | 32 | 24170 | 1003075 | 143940 | 202 |
+| p8d | lister, writer | 24 | 26314 | 704464 | 150161 | 203 |
+| p8e | lister, writer | 44 | 28580 | 1802194 | 163157 | 239 |
+| p8b | lister, 2 writers | 36 | 21810 | 955400 | 202758 | 206 |
+| total | 34 | 418 | 226027 | 9093891 | 1489647 | 2070 |
+
+Plus the first p1 lister under the first `steps.md` (record kept in `<data>/logs/step6/task5-first-p1/`): input 2, output 64, cache read 3223, cache write 13043, 6 s. With it: 35 runs, input 420, output 226091, cache read 9097114, cache write 1502690.
+
+- **Incident: the first `steps.md`.** p1's first lister (08:37Z) replied `[]` with no tool call. The brief had no rule for a step that names a test file without a title, so it was amended: such a step names the tests of that file its words describe; open every named test file before replying. p1's step folder was removed (its record kept aside) and p1 ran again under the amended brief, again `[]` with no read; the count-only probe above then showed no kept step of p1–p5 names a test, so `[]` is the right reply there.
+- **Note.** grade prints the product's setup output (install, seed) on stdout before its counts lines; the step line is the last line before the exit.
