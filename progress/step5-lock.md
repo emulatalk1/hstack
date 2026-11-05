@@ -1,6 +1,6 @@
 # Step 5 lock
 
-Locked 2026-11-05, after the last task of step 5 had run. `<data>` = `.evidence/bench` (gitignored, in the main checkout). Plan: `docs/plans/2026-11-03-bench-oracles.md` (Tasks 1 to 12). Rulings: prereg section 7.1, rulings 1-16 of the plan, the user's decisions of 2026-11-03, and the controller rulings listed below. The external tasks are the 24 rows of the live `<data>/ext/sample.tsv`; `progress/step5/sample.tsv` and `progress/step5/walk.tsv` are byte-identical copies (`cmp`). The real-estate tasks are p1, p2, p3, p4, p5, p6a, p6b, p6c, p7b, p7c, p8a, p8c, p8d and p8e. Every count here comes from the tools' printed lines (`bun bench/oracle.mjs labels` and `queue`, run again at the lock; `sources/labels.tsv` and `step9/*` had the same SHA-256 before and after), from validation verdicts, from `labels.json` bucket counts, from `agreement.json` numbers, from `moves.json` and from run records. A counting script (`/tmp/t12/count.mjs`) read the oracle manifests and printed only counts. Nothing here was read from an oracle file, a check file, an input, a sheet, a prompt, a reply, a `classify-*.json` label, a step 9 row, `ext/sealed/`, `ext/raw/` or `heldout/`. Those files are only hashed.
+Locked 2026-11-05, after the last task of step 5 had run. `<data>` = `.evidence/bench` (gitignored, in the main checkout). Plan: `docs/plans/2026-11-03-bench-oracles.md` (Tasks 1 to 12). Rulings: prereg section 7.1, rulings 1-16 of the plan, the user's decisions of 2026-11-03, and the controller rulings listed below. Rulings 1-16 are registered in prereg section 7.1, in the paragraph "Rulings registered before the oracles (step 5)". The external tasks are the 24 rows of the live `<data>/ext/sample.tsv`; `progress/step5/sample.tsv` and `progress/step5/walk.tsv` are byte-identical copies (`cmp`). The real-estate tasks are p1, p2, p3, p4, p5, p6a, p6b, p6c, p7b, p7c, p8a, p8c, p8d and p8e. Every count here comes from the tools' printed lines (`bun bench/oracle.mjs labels` and `queue`, run again at the lock; `sources/labels.tsv` and `step9/*` had the same SHA-256 before and after), from validation verdicts, from `labels.json` bucket counts, from `agreement.json` numbers, from `moves.json` and from run records. A counting script (`<data>/logs/task12/count.mjs`) read the oracle manifests and printed only counts. Nothing here was read from an oracle file, a check file, an input, a sheet, a prompt, a reply, a `classify-*.json` label, a step 9 row, `ext/sealed/`, `ext/raw/` or `heldout/`. Those files are only hashed.
 
 ## Kept tasks and their checks
 
@@ -16,7 +16,7 @@ How to read the columns:
 - **build**, **requirement** and **disputed cl.** come from `labels.json` and from the disputed lists in `agreement.json`, split rounds included.
 - **κ / raw / AC1 (n)** is the task's first classification round (`agreement.json`).
 
-For every task, written − none − moved out + moved in − split originals + new checks kept = valid + weak + broken + error + absent.
+For every task, written − none − moved out + moved in − split originals + new checks kept + restored originals = valid + weak + broken + error + absent. Split originals include the 8 that were restored, which are added back as restored originals: s2-09 2, s3-01 1 and s3-06 5.
 
 ### Real-estate (set `task-repo`)
 
@@ -108,7 +108,7 @@ Rule (b) is counted now over the agreed sources, and counted again after step 9.
 
 - **p8b1** was `dropped needs outside data` (ruling 8, checked before any label was spent). At 3e630e8, `src/seed/showcase.ts:13` reads `SHOWCASE_DIR` with no default, and the repo holds no `showcase/` folder. p8b is out of scope (trial-only, ruling 1). 14 real-estate tasks remain.
 - **s2-06** (OpenWhispr/openwhispr#2643) was `dropped not servable`. Its 3 serve rounds each failed the base build at a layer step that fetches or verifies the app's desktop runtime. These were recipe mistakes, not network or disk failures. **Replacement:** s2-09, kizuna-ai-lab/sokuji#361 (rank 14). `walk s2 --remove-out` checked 1 candidate. s2-09 was servable in 1 round.
-- **s1-08** (Open-Source-Legal/OpenContracts#2371) was `dropped no valid check`. After the writer rerun it had 5 entries, all `interface: none`. **Replacement:** s1-09, we-promise/sure#4246 (rank 13). `walk s1 --remove-out` checked 2 candidates; fossasia/eventyay#4768 was out with no fail-to-pass test. s1-09 was servable in 1 round and has 4 entries, all `valid`. Its first writer run was killed when its premature start was stopped. The record of that run was discarded (its usage was kept), and the oracle comes from a clean run.
+- **s1-08** (Open-Source-Legal/OpenContracts#2371) was `dropped no valid check`. After the writer rerun it had 5 entries, all `interface: none`. **Replacement:** s1-09, we-promise/sure#4246 (rank 13). `walk s1 --remove-out` checked 2 candidates; fossasia/eventyay#4768 was out with no fail-to-pass test. s1-09 was servable in 1 round. Its 4 entries were all `valid` at their first validation; its table row shows them after the split. Its first writer run was killed when its premature start was stopped. The record of that run was discarded (its usage was kept), and the oracle comes from a clean run.
 - **s2-04** (coder/xum#5191) was `dropped no valid check`. After the writer rerun it had 10 entries, all `interface: none`. **Replacement:** s2-10, coder/xum#6616 (rank 8). `walk s2 --remove-out` checked 2 candidates; coder/xum#7086 was out with no fail-to-pass test. s2-10 reused the repo's serve recipe (rounds=0). It has 8 entries, 3 of them `interface: none`.
 - Each retired id keeps its folder and its hashes below. Kept per stack: s1 8, s2 8, s3 8. No task was `dropped out of memory`, and no external task was `not judged`.
 
@@ -214,7 +214,7 @@ The controller's rulings, in the order they were made, as recorded in the SDD le
   - Every kept task has `oracle/manifest.json` and at least one `validation-*.json`.
   - Every kept task with a scored check has `classify-1.json`, `classify-2.json`, `labels.json` and `agreement.json`: 11 real-estate tasks and 24 external tasks.
   - p5, p7b and p7c have no scored check and were skipped by `classify`, so they have none of the four.
-- **Env files.** A script (`/tmp/t12/env-oracle.mjs`) rewrote the `oracle` field of the 27 external `<data>/env/s*.json` files (24 kept and 3 retired) to `bun /Users/hbchuc/Documents/programing/vibe-code/hstack/bench/ext.mjs oracle-run <task>`.
+- **Env files.** A script (`<data>/logs/task12/env-oracle.mjs`) rewrote the `oracle` field of the 27 external `<data>/env/s*.json` files (24 kept and 3 retired) to `bun /Users/hbchuc/Documents/programing/vibe-code/hstack/bench/ext.mjs oracle-run <task>`.
   - It asserted that every other field is unchanged: `changed 27, already main 0`.
   - s2-03 keeps port 49190.
   - Grading through these files needs the branch merged into the main checkout first.
