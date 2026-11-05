@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick, f2pOf, nextNumber, caseId } from '../bench/lib/oracle.mjs'
 import { diffHunks, oracle } from '../bench/oracle.mjs'
 import { check } from '../bench/input-check.mjs'
+import { taskOf } from '../bench/ext.mjs'
 
 const order = ['p1', 'p2', 'p3']
 
@@ -1325,4 +1326,125 @@ test('score reads the ids from the fix grade when step.json names oracle, and ex
   expect(m2.code).toBe(1)
   expect(m2.out).toContain('x1-01/step.json')
   await expect(withData(d, () => oracle(['score', 'x1-01', 'XYZ']))).rejects.toThrow('usage')
+})
+
+// --- step 6 task 4: an external task's step oracle (ruling 2) ---
+// a task x1-01 whose rows are [id, verdict, origin name, label]; f2p.json in ext/sealed/<slug>/; the brief in ext/briefs/
+const stData = (name, rows, cases) => {
+  const d = clData(name), e = END.slice(0, 7)
+  clTask(d, 'x1-01', END, rows.map(([n, v, o]) => [`${e}-T${n}`, v, { origin: `SENTINEL-FILE.spec.ts::${o}` }]), {})
+  writeFileSync(join(d, 'x1-01/labels.json'), JSON.stringify(Object.fromEntries(rows.filter((r) => r[3]).map(([n, , , l]) => [`${e}-T${n}`, l]))))
+  writeFileSync(join(d, 'ext/briefs/f2p.md'), 'F2P-BRIEF\n')
+  const sealed = join(d, 'ext/sealed', taskOf(join(d, 'ext'), 'x1-01').slug)
+  mkdirSync(sealed, { recursive: true })
+  writeFileSync(join(sealed, 'f2p.json'), JSON.stringify(cases))
+  return d
+}
+// a fake resolver: answers each origin of the prompt's json fence with say(origin) (undefined: left out)
+const resolver = (calls, say = () => 'f2p') => async (args) => {
+  calls.push(args)
+  const out = argOf(args, '--out'), prompt = readFileSync(argOf(args, '--prompt'), 'utf8')
+  const origins = JSON.parse(prompt.match(/````json\n([\s\S]*?)\n````/)[1])
+  writeFileSync(`${out}.run.json`, '{"code":0}')
+  writeFileSync(out, `SENTINEL-REPLY\n${JSON.stringify(origins.map((origin) => ({ origin, verdict: say(origin, args[1]) })).filter((x) => x.verdict))}`)
+  return 0
+}
+const step = (d, calls, say) => withData(d, () => quiet(() => oracle(['step', 'x1-01'], { agent: resolver(calls, say) })))
+const STEP_ROWS = [[1, 'valid', 'adds one', 'build'], [2, 'absent-at-base', 'keeps two', 'build'], [3, 'valid', 'SENTINEL-ASK', 'build'], [4, 'broken', 'adds one', 'build'],
+  [5, 'valid', 'adds one', 'requirement'], [6, 'valid', 'renders six[x]', 'build'], [7, 'valid', 'SENTINEL-ASK', 'requirement'], [8, 'valid', 'SENTINEL-OTHER', undefined]]
+const STEP_CASES = { f2p: ['SENTINEL-FILE.spec.ts::adds one', { classname: 'SENTINEL-CLS', name: 'renders six' }, 'a::SENTINEL-ASK'], p2p: ['SENTINEL-FILE.spec.ts::keeps two', 'b::SENTINEL-ASK'] }
+const tree = (d) => filesIn(d).filter((f) => !f.includes('/work/')).map((f) => [f, readFileSync(f, 'utf8')])
+
+test('external step writes only step.json and step-f2p.json', async () => {
+  const d = stData('st1', STEP_ROWS, STEP_CASES), e = END.slice(0, 7), calls = []
+  const before = new Map(tree(join(d, 'x1-01')))
+  const r = await step(d, calls, () => 'p2p')
+  expect(r.code).toBe(0)
+  const after = tree(join(d, 'x1-01'))
+  for (const [f, text] of before) expect(after.find(([g]) => g === f)?.[1]).toBe(text)
+  expect(after.map(([f]) => f.slice(join(d, 'x1-01').length + 1)).filter((f) => !before.has(join(d, 'x1-01', f))).sort())
+    .toEqual(['f2p.reply.md', 'f2p.reply.md.run.json', 'step-f2p.json', 'step.json'])
+  expect(ls(join(d, 'x1-01/work'))).toEqual(['f2p.prompt.md'])
+  expect(jsonAt(join(d, 'x1-01/step.json'))).toEqual({ oracle: 'oracle', ids: queuePick([`${e}-T1`, `${e}-T6`], 15, SEED), candidates: 2, seed: SEED })
+  // every scored check of every label (T4 is broken), in manifest order
+  expect(jsonAt(join(d, 'x1-01/step-f2p.json'))).toEqual([[1, 'exact', 'f2p'], [2, 'exact', 'p2p'], [3, 'resolver', 'p2p'], [5, 'exact', 'f2p'], [6, 'segment', 'f2p'], [7, 'resolver', 'p2p'], [8, 'resolver', 'p2p']]
+    .map(([n, by, verdict]) => ({ id: `${e}-T${n}`, by, verdict })))
+  // one resolver at the end, read only, given the brief, the ask origins and both case lists, never a check
+  expect(calls).toHaveLength(1)
+  const a = calls[0]
+  expect(a[0]).toBe(join(d, 'env/x1-01.json'))
+  expect(a[1]).toBe('f2p-x1-01')
+  expect(argOf(a, '--at')).toBe('e')
+  expect(argOf(a, '--tools')).toBe('Read,Glob,Grep')
+  expect(a).not.toContain('--settings')
+  const prompt = readFileSync(argOf(a, '--prompt'), 'utf8')
+  expect(prompt).toStartWith('F2P-BRIEF\n')
+  expect(JSON.parse(prompt.match(/````json\n([\s\S]*?)\n````/)[1])).toEqual(['SENTINEL-FILE.spec.ts::SENTINEL-ASK', 'SENTINEL-FILE.spec.ts::SENTINEL-OTHER'])
+  for (const c of ['SENTINEL-CLS::renders six', 'b::SENTINEL-ASK', 'SENTINEL-FILE.spec.ts::keeps two']) expect(prompt).toContain(c)
+  expect(prompt).not.toContain('SENTINEL-BEHAVIOUR')
+  expect(prompt).not.toContain(`${e}-T`)
+  expect(jsonAt(join(d, 'x1-01/f2p.reply.md.run.json')).promptSha).toHaveLength(64)
+})
+
+test('step keeps only build-labelled scored checks whose origin is f2p', async () => {
+  const d = stData('st2', STEP_ROWS, STEP_CASES), e = END.slice(0, 7), calls = []
+  const r = await step(d, calls, (o) => (o.endsWith('SENTINEL-ASK') ? 'f2p' : 'unknown'))
+  // T3 (build, resolver f2p) joins T1 and T6; T5 and T7 are f2p but not build, T2 is p2p, T4 is not scored
+  expect(r).toEqual({ code: 0, out: 'x1-01 step candidates=3 f2p=5 p2p=1 unknown=1 ids=3 resolver=ran' })
+  expect(jsonAt(join(d, 'x1-01/step.json')).ids.sort()).toEqual([`${e}-T1`, `${e}-T3`, `${e}-T6`])
+})
+
+test('the resolver runs only for ask origins and unknown is out', async () => {
+  // no ask: no resolver
+  const d0 = stData('st3', [[1, 'valid', 'adds one', 'build'], [2, 'valid', 'keeps two', 'build']], STEP_CASES), calls = []
+  expect(await step(d0, calls)).toEqual({ code: 0, out: 'x1-01 step candidates=1 f2p=1 p2p=1 unknown=0 ids=1 resolver=none' })
+  expect(calls).toHaveLength(0)
+  expect(existsSync(join(d0, 'x1-01/work'))).toBe(false)
+  // a reply that misses an origin is run once more (-2), and the rerun stands: what it still misses, or answers out of
+  // the three verdicts, is unknown and out
+  const d = stData('st4', STEP_ROWS, STEP_CASES), e = END.slice(0, 7)
+  const say = (o, label) => (o.endsWith('SENTINEL-ASK') ? (label.endsWith('-2') ? 'SENTINEL-BAD' : 'f2p') : undefined)
+  expect((await step(d, calls, say)).out).toBe('x1-01 step candidates=2 f2p=3 p2p=1 unknown=3 ids=2 resolver=ran')
+  expect(calls.map((a) => [a[1], argOf(a, '--out')])).toEqual([['f2p-x1-01', join(d, 'x1-01/f2p.reply.md')], ['f2p-x1-01-2', join(d, 'x1-01/f2p-2.reply.md')]])
+  expect(jsonAt(join(d, 'x1-01/step-f2p.json')).filter((x) => x.by === 'resolver')).toEqual([3, 7, 8].map((n) => ({ id: `${e}-T${n}`, by: 'resolver', verdict: 'unknown' })))
+  // a run whose record exists is reused; one whose prompt differs is refused and nothing is rewritten
+  expect((await step(d, calls, say)).out).toBe('x1-01 step candidates=2 f2p=3 p2p=1 unknown=3 ids=2 resolver=reused')
+  expect(calls).toHaveLength(2)
+  const kept = readFileSync(join(d, 'x1-01/step.json'), 'utf8')
+  writeFileSync(join(d, 'ext/briefs/f2p.md'), 'F2P-BRIEF-2\n')
+  expect(await step(d, calls, say)).toEqual({ code: 1, out: 'x1-01 step refused a run whose prompt differs from the one it ran with' })
+  expect(calls).toHaveLength(2)
+  expect(readFileSync(join(d, 'x1-01/step.json'), 'utf8')).toBe(kept)
+  // a task of tasks.json is Task 5's; the two-argument form is not built yet
+  await withData(d, () => expect(oracle(['step', 'task.json', 'r1'], { agent: resolver(calls) })).rejects.toThrow('not built yet'))
+})
+
+test('ids are the first 15 by seed', async () => {
+  const rows = Array.from({ length: 20 }, (_, i) => [i + 1, 'valid', 'adds one', 'build'])
+  const d = stData('st5', rows, STEP_CASES), e = END.slice(0, 7), calls = []
+  expect((await step(d, calls)).out).toBe('x1-01 step candidates=20 f2p=20 p2p=0 unknown=0 ids=15 resolver=none')
+  expect(jsonAt(join(d, 'x1-01/step.json'))).toEqual({ oracle: 'oracle', ids: queuePick(rows.map(([n]) => `${e}-T${n}`), 15, SEED), candidates: 20, seed: SEED })
+})
+
+test('a rerun after labels.json changes reuses the resolver record and changes only ids', async () => {
+  const d = stData('st6', STEP_ROWS, STEP_CASES), e = END.slice(0, 7), calls = []
+  await step(d, calls, () => 'f2p')
+  const f2p = readFileSync(join(d, 'x1-01/step-f2p.json'), 'utf8'), first = jsonAt(join(d, 'x1-01/step.json'))
+  expect(first.ids.sort()).toEqual([`${e}-T1`, `${e}-T3`, `${e}-T6`])
+  // step 9 moves T7 to build and T1 to requirement
+  writeFileSync(join(d, 'x1-01/labels.json'), JSON.stringify({ ...jsonAt(join(d, 'x1-01/labels.json')), [`${e}-T7`]: 'build', [`${e}-T1`]: 'requirement' }))
+  const r = await step(d, calls, () => 'p2p')
+  expect(r.out).toBe('x1-01 step candidates=3 f2p=6 p2p=1 unknown=0 ids=3 resolver=reused')
+  expect(calls).toHaveLength(1)
+  expect(readFileSync(join(d, 'x1-01/step-f2p.json'), 'utf8')).toBe(f2p)
+  expect(jsonAt(join(d, 'x1-01/step.json')).ids.sort()).toEqual([`${e}-T3`, `${e}-T6`, `${e}-T7`])
+})
+
+test('step prints no origin or case name', async () => {
+  const d = stData('st7', STEP_ROWS, STEP_CASES), calls = []
+  for (const say of [() => 'f2p', () => 'SENTINEL-VERDICT']) {
+    const r = await step(d, calls, say)
+    expect(r.out).not.toContain('SENTINEL')
+    expect(r.out).toMatch(/^x1-01 step candidates=\d+ f2p=\d+ p2p=\d+ unknown=\d+ ids=\d+ resolver=(ran|reused|none)$/)
+  }
 })

@@ -9,13 +9,13 @@ import { appendWalk, parseRunner, removeRecorded, taskOf } from './ext.mjs'
 import { grade as gradeCmd } from './grade.mjs'
 import { okBashCommands, okToolInputs } from './lib/agent.mjs'
 import { check } from './input-check.mjs'
-import { agreement, hunkOwners, introducer, mergeLabels, nextNumber, queuePick, usable } from './lib/oracle.mjs'
+import { agreement, caseId, f2pOf, hunkOwners, introducer, mergeLabels, nextNumber, queuePick, usable } from './lib/oracle.mjs'
 import { isTestPath } from './lib/replay.mjs'
 import { fixMatches, floorScore, verdict } from './lib/score.mjs'
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | validate <task.json> <task> | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | split [<task.json>] <task> | queue | score <task> <sha>'
+const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | validate <task.json> <task> | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | split [<task.json>] <task> | queue | score <task> <sha> | step <external task>'
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
@@ -1024,6 +1024,55 @@ async function queue() {
   return stop.length ? 3 : 0
 }
 
+// --- step (ruling 2 of step 6): an external task's step oracle. Prints counts only ---
+const F2P = ['f2p', 'p2p', 'unknown']
+// the resolver's verdict per origin it answered validly (an origin listed twice is not); ok when it answered each
+function f2pReply(text, origins) {
+  let arr = null
+  try { arr = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)) } catch {}
+  if (!Array.isArray(arr)) return { got: new Map(), ok: false }
+  const seen = new Map()
+  for (const e of arr) seen.set(e?.origin, (seen.get(e?.origin) ?? 0) + 1)
+  const got = new Map(arr.filter((e) => origins.includes(e?.origin) && seen.get(e.origin) === 1 && F2P.includes(e.verdict)).map((e) => [e.origin, e.verdict]))
+  return { got, ok: got.size === origins.length }
+}
+
+// the origin of every scored check (whatever its label, so the resolver's prompt does not move with labels.json) by f2pOf,
+// and the `ask` ones by one sealed resolver at the end; the build-labelled f2p ones are the candidates
+async function step(c, agent) {
+  if (!c.ext) throw new Error(`${c.task}: a real-estate step oracle is not built yet`)
+  const ext = join(c.data, 'ext'), t = taskOf(ext, c.task), seed = readJson(join(ext, 'groups.json'))?.seed
+  if (!seed) throw new Error('no seed in ext/groups.json')
+  const cases = readJson(join(ext, 'sealed', t.slug, 'f2p.json')), labels = readJson(join(c.dir, 'labels.json'))
+  if (!cases || !labels) { console.log(`${c.task} step refused: no ${cases ? 'labels.json' : 'f2p.json'}`); return 1 }
+  const [f2p, p2p] = [cases.f2p ?? [], cases.p2p ?? []].map((l) => l.map(caseId))
+  const scored = clScored(c), by = new Map(scored.map((e) => [e.id, f2pOf(e.origin, f2p, p2p)]))
+  const asks = [...new Set(scored.filter((e) => by.get(e.id).verdict === 'ask').map((e) => e.origin))].sort()
+  let resolver = 'none', got = new Map()
+  if (asks.length) {
+    const text = `${readFileSync(join(ext, 'briefs/f2p.md'), 'utf8').trimEnd()}\n\n## The tests (${asks.length})\n\n${fence(JSON.stringify(asks, null, 2), 'json')}\n` +
+      `## The fail-to-pass cases (${f2p.length})\n\n${fence(f2p.join('\n'))}\n## The pass-to-pass cases (${p2p.length})\n\n${fence(p2p.join('\n'))}`
+    resolver = 'reused'
+    // a reply that does not answer every origin is run once more (-2), and the rerun stands
+    for (const n of ['', '-2']) {
+      const out = join(c.dir, `f2p${n}.reply.md`)
+      const r = await once(agent, { prompt: join(c.dir, 'work', 'f2p.prompt.md'), text, out }, [c.taskFile, `f2p-${c.task}${n}`, '--at', t.end, '--tools', 'Read,Glob,Grep'])
+      if (r.stale) { console.log(`${c.task} step refused a run whose prompt differs from the one it ran with`); return 1 }
+      if (r.how === 'ran') resolver = 'ran'
+      const res = f2pReply(existsSync(out) ? readFileSync(out, 'utf8') : '', asks)
+      got = res.got
+      if (res.ok && r.code === 0) break
+    }
+  }
+  const decided = scored.map((e) => { const m = by.get(e.id); return m.verdict === 'ask' ? { id: e.id, by: 'resolver', verdict: got.get(e.origin) ?? 'unknown' } : { id: e.id, ...m } })
+  const candidates = decided.filter((x) => x.verdict === 'f2p' && labels[x.id] === 'build').map((x) => x.id), ids = queuePick(candidates, 15, seed)
+  writeFileSync(join(c.dir, 'step-f2p.json'), JSON.stringify(decided, null, 2) + '\n')
+  writeFileSync(join(c.dir, 'step.json'), JSON.stringify({ oracle: 'oracle', ids, candidates: candidates.length, seed }, null, 2) + '\n')
+  const n = (v) => decided.filter((x) => x.verdict === v).length
+  console.log(`${c.task} step candidates=${candidates.length} f2p=${n('f2p')} p2p=${n('p2p')} unknown=${n('unknown')} ids=${ids.length} resolver=${resolver}`)
+  return 0
+}
+
 // split's validation: this file's validate on the task, with split's options (refs, only, tag)
 const validateCmd = (inj) => async (a, opts = {}) => validate(await (a.length === 2 ? taskCtx(a[1], a[0]) : taskCtx(a[0])), { grade: inj.grade ?? gradeCmd, agent: inj.agent ?? sealedAgent, ...opts })
 
@@ -1061,6 +1110,7 @@ export async function oracle(args, inj = {}) {
   }
   if (cmd === 'queue' && args.length === 1) return queue()
   if (cmd === 'score' && taskPath && rest.length === 1) return scoreCmd(taskPath, rest[0])
+  if (cmd === 'step' && taskPath && rest.length <= 1) return step(rest.length ? clCtx(rest[0], taskPath) : clCtx(taskPath), agent)
   throw new Error(USAGE)
 }
 
