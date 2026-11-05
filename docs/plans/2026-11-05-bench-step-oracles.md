@@ -4,6 +4,8 @@ title: "Step oracle plan"
 description: "Prereg step 6: reclassify p8b with its interface sheet, record the H1 floor-rule decision with its numbers, and build the step oracle every task's H1 build score then comes from (a filter of the external oracles, new black-box checks for the real-estate tasks), with the one scoring rule that steps 7, 8, 11, 13 and 14 reuse."
 status: draft
 generated: { by: claude-code/2.1.310, at: "2026-11-05T12:15:00+07:00" }
+verified:
+  - { by: claude-code-advisor/2.1.310, at: "2026-11-05T12:40:00+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
@@ -199,7 +201,7 @@ Expected size: no Docker. Real-estate: 15 tasks, each a lister, a writer, at mos
 
 - [ ] **Step 1:** Write `sample-7.1-step.tsv` (`set task id`): `queuePick` of 10 over every scored real-estate step id of the 14 kept tasks, by a script in `<data>/logs/step6/` that prints only the count.
 - [ ] **Step 2: Check:** every kept task and p8b has `step.json`; real-estate ones have `step/validation-<end7>.json`; the step 5 lock's hashes of `oracle/`, `labels.json`, `agreement.json`, `validation-*.json` and `step9/*` (all but p8b's files and the two new ones) still match; `git status --short bench` empty; no Docker call was made.
-- [ ] **Step 3: Write** `progress/step6-lock.md`: the floor-rule decision and its numbers; p8b's reclassification (classified, build, requirement, partly, disputed, κ/raw/AC1 beside section 14's); per external task candidates, f2p, out, ids; per real-estate task listed, resolved, picked, written, none, valid, absent-at-base, weak, broken, error, ids; per set the median of step ids per task and the tasks with none; H1's N; the step 9 additions; the probe scripts; `shasum -a 256` of every `step.json`, `step-f2p.json`, `step/` file, brief and step 9 file (paths relative to `<data>`); the `bench/` commit.
+- [ ] **Step 3: Write** `progress/step6-lock.md`: the floor-rule decision and its numbers; p8b's reclassification (classified, build, requirement, partly, disputed, κ/raw/AC1 beside section 14's); per external task candidates, f2p, out, ids; per real-estate task listed, resolved, picked, written, none, valid, absent-at-base, weak, broken, error, ids; per set the median of step ids per task, the tasks with none and the tasks whose step checks are all `low`; H1's N; the step 9 additions; the probe scripts; `shasum -a 256` of every `step.json`, `step-f2p.json`, `step/` file, brief and step 9 file (paths relative to `<data>`); the `bench/` commit.
 - [ ] **Step 4: Record** usage in `progress/progress.md`; **Creation** line in `docs/log.md`; commit `git commit -m "Lock the step oracles of step 6 with the floor-rule decision and hashes"`.
 
 ## Known limits
