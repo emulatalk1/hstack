@@ -860,41 +860,83 @@ async function split(c, agent, validate) {
   const run = async (opts) => { try { const code = await validate(args, opts); return code === 0 ? null : `exit ${code}` } catch (err) { return String(err?.message ?? err).split('\n')[0] } }
   const failed = (why) => { console.log(`${c.task} split validate failed (${why}); the new checks are not classified`); return 1 }
   const done = new Set(agr.splitDone ?? [])
+  // the oracle files a split changed: a grouped original's shared file (the splitter rewrote it; `in/` holds it as it was
+  // before), else the new checks' own files (`out/` holds them)
+  const isSplit = (x) => agr.partly.includes(x.id) && (x.split_into || x.restored_from_split)
+  const grouped = (x, m) => x.file !== undefined && m.some((y) => y.id !== x.id && y.file === x.file)
+  const work = (x) => join(c.dir, 'work', `split-${x.id}`)
+  const num = (x) => Math.min(...halvesOf(x).map((id) => Number(id.split('-T').at(-1))))
+  const halfFiles = (x, m) => halvesOf(x).map((id) => { const h = m.find((y) => y.id === id); return h?.file ?? readdirSync(join(work(x), 'out')).find((f) => f.startsWith(`${id}.`)) }).filter(Boolean)
+  // put the files of these splits back as the splits left them (the latest split of a shared file holds every split of it)
+  const reapply = (xs, m) => {
+    for (const x of xs.filter((y) => !grouped(y, m))) for (const f of halfFiles(x, m)) { mkdirSync(dirname(join(o, f)), { recursive: true }); copyFileSync(join(work(x), 'out', f), join(o, f)) }
+    for (const f of new Set(xs.filter((y) => grouped(y, m)).map((y) => y.file))) {
+      const last = m.filter((y) => isSplit(y) && y.file === f).sort((a, b) => num(b) - num(a))[0]
+      copyFileSync(join(work(last), 'out', f), join(o, f))
+    }
+  }
+  // take these splits' files out of the oracle; a shared file goes back to the version before its first split
+  const revert = (xs, m) => {
+    for (const x of xs.filter((y) => !grouped(y, m))) for (const f of halfFiles(x, m)) rmSync(join(o, f), { force: true })
+    for (const f of new Set(xs.filter((y) => grouped(y, m)).map((y) => y.file))) {
+      const first = m.filter((y) => isSplit(y) && y.file === f).sort((a, b) => num(a) - num(b))[0]
+      copyFileSync(join(work(first), 'in', f), join(o, f))
+    }
+  }
+  const reverted = (x, m) => grouped(x, m)
+    ? (() => { const first = m.filter((y) => isSplit(y) && y.file === x.file).sort((a, b) => num(a) - num(b))[0]; return readFileSync(join(o, x.file)).equals(readFileSync(join(work(first), 'in', x.file))) })()
+    : halfFiles(x, m).every((f) => !existsSync(join(o, f)))
   let man = clManifest(c)
-  const todo = man.filter((x) => agr.partly.includes(x.id) && (x.split_into || x.restored_from_split) && !done.has(x.id))
+  const todo = man.filter((x) => isSplit(x) && !done.has(x.id))
+  let judged = [], restore = []
   if (todo.length) {
-    // an earlier restore is undone first, so its new checks are validated and fixed like the others
-    const undo = new Set(todo.filter((x) => x.restored_from_split).map((x) => x.id)), back = new Set(todo.filter((x) => undo.has(x.id)).flatMap(halvesOf))
-    if (undo.size) {
+    // an earlier restore is undone first (its files and entries put back), so its new checks are validated and fixed too
+    const undo = todo.filter((x) => x.restored_from_split), undoIds = new Set(undo.map((x) => x.id)), back = new Set(undo.flatMap(halvesOf))
+    if (undo.length) {
+      reapply(undo, man)
       man = man.map((x) => {
-        if (undo.has(x.id)) { const { restored_from_split, ...rest } = x; return { ...rest, dropped: true, split_into: restored_from_split } }
+        if (undoIds.has(x.id)) { const { restored_from_split, ...rest } = x; return { ...rest, dropped: true, split_into: restored_from_split } }
         if (back.has(x.id)) { const { dropped, drop_reason, ...rest } = x; return rest }
         return x
       })
       writeManifest(man)
-      writeLabels(c, {}, [...undo])
+      writeLabels(c, {}, [...undoIds])
     }
     const why = await run({ refs: [...new Set(todo.map((x) => x.fix_commit))], only: todo.flatMap(halvesOf), tag: 'split-' })
     if (why) return failed(why)
     man = clManifest(c)
     const v = (x, id) => clVerdict(c, { ...x, id })
     // a new check with no verdict, or `error`, is not judged: its original is neither restored nor decided
-    const judged = man.filter((x) => todo.some((t) => t.id === x.id) && halvesOf(x).every((id) => ![undefined, 'error'].includes(v(x, id))))
-    // 6.3 (controller ruling): a split none of whose new checks is scored did not split the check: the original comes
-    // back, is validated again in the oracle as it is then (its verdict), goes to requirement, and its new checks are dropped
-    const restore = judged.filter((x) => halvesOf(x).every((id) => !CL_SCORED.includes(v(x, id))))
+    judged = man.filter((x) => todo.some((t) => t.id === x.id) && halvesOf(x).every((id) => ![undefined, 'error'].includes(v(x, id))))
+    // 6.3 (controller ruling): a split none of whose new checks is scored did not split the check. A shared file can only
+    // go back whole, so a split in a file with a split that stays is not restored (and not decided)
+    const none = judged.filter((x) => halvesOf(x).every((id) => !CL_SCORED.includes(v(x, id))))
+    const stays = man.filter((x) => isSplit(x) && x.split_into && !none.includes(x))
+    restore = none.filter((x) => !grouped(x, man) || !stays.some((y) => y.file === x.file))
+    if (none.length > restore.length) console.log(`${c.task} split restore blocked for ${none.length - restore.length}: a shared file holds a split that stays`)
+    judged = judged.filter((x) => !none.includes(x) || restore.includes(x))
     if (restore.length) {
       const gone = new Set(restore.flatMap(halvesOf)), ids = new Set(restore.map((x) => x.id))
-      writeManifest(man.map((x) => {
+      man = man.map((x) => {
         if (ids.has(x.id)) { const { dropped, split_into, ...rest } = x; return { ...rest, restored_from_split: split_into } }
         return gone.has(x.id) ? { ...x, dropped: true, drop_reason: 'split gave no scored half' } : x
-      }))
+      })
+      writeManifest(man)
       writeLabels(c, Object.fromEntries(restore.map((x) => [x.id, 'requirement'])), [...gone])
-      const again = await run({ refs: [...new Set(restore.map((x) => x.fix_commit))] })
-      if (again) return failed(again)
       tally.restored = restore.length
     }
-    // decided: judged, and a restored original has its own verdict again
+  }
+  // every restored original's files out of the oracle (an earlier restore left them in), then the original validated
+  // again in the oracle as it is, so it has its own verdict (`grade --validate` writes only the checks not dropped)
+  const settle = man.filter((x) => x.restored_from_split && !reverted(x, man))
+  if (settle.length) {
+    revert(settle, man)
+    const again = await run({ refs: [...new Set(settle.map((x) => x.fix_commit))] })
+    if (again) return failed(again)
+    tally.settled = settle.length
+  }
+  if (todo.length) {
+    // decided: judged, and a restored original has a verdict of its own other than `error`
     const decided = judged.filter((x) => !restore.includes(x) || ![undefined, 'error'].includes(clVerdict(c, x)))
     agr.splitDone = [...done, ...decided.map((x) => x.id)]
     writeFileSync(join(c.dir, 'agreement.json'), JSON.stringify(agr, null, 2) + '\n')
@@ -914,7 +956,7 @@ async function split(c, agent, validate) {
     writeFileSync(join(c.dir, 'agreement.json'), JSON.stringify({ ...agr, split: all[0], splitRounds: all }, null, 2) + '\n')
   }
   const v = Object.values(r?.labels ?? {})
-  console.log(`${c.task} split partly=${agr.partly.length} split=${tally.split} failed=${tally.failed} restored=${tally.restored ?? 0} stale=${tally.stale} new=${made.length} classified=${r?.ids.length ?? 0} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length + (r?.partly.length ?? 0)} disputed=${r?.disputed.length ?? 0}`)
+  console.log(`${c.task} split partly=${agr.partly.length} split=${tally.split} failed=${tally.failed} restored=${tally.restored ?? 0} settled=${tally.settled ?? 0} stale=${tally.stale} new=${made.length} classified=${r?.ids.length ?? 0} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length + (r?.partly.length ?? 0)} disputed=${r?.disputed.length ?? 0}`)
   return tally.stale ? 1 : 0
 }
 

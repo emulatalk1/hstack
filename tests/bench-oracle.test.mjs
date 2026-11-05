@@ -995,7 +995,7 @@ test('agreed partly goes to split and disputed stays unlabelled', async () => {
   expect(jsonAt(join(d, 'r1/labels.json'))).toEqual({ [id(1)]: 'build', [id(2)]: 'requirement' })
   const s = await withData(d, () => quiet(() => oracle(['split', task, 'r1'], { agent, validate })))
   expect(s.code).toBe(0)
-  expect(s.out).toBe('r1 split partly=2 split=1 failed=1 restored=0 stale=0 new=2 classified=2 build=1 requirement=1 disputed=0')
+  expect(s.out).toBe('r1 split partly=2 split=1 failed=1 restored=0 settled=0 stale=0 new=2 classified=2 build=1 requirement=1 disputed=0')
   expect(vcalls).toEqual([[task, 'r1']])
   const splits = calls.filter((a) => a[1].startsWith('split-'))
   expect(splits.map((a) => a[1])).toEqual([`split-r1-${id(3)}`, `split-r1-${id(5)}`].map((x) => x.toLowerCase())) // an agent label is lower case
@@ -1040,7 +1040,7 @@ test('split validates new checks that have no verdict and fails when validate th
   const vcalls = []
   const validate = async (a) => { vcalls.push(a); const v = join(d, 'r1', `validation-${f}.json`), x = jsonAt(v); writeFileSync(v, JSON.stringify({ ...x, checks: [...x.checks, { id: id(2), verdict: 'valid' }, { id: id(3), verdict: 'valid' }] })); return 0 }
   const again = await withData(d, () => quiet(() => oracle(['split', task, 'r1'], { agent, validate })))
-  expect(again).toEqual({ code: 0, out: 'r1 split partly=1 split=0 failed=0 restored=0 stale=0 new=2 classified=2 build=0 requirement=2 disputed=0' })
+  expect(again).toEqual({ code: 0, out: 'r1 split partly=1 split=0 failed=0 restored=0 settled=0 stale=0 new=2 classified=2 build=0 requirement=2 disputed=0' })
   expect(vcalls).toEqual([[task, 'r1']])
   expect(await withData(d, () => quiet(() => oracle(['split', task, 'r1'], { agent, validate: async () => 4 })))).toMatchObject({ code: 0 }) // all validated: not called
   expect(calls.filter((a) => a[1].startsWith('split-'))).toHaveLength(1)
@@ -1070,13 +1070,14 @@ test('a split none of whose new checks is scored restores the original as requir
   // T1 -> T3 broken, T4 weak: no scored half, restored. T2 -> T5 error, T6 broken: not judged, neither restored nor decided
   verdicts = { [id(3)]: 'broken', [id(4)]: 'weak', [id(5)]: 'error', [id(6)]: 'broken' }
   const s = await go()
-  expect(s.out.split('\n').at(-1)).toBe('x1-01 split partly=2 split=2 failed=0 restored=1 stale=0 new=2 classified=0 build=0 requirement=0 disputed=0')
+  expect(s.out.split('\n').at(-1)).toBe('x1-01 split partly=2 split=2 failed=0 restored=1 settled=1 stale=0 new=2 classified=0 build=0 requirement=0 disputed=0')
   // the broken new checks had 2 fixer rounds of their own (label fix-split-<round>); the original was graded again
   expect(calls.filter((a) => a[1].startsWith('fix-')).map((a) => a[1])).toEqual([`fix-split-1-x1-01-${e}`, `fix-split-2-x1-01-${e}`])
   expect(existsSync(join(d, 'x1-01/work/fix-split-1'))).toBe(true)
   expect(gcalls).toHaveLength(2)
   const byId = () => new Map(jsonAt(join(d, 'x1-01/oracle/manifest.json')).map((x) => [x.id, x]))
   expect(byId().get(id(1))).toMatchObject({ restored_from_split: [id(3), id(4)] })
+  for (const n of [3, 4]) expect(existsSync(join(d, 'x1-01/oracle', `${id(n)}.ts`))).toBe(false) // its new checks' files left the oracle
   expect(byId().get(id(1)).dropped).toBeUndefined()
   for (const n of [3, 4]) expect(byId().get(id(n))).toMatchObject({ dropped: true, drop_reason: 'split gave no scored half' })
   expect(jsonAt(join(d, 'x1-01', `validation-${e}.json`)).checks.find((x) => x.id === id(1)).verdict).toBe('valid') // its own verdict again
@@ -1085,19 +1086,47 @@ test('a split none of whose new checks is scored restores the original as requir
   // T5 now validates: T2's split stands and its scored half is classified; T1 is decided and left alone
   verdicts = { [id(5)]: 'valid', [id(6)]: 'broken' }
   const t = await go()
-  expect(t.out.split('\n').at(-1)).toBe('x1-01 split partly=2 split=0 failed=0 restored=0 stale=0 new=2 classified=1 build=0 requirement=1 disputed=0')
+  expect(t.out.split('\n').at(-1)).toBe('x1-01 split partly=2 split=0 failed=0 restored=0 settled=0 stale=0 new=2 classified=1 build=0 requirement=1 disputed=0')
   expect(jsonAt(join(d, 'x1-01/agreement.json')).splitDone).toEqual([id(1), id(2)])
   // an earlier restore whose split now has a scored half is undone: the split stands and the original leaves the labels
   const a = jsonAt(join(d, 'x1-01/agreement.json'))
   writeFileSync(join(d, 'x1-01/agreement.json'), JSON.stringify({ ...a, splitDone: [id(2)] }))
   verdicts = { [id(3)]: 'absent-at-base', [id(4)]: 'weak', [id(6)]: 'broken' }
   const u = await go()
-  expect(u.out.split('\n').at(-1)).toBe('x1-01 split partly=2 split=0 failed=0 restored=0 stale=0 new=4 classified=1 build=0 requirement=1 disputed=0')
+  expect(u.out.split('\n').at(-1)).toBe('x1-01 split partly=2 split=0 failed=0 restored=0 settled=0 stale=0 new=4 classified=1 build=0 requirement=1 disputed=0')
   expect(byId().get(id(1))).toMatchObject({ dropped: true, split_into: [id(3), id(4)] })
   expect(byId().get(id(1)).restored_from_split).toBeUndefined()
   for (const n of [3, 4]) expect(byId().get(id(n)).dropped).toBeUndefined()
+  for (const n of [3, 4]) expect(existsSync(join(d, 'x1-01/oracle', `${id(n)}.ts`))).toBe(true) // and their files came back
   expect(jsonAt(join(d, 'x1-01/labels.json'))).toEqual({ [id(5)]: 'requirement', [id(3)]: 'requirement' })
   expect(jsonAt(join(d, 'x1-01/agreement.json')).splitRounds.map((x) => [x.name, x.ids])).toEqual([['classify-split', [id(5)]], ['classify-split2', [id(3)]]])
+})
+
+test('restoring a split of a shared file puts the file back as it was before the split', async () => {
+  const d = clData('cl14'), e = END.slice(0, 7), id = (n) => `${e}-T${n}`, calls = []
+  writeFileSync(join(d, 'ext/sample.tsv'), `task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend\nx1-01\tx1\t1\t1\town/rp#7\tu\t7\t6\t${'b'.repeat(40)}\t${END}\n`)
+  for (const b of ['fix.md', 'compare.md']) writeFileSync(join(d, 'briefs', b), 'BRIEF\n')
+  clTask(d, 'x1-01', END, [[id(1), 'valid', { file: 'checks/group.ts' }], [id(2), 'valid', { file: 'checks/group.ts' }]], { 'checks/group.ts': 'OLD\n', 'runner.json': '{"layer":[],"run":"r"}' })
+  const split = (ids) => ({ 'manifest.json': JSON.stringify(ids.map((x) => ({ id: x, behaviour: 'b', severity: 'low', file: 'checks/group.ts' }))) })
+  const base = fake(calls, { rate: (r, x) => (x === id(1) ? 'partly' : 'traceable'), split })
+  const agent = async (args, opts) => {
+    if (/^(fix|compare)-/.test(args[1])) { writeFileSync(`${argOf(args, '--out')}.run.json`, '{"code":0}'); writeFileSync(argOf(args, '--out'), 'done'); return 0 }
+    if (args[1].startsWith('split-')) { mkdirSync(join(argOf(args, '--out'), '..', 'out/checks'), { recursive: true }); writeFileSync(join(argOf(args, '--out'), '..', 'out/checks/group.ts'), 'NEW\n') }
+    return base(args, opts)
+  }
+  // the halves never build: the grade reads the shared file, and an original is valid only in the file as it was
+  const grade = async (a) => {
+    const live = jsonAt(join(a[1], 'manifest.json')).filter((m) => !m.dropped).map((m) => m.id), old = readFileSync(join(a[1], 'checks/group.ts'), 'utf8') === 'OLD\n'
+    writeFileSync(join(a[1], '..', `validation-${e}.json`), JSON.stringify({ ref: END, checks: live.map((x) => ({ id: x, verdict: [id(3), id(4)].includes(x) ? 'broken' : old ? 'valid' : 'broken' })) }))
+    return 0
+  }
+  await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent })))
+  const s = await withData(d, () => quiet(() => oracle(['split', 'x1-01'], { agent, grade })))
+  expect(s.out.split('\n').at(-1)).toBe('x1-01 split partly=1 split=1 failed=0 restored=1 settled=1 stale=0 new=0 classified=0 build=0 requirement=0 disputed=0')
+  expect(readFileSync(join(d, 'x1-01/oracle/checks/group.ts'), 'utf8')).toBe('OLD\n')
+  const v = new Map(jsonAt(join(d, 'x1-01', `validation-${e}.json`)).checks.map((x) => [x.id, x.verdict]))
+  expect([v.get(id(1)), v.get(id(2))]).toEqual(['valid', 'valid'])
+  expect(jsonAt(join(d, 'x1-01/labels.json'))).toEqual({ [id(2)]: 'build', [id(1)]: 'requirement' })
 })
 
 test('split validates through the validate command by default', async () => {
@@ -1115,7 +1144,7 @@ test('split validates through the validate command by default', async () => {
   await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent, grade })))
   const s = await withData(d, () => quiet(() => oracle(['split', 'x1-01'], { agent, grade })))
   expect(s.code).toBe(0)
-  expect(s.out.split('\n').at(-1)).toBe('x1-01 split partly=1 split=1 failed=0 restored=0 stale=0 new=2 classified=2 build=0 requirement=2 disputed=0')
+  expect(s.out.split('\n').at(-1)).toBe('x1-01 split partly=1 split=1 failed=0 restored=0 settled=0 stale=0 new=2 classified=2 build=0 requirement=2 disputed=0')
   expect(gcalls).toHaveLength(1)
   expect(argOf(gcalls[0], '--validate')).toBe(END)
 })
@@ -1132,7 +1161,7 @@ test('split puts the new checks of a grouped external file into that file', asyn
   const validate = async (a) => { vcalls.push(a); const v = join(d, 'x1-01', `validation-${e}.json`), x = jsonAt(v); writeFileSync(v, JSON.stringify({ ...x, checks: [...x.checks, { id: id(3), verdict: 'absent-at-base' }, { id: id(4), verdict: 'weak' }] })); return 0 }
   await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent })))
   const s = await withData(d, () => quiet(() => oracle(['split', 'x1-01'], { agent, validate })))
-  expect(s.out).toBe('x1-01 split partly=1 split=1 failed=0 restored=0 stale=0 new=2 classified=1 build=1 requirement=0 disputed=0') // the weak half is not classified
+  expect(s.out).toBe('x1-01 split partly=1 split=1 failed=0 restored=0 settled=0 stale=0 new=2 classified=1 build=1 requirement=0 disputed=0') // the weak half is not classified
   expect(vcalls).toEqual([['x1-01']])
   const sp = calls.find((a) => a[1].startsWith('split-')), prompt = readFileSync(argOf(sp, '--prompt'), 'utf8')
   expect(prompt).toContain('EXT-RULES')
