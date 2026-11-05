@@ -2309,3 +2309,21 @@ p8b step listed=41 resolved=33 picked=15 written=13 refused=2 none=1 valid=2 abs
   - Ids: 87 (75 + 12).
   - Tasks with fewer than 5 ids: 8 (p1–p5 with 0, p6b 4, p7b 2, p7c 1).
   - Tasks with 5 or more ids: p6a, p6c, p8a, p8b, p8c, p8d, p8e.
+
+### Task 6
+
+The step 9 sample of step checks and the step 6 lock, `progress/step6-lock.md`. No sealed agent ran, and no Docker or database command ran. `oracle queue` was not run.
+
+- **`step9/sample-7.1-step.tsv`.** `<data>/logs/step6/sample-7.1-step.mjs` printed `10`. It is `queuePick` of 10, seed `hstack-bench-2026-10-27`, over the 75 `step.json` ids of the 14 kept real-estate tasks, with p8b excluded. Header `set task id`, set `task-repo`. No other `step9/` file was touched.
+- **Floor rule recount.** `<data>/logs/step6/floor-count.mjs` gives the plan's numbers:
+  - external median 2, and 2 with the 9 disputed classifications counted;
+  - real-estate median 0, and 0.5 with the 11 disputed classifications counted.
+- **Step oracle counts.** `<data>/logs/step6/lock-count.mjs` read `step.json`, `step-f2p.json`, step validation verdicts and the severities of the ids, and printed counts only.
+  - External: 51 ids. The median is 1 over the 24 tasks and 2 over the 20 tasks with ids. The tasks with none are s1-01, s1-06, s3-01 and s3-07. The one all-`low` task is s1-02.
+  - Real-estate (14 kept): 75 ids, median 3. The tasks with none are p1–p5, and no task is all `low`.
+  - p8b: 12 ids.
+- **Step 5 hashes.** `<data>/logs/step6/lock5-compare.mjs` gave 1369 hashed, 1369 equal, 0 changed, 0 missing. The step 5 lock hashed no p8b file.
+- **Hashes.** `<data>/logs/step6/lock-hash.mjs` hashed 555 files plus 16 scripts. One hash was checked against `shasum -a 256`, and the two agree.
+- **`git status --short bench`** is empty. `bench/` is at e97944495f4c2a270295bd2dd787ab355999c70e.
+
+Usage: no sealed agent ran (0 tokens of sealed runs). Each script ran in under a few seconds. Implementer tokens are left to the controller's ledger.
