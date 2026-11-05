@@ -59,3 +59,27 @@ export function queuePick(ids, n, seed) {
   const key = new Map(ids.map((id) => [id, sortKey(id, seed)]))
   return [...ids].sort((x, y) => (key.get(x) < key.get(y) ? -1 : key.get(x) > key.get(y) ? 1 : 0)).slice(0, n)
 }
+
+// the highest n of `<sha7>-T<n>` among ids, 0 when none
+export function nextNumber(ids, sha7) {
+  let max = 0
+  for (const id of ids) { const m = String(id).match(/^(.+)-T(\d+)$/); if (m && m[1] === sha7) max = Math.max(max, Number(m[2])) }
+  return max
+}
+
+// a f2p.json case (a string, or { classname, name }) as one id
+export const caseId = (c) => (typeof c === 'string' ? c : `${c.classname}::${c.name}`)
+
+// ruling 2 of step 6: is the origin test (`<file>::<name>`, the name may hold `::`) a fail-to-pass or a pass-to-pass case?
+const nameOf = (id) => { const i = id.indexOf('::'); return i < 0 ? id : id.slice(i + 2) }
+const lastSegment = (s) => s.replace(/\s*(\[[^\]]*\]|\([^)]*\))$/, '').split(/::|\.|\/| > | › /).at(-1).trim()
+export function f2pOf(origin, f2p, p2p) {
+  const name = nameOf(origin)
+  const exact = (list) => list.some((id) => id === name || nameOf(id) === name || id.endsWith(`::${name}`) || id.endsWith(`.${name}`))
+  const [ef, ep] = [exact(f2p), exact(p2p)]
+  if (ef !== ep) return { verdict: ef ? 'f2p' : 'p2p', by: 'exact' }
+  if (ef) return { verdict: 'ask', by: null }
+  const seg = lastSegment(name), has = (list) => seg !== '' && list.some((id) => lastSegment(nameOf(id)) === seg)
+  const [sf, sp] = [has(f2p), has(p2p)]
+  return sf !== sp ? { verdict: sf ? 'f2p' : 'p2p', by: 'segment' } : { verdict: 'ask', by: null }
+}

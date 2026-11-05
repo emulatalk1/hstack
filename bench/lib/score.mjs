@@ -69,3 +69,19 @@ export function checksFrom(manifest, labels = {}) {
 
 // a manifest fix_commit and a ref match when one is a prefix of the other, compared on at most 7 characters
 export const fixMatches = (fix, ref) => { const a = fix.slice(0, 7), b = ref.slice(0, 7), n = Math.min(a.length, b.length); return n > 0 && a.slice(0, n) === b.slice(0, n) }
+
+// ruling 7 of step 6 (9.1 as section 2 amends it). fix, step: grade files; step null reads the ids from fix.
+// An id absent from its grade counts as a high check that did not pass, so a missing step check never helps a score.
+export function floorScore(fix, step, ids) {
+  const src = (step ?? fix).checks, byId = new Map(src.map((c) => [c.id, c]))
+  const share = (cs) => {
+    const total = cs.reduce((n, c) => n + WEIGHT[c.severity], 0)
+    return total ? cs.reduce((n, c) => n + (c.result === 'pass' ? WEIGHT[c.severity] : 0), 0) / total : null
+  }
+  const mine = ids.map((id) => byId.get(id) ?? { id, severity: 'high', result: 'error' })
+  const out = new Set((fix.excluded ?? []).map((e) => e.id))
+  return {
+    build: share(mine), requirement: share(fix.checks.filter((c) => !out.has(c.id))),
+    passed: ids.length ? mine.every((c) => c.severity === 'low' || c.result === 'pass') : null,
+  }
+}

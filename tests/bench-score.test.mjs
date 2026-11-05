@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { results, score, verdict, checksFrom, fixMatches, unscored } from '../bench/lib/score.mjs'
+import { results, score, verdict, checksFrom, fixMatches, unscored, floorScore } from '../bench/lib/score.mjs'
 import { grade } from '../bench/grade.mjs'
 import { clean } from '../bench/env.mjs'
 import { ROOT, releaseRoot } from './bench-root.mjs'
@@ -364,4 +364,33 @@ test('reuse runs again when the grade file does not parse', async () => {
   expect(out.code).toBe(0)
   expect(runs.n()).toBe(1)
   expect((await gradeFile()).junit).toBe('ok')
+})
+
+// --- floor rule (ruling 7 of step 6) ---
+const g = (checks, excluded = []) => ({ checks: checks.map(([id, result, severity = 'high', bucket = 'build']) => ({ id, bucket, severity, result })), excluded })
+
+test('floorScore counts every scored fix check in requirement and only step ids in build', () => {
+  const fix = g([['f-T1', 'pass', 'high', 'build'], ['f-T2', 'fail', 'medium', 'requirement'], ['f-T3', 'pass', 'low', 'partly'],
+    ['f-T4', 'pass', 'high', 'out'], ['f-T5', 'fail', 'high', 'build'], ['f-T6', 'pass', 'high', 'build']], [{ id: 'f-T6', verdict: 'weak' }])
+  const step = g([['s-T1', 'pass', 'high'], ['s-T2', 'fail', 'medium'], ['s-T3', 'pass', 'low']])
+  // requirement: f-T1 3 + f-T3 1 + f-T4 3 pass of 3+2+1+3+3 = 12 -> 7/12; the excluded f-T6 counts nowhere
+  expect(floorScore(fix, step, ['s-T1', 's-T2', 's-T3'])).toEqual({ build: 4 / 6, requirement: 7 / 12, passed: false })
+  expect(floorScore(fix, step, ['s-T1', 's-T3']).build).toBe(1)
+  // step null: the ids are read from the fix grade
+  expect(floorScore(fix, null, ['f-T1', 'f-T5']).build).toBe(0.5)
+  // an id absent from the grade is not passed
+  expect(floorScore(fix, step, ['s-T1', 'gone']).build).toBe(0.5)
+  expect(floorScore(g([['a', 'pass']], [{ id: 'a', verdict: 'broken' }]), null, []).requirement).toBeNull()
+})
+
+test('floorScore gives null build and passed for no step id', () => {
+  expect(floorScore(g([['a', 'pass']]), g([]), [])).toEqual({ build: null, requirement: 1, passed: null })
+})
+
+test('passed needs every high and medium step check to pass', () => {
+  const fix = g([['a', 'pass']])
+  expect(floorScore(fix, g([['s1', 'pass', 'high'], ['s2', 'pass', 'medium'], ['s3', 'fail', 'low']]), ['s1', 's2', 's3']).passed).toBe(true)
+  for (const bad of ['fail', 'precondition', 'error'])
+    expect(floorScore(fix, g([['s1', 'pass', 'high'], ['s2', bad, 'medium']]), ['s1', 's2']).passed).toBe(false)
+  expect(floorScore(fix, g([['s1', 'fail', 'low'], ['s2', 'error', 'low']]), ['s1', 's2']).passed).toBe(true) // all low: passes on that clause alone
 })

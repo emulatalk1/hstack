@@ -2,7 +2,7 @@ import { test, expect, afterAll, spyOn } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick } from '../bench/lib/oracle.mjs'
+import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick, f2pOf, nextNumber, caseId } from '../bench/lib/oracle.mjs'
 import { diffHunks, oracle } from '../bench/oracle.mjs'
 import { check } from '../bench/input-check.mjs'
 
@@ -1245,4 +1245,84 @@ test('queue exits 3 on a set that is not usable', async () => {
   const q = await withData(d, () => quiet(() => oracle(['queue'])))
   expect(q.code).toBe(3)
   expect(q.out.split('\n').slice(-2)).toEqual(['external: tasks 1, checks 9, kappa=-0.50 raw=0.00 ac1=-0.50 usable no', 'stop: external not usable'])
+})
+
+// --- step 6 task 2: the fail-to-pass matcher, id numbering over step oracles, the score command ---
+test('f2pOf matches parametrised and qualified names and asks when a segment is in both lists', () => {
+  const cid = (c) => caseId(c)
+  expect(cid({ classname: 'a.B', name: 'works' })).toBe('a.B::works')
+  expect(cid('x::y')).toBe('x::y')
+  // exact: a case id, a case's name part, or a case id ending with ::name or .name
+  expect(f2pOf('t.spec.ts::adds up', ['t.spec.ts::adds up'], [])).toEqual({ verdict: 'f2p', by: 'exact' })
+  expect(f2pOf('t.py::TestA::test_x', ['TestA::test_x'], [])).toEqual({ verdict: 'f2p', by: 'exact' })
+  expect(f2pOf('t.py::test_x', ['mod.Cls::test_x'], ['mod.Cls::test_y'])).toEqual({ verdict: 'f2p', by: 'exact' })
+  expect(f2pOf('t.go::TestX', ['pkg.TestX'], [])).toEqual({ verdict: 'f2p', by: 'exact' })
+  expect(f2pOf('t.go::TestY', [], ['pkg.TestY'])).toEqual({ verdict: 'p2p', by: 'exact' })
+  expect(f2pOf('t.py::test_x', ['m::test_x'], ['n::test_x'])).toEqual({ verdict: 'ask', by: null }) // exact in both lists
+  // segment: a parametrised id against the bare name
+  expect(f2pOf('t.py::test_x', ['t.py::test_x[param]'], ['t.py::test_y[p]'])).toEqual({ verdict: 'f2p', by: 'segment' })
+  expect(f2pOf('t.py::test_y', ['t.py::test_x[param]'], ['t.py::test_y[p]'])).toEqual({ verdict: 'p2p', by: 'segment' })
+  // a Jest name with ' › ' and a Java-style (…) tail
+  expect(f2pOf('a.test.ts::suite › renders', ['a.test.ts::root › suite › renders (2)'], [])).toEqual({ verdict: 'f2p', by: 'segment' })
+  expect(f2pOf('A.java::run', ['A.run(int)'], [])).toEqual({ verdict: 'f2p', by: 'segment' })
+  // a segment in both lists, or in neither
+  expect(f2pOf('t.py::test_x', ['a::test_x[1]'], ['b::test_x[2]'])).toEqual({ verdict: 'ask', by: null })
+  expect(f2pOf('t.py::test_z', ['a::test_x'], ['b::test_y'])).toEqual({ verdict: 'ask', by: null })
+})
+
+test('nextNumber counts both oracle and step oracle manifests', async () => {
+  expect(nextNumber(['abc1234-T1', 'abc1234-T12', 'abc1234-T3', 'def5678-T40', 'abc1234-Tx', 'abc12345-T99'], 'abc1234')).toBe(12)
+  expect(nextNumber([], 'abc1234')).toBe(0)
+  // highestOf reads <task>/oracle and <task>/step/oracle manifests, dropped entries too: a split numbers after both
+  const d = clData('sc0'), e = END.slice(0, 7)
+  clTask(d, 'x2-01', END, [[`${e}-T3`, 'valid']], {})
+  mkdirSync(join(d, 'x2-01/step/oracle'), { recursive: true })
+  writeFileSync(join(d, 'x2-01/step/oracle/manifest.json'), JSON.stringify([{ id: `${e}-T7`, dropped: true }]))
+  const calls = []
+  const split = (ids) => ({ 'manifest.json': JSON.stringify(ids.map((x) => ({ id: x, behaviour: 'b', severity: 'low', file: `${x}.ts` }))), ...Object.fromEntries(ids.map((x) => [`${x}.ts`, 'N\n'])) })
+  clTask(d, 'x1-01', END, [[`${e}-T4`, 'valid', { severity: 'high' }]], { [`${e}-T4.ts`]: 'x\n' })
+  const rate = (r, id) => (id.endsWith('-T4') ? 'partly' : 'traceable')
+  await withData(d, () => quiet(() => oracle(['classify', 'x1-01'], { agent: fake(calls, { rate }) })))
+  await withData(d, () => quiet(() => oracle(['split', 'x1-01'], { agent: fake(calls, { rate, split }), validate: async () => 0 })))
+  const ids = jsonAt(join(d, 'x1-01/oracle/manifest.json')).map((m) => m.id)
+  expect(ids).toEqual([`${e}-T4`, `${e}-T8`, `${e}-T9`])
+})
+
+const scoreData = (name, step, grades) => {
+  const d = clData(name)
+  mkdirSync(join(d, 'x1-01/grades'), { recursive: true })
+  if (step) writeFileSync(join(d, 'x1-01/step.json'), JSON.stringify(step))
+  for (const [f, g] of Object.entries(grades)) { mkdirSync(join(d, f, '..'), { recursive: true }); writeFileSync(join(d, f), JSON.stringify(g)) }
+  return d
+}
+const gr = (checks, excluded = []) => ({ checks: checks.map(([id, result, severity = 'high', bucket = 'build']) => ({ id, bucket, severity, result })), excluded })
+
+test('score prints only the counts line', async () => {
+  const sha = 'abcdef1234567890'
+  const d = scoreData('sc1', { oracle: 'step/oracle', ids: ['s-T1', 's-T2'], candidates: 2, seed: 's' }, {
+    [`x1-01/grades/abcdef1.json`]: gr([['a-T1', 'pass'], ['a-T2', 'fail', 'low', 'out'], ['a-T3', 'pass', 'medium', 'requirement'], ['a-T4', 'pass', 'high', 'build']], [{ id: 'a-T4', verdict: 'weak' }]),
+    [`x1-01/step/grades/abcdef1.json`]: gr([['s-T1', 'pass', 'high'], ['s-T2', 'fail', 'low']]),
+  })
+  const r = await withData(d, () => quiet(() => oracle(['score', 'x1-01', sha])))
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('x1-01 abcdef1 build=0.75 requirement=0.83 passed=yes') // a-T4 is excluded: (3 + 2) / (3 + 1 + 2)
+})
+
+test('score reads the ids from the fix grade when step.json names oracle, and exits 1 on a missing file', async () => {
+  const sha = 'abcdef1234567890'
+  const d = scoreData('sc2', { oracle: 'oracle', ids: ['a-T1', 'a-T9'], candidates: 2, seed: 's' }, { 'x1-01/grades/abcdef1.json': gr([['a-T1', 'pass', 'high'], ['a-T2', 'fail', 'low']]) })
+  const r = await withData(d, () => quiet(() => oracle(['score', 'x1-01', sha])))
+  expect(r.out).toBe('x1-01 abcdef1 build=0.50 requirement=0.75 passed=no') // a-T9 is absent: not passed
+  expect(r.code).toBe(0)
+  const none = await withData(d, () => quiet(() => oracle(['score', 'x1-01', 'abcdef2'])))
+  expect(none.code).toBe(1)
+  expect(none.out).toContain('x1-01/grades/abcdef2.json')
+  const d2 = scoreData('sc3', { oracle: 'step/oracle', ids: ['s-T1'], candidates: 1, seed: 's' }, { 'x1-01/grades/abcdef1.json': gr([]) })
+  const m = await withData(d2, () => quiet(() => oracle(['score', 'x1-01', sha])))
+  expect(m.code).toBe(1)
+  expect(m.out).toContain('step/grades/abcdef1.json')
+  const m2 = await withData(clData('sc4'), () => quiet(() => oracle(['score', 'x1-01', sha])))
+  expect(m2.code).toBe(1)
+  expect(m2.out).toContain('x1-01/step.json')
+  await expect(withData(d, () => oracle(['score', 'x1-01', 'XYZ']))).rejects.toThrow('usage')
 })

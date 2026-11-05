@@ -9,13 +9,13 @@ import { appendWalk, parseRunner, removeRecorded, taskOf } from './ext.mjs'
 import { grade as gradeCmd } from './grade.mjs'
 import { okBashCommands, okToolInputs } from './lib/agent.mjs'
 import { check } from './input-check.mjs'
-import { agreement, hunkOwners, introducer, mergeLabels, queuePick, usable } from './lib/oracle.mjs'
+import { agreement, hunkOwners, introducer, mergeLabels, nextNumber, queuePick, usable } from './lib/oracle.mjs'
 import { isTestPath } from './lib/replay.mjs'
-import { fixMatches, verdict } from './lib/score.mjs'
+import { fixMatches, floorScore, verdict } from './lib/score.mjs'
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | validate <task.json> <task> | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | split [<task.json>] <task> | queue'
+const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | validate <task.json> <task> | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | split [<task.json>] <task> | queue | score <task> <sha>'
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
@@ -800,15 +800,12 @@ async function classify(c, agent) {
   return 0
 }
 
-// the highest n of `<sha7>-T<n>` over every oracle of the data folder, dropped entries too: a source commit's checks
+// the highest n of `<sha7>-T<n>` over every oracle and step oracle of the data folder, dropped entries too: a source commit's checks
 // can sit in several tasks' oracles. shortcut: no lock across tasks, so split one task at a time
 function highestOf(data, sha7) {
-  let max = 0
-  for (const d of readdirSync(data)) for (const e of readJson(join(data, d, 'oracle', 'manifest.json')) ?? []) {
-    const m = String(e?.id).match(/^(.+)-T(\d+)$/)
-    if (m && m[1] === sha7) max = Math.max(max, Number(m[2]))
-  }
-  return max
+  const ids = []
+  for (const d of readdirSync(data)) for (const o of ['oracle', 'step/oracle']) ids.push(...(readJson(join(data, d, o, 'manifest.json')) ?? []).map((e) => e?.id))
+  return nextNumber(ids, sha7)
 }
 
 // one sealed splitter for an agreed partly check; the two new entries (judged by the writer rules) or null
@@ -1030,6 +1027,22 @@ async function queue() {
 // split's validation: this file's validate on the task, with split's options (refs, only, tag)
 const validateCmd = (inj) => async (a, opts = {}) => validate(await (a.length === 2 ? taskCtx(a[1], a[0]) : taskCtx(a[0])), { grade: inj.grade ?? gradeCmd, agent: inj.agent ?? sealedAgent, ...opts })
 
+// the floor-rule score of a task at a commit (ruling 7 of step 6): build over step.json's ids, requirement over the fix grade
+function scoreCmd(task, sha) {
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(task) || !/^[0-9a-f]{7,40}$/.test(sha)) throw new Error(USAGE)
+  const sha7 = sha.slice(0, 7), read = (rel) => readJson(join(dataDir(), task, rel))
+  const missing = (rel) => { console.log(`${task} score ${sha7}: ${join(task, rel)} is missing`); return 1 }
+  const step = read('step.json')
+  if (!step) return missing('step.json')
+  const fix = read(`grades/${sha7}.json`)
+  if (!fix) return missing(`grades/${sha7}.json`)
+  const sg = step.oracle === 'step/oracle' ? read(`step/grades/${sha7}.json`) : null
+  if (step.oracle === 'step/oracle' && !sg) return missing(`step/grades/${sha7}.json`)
+  const r = floorScore(fix, sg, step.ids)
+  console.log(`${task} ${sha7} build=${fx(r.build)} requirement=${fx(r.requirement)} passed=${r.passed === null ? 'none' : r.passed ? 'yes' : 'no'}`)
+  return 0
+}
+
 export async function oracle(args, inj = {}) {
   // inj.validate: split's validation of its new checks (tests inject one); by default this file's validate command
   const { agent = sealedAgent, grade = gradeCmd, validate: validateRun = validateCmd(inj) } = inj
@@ -1047,6 +1060,7 @@ export async function oracle(args, inj = {}) {
     return cmd === 'classify' ? classify(c, agent) : split(c, agent, validateRun)
   }
   if (cmd === 'queue' && args.length === 1) return queue()
+  if (cmd === 'score' && taskPath && rest.length === 1) return scoreCmd(taskPath, rest[0])
   throw new Error(USAGE)
 }
 
