@@ -2,10 +2,11 @@
 type: plan
 title: "Step oracle plan"
 description: "Prereg step 6: reclassify p8b with its interface sheet, record the H1 floor-rule decision with its numbers, and build the step oracle every task's H1 build score then comes from (a filter of the external oracles, new black-box checks for the real-estate tasks), with the one scoring rule that steps 7, 8, 11, 13 and 14 reuse."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.310, at: "2026-11-05T12:15:00+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.310, at: "2026-11-05T12:40:00+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-05T20:35:00+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md

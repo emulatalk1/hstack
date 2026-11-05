@@ -882,3 +882,7 @@ a64da303021641a05c7f2071dcfa691dbf9799daa889c67601cde0826b38a62e  logs/step6/pro
 f003dbabdd44b420ac586bbdce4a83c1ff663799c60f30eb5bc60c4519919fb6  logs/step6/task5-ids.mjs
 81051ee3b2c5f570c311181d3eef8b244b74a53e6099d75f4eada64db52414b8  logs/step6/task5-usage.mjs
 ```
+
+## Approval, 2026-11-05
+
+The user approved the build on 2026-11-05 ("Duyệt build merge và push"): the plan `docs/plans/2026-11-05-bench-step-oracles.md` is `stable`, the branch is merged into main and pushed, and the build-time rulings that change how a step check is chosen, judged or scored are registered in prereg section 2 ("Added 2026-11-05, during the step 6 build"). Ruling 17 (p6a's and p7c's fixer runs stand) was put to the user as reversible and was not reversed.

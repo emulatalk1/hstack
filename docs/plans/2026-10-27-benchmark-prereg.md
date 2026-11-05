@@ -58,6 +58,15 @@ Decided by the user on 2026-11-05, option 1 (the proposal of the step oracle pla
 
 Registered before any step oracle is built; `bench/oracle.mjs step` has not run.
 
+Added 2026-11-05, during the step 6 build; the user approved the build on 2026-11-05. These are the rulings that change how a step check is chosen, judged or scored, each with its reason.
+- f2p matcher: an origin whose name matches exactly in both the fail-to-pass and the pass-to-pass list is `ask` (resolver), and one that matches exactly only in the pass-to-pass list is `p2p`, because ruling 2's exact rule names only the fail-to-pass side and the symmetric reading only drops a check.
+- Reading gates: a resolver or lister run whose record shows no `Read` call is rerun once as `-2` and the rerun stands, the content-independent gate of the step 5 labellers and raters; no further rerun or brief change after the gate, because changing the measure after seeing its effect would be tuning (step 5 ruling 14).
+- Lister: a step names a test also when it quotes the test's title without its file (the tool then resolves the title over the end's test files, exactly one match). The first real-estate run, under a brief that missed title-only pointers, was voided unread and all 15 tasks were run again under one brief, so the picks stay "chosen by seed" over one candidate universe. p1–p5 still list no step: their kept feature steps name no test, so they have no step oracle and no H1 score.
+- Instrument fixes, content-independent: a writer's `-2` rerun is told its own folder (it was told the first run's); a sealed writer is granted its folder by its real path too (`p8b` is a symlink to `8b`, and the symlink grant blocked every write); a step fixer's copy of the manifest holds no step text. p6a's and p7c's fixer runs, made before the last fix with the step text readable in their folder (not in their prompt), stand: the comparer kept only changes that compare the same assertions.
+- `score` refuses a step id that is missing from the grade it reads, because such a grade is stale, and scores a task whose step oracle has no id from its fix-commit grade alone (H1 `none`).
+- H1's N: external tasks with a step oracle are 20 (s1-01, s3-01 have no traceable check; s1-06's only one is pass-to-pass, s3-07's resolver-unknown); under the user's decision the step 11 walk tops it up. The 7.1 human sample of step checks draws from the 14 kept real-estate tasks, not p8b (trial-only).
+The full list of build-time rulings is in `progress/step6-lock.md` ('Rulings during the build').
+
 H1, H2 and H3 are the three primary tests, with a Holm correction across them. H4 validates the stick: if H4 is not met, H1–H3 are not reported (the stick cannot tell a weak harness apart). H5 is secondary and reported on its own.
 
 `real-estate` is a secondary set: its 20 bugs shaped the old design, so its results are reported but not used for acceptance.
