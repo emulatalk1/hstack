@@ -560,7 +560,12 @@ async function fixRound(c, round, g, broken, agent, tag = '') {
   ].join('\n')
   const w = await runWriter(agent, { taskFile: c.taskFile, label: `fix-${tag}${round}-${c.task}-${sha7}`, at: g.ref, prompt: join(work, `${sha7}.fix.prompt.md`), text,
     out: join(work, `${sha7}.fix.reply.md`), dir, settings: join(work, `${sha7}.settings.json`), reads: [logs],
-    fill: (d) => cpSync(c.oracleDir, d, { recursive: true, verbatimSymlinks: true, filter: (f) => basename(f) !== 'node_modules' }) })
+    fill: (d) => {
+      cpSync(c.oracleDir, d, { recursive: true, verbatimSymlinks: true, filter: (f) => basename(f) !== 'node_modules' })
+      // ruling 4: a step check's step text stays out of the fixer's copy too (the manifest is never in scope, so never read back)
+      const m = join(d, 'manifest.json'), list = readJson(m)
+      if (Array.isArray(list) && list.some((e) => e?.step !== undefined)) writeFileSync(m, JSON.stringify(list.map(({ step, ...e }) => e), null, 2) + '\n')
+    } })
   const none = { changed: 0, kept: 0, comparer: 0, gate: 0, scope: 0 }
   if (w.stale) { console.log(`fix ${c.task} ${sha7} round ${tag}${round}: refused a fixer run whose prompt differs from the one it ran with`); return none }
   const bytes = (f) => (existsSync(f) ? readFileSync(f) : null)
@@ -1083,7 +1088,8 @@ function stepsReply(text) {
   let arr = null
   try { arr = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)) } catch {}
   if (!Array.isArray(arr)) return { list: [], ok: false }
-  const list = arr.filter((e) => typeof e?.file === 'string' && ['step', 'title'].every((k) => typeof e?.[k] === 'string' && e[k].trim())).map(({ step, file, title }) => ({ step, file, title }))
+  // a title with a line break is refused: `git grep -e` would read its lines as patterns joined by OR
+  const list = arr.filter((e) => typeof e?.file === 'string' && ['step', 'title'].every((k) => typeof e?.[k] === 'string' && e[k].trim()) && !/[\r\n]/.test(e.title)).map(({ step, file, title }) => ({ step, file, title }))
   return { list, ok: list.length === arr.length }
 }
 

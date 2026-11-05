@@ -1576,6 +1576,7 @@ test('a title that matches no test file, or two, is unresolved', async () => {
     { step: 'S4', file: 'x.spec.ts', title: 'SENTINEL-SHARED' }, // two matches, neither named
     { step: 'S5', file: 'src/doc.txt', title: 'SENTINEL-NOTTEST' }, // not a test file
     { step: 'S6', file: 'tests/a.spec.ts', title: 'SENTINEL-NOWHERE' },
+    { step: 'S7', file: 'tests/a.spec.ts', title: 'SENTINEL-TITLE 2\nSENTINEL-TITLE 3' }, // a line break: refused, not listed
   ] : 'SENTINEL-NOT-JSON')
   const r = await reStep(d, 'r1', calls, { list })
   expect(r.out.split('\n').at(-1)).toBe('r1 step listed=6 resolved=2 picked=2 written=2 refused=0 none=0 valid=2 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=2')
@@ -1659,6 +1660,12 @@ test('a broken step check gets a fixer round and a changed one stays broken', as
   const fixer = calls[2]
   expect(argOf(fixer, '--out')).toBe(join(d, `r1/step/work/fix-step-1/${E7}.fix.reply.md`))
   expect(readFileSync(argOf(fixer, '--prompt'), 'utf8')).not.toContain('SENTINEL-STEP') // a fixer never sees the step text
+  for (const r of [1, 2]) { // nor in its folder copy
+    const m = readFileSync(join(d, `r1/step/work/fix-step-${r}/${E7}/manifest.json`), 'utf8')
+    expect(m).not.toContain('SENTINEL-STEP')
+    expect(JSON.parse(m).map((e) => e.id)).toEqual([`${E7}-T1`, `${E7}-T2`])
+  }
+  expect(readFileSync(join(d, 'r1/step/oracle/manifest.json'), 'utf8')).toContain('SENTINEL-STEP') // the oracle keeps it
   for (const f of readdirSync(join(d, 'r1/step/oracle')).filter((f) => f.endsWith('.spec.ts'))) expect(readFileSync(join(d, 'r1/step/oracle', f), 'utf8')).not.toBe('FIXED\n')
   expect(jsonAt(join(d, 'r1/step/labels.json'))).toEqual({})
   // a fixed one the comparer calls same is kept and validated again
