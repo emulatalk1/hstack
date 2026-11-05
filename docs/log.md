@@ -1,6 +1,8 @@
 # Update Log
 
 ## 2026-11-05
+* **Approve**: the built [oracle preparation plan](/plans/2026-11-03-bench-oracles.md) (status `stable`): 24 external and 14 real-estate tasks with oracles, validated and classified twice, locked in `progress/step5-lock.md`; both sets usable under 7.2; the external median of traceable checks is 2, so step 6 applies the H1 floor rule.
+* **Update**: Added to the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 7.1) the rulings of the step 5 build that change how a check is judged or counted, with their reasons, and a pointer to the full list in `progress/step5-lock.md`.
 * **Creation**: Locked step 5 of the [oracle preparation plan](/plans/2026-11-03-bench-oracles.md) in `progress/step5-lock.md`. The lock records, per task: the sources, the checks written, the validation verdicts, the pre-existing moves, the splits and the classifications. Per set, it records the pooled agreement (task-repo κ 0.73, external κ 0.91; both usable) and the median `build` checks per task (0 and 2). It also records the rule (b) result (9 of 14 real-estate tasks meet it now), the drops (p8b1, s2-06, s1-08 and s2-04) and their replacements (s2-09, s1-09 and s2-10), the cold-setup repos and canary tasks, the step 9 queue counts, the controller's rulings and incidents during the build, and the SHA-256 of 1367 records. Every external env file now points at the main checkout's `bench/ext.mjs`.
 
 ## 2026-11-03

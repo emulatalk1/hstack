@@ -2,8 +2,11 @@
 type: plan
 title: "Oracle preparation plan"
 description: "Prereg step 5: check that each external web or desktop task can be served in a container, then, for every external task and every eligible real-estate task, label the oracle sources, rewrite their tests as black-box checks, write the interface sheets the external tasks lack, validate every check including the task-base run, and classify it twice."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.310, at: "2026-11-03T23:30:00+07:00" }
+verified:
+  - { by: claude-code-advisor/2.1.310, at: "2026-11-05T10:40:55+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-05T10:40:55+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md

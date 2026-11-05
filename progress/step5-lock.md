@@ -1649,3 +1649,14 @@ Two scripts are hashed here, apart from the 1367 files above: the lock's written
 fa4009101195931ca787b4a3628844932b25f9582eb374023695510c029d5cc5  logs/task12/count.mjs
 220336028215001afa9ad74bfac22a4240077aaa09c9d64c91b15f3a630bc944  logs/task9/drivers/sweep-saved.mjs
 ```
+
+## Approval, 2026-11-05
+
+The user approved the build on 2026-11-05 by delegating the open decisions to the advisor's recommendation. The plan `docs/plans/2026-11-03-bench-oracles.md` is `stable`, and the build-time rulings that change how a check is judged or counted are registered in prereg section 7.1 ("Added 2026-11-05"). The four data-shaping rulings are ratified:
+
+- No app at base (ruling 30, 34): `precondition` for every check, because nothing the task builds can exist where no app exists.
+- Restore as `requirement` (ruling 42): a split original none of whose halves is scored goes back to the requirement bucket and its halves are dropped, because prereg 6.3 sends an unsplittable check there.
+- The 7.1 sample from scored checks (ruling 28): `valid` and `absent-at-base` are both kept and scored under 7.1.
+- Not judged (ruling 37): an external task whose only remaining checks are `error` is rerun and never dropped, because a machine failure is never an out.
+
+Note for step 9: the 8 restored originals (s2-09 2, s3-01 1, s3-06 5) are rule-assigned `requirement`, not rater-agreed. Their ids: s2-09 11bb3ba-T3, s2-09 11bb3ba-T4, s3-01 a3035cf-T3, s3-06 73d4686-T1, s3-06 73d4686-T2, s3-06 73d4686-T7, s3-06 73d4686-T9, s3-06 73d4686-T12.
