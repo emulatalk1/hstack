@@ -1877,3 +1877,188 @@ The lock, `progress/step5-lock.md` (2026-11-05). This task ran no sealed agent, 
 - **Hashes.** 1367 files.
 
 Usage: implementer opus, 197.6k tokens / 13.1 min (from the controller); reviewer sonnet. Sealed agents: none. Wall clock of the task: about 02:30Z–02:55Z.
+
+### SDD ledger of step 5 (copied before the final review)
+
+    # SDD ledger — plan: docs/plans/2026-11-03-bench-oracles.md
+    
+    Spec: docs/plans/2026-10-27-benchmark-prereg.md (reachable). Plan approved by the user 2026-11-03 ("Duyệt"), plan commit 3becd2e.
+    
+    Ruling: the user's "Duyệt" approves the plan as written, including its two proposals (Docker removal of step 5's own images/containers by exact recorded name as soon as the step that built them ends, digests kept, `docker builder prune -f` below the floor; label disagreements wait for step 9) — why: both are written into the plan under "Decided by the user (asked with this plan)" and the user approved without amending — cost if wrong: Task 1 registers them as the user's decisions; an undo is a dated prereg amendment and keeping images (disk fills sooner).
+    
+    ## Pre-flight scan
+    
+    | tasks | shared file / interface | produced vs consumed | finding |
+    |---|---|---|---|
+    | T2→T3 | `oracleSha` | T2 `(files:{path,text}[])->string`; T3 hashes oracle folder without node_modules | consistent |
+    | T2→T7 | `hunkOwners` | T2 Map keyed commit\tfile\told; T7 pairs | consistent |
+    | T2→T9 | `introducer` | T2 boundaries newest first {task,base,end}; T9 sweep runs each distinct boundary once and maps results per task | consistent (T9 builds per-task base/end from per-commit results) |
+    | T2→T11 | `agreement`,`usable`,`mergeLabels`,`queuePick` | signatures match T11 use; queuePick uses lib/ext `sortKey` | consistent |
+    | T3↔T5 | `start: null`, `--sealed`, oracle command | T5 oracle-run is the task's `oracle`; timeoutSec 7800 | consistent |
+    | T4↔T5 | `bench/ext.mjs`, `tests/bench-ext-check.test.mjs`, `docker.json`, `serve.json`, `task-recipe.json` | T4 serve must remove its images "as decided"; T5 defines `ext remove <task>` | CONFLICT (order): T4 needs removal before T5 exists |
+    | T4↔T6 | `task-env`, `serve`, `sample` ids, `step5-recipes.tsv` | T6 runs T4's commands | consistent |
+    | T6↔T9 | drops → ruling 14 loop | T9 Step 3 returns to T6 Step 3 | consistent |
+    | T7↔T8 | `labels.tsv source yes`, `pairs.tsv hunks` | T8 writer per source commit with its in-scope hunks and owners | consistent |
+    | T8↔T9 | manifest `{id, fix_commit, task, hunk, origin, behaviour, interface, severity}` | grade matches `fix_commit` to ref; fixer reads `origin` | consistent |
+    | T8↔T11 | manifest stripped of fix_commit, origin, hunk, task for raters | consistent |
+    | T9↔T11 | `split` → validate + classify new checks | T11 calls T9's validate | consistent |
+    | T10→T11 | sheet before classify | order T10 then T11 | consistent |
+    | T3↔T9 | `grade --validate` throws on missing JUnit | T9 records `error` and continues | consistent |
+    | T1 | prereg paragraph | records "Decided by the user" | needs the approval ruling above |
+    | T6↔T12 | `progress/step5/{sample,walk}.tsv` | step 4 copies untouched | consistent |
+    
+    | task | self-consistency |
+    |---|---|
+    | T1 | consistent |
+    | T2 | tests cover each export; consistent |
+    | T3 | Files include score.mjs + bench-score test for verdict change; consistent |
+    | T4 | serve removes images but no remove helper yet (see conflict row) |
+    | T5 | consistent |
+    | T6 | run task, no code; consistent |
+    | T7 | (c) check reads real-estate code (not sealed); consistent |
+    | T8 | consistent |
+    | T9 | Interfaces add `sweep`; tests named; consistent |
+    | T10 | consistent |
+    | T11 | consistent |
+    | T12 | consistent |
+    
+    Ruling: T4 implements the shared removal helper (remove the names a task's `docker.json` records, by exact name, never `-f`, digests kept) and uses it after each serve check; T5 adds the `ext remove <task>` command over that helper and its decoy test — why: T4's serve already needs removal and the plan puts the command in T5 — cost if wrong: none beyond where the helper lives.
+    
+    ## Tasks
+    Task 1: implementer sonnet 68.0k/1.3 min, commit 9a0ca9a; review sonnet 67.3k/0.7 min: spec ✅, Approved. ⚠️ ruling 10 of 4.2 names the step 5 serve check — controller confirmed (prereg 4.2 ruling 10: "checked in step 5").
+    Task 1: minor (deferred): prereg 7.1 step 5 Docker bullet "Without it, 7.6 GB fills…" has no antecedent after "Proposed:" was dropped.
+    Task 1: minor (deferred): intro does not say whether the user's approval also covers rulings 1–16 (they read "proposed by the step 5 plan").
+    Task 1: complete (commits 3becd2e..9a0ca9a, review clean)
+    Task 2: implementer sonnet 64.5k/2.4 min, commit 1882391; review sonnet 63.0k/0.9 min: spec ✅, Approved.
+    Task 2: minor (deferred): hunkOwners gives order[0] to a hunk none of whose tasks is in `order` (callers pass every tasks.json key).
+    Task 2: minor (deferred): agreement does not reject a label outside `categories`; mergeLabels maps any other agreed label to requirement and lets duplicate ids overwrite.
+    Task 2: complete (commits 9a0ca9a..1882391, review clean)
+    Task 3: implementer opus 131.2k/13.0 min, commit 299ab51; review opus 95.8k/2.4 min: spec ✅, Needs fixes (1 Important: symlink in oracle folder crashes the always-on hash). ⚠️ logs land in dirname(oracle) = <data>/<task>/logs — controller confirmed: plan puts oracles at <data>/<task>/oracle, and logs/ is in the sealed list.
+    Task 3: minor (deferred): oracle-folder walker lives in grade.mjs, not lib/oracle.mjs (Task 9 calls grade by CLI, so no second walker).
+    Task 3: minor (deferred): a sealed run that throws before the oracle leaves an empty log; tests do not assert start log kept in sealed mode nor no log on reuse.
+    Task 3: minor (deferred): a no-app task still needs a free dummy port (Task 4 assigns 49152+index); oracle files written into the oracle folder would defeat reuse (external oracles run in the container, real-estate Playwright writes to BENCH_DIR — none today).
+    Task 3: fix round 1/5 (2 addressed, 0 open — symlink hashed by target; unparsable cached grade reruns; commits 299ab51..37ff50c); implementer +4.8k/4.9 min; re-review sonnet 53.0k/0.5 min.
+    Task 3: minor (deferred): a file whose content is exactly `link:<path>` hashes like a symlink to <path>.
+    Task 3: complete (commits 1882391..37ff50c, review clean)
+    Task 4: implementer opus 235.7k/36.1 min, commit 5d40c5c (gated 67/0, suite 302 pass/15 skip). Implementer removed 2 of its own hung test leftovers by exact name (this plan's own; allowed).
+    Ruling: Task 4 interpretations 1–3, 5–11 accepted as reported (digests field in docker.json; stale serve.json not offered as a start; builder prune inside serve then exit 3 if still low; input.md no trailing newline; OOM ends rounds; walk row `dropped`; rounds=<k> per slug; end-only failure told without log; network test via interface list) — why: each matches the rulings or is additive — cost if wrong: small rework in serve.
+    Ruling: env/<task>.json's `oracle` holds the absolute bench path of the checkout that ran task-env; Task 6 runs task-env from this worktree, and after the branch merges the env files are rewritten by `task-env` from the main checkout (recorded at the lock) — why: env files are data and regenerable — cost if wrong: grade fails loudly with a missing script after the worktree is removed.
+    Task 4: review opus 131.1k/8.7 min: spec ❌ (2 Important: empty serve recipe passes for S1/S2; 600 s ready bounded by passes not time) + pristine-output gap in gated afterAll; interpretation 4 recommended accepted (already ruled). ⚠️ serve brief SHA to be hashed at the lock (Task 12 hashes every brief) — confirmed. ⚠️ removeRecorded removes every docker.json name — each step removes its own names when it ends; carried to Task 5.
+    Task 4: minor (deferred): removeNames now silent on already-gone names, which also changes step 4 `--remove-out` stderr.
+    Task 4: minor (deferred): task-env writes task-recipe.json before reading issue.json (partial write if missing); no-network test greps the whole base log; ext.mjs ~1030 lines.
+    Task 4: fix round 1/5 (4 addressed, 0 open — empty start is a bad reply and the brief sentence is gone (serve.md 830c0027…); ready bounded by wall time; afterAll silent; prune and reuse stages; commits 5d40c5c..896776f); implementer cumulative 257.4k/52 min; re-review sonnet.
+    Task 4: minor (deferred): `ready` succeeding after the limit branch untested; diskStop throwing is labelled task-env.
+    Task 4: complete (commits 37ff50c..896776f, review clean)
+    Task 5: implementer opus, commit bbe462f (gated 47/47 ×3, suite 304 pass/20 skip; Docker names identical before/after).
+    Ruling: a run with no JUnit (timeout, OOM, kill) makes grade throw; ruling 10's "error per check with the stage" is Task 9's `oracle.mjs validate` job, as the plan says — why: plan Task 9 Produces — cost if wrong: none.
+    Ruling: carry to Task 8 the writer-brief facts: runner `run` executes in /work; the grade image builds FROM the serve image with an empty context, so `runner.json` `layer` can only use RUN; graded external runs always use `--sealed` — why: oracle-run's design — cost if wrong: broken checks fixed by the fixer.
+    Ruling: carry to step 7 (not this plan): oracle-run builds `git archive HEAD`, so a seeded bug must be a commit — recorded for the lock's notes.
+    Task 5: implementer opus 199.1k/27.8 min; review opus: spec ✅, Approved with 1 plan-mandated Important (container 30-min bound depends on oracle-run living; grade sends only SIGKILL). ⚠️ base sha full-length match — gated test :695 asserts base log present/end log absent; kept.
+    Ruling: plan-mandated Important on Task 5 → fix container-side (the grade script bounds itself with a background timer), not by changing grade's signal — why: smallest change, keeps proc.mjs untouched — cost if wrong: a stray container still possible if the timer itself fails; `ext remove` kills it.
+    Task 5: parked — removal of all docker.json names can kill a concurrent run of the same task — Ruling: the plan runs one task at a time on Docker; real but nothing builds on concurrency — cost if wrong: a parallel run of one task would be killed mid-run.
+    Task 5: minor (deferred): timed-out run loses readiness; two removals on a signal can race on docker.json digests; SIGINT exits 143 not 130.
+    Task 5: INCIDENT (to report to the user): in fix round 1 a probe `docker run` used `-v /dev/null:/x` (forbidden flag); it failed and created nothing; not in code or tests. A hung probe container `bench-ext-t5probe` was removed by that exact name (the implementer's own).
+    Task 5: fix round 1/5 (3 addressed, 0 open — container self-bound by in-script timer; n unique per run; verbatimSymlinks; commits bbe462f..bac5d8d); implementer cumulative 214.3k/36.5 min; re-review sonnet.
+    Task 5: minor (deferred): n and symlink copy untested; timer/body race at the 30-min edge reads timeout.
+    Task 5: complete (commits 896776f..bac5d8d, review clean)
+    Task 6: dispatched (opus, background) at bac5d8d; guard: stop if the first 4 of a stack all drop not servable.
+    Ruling: Task 7 (real-estate sources) runs in parallel with Task 6 in its own git worktree, merged back after review — why: Task 6 is hours of Docker and touches only progress.md and data; Task 7 touches bench/oracle.mjs, tests, README and runs sealed labellers off Docker — cost if wrong: an append conflict in progress/progress.md, resolved by keeping both sections.
+    Task 7: implementer opus 210.5k/34.7 min (worktree branch worktree-agent-aeff905a58618581b, commits 729c2eb..bf83939); (c): p8b1 dropped (outside data), 14 tasks; 347 pairs, 63 agreed fix (53 commits), 270 agreed not fix, 14 disputed (step 9); labellers 632/155604/11385833/1509006, opus-5-5, ~14 min.
+    Ruling: the label brief was amended after 7 runs that labelled from subjects; those runs were voided unread (sources/superseded/) and every kept label is from the amended brief — why: an instrument fix independent of any label content, as step 4 regenerated recipes under a new brief — cost if wrong: 7 wasted runs; the lock records the amendment.
+    Ruling: a labeller run whose `git show` calls are fewer than the distinct commits listed for that task did not read every diff and is rerun once (same brief, new out name), applied to every run by the trigger, not by its labels — why: 6.1 asks the labeller to read the diff; the trigger is content-independent — cost if wrong: a few extra labeller runs.
+    Task 7: review opus: spec ✅, Approved (0 Important); ⚠️ labellers have Bash — Ruling: accepted, plan-mandated by ruling 7 (git show / git log -1), confined by label-settings.json (only those two git commands, sandbox, Read on progress folder + attribution.md) — cost if wrong: a labeller could Grep <data> (not probed); its reply is data, sealed. ⚠️ 63 pairs from 53 commits — Task 8 groups by commit (ruling 9). ⚠️ implementer/reviewer usage — added in fix round.
+    Task 7: minor (deferred): diffHunks could misread a deleted `-- ` line as a header (0 of 1845 hunks affected); prompt file written in place (race); a transient failure uses the rerun; untested both-kinds throw / unknown --drop; p8b/p8b1 excluded only by manual --drop.
+    Task 7: fix round 1 implemented (e7db94e, 066aa99): all 28 runs met the read trigger (first runs had no count) and were rerun; 13/28 read every commit, 15/28 still under-read by the measure and keep labels (rule). Labels now: 347 pairs, 65 agreed fix, 270 not, 12 disputed, 0 unlabelled, 52 source commits; reruns 652/162117/12346665/1545533, opus-5-5, 10.6 min.
+    Ruling: no second rerun and no change of the reading measure after the reruns (a range form like `a..b` counts as under-reading) — why: the rule allowed one rerun and changing the measure after seeing its effect would be tuning; the 15 under-reading runs are listed in progress.md and go to the lock as a known limit — cost if wrong: some labels from partial reading; the step 9 human read of disagreements is the backstop.
+    Task 7: fix round 1/5 (5 addressed, 0 open — read gate + rerun, unlabelled not step9, labels prints per-kind totals, env restored, usage line; commits bf83939..066aa99); implementer cumulative 247.0k/53.3 min; re-review sonnet 88.9k/1.6 min.
+    Task 7: minor (deferred): reading measure undercounts range/chained forms (15/28 listed under-read may be overstated).
+    Task 7: complete (commits bac5d8d..066aa99, review clean); fast-forwarded into the main worktree branch.
+    Task 8: dispatched (opus, own worktree, base 066aa99); real-estate writers now, external writers only for tasks with a final serve verdict; the rest resumed after Task 6.
+    Task 8: implementer opus ~217k/~70 min (branch worktree-agent-a4dba354fada17938, c22cfc3..822a3eb). RE: 52 writers, 201 checks (49 interface none; high 66/med 93/low 42), 4 empty manifests (58e8819, 730509b, edf7c3a, fb7a2d9). EXT: 21 tasks, 133 checks (20 none); s1-08 and s2-04 have only interface-none checks. Waiting: s2-07, s2-08 (no serve verdict); s2-06 dropped not servable (replacement pending in Task 6). Usage RE 836/378493/11.0M/1.47M; EXT 743/381616/27.2M/1.38M, opus-5-5.
+    Ruling: leak check narrowed to ≥8 hex chars of the fix sha or the origin test's path (id prefixes in other forms are not leaks) — why: the check id itself carries sha7, which every check must name — cost if wrong: a check naming 7 chars of its fix sha in prose passes.
+    Ruling: when a commit has both an in-task pair and a later pair, a hunk the later pair lists belongs to the later pair's task — why: matches the bugs.mjs owner rule (blame rows first, the range only as a fallback), ruling 6's source — cost if wrong: 3 checks in p2/p4 instead of p3/p8d.
+    Ruling: a writer run whose manifest is empty is rerun once (same brief, new out); the second result stands — why: content-independent trigger, as for recipes and labels; 4 empty runs read at most 1 file — cost if wrong: 4 extra writer runs.
+    Task 8: review opus: spec ❌, Needs fixes (4 Important: prompts overwritten on reuse; imports/.spec.ts not enforced; source-path stdout sentinel untested; empty-manifest rerun missing). ⚠️ (a)(b) real-estate grading setup/start and oracle.sh paths — existing env scripts used by p8b's validation; Task 9 exercises them. ⚠️ (c) grade ignores JUnit ids not in the manifest — confirmed (score.mjs results(): `if (!out.has(id)) continue`). ⚠️ (d) queue from labels.tsv `source yes` rows — shas and the yes column only, no reasons. ⚠️ (e) scaffold package.json written by hand — accepted.
+    Ruling: the real-estate writer brief need not name `bench_re` — why: a database name in a sealed brief adds nothing and is a protected-name family — cost if wrong: none.
+    Ruling: the writer rerun trigger covers a manifest that is empty OR all `interface: none` (one rerun, second stands) — why: shape-only, content-independent, counters shallow reading (several all-none runs, and s1-08/s2-04 would otherwise drop) — cost if wrong: extra writer runs; possible bias toward more checks, bounded by validation and the comparer.
+    Task 8: minor (deferred): every write rewrites all oracle manifests; external oracle replaced rm-then-copy and dropped support files not counted; no invalid runner.json test; orphan file of an external interface-none entry copied; scaffold config comment names plan 8b.
+    Task 8: fix round 1 implemented (1af70b7, 4d2d95e): briefs restored to the pass-1 text and the 72 prompts restored to match their runs (sha in run records); rules in <data>/briefs/oracle-re.json; pass 3 76/76 runs: fb7a2d9 0→4, b5b3cec gains 1 scorable; still empty 58e8819, 730509b, edf7c3a; still all-none 090f6f2, 6c69b33, a5e0cd3, s1-08, s2-04; 1 refused (import). Totals RE 204 (48 none), EXT 22 tasks 145 (23 none); s2-07 now written; s2-05 rerun under original brief. Usage RE 60 runs 942/412924/12.0M/1.62M, EXT 25 runs 855/445968/29.8M/1.62M. Implementer cumulative 314.0k. Waiting: s2-08 serve; s2-06 replacement.
+    Task 8: fix round 1/5 (5 addressed, 0 open — prompts only on run + promptSha, import/file/kind rules from data, sentinel asserts, -2 rerun on empty/all-none, ownership test; commits 822a3eb..4d2d95e); re-review sonnet 90.3k/2.2 min (84/84 prompt files match promptSha).
+    Task 8: minor (deferred): stale-prompt test depends on the previous test's files; textual import gate (false positives refuse); README layout lacks the -2 folders.
+    Task 8: complete (commits 066aa99..4d2d95e, review clean); fast-forwarded into the main worktree branch. Writes still owed: s2-08 (after its serve verdict) and s2-06's replacement — carried to Task 9's run step (the loop Task 9 Step 3 names).
+    Task 9: dispatched (opus, own worktree, base 4d2d95e); real-estate lane now; external lane only after the controller says "Docker is free" (Task 6 still on Docker).
+    Ruling: a validation `error` verdict is unscored (added to UNSCORED) — why: ruling 10 records error for a thrown grade; an error check must not count as scored — cost if wrong: none.
+    Ruling: one fixer per (task, fix commit) group per round and a comparer per changed check; external runner.json changes go through the comparer as one item — why: ruling 11 batch per pass; the runner wires every check — cost if wrong: coarser fixer context.
+    Task 6: implementer opus, ~2 h 55 min wall; commits 3fcd8ad, 742139a. s1 8/8 served; s2 7 served + s2-06 (openwhispr#2643) dropped not servable (3 rounds failed the base build fetching the desktop runtime) → replaced by s2-09 kizuna-ai-lab/sokuji#361 (served, 1 round); s3 8 empty recipe. 17 serve agents out 134k / cacheRead 5.89M / cacheWrite 831k; 1 recipe agent out 10k. pgsnap equal ×4; Docker 330 containers / 174 tags identical before/after.
+    Ruling: s2's cold-setup repo moves from super-productivity (s2-08) to kizuna-ai-lab/sokuji (s2-09), per ruling 13 over the kept tasks — why: ruling 2 says cold-setup is read over kept tasks in sort order — cost if wrong: none; recorded at the lock.
+    Task 6: note — Docker build cache 780→190 entries with no logged prune; likely Docker's own GC; builder prune is allowed anyway; not verified.
+    Task 10: dispatched (opus, own worktree, base 742139a) in parallel with Task 9 — no Docker, no database; oracle.mjs merge conflicts resolved by the implementer if any.
+    Task 6: review sonnet: spec ✅, Approved (recipe SHAs vs lock 24/24, step4 untouched, step5 copies equal live files, walk order, usage sums, pgsnap ×4, Docker diff empty).
+    Task 6: minor (deferred): serve run records differ in a toolUses field (code changed mid-run by other tasks' merges); wall clock is a rounded sum.
+    Task 6: complete (commits 4d2d95e..742139a, review clean)
+    Task 10: implementer opus ~127k (branch worktree-agent-ae7e9651c5862a778, d3e4e3b..121a0ba): 24 sheets, 408 names, 2 deleted by input-check, 0 failed; usage 201/22181/1548206/461666 opus-5-5, 2.6 min wall. 33 of 408 names not found verbatim in the end commit (s3-06 17, s1-07 6 among them).
+    Ruling: the sheet tool deletes every name not found verbatim in the end commit's files (a mechanical check, counted), as the brief says "a name you cannot find in the code is left out, never guessed" — why: content-independent enforcement of the brief's own rule — cost if wrong: a name the framework supplies outside the repo is lost (already a known limit, prereg §15).
+    Ruling: the sheet agent sees the end tree including the PR's tests (as step 3a's real-estate sheets saw their end tree); recorded as a known limit, no change — cost if wrong: a sheet name may come from a test file.
+    Task 10: review sonnet: spec ✅, Approved; Important (on the ruling's fix): the verbatim check must skip test paths. Fix round 1 sent: verbatim check on non-test files, bullet parse, section deletion, README wording; re-applied to the 24 saved replies, no new agents.
+    Task 10: minor (deferred): agent exit code ignored on reuse; no test for -2 success or promptSha refusal; test-order dependence.
+    Task 10: fix round 1 implemented (b7a9da2, fdb62d1): 24 sheets rebuilt from saved replies: 360 names, 16 deleted, 34 not found (410 bullets), all PASS input-check.
+    Ruling: a `##` heading input-check flags is replaced by `## Unnamed section <n>` and its bullets kept (each still checked), instead of deleting the section — why: the heading only groups; the names under it pass every check (s3-01 fell to 2 names) — cost if wrong: names lose their page context in two sheets.
+    Task 10: minor (deferred): in-file test modules (e.g. Rust) count as source for the verbatim check.
+    Task 10: fix rounds 1–2/5 (all addressed — verbatim non-test check, bullet parse, unnamed-section headings, README; commits 121a0ba..b6a4b19); final: 24 sheets, 374 names, 34 not found, all PASS; implementer cumulative ~172k; re-review sonnet.
+    Task 10: complete (commits 742139a..b6a4b19, review clean); fast-forwarded into the main worktree branch.
+    Task 11: dispatched (opus, own worktree, base b6a4b19): Phase A code now; Phase B run after "validation done" from Task 9.
+    Ruling: classifiers see only scored checks (last verdict valid or absent-at-base, interface not none, not dropped/moved out) — why: unscored checks never enter a score; classifying them spends tokens and dilutes agreement — cost if wrong: a check revived later needs its own classification.
+    Task 11: Phase A done (27cb84f, 04c38d6; 328 pass/21 skip). Not test-first (code before tests) — noted.
+    Ruling: real-estate classify/split take `<task.json> <task>` (like validate) and queue names the sets `task-repo` / `external` — why: bench/ names no customer — cost if wrong: none.
+    Task 11: Phase A review opus: spec ❌, Needs fixes (3 Important: split ids recomputed → stale on rerun; split validate skipped silently; dead rater counted as a round). ⚠️ validate not on this branch — merge with Task 9 needed; signatures match (reviewer checked d3878ad).
+    Ruling: the 7.1 human sample draws from scored checks (valid or absent-at-base) — why: both are kept and scored by 7.1; "valid" in ruling 16 means validated-and-scored — cost if wrong: a few absent-at-base checks in the human sample.
+    Ruling: the 7.2 sample takes only ids both raters gave the same 6.3 label (traceable or not traceable), never a rule-assigned bucket — why: 7.2 re-rates agreed classifications — cost if wrong: none.
+    Task 11: minor (deferred): grouped external split copies the whole file without checking siblings; manifest strip is a deny-list; classify.md `not traceable`/`partly` clauses overlap; a set with 0 pooled checks gives no verdict; not test-first.
+    Task 11: Phase A fix round 1/5 (6 addressed, 0 open — split ids in record; validate gate on missing verdicts; dead rater exits non-zero; 7.2 agreed-only; lazy prompt; read counts; commit 1ddae5f); re-review sonnet. Phase A code review clean; Phase B pending Task 9 merge.
+    Task 11: carry to Phase B — the real `validate` binding arrives with Task 9's merge; check its exit-code convention (0 on success) against split's `code !== 0` gate.
+    Task 11: minor (deferred): splitter readsInFolder counts only in/; sequential split numbering no longer tested; failed rater records must be deleted to redo (README silent).
+    Task 9: interim — code d3878ad (327 pass); s2-08 written 2 (0 none), s2-09 89 (72 none); s1-01..s1-07 validated; s1-08 dropped no valid check (5/5 none) → replacement loop; p1 base 691a723 has no package.json → setup fails.
+    Ruling: a real-estate task whose base commit has no app manifest gets `precondition` (stage `no app at base`) as the base result for every check, instead of `error` — why: nothing the task builds can exist where no app exists; 7.1 expects a precondition failure at the base — cost if wrong: none for p1 (the repo's first base); any other failing base stays error.
+    Ruling: Task 9's agent runs s1's replacement loop (walk, sample, task-env --from-meta, serve, write, validate) after its external lane frees Docker; the replacement's sheet and classification come with Tasks 10/11 later — why: one Docker user at a time, and Task 9's branch lacks the sheet tool — cost if wrong: none.
+    Task 9: interim — s2-04 dropped no valid check (10/10 none) → s2 replacement loop after the external lane (approved); no-app-at-base implemented (97d3d94, task field appFile=package.json); s2-03 dummy port 49162 held by a host program → env/s2-03.json moved to 49190 (approved); p2: 20 absent-at-base, 3 broken, 2 weak, 2 error (fix parent 090f6f2 never ready).
+    Task 9: interim — s3-04 base build ENOSPC, s3-05 apt "invalid signature" (full-disk symptom), both `error`; the disk estimate read ~34 GB free (60 GB limit − 25.7 GB df), so the floor never fired.
+    Ruling: `docker builder prune -f` by hand between tasks when a build or run fails with a disk-full signature, regardless of the estimate, then rerun the errored tasks — why: the user's standing instruction allows `docker builder prune -f` (build cache only); the estimate misses VM allocation — cost if wrong: a longer rebuild from an empty build cache.
+    Task 9: interim — external lane done. s1-08 → s1-09 we-promise/sure#4246 (servable r1, 4 entries, 4 valid); s2-04 → s2-10 coder/xum#6616 (servable r0, 8 entries/3 none, 1 valid + 4 absent-at-base after 1 fixer round). Prune freed 20.81 GB; s3-04 (2 valid), s3-05 (7 valid, 1 absent) reran clean; s2-03 1 valid. No external task without a scored check. p4 (real-estate Postgres in Docker) hit ENOSPC → 12 error, reruns at lane end; then p1, then sweep.
+    Task 9: minor (deferred): `write` reads the serve verdict from ext/step5-logs/serve.tsv, so s1-09's line was appended by hand; a killed first s1-09 writer run left an orphan, stopped, record discarded (usage kept).
+    Sheets for s1-09 and s2-10 dispatched (sonnet run agent, main worktree; Task 10's tool).
+    Task 10 addendum: replacement sheets s1-09 names=14 notfound=9, s2-10 names=22 notfound=0, both PASS; usage 26/3412/252241/37467 opus-5-5; commit 1e6a4e1 (progress only).
+    Task 9: interim — sweep: 47 pre-existing, 20 boundaries, 38 moved (p2 20, p3 11, p6a 9…), 9 recorded none (their p1 base errored: no app).
+    Ruling: the no-app-at-base rule also applies to the sweep's boundaries, applied to the existing sweep results (a commit without the app file reads `precondition`), without regrading — why: the rule depends on the file's absence, not on a run; same rule as validation — cost if wrong: 9 checks move to p1 instead of none.
+    Task 9: implementer opus 403.2k / 18.4 h wall (branch …a4533c6b944478a71: d3878ad, 97d3d94, 171c605 merge of main, 79d41bf, c03e8b0; 331 pass). RE 14 tasks: 156 checks — valid 4, weak 25, broken 10, error 2, absent-at-base 115, none 48; 47 pre-existing all moved (p2 19, p3 10, p6a 7, p4 2, p1 9). EXT 24 kept: 150 checks — valid 54, weak 5, broken 3, error 0, absent-at-base 88, none 83; every kept task ≥1 scored. Drops s1-08, s2-04 → s1-09, s2-10.
+    Task 9: INCIDENT (to report to the user): a process listing showed the opening lines of s1-09's writer prompt (brief text only, no oracle content).
+    Ruling: rule (b) is counted at the lock (ruling 13): p5, p7b, p7c (0 scored) and p6b, p6c (2 each) do not meet it now and are recorded as such, to be recounted after step 9 — why: ruling 13 says so — cost if wrong: none now.
+    Ruling: before a Docker batch (Task 11 split validation), run `docker builder prune -f` when the build cache exceeds 15 GB — why: the disk estimate misses ENOSPC; pruning only the cache is allowed by the user — cost if wrong: slower cold rebuilds.
+    Task 11: Phase B started — merge Task 9 branch, classify all kept tasks; split held until Task 9 review is clean ('split go').
+    Task 9: review opus: spec ❌, Needs fixes — Critical: README conflict markers committed (171c605); Important: fixer-kept files bypass write's leak/import/runner gates. Counts reconciled with moves.json and validation files (RE 156, EXT 150).
+    Ruling: an external task with no scored check but some `error` checks is `not judged` (rerun), not dropped — why: a machine failure is never an out (step 4 rule) — cost if wrong: none occurred.
+    Task 9: parked — a check moved by the sweep gets no fixer round at its receiver (1 broken in p2) — Ruling: ruling 12 asks only a partial revalidation of receivers; real, nothing builds on it — cost if wrong: 1 check unscored.
+    Ruling: s1's cold-setup repo moves from paperless-ngx (s1-06) to we-promise/sure (s1-09), per ruling 13 over the kept tasks — cost if wrong: none; recorded at the lock.
+    Task 9: minor (deferred): a stale fixer round counts toward rounds; appFile rejection untested; not-judged / runner-through-comparer / duplicate-id comparer paths untested; verdict lookup duplicated.
+    Task 11: Phase B interim — merged Task 9 (03dc4c2; README markers resolved there; split validates via Task 9's validate, exit 0); 35 tasks classified, 3 skipped (p5, p7b, p7c: no scored check); 70 rater runs code 0; RE 119 (build 3, requirement 96, partly 15, disputed 5), EXT 142 (build 38, requirement 67, partly 27, disputed 10); interim pooled RE κ .86 raw .96 AC1 .95 usable; EXT κ .89 raw .93 AC1 .90 usable; usage out 151759 / cr 2.20M / cw 0.996M opus-5-5; 10/70 raters did not open every file.
+    Ruling: rater reading gate — a run that did not open every file in its folder is rerun once (labels of the rerun stand), by that trigger only — why: same content-independent gate as the labellers — cost if wrong: ~10 extra rater runs; agreement shifts.
+    Ruling: tasks whose check files Task 9's fix round restores are reclassified before split (old records superseded) — why: raters must judge the check as it will be scored — cost if wrong: a few extra runs.
+    Task 9: fix round 1 implemented (93dcc76, c3f4d32; 332 pass): README markers removed; fixer-kept files gated (leak/import/runner); recheck 321 files, 0 fail → nothing restored, no revalidation, so no task needs reclassification; counters split (129 compared, 3 comparer changed, 0 out-of-scope); sweep-saved.mjs saved to drivers; cold-setup s1 recorded. Implementer cumulative ~403k+.
+    Task 9: fix round 1/5 (5 addressed, 0 open; commits c03e8b0..c3f4d32); re-review sonnet.
+    Task 9: minor (deferred): earlier per-task "refused" figures left as written with a corrective bullet.
+    Task 9: complete (commits 1e6a4e1..c3f4d32, review clean); fast-forwarded into the main worktree branch.
+    Task 11: split go sent (merge c3f4d32 first; builder prune before the external batch).
+    Task 11: Phase B done (de9ef2c gate, e24d116 merge c3f4d32, 1036af6 progress; 343 pass): gate reruns 10 (4 then read all, 6 still partial, stand); 40 partly split in 19 tasks → 80 new (44 scored: 12 valid, 32 absent; 14 weak, 22 broken); bench_re lane hit a 2-h shell limit mid-p2 — leftover grade worktree and bench_re/bench_re_test removed by the task's own teardown, pgsnap equal; external: builder prune (21 GB). Queue: RE 119, κ .73 raw .92 AC1 .91 usable (build 5, requirement 104, disputed 11); EXT 142, κ .91 raw .94 AC1 .92 usable (build 53, requirement 83, disputed 9); step9 labels 12, classify 20, 7.1 40, 7.2 40, inputs 4. 150 agent runs, out 368k, opus-5-5. Implementer cumulative ~370k.
+    Ruling: a split original none of whose halves is scored is restored with label requirement and its halves dropped (`split gave no scored half`) — why: 6.3 "if not [splittable], it goes to the requirement bucket" — cost if wrong: 9 checks in requirement instead of out.
+    Task 11: restore rule applied (c7bed6a, 0635e1a; 344 pass): 9 originals restored as requirement (s1-06 1, s2-09 2, s3-01 1, s3-06 5), 18 halves dropped; EXT requirement 83→92; pooled agreement unchanged. Added marker `restored_from_split` (prevents re-split) — accepted.
+    Task 11: Phase B review opus: spec ❌, Needs fixes — (1) 9 restored originals have no verdict (split's validate rewrote the file without the dropped original), so unscored; (2) 13 split fixer runs refused as stale (shared labels with Task 9's fix records), undisclosed; 7 of 9 restores follow from it. Counts otherwise reconciled (labels 254 = 58 build + 196 requirement; disputed 20; step9 files).
+    Ruling: split halves get ruling 11's fixer rounds under their own labels (fix-split-…); rerun split validation for p3, p6c, s1-03, s1-04, s1-06, s3-01, s3-06; re-apply the restore rule after, with restored originals revalidated so they carry a verdict; error halves are not judged (no restore) — why: ruling 11/15 apply to split checks; ruling 13 needs a verdict to score — cost if wrong: hours of extra validation runs.
+    Task 11: minor (deferred): split's `code !== 0` gate is dead against validate (always 0); a restore-only rerun prints requirement=0; no test for the readsInFolder fallback.
+    Task 11: Phase B fix round implemented (1b09558, 1864c9f, eba44d1; 345 pass): split fixers under fix-split-<round> (kept fixes s1-03 3, s1-04 1, s1-06 1; p3/p6c refusals were on non-split checks already fixed by Task 9); restore re-grades the original with the split's files taken out (shared file reverted) — 8 restored now scored (s2-09 2, s3-01 1, s3-06 5); s1-06 restore undone (split has a scored half); error/no-verdict halves not judged; EXT labels build 55, requirement 95, disputed 9; RE unchanged; pooled κ unchanged; 14 fixer/comparer + 6 rater runs.
+    Task 11: Phase B fix round 1/5 (4 addressed, 0 open; commits 0635e1a..eba44d1); re-review sonnet: all 259 labelled keys have a scored verdict (61 valid, 198 absent-at-base).
+    Task 11: minor (deferred): README "only stdout line" for split no longer exact; undoing a restore recopies splitter out/ files (kept fixer changes on those halves lost until reapplied; no current effect); rerun prints classified=0.
+    Task 11: complete (commits b6a4b19..eba44d1, review clean); fast-forwarded into the main worktree branch. Implementer cumulative 476.1k.
+    Ruling: before the lock, every external env/<task>.json `oracle` points at the main checkout's bench/ext.mjs (the code lands there at merge), so the lock hashes the final env files — why: the worktree path dies with the worktree — cost if wrong: grading needs the merge first (no grading is planned before it).
+    Task 12: implementer opus, commit 62e0839: lock written (44 rulings, 3 incidents, 1367 hashes); 27 env oracle fields → main checkout; task-repo 14 kept/11 classified, 120 scored, build 5 / requirement 104 / disputed 11, κ .73 usable, median build 0; external 24, 159 scored, build 55 / requirement 95 / disputed 9, κ .91 usable, median build 2; rule (b) met by 9 (p1, p2, p3, p4, p6a, p8a, p8c, p8d, p8e), not by p5, p7b, p7c (0), p6b, p6c (2); Docker: no step 5 names left (328 fixture containers, 162 fixture images).
+    Task 12: review sonnet: spec ❌ (Important: /tmp/t12 citations); tables, medians, rule (b), rulings (44), hashes (24 random + all env/step9/briefs lines verified), Docker all reconcile. Fix round 1 sent (paths, identity term, wording, usage line, rulings 1–16 pointer).
+    Task 12: fix round 1/5 (5 addressed, 0 open; commit a697d86, text only, no hash or count changed); re-review haiku 76.0k. <data>/logs/task12/ existence confirmed by the first reviewer.
+    Task 12: complete (commits eba44d1..a697d86, review clean)
