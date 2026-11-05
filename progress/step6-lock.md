@@ -8,7 +8,7 @@ Every count here comes from one of these sources:
 - `step.json`, `step-f2p.json`, step validation verdicts, `labels.json`, `agreement.json` numbers and `*.run.json` usage;
 - the counts-only scripts of `<data>/logs/step6/`, listed under "Scripts" below.
 
-The scripts read the oracle manifests only to count ids, verdicts and severities. Nothing here was read from an oracle or step oracle file, a check file, a `steps.json`, a `filter-source.md`, an input, a sheet, a prompt, a reply, a `classify-*.json` label, a step 9 row, `ext/sealed/`, `ext/raw/`, `heldout/`, `step-v1/` or `step-v2-writer/`. Those files are only hashed, or only counted.
+The scripts read the oracle manifests only to count ids, verdicts and severities. Nothing here was read from an oracle or step oracle file, a check file, a `steps.json`, a `filter-source.md`, an input, a sheet, a prompt, a reply, a `classify-*.json` label, a step 9 row, `ext/sealed/`, `ext/raw/`, `heldout/`, `step-v1/` or `step-v2-writer/`. Those files are only hashed, or only counted (the lister replies were counted by `lister-newlines.mjs`, which prints no title).
 
 `<data>/p8b` is a symlink to `<data>/8b` (since 2026-10-27). Every p8b path here goes through `p8b/...`, and nothing was hashed or counted through `8b/...`.
 
@@ -197,6 +197,7 @@ Columns:
 | `task5-usage.mjs` | Task 5: summed usage of the `.run.json` records under `<task>/step/` |
 | `floor-count.mjs` | Task 6: the floor-rule numbers, from `labels.json` and the disputed lists of `agreement.json` |
 | `sample-7.1-step.mjs` | Task 6: wrote `step9/sample-7.1-step.tsv`, printed its row count |
+| `lister-newlines.mjs` | Final review: per task of the live step (through p8b), the lister entries and those whose title holds a line break; prints counts only |
 | `lock-count.mjs` | Task 6: per task, `step.json` ids and candidates, `step-f2p.json` verdicts, step validation verdicts and the severities of the ids; per set, the median, tasks with none, tasks all `low` |
 | `lock5-compare.mjs` | Task 6: recomputed SHA-256 of every file the step 5 lock hashed; printed counts and any changed or missing path |
 | `lock-hash.mjs` | Task 6: wrote this lock's hash lines to a file and printed counts per category, plus the file counts of the voided folders |
@@ -213,7 +214,7 @@ The voided folders were moved unread. They are not hashed here. Their file count
 
 ## Rulings during the build
 
-The controller's rulings, in the order they were made, as recorded in the SDD ledger (`.superpowers/sdd/2026-11-05-bench-step-oracles/progress.md`). Each gives the decision and its reason.
+The controller's rulings, in the order they were made, as recorded in the SDD ledger (`.superpowers/sdd/...` is gitignored; the copy is in `progress/progress.md`, section "SDD ledger of step 6 (copied before the final review)"). Each gives the decision and its reason.
 
 1. Tasks run strictly one after another in this worktree. The skill forbids parallel implementers, and `progress/progress.md` would conflict.
 2. Implementers record sealed-agent usage and run wall clock in `progress/progress.md`, under the section "2026-11-05 — step oracle plan". The controller records implementer and reviewer usage in the ledger and copies it there before the final review.
@@ -260,6 +261,7 @@ The controller's rulings, in the order they were made, as recorded in the SDD le
   - `oracle/`, `labels.json`, `agreement.json`, `validation-*.json` and the five step 5 `step9/` files are unchanged.
 - **Hash tool.** `lock-hash.mjs` hashes with Bun's SHA-256. One file was checked against `shasum -a 256`, `step9/sample-7.1-step.tsv`, and the two agree.
 - **Tools.** `bench/` is at `e97944495f4c2a270295bd2dd787ab355999c70e` (`git rev-parse HEAD` before this lock's commit), and `git status --short bench` is empty.
+- **Lister titles with a line break (final review, I3).** `logs/step6/lister-newlines.mjs` parses every `steps.reply.md` and `steps-2.reply.md` of the 15 tasks of the live step (p1–p5, p6a, p6b, p6c, p7b, p7c, p8a, p8b, p8c, p8d, p8e; p8b through `p8b/...`) as `stepsReply` does and prints counts only, no title. It found 321 entries in all (p1–p5 0, p6a 11, p6b 12, p6c 18, p7b 28, p7c 12, p8a 49, p8b 41, p8c 40, p8d 70, p8e 40) and **0** with a `\r` or `\n` in the title. Run with `bun logs/step6/lister-newlines.mjs <data>`. `step` was not rerun.
 - **Docker.** No Docker call was made in step 6. Tasks 3 and 4 ran none, by their records. Task 5 graded real-estate on the host database `bench_re` only. Task 6 ran none.
 - **Databases.** Task 5's pgsnap lists were equal before and after each of its three batches, with no `bench_re` left. Task 6 touched no database.
 
@@ -270,6 +272,8 @@ The controller's rulings, in the order they were made, as recorded in the SDD le
 - **p7c has 1 step id and p7b 2,** so their H1 scores are near-binary.
 - **s1-02's only step check is `low`,** so it passes 9.1's "task passed" clause whatever the check's result.
 - **The p6a and p7c v2 fixer folders** held the step text in their manifest copy (ruling 17). Those runs stand.
+- **The controller kept ruling 17** (p6a's and p7c's fixer runs had the step text readable in their folder copy, not in their prompt). The user may reverse it.
+- **A step 10 rerun of the task-repo `step`** re-passes `grade` and rewrites `step/validation-<end7>.json` with a new `at`. Step 10 must compare those files without `at`, or record new hashes (final review M4).
 - **`sample-7.1-step.mjs` imports `queuePick` by this worktree's absolute path.** A rerun after the worktree is removed needs the import repointed to the main checkout. The file's hash below is the one that wrote the sample.
 - **The median of external step ids** is 1 over all 24 sampled tasks, because 4 have no step oracle, and 2 over the 20 tasks with an H1 score. The plan's sentence "H1 rests on a median of 2 checks per task" holds for the scored tasks. The plan text was not changed.
 
@@ -283,8 +287,9 @@ The controller's rulings, in the order they were made, as recorded in the SDD le
 - **p8b keeps its step 2 validations** for its fix-commit oracle, and p8b is trial-only.
 - **The f2p resolver judges with one agent.** `unknown` is out.
 - **Under-reading.** These runs stand under the gate rules:
-  - **Resolver.** 4 of the 5 gate reruns made no `Read`: s2-10, s3-01, s3-06 and s3-07. Only s2-02's rerun read. The verdicts that move ids (s2-02, s2-10 and s3-06 `f2p`; s3-05 and s3-07 `unknown`) rest on one or two searches each. Step 9 could add a human read of them.
+  - **Resolver.** 4 of the 5 gate reruns made no `Read`: s2-10, s3-01, s3-06 and s3-07. Only s2-02's rerun read. The verdicts that move ids (s2-02, s2-10 and s3-06 `f2p`; s3-05 and s3-07 `unknown`) all but s2-02's rest on one or two searches. Step 9 could add a human read of them.
   - **Lister.** The gate fired in 9 tasks (p1–p5, p6a, p6b, p6c, p7b), and every rerun also made no `Read`. The tool verifies every listed title against the end's test files, so an unread listing cannot add a wrong test, but it can miss steps.
+- **A listed title that is a substring of a longer test title** can resolve to the one file that holds only the longer test (`git grep -F` matches the title verbatim inside it), so the step check may be written from a test other than the one the step names (final review M5).
 - **The `p8b`/`8b` symlink.** Scans that walk `<data>` see p8b twice. Only scans through `p8b/...` count it once.
 
 ## Hashes
@@ -856,10 +861,11 @@ eb6deaf39b3cf6f445bad87a9a43f6e4388d16298e362bb126efa48dde1515f5  s3-08/step.jso
 9b7147bf4e6f3f9c19bc7cf333f4601c0a4fe5fb338cb9cc23a1a8b8851bf345  step9/sample-7.1-step.tsv
 ```
 
-The 16 scripts of `<data>/logs/step6/` are hashed apart from the 555 files above. The lock's counts come from them (see "Scripts").
+The 17 scripts of `<data>/logs/step6/` are hashed apart from the 555 files above. The lock's counts come from them (see "Scripts").
 
 ```text
 83e8117bbb500f3f61b19b7554b98dc29a33a8a787f85ea83e98f3175bdff193  logs/step6/floor-count.mjs
+44376388e87884fbacc5f722eb584261064a052cb7b371695c35460f67c062c2  logs/step6/lister-newlines.mjs
 f2505975f8617c73d693c84c5a12e7daf5024f7d37734bb11a9bd65d491dc966  logs/step6/lock-count.mjs
 51aff2e51017bb926bc3ce9e062aa4762804c9f2b98413edf86cadb5ea9fa28c  logs/step6/lock-hash.mjs
 f5ee3df0811b773d43d5ab4bb31207f0cc4b4c08c751c93112773e5f208b576e  logs/step6/lock5-compare.mjs
