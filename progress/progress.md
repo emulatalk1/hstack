@@ -2288,3 +2288,24 @@ Usage of v2: the sum of every `.run.json` under `<task>/step/` (listers, writers
 | total | 41 | 450 | 248818 | 9189822 | 1667568 | 2280 |
 
 Superseded spend (v1, 35 runs: the 34 in `step-v1/` plus the first p1 lister): input 420, output 226091, cache read 9097114, cache write 1502690.
+
+#### p1–p5 and p8b after run v2 (controller rulings)
+
+- **p1–p5 are accepted with no step oracle.** The per-line probe is right and probe-titles2 overcounted: its p1–p4 hits span a line break, and `git grep -e` ORs the two halves of such a pattern.
+- **p8b: the writer's folder was reached through a symlink.** `<data>/p8b` is a symlink to `<data>/8b`.
+  - **Probe** (sealed-agent, one Write each, under `/tmp/hstack-bench/symprobe/`). A folder granted only by its symlink path: code 0, `Write` 1, no file landed. The same folder granted by its real path: code 0, `Write` 1, the file landed. Granted by both paths with the prompt naming the symlink path (the fix's shape): code 0, `Write` 1, the file landed. Usage of the 3 probes: input 12, output 390, cache read 29897, cache write 7514.
+  - **Fix** (commit 865f6bb). `runWriter` grants each folder (the writer's, the `-2`'s, the fixer's and the fixer's read-only logs) by the given path and by its `realpathSync`, in `additionalDirectories` and in `allow`. The prompt keeps the given path. New test: 'a writer folder reached through a symlink is granted by its real path'. It fails against the old code. `bun test ./tests`: 372 pass, 21 skip, 0 fail.
+  - **Data.** p8b's two v2 writer runs (folders, replies, records, prompt, settings) were moved unread to `<data>/p8b/step-v2-writer/`. The lister record stays, so the pick is the same.
+  - **Rerun of p8b only** (12:23:20Z–12:34:58Z, exit 0; no new lister run, 1 writer run, 2 grade runs):
+
+```
+p8b step listed=41 resolved=33 picked=15 written=13 refused=2 none=1 valid=2 absent-at-base=10 weak=0 broken=0 error=0 fixer rounds=0 ids=12
+```
+
+  - **Writer usage:** input 30, output 30427, cache read 1182236, cache write 45916, code 0, 15 `Write`. The two voided v2 writer runs are superseded spend; they are in the v2 table above under p8b.
+  - **Ids:** p8b's ids are `1846450-T1` … `T15`. There are no collisions once the `p8b`/`8b` link is counted as one folder (`task5-ids.mjs` counts it twice).
+  - **pgsnap:** equal before and after (`<data>/logs/step6/pgsnap-task5p8b-{before,after}.txt`), no `bench_re`, no grade worktree left.
+- **Real-estate totals after this rerun.**
+  - Ids: 87 (75 + 12).
+  - Tasks with fewer than 5 ids: 8 (p1–p5 with 0, p6b 4, p7b 2, p7c 1).
+  - Tasks with 5 or more ids: p6a, p6c, p8a, p8b, p8c, p8d, p8e.
