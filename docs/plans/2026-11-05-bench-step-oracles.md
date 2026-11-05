@@ -91,6 +91,8 @@ So the floor rule applies, now and after step 9: H1's build score comes from the
 
 - **H1 on fewer than 24 external tasks.** s1-01 and s3-01 have no `traceable` check and no disputed one, so their step oracle is empty and H1 has no score for them. That leaves 22, or fewer if the resolver sends a task's only candidate out. Section 10.2 says N never drops below 24. Ruling 14 of step 4 reopens the walk only for a dropped task, and these two stay for H2–H4.
 
+  Decided by the user on 2026-11-05: option 1, the proposal below.
+
   Proposed: register now that H1's N counts only tasks with a non-empty step oracle. When step 11 recomputes N (section 10.2), the walk of ruling 14 continues until that count meets N, which is at least 24. The added tasks go through the step 5 pipeline and this plan's `step`. Consequence: they arrive after step 7 and the stick v1 lock (step 10), so each needs its seeded bugs (step 7) run then and the lock amended. The N rule already foresees tasks added at step 11 with exactly these consequences, and a σ_d above 0.25 would send the walk on anyway, so one walk covers both.
 
   Alternatives: walk for 2 or more tasks now, before step 7. Each then runs the step 5 pipeline (serve, write, validate, sheet, classify, with Docker) inside step 6, and a later N rise still needs a second walk at step 11. Or report H1 on 22 as a registered deviation from 10.2.
