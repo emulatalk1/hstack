@@ -1500,7 +1500,8 @@ const reData = (name) => {
 const titled = (n) => ({ step: `SENTINEL-STEP ${n}`, file: 'tests/a.spec.ts', title: `SENTINEL-TITLE ${n}` })
 // one fake agent: a lister replies list(label) (a string as it is); a writer writes a check per listed id (write(given)
 // may change the entries); a fixer or comparer is fakeAgents'
-const reAgent = (calls, { list = () => [titled(1), titled(2)], write = (g) => g.map(({ id, origin }) => ({ id, origin })), fix = {} } = {}) => {
+// a lister's record counts reads(label) Read calls
+const reAgent = (calls, { list = () => [titled(1), titled(2)], write = (g) => g.map(({ id, origin }) => ({ id, origin })), fix = {}, reads = () => 1 } = {}) => {
   const fa = fakeAgents(fix, calls)
   return async (args) => {
     const label = args[1], out = argOf(args, '--out')
@@ -1512,12 +1513,12 @@ const reAgent = (calls, { list = () => [titled(1), titled(2)], write = (g) => g.
     } else {
       const dir = JSON.parse(readFileSync(argOf(args, '--settings'), 'utf8')).permissions.additionalDirectories[0]
       const given = [...readFileSync(argOf(args, '--prompt'), 'utf8').matchAll(/^- `([0-9a-f]{7}-T\d+)`: `(.+)`$/gm)].map((m) => ({ id: m[1], origin: m[2] }))
-      const entries = write(given).map((e) => ({ behaviour: `SENTINEL-BEHAVIOUR ${e.id}`, interface: 'browser', severity: 'high', ...e }))
+      const entries = write(given, label).map((e) => ({ behaviour: `SENTINEL-BEHAVIOUR ${e.id}`, interface: 'browser', severity: 'high', ...e }))
       for (const e of entries) if (e.interface !== 'none') writeFileSync(join(dir, `${e.id}.spec.ts`), "import { test } from '@playwright/test'\n")
       writeFileSync(join(dir, 'manifest.json'), JSON.stringify(entries))
       writeFileSync(out, 'SENTINEL-REPLY')
     }
-    writeFileSync(`${out}.run.json`, '{"code":0}')
+    writeFileSync(`${out}.run.json`, JSON.stringify({ code: 0, ...(label.startsWith('steps-') && reads(label) ? { toolUses: { Read: reads(label) } } : {}) }))
     return 0
   }
 }
@@ -1680,4 +1681,45 @@ test('step prints no title, file or behaviour', async () => {
   const kept = readFileSync(join(d, 'r1/step.json'), 'utf8')
   expect(await reStep(d, 'r1', calls)).toEqual({ code: 1, out: 'r1 step refused a run whose prompt differs from the one it ran with' })
   expect(readFileSync(join(d, 'r1/step.json'), 'utf8')).toBe(kept)
+})
+
+test('a lister run that made no Read is rerun once and the rerun stands', async () => {
+  const d = reData('re8'), calls = []
+  // the first run reads nothing and lists one test; the rerun, which reads nothing either, stands with its two
+  const list = (label) => (label.endsWith('-2') ? [titled(1), titled(2)] : [titled(3)])
+  const r = await reStep(d, 'r1', calls, { list, reads: () => 0 })
+  expect(r.out.split('\n').at(-1)).toMatch(/^r1 step listed=2 resolved=2 picked=2 /)
+  expect(calls.map((a) => a[1])).toEqual(['steps-r1', 'steps-r1-2', 'step-r1'])
+  // no third run: both records are reused
+  await reStep(d, 'r1', calls, { list, reads: () => 0 })
+  expect(calls).toHaveLength(3)
+  // a first run that read stands alone
+  const d2 = reData('re8b'), calls2 = []
+  await reStep(d2, 'r1', calls2, { list })
+  expect(calls2.map((a) => a[1])).toEqual(['steps-r1', 'step-r1'])
+})
+
+test('a title given with no file resolves only when exactly one test file holds it', async () => {
+  const d = reData('re9'), calls = []
+  const list = () => [{ step: 'S1', file: '', title: 'SENTINEL-TITLE 5' }, { step: 'S2', file: '', title: 'SENTINEL-SHARED' }]
+  const r = await reStep(d, 'r1', calls, { list })
+  expect(r.out.split('\n').at(-1)).toMatch(/^r1 step listed=2 resolved=1 picked=1 /)
+  expect(jsonAt(join(d, 'r1/step/steps.json'))).toEqual([
+    { step: 'S1', file: 'tests/a.spec.ts', title: 'SENTINEL-TITLE 5', resolved: true },
+    { step: 'S2', file: '', title: 'SENTINEL-SHARED', resolved: false },
+  ])
+})
+
+test('a writer rerun\'s prompt names its own folder', async () => {
+  const d = reData('re10'), calls = []
+  // the first writer leaves only interface none; the rerun writes its checks into the folder its prompt names
+  const write = (g, label) => g.map(({ id, origin }) => ({ id, origin, ...(label.endsWith('-2') ? {} : { interface: 'none' }) }))
+  const r = await reStep(d, 'r1', calls, { write })
+  expect(calls.map((a) => a[1])).toEqual(['steps-r1', 'step-r1', 'step-r1-2'])
+  const w1 = join(d, 'r1/step/work/write'), w2 = `${w1}-2`
+  const p2 = readFileSync(argOf(calls[2], '--prompt'), 'utf8')
+  expect(p2).toContain(`\`${w2}\``)
+  expect(p2).not.toContain(`\`${w1}\``)
+  expect(JSON.parse(readFileSync(argOf(calls[2], '--settings'), 'utf8')).permissions.additionalDirectories[0]).toBe(w2)
+  expect(r.out.split('\n').at(-1)).toMatch(/ written=2 refused=0 none=0 valid=2 .* ids=2$/)
 })

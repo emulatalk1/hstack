@@ -264,11 +264,12 @@ async function once(agent, { prompt, text, out, prepare }, args) {
 }
 
 // controller ruling: a run that leaves no manifest, an empty one, or only `interface: none` entries is run once more
-// (`-2`: same prompt, its own folder, reply and settings; the first record stays), and the second run stands
+// (`-2`: same prompt naming its own folder, its own folder, reply and settings; the first record stays), and the second run stands
 async function writer(agent, o) {
   const first = await runWriter(agent, o), l = readJson(join(o.dir, 'manifest.json'))
   if (first.stale || (Array.isArray(l) && l.some((e) => e?.interface !== 'none'))) return { ...first, dir: o.dir, runs: 1 }
   const two = { ...o, label: `${o.label}-2`, out: o.out.replace(/\.reply\.md$/, '-2.reply.md'), dir: `${o.dir}-2`, settings: o.settings.replace(/\.json$/, '-2.json') }
+  two.text = o.text.replaceAll(o.dir, two.dir) // controller ruling: the rerun's prompt names its own folder (every caller puts dir in verbatim)
   return { ...(await runWriter(agent, two)), dir: two.dir, runs: 2 }
 }
 const staleLine = (label) => `write ${label}: refused 1 writer run whose prompt differs from the one it ran with`
@@ -1074,12 +1075,13 @@ async function step(c, agent) {
 }
 
 // --- step <task.json> <task> (rulings 3-6 of step 6): a real-estate task's step oracle. Prints counts only ---
-// the lister's entries with a string step, file and title; ok when the reply is such an array and every entry is one
+// the lister's entries with a string step, file and title (file may be empty: the step quotes only the title); ok when
+// the reply is such an array and every entry is one
 function stepsReply(text) {
   let arr = null
   try { arr = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)) } catch {}
   if (!Array.isArray(arr)) return { list: [], ok: false }
-  const list = arr.filter((e) => ['step', 'file', 'title'].every((k) => typeof e?.[k] === 'string' && e[k].trim())).map(({ step, file, title }) => ({ step, file, title }))
+  const list = arr.filter((e) => typeof e?.file === 'string' && ['step', 'title'].every((k) => typeof e?.[k] === 'string' && e[k].trim())).map(({ step, file, title }) => ({ step, file, title }))
   return { list, ok: list.length === arr.length }
 }
 
@@ -1112,7 +1114,8 @@ async function stepRe(c0, { agent, grade }) {
   const end = (await gitOut(c.repo, 'rev-parse', `${c.end}^{commit}`)).trim(), base = (await gitOut(c.repo, 'rev-parse', `${c.base}^{commit}`)).trim(), end7 = end.slice(0, 7)
   const stale = () => { console.log(`${c.task} step refused a run whose prompt differs from the one it ran with`); return 1 }
   const n = { listed: 0, resolved: 0, picked: 0, written: 0, refused: 0, none: 0, rounds: 0 }
-  // 1. the lister; a reply that is not the list, or a run with a code other than 0, is run once more (-2), which stands
+  // 1. the lister; a reply that is not the list, a run with a code other than 0, or one whose record shows no Read (the
+  // reading gate, controller ruling) is run once more (-2), which stands
   const read = (f) => readFileSync(join(c0.evDir, f), 'utf8')
   const ltext = `${readFileSync(join(c.data, 'briefs/steps.md'), 'utf8').trimEnd()}\n\n## The plan text\n\n${fence(read('filter-source.md'), 'markdown')}\n## The filtered input\n\n${fence(read('input.md'), 'markdown')}`
   let listed = []
@@ -1122,7 +1125,7 @@ async function stepRe(c0, { agent, grade }) {
     if (r.stale) return stale()
     const res = stepsReply(existsSync(out) ? readFileSync(out, 'utf8') : '')
     listed = res.list
-    if (res.ok && r.code === 0) break
+    if (res.ok && r.code === 0 && readJson(`${out}.run.json`)?.toolUses?.Read > 0) break
   }
   // resolution: the named file when it matches, else the one test file that does; deduplicated by <file>::<title>
   const steps = [], seen = new Set()
