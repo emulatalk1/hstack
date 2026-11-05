@@ -1081,7 +1081,7 @@ async function step(c, agent) {
   return 0
 }
 
-// --- step <task.json> <task> (rulings 3-6 of step 6): a real-estate task's step oracle. Prints counts only ---
+// --- step <task.json> <task> (rulings 3-6 of step 6): a task of tasks.json's step oracle. Prints counts only ---
 // the lister's entries with a string step, file and title (file may be empty: the step quotes only the title); ok when
 // the reply is such an array and every entry is one
 function stepsReply(text) {
@@ -1221,8 +1221,12 @@ function scoreCmd(task, sha) {
   if (!step) return missing('step.json')
   const fix = read(`grades/${sha7}.json`)
   if (!fix) return missing(`grades/${sha7}.json`)
-  const sg = step.oracle === 'step/oracle' ? read(`step/grades/${sha7}.json`) : null
-  if (step.oracle === 'step/oracle' && !sg) return missing(`step/grades/${sha7}.json`)
+  if ((step.oracle !== 'oracle' && step.oracle !== 'step/oracle') || !Array.isArray(step.ids)) { console.log(`${task} score ${sha7}: ${join(task, 'step.json')} is not a step.json`); return 1 }
+  const useStep = step.oracle === 'step/oracle' && step.ids.length // a task with no step id has no step oracle (p1-p5)
+  const sg = useStep ? read(`step/grades/${sha7}.json`) : null
+  if (useStep && !sg) return missing(`step/grades/${sha7}.json`)
+  const absent = step.ids.filter((id) => !(sg ?? fix).checks.some((c) => c.id === id)).length
+  if (absent) { console.log(`${task} score ${sha7}: ${absent} step ids not in the grade`); return 1 }
   const r = floorScore(fix, sg, step.ids)
   console.log(`${task} ${sha7} build=${fx(r.build)} requirement=${fx(r.requirement)} passed=${r.passed === null ? 'none' : r.passed ? 'yes' : 'no'}`)
   return 0

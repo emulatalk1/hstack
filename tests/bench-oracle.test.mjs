@@ -1311,9 +1311,9 @@ test('score prints only the counts line', async () => {
 
 test('score reads the ids from the fix grade when step.json names oracle, and exits 1 on a missing file', async () => {
   const sha = 'abcdef1234567890'
-  const d = scoreData('sc2', { oracle: 'oracle', ids: ['a-T1', 'a-T9'], candidates: 2, seed: 's' }, { 'x1-01/grades/abcdef1.json': gr([['a-T1', 'pass', 'high'], ['a-T2', 'fail', 'low']]) })
+  const d = scoreData('sc2', { oracle: 'oracle', ids: ['a-T1', 'a-T2'], candidates: 2, seed: 's' }, { 'x1-01/grades/abcdef1.json': gr([['a-T1', 'pass', 'high'], ['a-T2', 'fail', 'medium']]) })
   const r = await withData(d, () => quiet(() => oracle(['score', 'x1-01', sha])))
-  expect(r.out).toBe('x1-01 abcdef1 build=0.50 requirement=0.75 passed=no') // a-T9 is absent: not passed
+  expect(r.out).toBe('x1-01 abcdef1 build=0.60 requirement=0.60 passed=no')
   expect(r.code).toBe(0)
   const none = await withData(d, () => quiet(() => oracle(['score', 'x1-01', 'abcdef2'])))
   expect(none.code).toBe(1)
@@ -1326,6 +1326,28 @@ test('score reads the ids from the fix grade when step.json names oracle, and ex
   expect(m2.code).toBe(1)
   expect(m2.out).toContain('x1-01/step.json')
   await expect(withData(d, () => oracle(['score', 'x1-01', 'XYZ']))).rejects.toThrow('usage')
+})
+
+test('score of a task whose step oracle has no id needs no step grade', async () => {
+  const d = scoreData('sc5', { oracle: 'step/oracle', ids: [], candidates: 0, seed: 's' }, { 'x1-01/grades/abcdef1.json': gr([['a-T1', 'pass', 'high'], ['a-T2', 'fail', 'low']]) })
+  const r = await withData(d, () => quiet(() => oracle(['score', 'x1-01', 'abcdef1234567890'])))
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('x1-01 abcdef1 build=none requirement=0.75 passed=none')
+})
+
+test('score refuses a step.json it cannot read and an id missing from its grade', async () => {
+  const sha = 'abcdef1234567890', g = { 'x1-01/grades/abcdef1.json': gr([['a-T1', 'pass']]) }
+  for (const [name, step] of [['sc6', { oracle: 'elsewhere', ids: [] }], ['sc7', { oracle: 'oracle', ids: 'a-T1' }], ['sc8', { oracle: 'oracle' }]]) {
+    const r = await withData(scoreData(name, step, g), () => quiet(() => oracle(['score', 'x1-01', sha])))
+    expect(r.code).toBe(1)
+    expect(r.out.trim().split('\n')).toHaveLength(1)
+    expect(r.out).toContain('x1-01 score abcdef1')
+  }
+  // an id missing from the grade it is read from: the fix grade, or the step grade
+  const a = await withData(scoreData('sc9', { oracle: 'oracle', ids: ['a-T1', 'a-T9', 'a-T8'] }, g), () => quiet(() => oracle(['score', 'x1-01', sha])))
+  expect([a.code, a.out]).toEqual([1, 'x1-01 score abcdef1: 2 step ids not in the grade'])
+  const b = await withData(scoreData('sc10', { oracle: 'step/oracle', ids: ['s-T1', 'a-T1'] }, { ...g, 'x1-01/step/grades/abcdef1.json': gr([['s-T1', 'pass']]) }), () => quiet(() => oracle(['score', 'x1-01', sha])))
+  expect([b.code, b.out]).toEqual([1, 'x1-01 score abcdef1: 1 step ids not in the grade'])
 })
 
 // --- step 6 task 4: an external task's step oracle (ruling 2) ---
@@ -1356,7 +1378,7 @@ const STEP_ROWS = [[1, 'valid', 'adds one', 'build'], [2, 'absent-at-base', 'kee
 const STEP_CASES = { f2p: ['SENTINEL-FILE.spec.ts::adds one', { classname: 'SENTINEL-CLS', name: 'renders six' }, 'a::SENTINEL-ASK'], p2p: ['SENTINEL-FILE.spec.ts::keeps two', 'b::SENTINEL-ASK'] }
 const tree = (d) => filesIn(d).filter((f) => !f.includes('/work/')).map((f) => [f, readFileSync(f, 'utf8')])
 
-test('external step writes only step.json and step-f2p.json', async () => {
+test('external step writes only step.json, step-f2p.json and its resolver records', async () => {
   const d = stData('st1', STEP_ROWS, STEP_CASES), e = END.slice(0, 7), calls = []
   const before = new Map(tree(join(d, 'x1-01')))
   const r = await step(d, calls, () => 'p2p')

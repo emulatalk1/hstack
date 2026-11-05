@@ -81,6 +81,7 @@ export function floorScore(fix, step, ids) {
   const mine = ids.map((id) => byId.get(id) ?? { id, severity: 'high', result: 'error' })
   const out = new Set((fix.excluded ?? []).map((e) => e.id))
   return {
+    // H2 counts every non-excluded check whatever its bucket, `out` too (today only unlabelled or disputed, ruling 7); a future `out` label would be counted
     build: share(mine), requirement: share(fix.checks.filter((c) => !out.has(c.id))),
     passed: ids.length ? mine.every((c) => c.severity === 'low' || c.result === 'pass') : null,
   }
