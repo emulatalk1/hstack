@@ -23,14 +23,17 @@ const dataDir = () => dirname(resolve(process.env.HSTACK_BENCH_MACHINE))
 const readPairs = (src) => readFileSync(join(src, 'pairs.tsv'), 'utf8').split('\n').slice(1).filter(Boolean)
   .map((l) => { const [commit, task, kind, hunks] = l.split('\t'); return { commit, task, kind, hunks: hunks ? hunks.split(',') : [] } })
 
-// { file, old } per hunk of a -U0 diff; a deleted file keeps its old path
-function diffHunks(diff) {
+// { file, old } per hunk of a -U0 diff; a deleted file keeps its old path. `---`/`+++` are headers only between a
+// `diff --git` line and that file's first `@@` (a deleted line `-- x` reads `--- x` in a hunk)
+export function diffHunks(diff) {
   const out = []
-  let file = null
+  let file = null, head = false
   for (const line of diff.split('\n')) {
-    if (line.startsWith('--- ')) file = line === '--- /dev/null' ? null : line.slice(6)
-    else if (line.startsWith('+++ ') && line !== '+++ /dev/null') file = line.slice(6)
+    if (line.startsWith('diff --git ')) { head = true; file = null }
+    else if (head && line.startsWith('--- ')) file = line === '--- /dev/null' ? null : line.slice(6)
+    else if (head && line.startsWith('+++ ') && line !== '+++ /dev/null') file = line.slice(6)
     const m = line.match(/^@@ -(\d+)/)
+    if (m) head = false
     if (m && file) out.push({ file, old: Number(m[1]) })
   }
   return out
@@ -494,6 +497,13 @@ async function groupsOf(c, refs) {
   return out
 }
 
+// the sha7s of these commits whose last run in build/readiness.tsv (oracle-run appends one line a run) did not get ready
+function notReadyOf(evDir, commits) {
+  const f = join(evDir, 'build', 'readiness.tsv'), last = new Map()
+  for (const l of existsSync(f) ? readFileSync(f, 'utf8').split('\n') : []) { const [s, r] = l.split('\t'); if (r) last.set(s, r) }
+  return [...new Set(commits.map((x) => x.slice(0, 7)))].filter((s) => ['not ready', 'timeout'].includes(last.get(s)))
+}
+
 // a grade that throws or exits non-zero gives `error` for that ref's checks, with the stage, and the task goes on
 async function gradePass(c, groups, grade) {
   for (const g of groups) {
@@ -505,6 +515,15 @@ async function gradePass(c, groups, grade) {
       const checks = v.checks.map((x) => ({ ...x, base: 'precondition', stage: why, verdict: verdict({ ref: x.ref, bad: x.bad, base: 'precondition' }) }))
       writeFileSync(f, JSON.stringify({ ...v, base: g.base, stage: why, checks }, null, 2) + '\n')
       console.log(`validation-${g.ref.slice(0, 7)} (${why}): ${checks.map((x) => `${x.id}=${x.verdict}`).join(' ')}`)
+    }
+    if (stage === null && c.ext) { // ruling 37: a run that never got ready (its JUnit is empty) is not judged, so its checks are `error`
+      const notReady = notReadyOf(c.evDir, [g.ref, ...g.bad])
+      if (notReady.length) {
+        const f = join(c.evDir, `validation-${g.ref.slice(0, 7)}.json`), v = JSON.parse(readFileSync(f, 'utf8')), why = `not ready at ${notReady[0]}`
+        writeFileSync(f, JSON.stringify({ ...v, stage: why, checks: v.checks.map((x) => ({ ...x, verdict: 'error', stage: why })) }, null, 2) + '\n')
+        for (const s of notReady) rmSync(join(c.evDir, 'grades', `${s}.json`), { force: true }) // so --reuse runs it again
+        console.log(`validation-${g.ref.slice(0, 7)} (${why}): error ${v.checks.length}`)
+      }
     }
     if (stage === null) continue
     writeFileSync(join(c.evDir, `validation-${g.ref.slice(0, 7)}.json`), JSON.stringify({ ref: g.ref, bad: g.bad, base: g.base, at: new Date().toISOString(), stage,
@@ -664,7 +683,8 @@ async function sweep(taskFile, drop, { grade, agent }) {
 
 // --- classify, split (ruling 15) and queue (ruling 16). Prints counts only: replies, labels, prompts and checks are sealed ---
 const CLASS = ['traceable', 'not traceable', 'partly']
-const CL_HIDDEN = ['fix_commit', 'origin', 'hunk', 'task'] // never shown to a classifier
+// the only fields a classifier or splitter sees of an entry (`file` only when present and `file` is true)
+const clShown = (e, file = true) => Object.fromEntries(['id', 'behaviour', 'interface', 'severity', 'file'].filter((k) => e[k] !== undefined && (k !== 'file' || file)).map((k) => [k, e[k]]))
 const CL_SCORED = ['valid', 'absent-at-base'] // ruling 13
 const SAMPLE_71 = ['valid', 'absent-at-base'] // the checks the 7.1 read samples from
 const fx = (x) => (typeof x === 'number' ? x.toFixed(2) : 'none')
@@ -737,7 +757,7 @@ async function classRound(agent, c, name, entries) {
     rmSync(dir, { recursive: true, force: true })
     mkdirSync(dir, { recursive: true })
     for (const f of ['input.md', 'interface.md']) copyFileSync(join(c.dir, f), join(dir, f))
-    writeFileSync(join(dir, 'manifest.json'), JSON.stringify(entries.map((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !CL_HIDDEN.includes(k)))), null, 2) + '\n')
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify(entries.map((e) => clShown(e)), null, 2) + '\n')
     for (const f of new Set(entries.map((e) => clFile(c, e)))) cpSync(join(c.dir, 'oracle', f), join(dir, f))
     writeFileSync(prompt, text)
     writeFileSync(settings, JSON.stringify({ permissions: { additionalDirectories: [dir], allow: [`Read(/${dir}/**)`] } }, null, 2) + '\n')
@@ -807,8 +827,7 @@ async function splitOne(agent, c, e, manifest) {
     mkdirSync(outDir, { recursive: true })
     mkdirSync(dirname(join(inDir, file)), { recursive: true })
     for (const f of ['input.md', 'interface.md']) copyFileSync(join(c.dir, f), join(inDir, f))
-    const shown = Object.fromEntries(Object.entries(e).filter(([k]) => !CL_HIDDEN.includes(k) && (k !== 'file' || grouped)))
-    writeFileSync(join(inDir, 'entry.json'), JSON.stringify(shown, null, 2) + '\n')
+    writeFileSync(join(inDir, 'entry.json'), JSON.stringify(clShown(e, grouped), null, 2) + '\n')
     copyFileSync(join(c.dir, 'oracle', file), join(inDir, file))
     writeFileSync(prompt, text)
     writeFileSync(settings, JSON.stringify({ permissions: { additionalDirectories: [work], allow: [`Read(/${work}/**)`, `Edit(/${outDir}/**)`] } }, null, 2) + '\n')
@@ -857,7 +876,7 @@ async function split(c, agent, validate) {
   const halvesOf = (x) => x.split_into ?? x.restored_from_split ?? []
   const writeManifest = (m) => writeFileSync(join(o, 'manifest.json'), JSON.stringify(m, null, 2) + '\n')
   const args = c.ext ? [c.task] : [c.taskFile, c.task]
-  const run = async (opts) => { try { const code = await validate(args, opts); return code === 0 ? null : `exit ${code}` } catch (err) { return String(err?.message ?? err).split('\n')[0] } }
+  const run = async (opts) => { try { await validate(args, opts); return null } catch (err) { return String(err?.message ?? err).split('\n')[0] } } // validate returns 0 or throws
   const failed = (why) => { console.log(`${c.task} split validate failed (${why}); the new checks are not classified`); return 1 }
   const done = new Set(agr.splitDone ?? [])
   // the oracle files a split changed: a grouped original's shared file (the splitter rewrote it; `in/` holds it as it was

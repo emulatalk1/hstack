@@ -726,6 +726,17 @@ dtest('a run that never gets ready gives every check error and the validation is
   expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(`${c17}\tnot ready\n${c07}\tnot ready\n`)
   expect(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8')).toContain('bench: ready did not exit 0 within 4 s')
   for (const c of json(join(s.data, 's1-01', 'docker.json')).containers) expect(exists('container', c)).toBe(false)
+  // grade alone reads the empty JUnit as broken; oracle validate reuses both runs and reads them as not judged
+  expect(v.checks.map((c) => c.verdict)).toEqual(['broken', 'broken'])
+  writeFileSync(join(s.data, 'tasks.json'), '{}')
+  const p = Bun.spawn(['bun', join(import.meta.dir, '../bench/oracle.mjs'), 'validate', 's1-01'], { env: { ...process.env, HSTACK_BENCH_MACHINE: join(s.data, 'machine.json') }, stdout: 'pipe', stderr: 'pipe' })
+  const o = { stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text(), code: await p.exited }
+  expect(o).toMatchObject({ code: 0, stderr: '' })
+  for (const c of [c17, c07]) expect(o.stdout).toMatch(new RegExp(`^${c} junit=ok .* reused$`, 'm')) // no new container
+  expect(o.stdout).toContain('s1-01 not judged: 2 checks error\n')
+  const w = json(join(s.data, 's1-01', `validation-${c17}.json`))
+  expect(w.checks.map((c) => [c.ref, c.bad, c.verdict, c.stage])).toEqual([['error', ['error'], 'error', `not ready at ${c17}`], ['error', ['error'], 'error', `not ready at ${c17}`]])
+  for (const c of [c17, c07]) expect(existsSync(join(s.data, 's1-01', 'grades', `${c}.json`))).toBe(false) // the next validate runs them again
 }, 900000)
 
 dtest('removal deletes only names docker.json records (needs BENCH_EXT_DOCKER=1)', async () => {

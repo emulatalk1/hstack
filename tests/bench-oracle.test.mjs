@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlink
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick } from '../bench/lib/oracle.mjs'
-import { oracle } from '../bench/oracle.mjs'
+import { diffHunks, oracle } from '../bench/oracle.mjs'
 import { check } from '../bench/input-check.mjs'
 
 const order = ['p1', 'p2', 'p3']
@@ -139,6 +139,13 @@ const quiet = async (fn) => {
   const c = spyOn(process.stdout, 'write').mockImplementation((x) => { out.push(String(x)); return true })
   try { return { code: await fn(), out: out.join('\n') } } finally { a.mockRestore(); b.mockRestore(); c.mockRestore() }
 }
+test('diffHunks reads --- and +++ as headers only between diff --git and the file\'s first @@', () => {
+  const diff = ['diff --git a/src/q.sql b/src/q.sql', 'index 1111111..2222222 100644', '--- a/src/q.sql', '+++ b/src/q.sql',
+    '@@ -3 +3 @@', '--- a comment line', '+++ b new line', '@@ -9,2 +8,0 @@', '-x', '-y',
+    'diff --git a/src/gone.txt b/src/gone.txt', 'deleted file mode 100644', 'index 3333333..0000000', '--- a/src/gone.txt', '+++ /dev/null', '@@ -1 +0,0 @@', '-bye', ''].join('\n')
+  expect(diffHunks(diff)).toEqual([{ file: 'src/q.sql', old: 3 }, { file: 'src/q.sql', old: 9 }, { file: 'src/gone.txt', old: 1 }])
+})
+
 const pairRows = () => readFileSync(join(src, 'pairs.tsv'), 'utf8').trim().split('\n').slice(1).map((l) => l.split('\t'))
 
 test('pairs lists a later commit only with tests changed and a hunk a step 5 task owns', async () => {
@@ -661,6 +668,30 @@ test('a grade that throws records error for that commit\'s checks and the task g
   expect(r.out).toContain('t1: checks 2, valid 1, weak 0, broken 0, error 1,')
 })
 
+test('an external run that never got ready gives error, is not judged, and its grade file is not reused', async () => {
+  const ext = extSample(), s = k3Full.slice(0, 7), b = k1Full.slice(0, 7), ev = join(data, 's9-01'), agents = []
+  extOracle(s)
+  mkdirSync(join(ev, 'build'), { recursive: true })
+  // oracle-run appends a line a run: the base's last run got ready, the end's did not
+  writeFileSync(join(ev, 'build/readiness.tsv'), `${b}\tnot ready\n${s}\tready\n${s}\tnot ready\n${b}\tready\n`)
+  // as grade would: an empty JUnit gives broken; each run leaves its grade file
+  const inner = fakeGrade(() => 'broken', [])
+  const grade = async (args) => { mkdirSync(join(ev, 'grades'), { recursive: true }); for (const x of [s, b]) writeFileSync(join(ev, 'grades', `${x}.json`), '{}'); return inner(args) }
+  const r = await quiet(() => oracle(['validate', 's9-01'], { grade, agent: fakeAgents({}, agents) }))
+  expect(r.code).toBe(0)
+  expect(agents).toHaveLength(0) // error is not broken: no fixer
+  const v = JSON.parse(readFileSync(join(ev, `validation-${s}.json`), 'utf8'))
+  expect(v.stage).toBe(`not ready at ${s}`)
+  expect(v.checks.map((x) => [x.id, x.verdict, x.stage])).toEqual([1, 2].map((n) => [`${s}-T${n}`, 'error', `not ready at ${s}`]))
+  expect(existsSync(join(ev, 'grades', `${s}.json`))).toBe(false)
+  expect(existsSync(join(ev, 'grades', `${b}.json`))).toBe(true)
+  expect(r.out).toContain(`validation-${s} (not ready at ${s}): error 2`)
+  expect(r.out).toContain('s9-01: checks 2, valid 0, weak 0, broken 0, error 2,')
+  expect(r.out).toContain('s9-01 not judged: 2 checks error')
+  expect(r.out).not.toContain('dropped')
+  expect(existsSync(join(ext, 'walk.tsv'))).toBe(false)
+})
+
 test('an external task with no valid check is dropped', async () => {
   const ext = extSample()
   extOracle(k3Full.slice(0, 7))
@@ -869,9 +900,9 @@ const withData = async (d, fn) => {
 const argOf = (a, k) => a[a.indexOf(k) + 1]
 const jsonAt = (f) => JSON.parse(readFileSync(f, 'utf8'))
 
-test('classify gives the raters the manifest without fix_commit, origin, hunk or task', async () => {
+test('classify gives the raters only the id, behaviour, interface, severity and file of each manifest entry', async () => {
   const d = clData('cl1'), e = END.slice(0, 7), calls = []
-  clTask(d, 'x1-01', END, [[`${e}-T1`, 'valid', { file: 'checks/group.ts' }], [`${e}-T2`, 'absent-at-base', { file: 'checks/group.ts' }], [`${e}-T3`, 'broken', { file: `${e}-T3.ts` }],
+  clTask(d, 'x1-01', END, [[`${e}-T1`, 'valid', { file: 'checks/group.ts', leak: 'SENTINEL-LEAK' }], [`${e}-T2`, 'absent-at-base', { file: 'checks/group.ts' }], [`${e}-T3`, 'broken', { file: `${e}-T3.ts` }],
     [`${e}-T4`, 'valid', { interface: 'none' }], [`${e}-T5`, 'valid', { file: `${e}-T5.ts`, dropped: true }], [`${e}-T6`, 'valid', { file: `${e}-T6.ts` }]],
   { 'checks/group.ts': 'SENTINEL-CHECK\n', [`${e}-T3.ts`]: 'x\n', [`${e}-T5.ts`]: 'x\n', [`${e}-T6.ts`]: 'SENTINEL-CHECK\n', 'runner.json': '{}' })
   const rate = (r, id) => (id.endsWith('T6') && r === 2 ? 'partly' : 'traceable')
@@ -893,7 +924,8 @@ test('classify gives the raters the manifest without fix_commit, origin, hunk or
   expect(ls(folder)).toEqual([`${e}-T6.ts`, 'checks', 'input.md', 'interface.md', 'manifest.json'])
   const shown = jsonAt(join(folder, 'manifest.json'))
   expect(shown.map((m) => m.id)).toEqual([`${e}-T1`, `${e}-T2`, `${e}-T6`])
-  for (const m of shown) for (const k of ['fix_commit', 'origin', 'hunk', 'task']) expect(m).not.toHaveProperty(k)
+  for (const m of shown) for (const k of Object.keys(m)) expect(['id', 'behaviour', 'interface', 'severity', 'file']).toContain(k) // an unknown field too
+  expect(readFileSync(join(folder, 'manifest.json'), 'utf8')).not.toContain('SENTINEL-LEAK')
   expect(calls.map((a) => a[1]).sort()).toEqual(['classify-1-x1-01', 'classify-2-x1-01'])
   expect(argOf(calls[0], '--prompt')).toBe(argOf(calls[1], '--prompt'))
   for (const a of calls) {
@@ -977,7 +1009,7 @@ test('classify refuses when nothing is scored or a file is missing', async () =>
 test('agreed partly goes to split and disputed stays unlabelled', async () => {
   const d = clData('cl3'), f = FIX.slice(0, 7), id = (n) => `${f}-T${n}`, calls = [], vcalls = []
   const spec = (n) => ({ [`${id(n)}.spec.ts`]: "import { test } from '@playwright/test'\nSENTINEL-CHECK\n" })
-  clTask(d, 'r1', FIX, [1, 2, 3, 4, 5].map((n) => [id(n), 'valid']), Object.assign({}, ...[1, 2, 3, 4, 5].map(spec)))
+  clTask(d, 'r1', FIX, [1, 2, 3, 4, 5].map((n) => [id(n), 'valid', { leak: 'SENTINEL-LEAK' }]), Object.assign({}, ...[1, 2, 3, 4, 5].map(spec)))
   clTask(d, 'r2', FIX, [[id(9), 'valid']], spec(9)) // another task holds a check of the same commit: new ids come after it
   const rate = (r, x) => ({ [id(1)]: 'traceable', [id(2)]: 'not traceable', [id(3)]: 'partly', [id(4)]: r === 1 ? 'traceable' : 'not traceable', [id(5)]: 'partly',
     [id(10)]: 'traceable', [id(11)]: 'partly' })[x]
