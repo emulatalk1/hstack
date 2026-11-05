@@ -1642,3 +1642,10 @@ bc72bc0ab2026da0dd21328096c29873f985e4a99f0e0fef0fa97ff958929db0  step9/inputs.t
 1619628b3f560c2a54ae095a0187cc37ba2c67dad7ee5c3b392d0440befee2ee  step9/sample-7.1.tsv
 8059fdbda55c45724687a87b456049c874d63377bcdedc5669c4c145c2f1be68  step9/sample-7.2.tsv
 ```
+
+Two scripts are hashed here, apart from the 1367 files above: the lock's written, none and split columns come from `logs/task12/count.mjs`, and the p1 moves come from `logs/task9/drivers/sweep-saved.mjs`.
+
+```text
+fa4009101195931ca787b4a3628844932b25f9582eb374023695510c029d5cc5  logs/task12/count.mjs
+220336028215001afa9ad74bfac22a4240077aaa09c9d64c91b15f3a630bc944  logs/task9/drivers/sweep-saved.mjs
+```
