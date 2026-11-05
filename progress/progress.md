@@ -2164,6 +2164,8 @@ The controller added the reading gate of the step 5 labellers and raters to the 
 
 ### Task 5
 
+#### Run v1: superseded (lister brief v1 missed title-only pointers; writer -2 folder bug)
+
 `bun bench/oracle.mjs step <data>/env/real-estate.json <task>` (commit f498b3c) ran for the 14 kept real-estate tasks and p8b, one at a time, each detached with its log in `<data>/logs/step6/task5-<task>.log`, all exit 0, 2026-11-05 08:40:54Z–10:17:46Z (97 min). The briefs `<data>/briefs/steps.md` and `<data>/briefs/step-re.md` were written first (they name no repo, stack, customer or task). Every final line:
 
 ```
@@ -2217,3 +2219,72 @@ Plus the first p1 lister under the first `steps.md` (record kept in `<data>/logs
 
 - **Incident: the first `steps.md`.** p1's first lister (08:37Z) replied `[]` with no tool call. The brief had no rule for a step that names a test file without a title, so it was amended: such a step names the tests of that file its words describe; open every named test file before replying. p1's step folder was removed (its record kept aside) and p1 ran again under the amended brief, again `[]` with no read; the count-only probe above then showed no kept step of p1–p5 names a test, so `[]` is the right reply there.
 - **Note.** grade prints the product's setup output (install, seed) on stdout before its counts lines; the step line is the last line before the exit.
+
+#### Controller rulings after v1, and run v2
+
+**Trigger evidence.** The controller's count-only probe `<data>/logs/step6/probe-titles2.mjs` counted quoted strings of `filter-source.md` that are exact `it(`/`test(` titles at the task end: p1 9, p2 15, p3 11, p4 9, p5 13; p6a 13, p6b 13, p7b 27, p8c 84. Prereg §5 keeps pointer-only steps of plans 1–6c as test titles, and the p1–p5 listers had made no tool call and replied `[]` in 3–6 s.
+
+**Note on that probe (implementer).** All its p1–p4 hits are strings that span a line break, and `git grep -e` reads a pattern with a newline as two patterns joined by OR, so those hits are not titles. A per-line version (`<data>/logs/step6/probe-titles3.mjs`) finds 0 test titles in p1–p4's `filter-source.md`. In p5 it finds 5: 4 on dropped steps and 1 outside any step. In p6a and p6b it finds 3 and 5 on kept steps, plus 4 and 8 in Review Focus. The v2 results below agree: p1–p5 list 0.
+
+**Rulings applied (commit 232bf05).**
+- `writer()` now builds the `-2` rerun's prompt with `o.text.replaceAll(o.dir, two.dir)`, so it names the rerun's own folder. Step 5's 13 `-2` writer records now hash stale, and no step 5 `write` was rerun.
+- `briefs/steps.md` is amended. A step names a test when it quotes the test's title, with or without its file; `file` is `""` when the step gives none. The lister opens the end's test files to confirm each title. The earlier file-only amendment stays.
+- The tool resolves an empty `file` by the unique-match rule.
+- The lister has a reading gate: a run whose record shows no `Read` reruns once as `-2`. This is combined with the bad-reply and non-zero-code triggers, and the rerun stands.
+- 3 new tests: 'a lister run that made no Read is rerun once and the rerun stands', 'a title given with no file resolves only when exactly one test file holds it', and 'a writer rerun's prompt names its own folder'. Against the old `oracle.mjs`: 67 pass, 3 fail. Now `bun test tests/bench-oracle.test.mjs` gives 70 pass, and `bun test ./tests` gives 371 pass, 21 skip, 0 fail.
+
+**Data.** For each of the 15 tasks, `<task>/step` was moved to `<task>/step-v1` and `step.json` into it, unread. p8b was done once, through its `p8b -> 8b` symlink. The v1 logs and pgsnap files went to `<data>/logs/step6/task5-v1/`. `highestOf` reads only `oracle/` and `step/oracle/`, so v2 ids start again after the step 5 highest: p7b at T3, every other prefix at T1. No id collides with another manifest.
+
+**Run v2.** Commit 232bf05, 2026-11-05 10:33:47Z–12:17:06Z (103 min), one task at a time, all exit 0. The final lines:
+
+```
+p1 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p2 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p3 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p4 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p5 step listed=0 resolved=0 picked=0 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+p6a step listed=7 resolved=7 picked=7 written=7 refused=0 none=0 valid=0 absent-at-base=7 weak=0 broken=0 error=0 fixer rounds=2 ids=7
+p6b step listed=6 resolved=6 picked=6 written=6 refused=0 none=2 valid=2 absent-at-base=2 weak=0 broken=0 error=0 fixer rounds=0 ids=4
+p6c step listed=9 resolved=9 picked=9 written=9 refused=0 none=1 valid=8 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=8
+p7b step listed=14 resolved=7 picked=7 written=7 refused=0 none=4 valid=2 absent-at-base=0 weak=1 broken=0 error=0 fixer rounds=0 ids=2
+p7c step listed=12 resolved=11 picked=11 written=11 refused=0 none=4 valid=0 absent-at-base=1 weak=5 broken=1 error=0 fixer rounds=2 ids=1
+p8a step listed=49 resolved=28 picked=15 written=15 refused=0 none=1 valid=9 absent-at-base=5 weak=0 broken=0 error=0 fixer rounds=0 ids=14
+p8c step listed=40 resolved=30 picked=15 written=15 refused=0 none=3 valid=1 absent-at-base=11 weak=0 broken=0 error=0 fixer rounds=0 ids=12
+p8d step listed=70 resolved=45 picked=15 written=15 refused=0 none=0 valid=7 absent-at-base=6 weak=2 broken=0 error=0 fixer rounds=0 ids=13
+p8e step listed=40 resolved=31 picked=15 written=15 refused=0 none=1 valid=6 absent-at-base=8 weak=0 broken=0 error=0 fixer rounds=0 ids=14
+p8b step listed=41 resolved=33 picked=15 written=0 refused=0 none=0 valid=0 absent-at-base=0 weak=0 broken=0 error=0 fixer rounds=0 ids=0
+```
+
+- **Totals.**
+  - Listed 288, resolved 207, picked 115.
+  - Written 100 (refused 0, interface none 16).
+  - Validated 84: valid 35, absent-at-base 40, weak 8, broken 1, error 0.
+  - Scored ids: 75.
+- **Tasks with fewer than 5 ids: 9.** p1–p5 have 0 (every lister listed nothing). p8b has 0 (see below). p6b has 4, p7b 2, p7c 1. Tasks with 5 or more: p6a 7, p6c 8, p8a 14, p8c 12, p8d 13, p8e 14.
+- **p8b: no step oracle.** The first writer run ended with code 0 after 1 `Write`. The fixed `-2` run, whose prompt names `write-2/`, ended with code 0 after 2 `Write`. Both folders hold 0 files. The second run stands, and there is no third run.
+- **Lister `-2` runs: 9.** In p1–p5, p6a, p6b, p6c and p7b, the first run made no `Read`. Every rerun made no `Read` either, and each stands. In p7c, p8a, p8c, p8d, p8e and p8b, the first run read (1–3 `Read`).
+- **Grade runs: 22.** p6a ran 6 (2 fixer rounds that kept files), and the other 8 graded tasks ran 2 each. The 9 graded tasks' wall clock minus their agents' run time is 3527 s (59 min).
+- **pgsnap.** Before and after (`<data>/logs/step6/pgsnap-task5v2-{before,after}.txt`) are equal: 6 databases, no `bench_re`. No grade worktree was left.
+
+Usage of v2: the sum of every `.run.json` under `<task>/step/` (listers, writers, fixers, comparers). All ended with code 0, model claude-opus-5-5.
+
+| task | runs | input | output | cache read | cache write | agent s |
+|---|---|---|---|---|---|---|
+| p1 | 2 listers | 6 | 580 | 22961 | 29591 | 11 |
+| p2 | 2 listers | 4 | 150 | 6446 | 34324 | 7 |
+| p3 | 2 listers | 8 | 540 | 51601 | 39276 | 14 |
+| p4 | 2 listers | 4 | 223 | 6446 | 42212 | 10 |
+| p5 | 2 listers | 4 | 169 | 6446 | 38988 | 7 |
+| p6a | 2 listers, writer, 2 fixers, 2 comparers | 90 | 42081 | 1431404 | 286794 | 397 |
+| p6b | 2 listers, writer | 38 | 18990 | 675244 | 106193 | 193 |
+| p6c | 2 listers, writer | 56 | 22170 | 1289091 | 122182 | 217 |
+| p7b | 2 listers, writer | 34 | 13438 | 334331 | 68132 | 130 |
+| p7c | lister, writer, 2 fixers | 52 | 24163 | 685231 | 132418 | 235 |
+| p8a | lister, writer | 22 | 21424 | 441425 | 104237 | 172 |
+| p8c | lister, writer | 22 | 23234 | 631974 | 146915 | 190 |
+| p8d | lister, writer | 24 | 29492 | 700643 | 153365 | 228 |
+| p8e | lister, writer | 44 | 31476 | 1789626 | 161667 | 262 |
+| p8b | lister, 2 writers | 42 | 20688 | 1116953 | 201274 | 209 |
+| total | 41 | 450 | 248818 | 9189822 | 1667568 | 2280 |
+
+Superseded spend (v1, 35 runs: the 34 in `step-v1/` plus the first p1 lister): input 420, output 226091, cache read 9097114, cache write 1502690.
