@@ -2419,3 +2419,13 @@ Usage: no sealed agent ran (0 tokens of sealed runs). Each script ran in under a
     Task 6: review approved (sonnet), spec ✅
     Task 6: minor (deferred): lock's rulings drop the "cost if wrong" clauses and add editorial text; plan-ruling and lock-ruling numbers mix ("ruling 8"); preface points to the gitignored SDD ledger path; no per-task "out" column for external tasks (derivable); line on resolver verdicts says "one or two searches each" though s2-02's rerun read
     Task 6: complete (commits e979444..e821cb7, review clean)
+
+### SDD ledger tail after the final review
+
+    Task 6: reviewer sonnet 110.1k tokens, 3.1 min
+    Final review (opus): with fixes — I1 score fails for tasks with empty step ids (p1–p5); I2 new "real-estate" naming in bench/README and a comment; I3 count lister replies with newline titles (expect 0) before step 10 relies on the data; I4 ruling 17 (p6a/p7c fixers had step text in their folder copy) — user's call; minors M1 loud refusal for step ids missing from a grade, M2 comment on `out` in H2, M3 external step writes resolver files (README/test name), M4 step 10 rerun rewrites step validation files (lock hashes), M5 title substring can resolve to a longer test (known limit), M6 README: two grades per product
+    - Ruling: keep ruling 17 (accept p6a/p7c fixer runs) and surface it to the user as reversible — the plan's ruling 4 binds the writer, the fixer had it in a readable folder not its prompt, the comparer kept only `same` assertions, and p6a/p7c hold few ids; voiding means restoring their step oracles and regrading — cost if wrong: mechanics of p6a/p7c step checks chosen by a fixer that could read step text.
+    - Ruling: one fix wave covers I1, I2, I3 (count only), M1, M2, M3, M4 and M5 (lock), M6, and the two lock wording minors (ledger pointer, "one or two searches") — all small; prereg ruling 2's two f2pOf clarifications wait for the build-approval addendum as step 5 did — cost if wrong: none.
+    Final review: opus 206.8k tokens, 13.0 min; fix wave dispatched (sonnet)
+    Final fix wave: done 87ff168 3bbc589; 374 pass 21 skip; I3 0 newline titles of 321 entries
+    Final fix wave: re-review sonnet: all 8 addressed, no new breakage (commits 2ee12f9..3bbc589)
