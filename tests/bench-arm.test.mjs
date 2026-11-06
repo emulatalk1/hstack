@@ -272,7 +272,7 @@ test('boxArgs mounts nothing and asks for no capability', () => {
   expect(a.slice(0, 2)).toEqual(['create', '--name'])
   expect(a.slice(-2)).toEqual(['img:1-arm', '90000'])
   expect(a.join(' ')).toContain('--memory 6g')
-  expect(a.join(' ')).toContain('--cap-drop NET_RAW') // a raw frame passes under every iptables rule
+  expect(a.filter((x, i) => a[i - 1] === '--cap-drop').sort()).toEqual(['AUDIT_WRITE', 'FSETID', 'MKNOD', 'NET_BIND_SERVICE', 'NET_RAW', 'SETFCAP', 'SETPCAP', 'SYS_CHROOT']) // Docker's defaults but the six kept; NET_RAW: a raw frame passes under every iptables rule
   expect(a.join(' ')).toContain('--entrypoint sleep img:1-arm')
   expect(a.join(' ')).toContain('--platform linux/arm64')
   expect(a.filter((x) => x === '--add-host').length).toBe(2)

@@ -2,7 +2,7 @@
 // External task selection. `list`: search the repo universe of a tier, read each repo's stack markers, read every merged
 // PR of the window that links an issue, and write them sorted by key. Every response is saved under <data>/ext/raw/
 // before it is parsed, and a rerun reuses a saved one (resume). Prints counts only: never a PR title, body, path or issue.
-import { appendFileSync, closeSync, copyFileSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { withExport } from './env.mjs'
@@ -409,6 +409,8 @@ export const daemon = async () => {
 // network or a low disk does
 export async function buildImage({ scratch, dockerfile, test, platform, commit, tag, log, diskFree }) {
   return scratch('ctx', commit, async (dir) => {
+    // a commit's symlink under one of these names would have the write land outside the folder
+    for (const f of ['.bench.Dockerfile', '.bench.Dockerfile.dockerignore', '.bench-test.sh']) rmSync(join(dir, f), { force: true })
     writeFileSync(join(dir, '.bench.Dockerfile'), dockerfile)
     writeFileSync(join(dir, '.bench.Dockerfile.dockerignore'), '') // BuildKit reads it instead of the repo's .dockerignore
     writeFileSync(join(dir, '.bench-test.sh'), test)
@@ -1073,7 +1075,8 @@ export async function oracleRun(args, inj = {}) {
       if (existsSync(join(o, 'out', '.bench-timeout'))) { readiness('timeout'); throw new Error(`${name}: not done in ${limitSec} s, killed inside`) }
       readiness(existsSync(join(o, 'out', '.bench-ready')) ? 'ready' : 'not ready')
       if (r.how === 'oom') throw new Error(`${name} was killed for memory (OOMKilled)`)
-      copyFileSync(join(o, 'out', 'junit.xml'), junit)
+      // docker cp keeps a link, and the container's link must not be followed on the host: no copy, no JUnit, a grade with no result
+      if (lstatSync(join(o, 'out', 'junit.xml')).isFile()) copyFileSync(join(o, 'out', 'junit.xml'), junit)
     })
   } finally {
     process.off('SIGTERM', stop)

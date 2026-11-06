@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // The arm box, the only place an arm agent runs (rulings 2, 3, 5, 6, 13 of step 8): the task's serve image plus the arm layer,
-// nothing mounted, no capability, the firewall set from outside and checked from outside before the CLI goes in. Any failure
+// nothing mounted, six capabilities kept and none of them over the network, the firewall set from outside and checked from outside before the CLI goes in. Any failure
 // on the way in removes what was made and throws: a run with no box does not happen. `proof` prints the boundary's table.
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -8,7 +8,7 @@ import { basename, dirname, join } from 'node:path'
 import { git, ROOT, withExport } from './env.mjs'
 import { daemon, dataOf, diskFloor, dockerDiskFree, imageBuilder, must, recordDocker, removeRecorded, serveRecipe, sp, taskOf, word } from './ext.mjs'
 import { claudeArgs, finalText } from './lib/agent.mjs'
-import { API_HOSTS, boxArgs, fwScript, initInfo, netOk, netScript, RESUMES, WEB_OFF } from './lib/arm.mjs'
+import { API_HOSTS, boxArgs, CAP_DROPS, fwScript, initInfo, KEPT_CAP_MASK, netOk, netScript, RESUMES, WEB_OFF } from './lib/arm.mjs'
 import { runGroup } from './lib/proc.mjs'
 import { loadTask } from './lib/task.mjs'
 
@@ -27,13 +27,24 @@ const SKIP = 'skipped: no box.env'
 export const ARM_LAYER = ['RUN rm -rf /work/.git /work/.bench.Dockerfile /work/.bench.Dockerfile.dockerignore /work/.bench-test.sh',
   'RUN command -v git >/dev/null || (apt-get update && apt-get install -y --no-install-recommends git)']
 
-// `ip -4 route` and resolv.conf, as the box sees them, to the targets of ruling 3
-export function blockedTargets(text) {
+// `ip -4 route` and resolv.conf, as the box sees them, to the targets of ruling 3. port: a throwaway listener on the host, so no
+// check ever connects to a real service there. outside: the public targets, which a test on a bridge replaces
+export function blockedTargets(text, port, outside = [{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 }]) {
   const gateway = /^default via (\S+)/m.exec(text)?.[1], resolvers = [...text.matchAll(/^nameserver\s+(\S+)/gm)].map((m) => m[1])
   if (!gateway) throw new Error('no gateway in the box to check')
   if (!resolvers.length) throw new Error('no resolver in the box to check')
-  return [{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 }, { host: 'host.docker.internal', port: 5432 }, { host: gateway, port: 5432 }, ...resolvers.map((host) => ({ host, port: 53 }))]
+  return [...outside, { host: 'host.docker.internal', port }, { host: gateway, port }, ...resolvers.map((host) => ({ host, port: 53 }))]
 }
+
+// fn(port) with something listening on the host on an ephemeral port, closed in every outcome
+export async function withListener(fn) {
+  const listener = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { open(s) { s.end() }, data() {} } })
+  try { return await fn(listener.port) } finally { listener.stop(true) }
+}
+
+// the kernel's own answer: a tool that is not there fails too, and proves nothing
+export const rootRefused = (r) => r.code !== 0 && /not permitted|denied/i.test(r.err)
+export const vsockRefused = (r) => r.code !== 0 && /(Permission|OS)Error/.test(r.err)
 
 // fwScript takes IPv4 only, so a name that has none cannot be allowed
 export async function pinHosts(names, lookup = (h, o) => Bun.dns.lookup(h, o)) {
@@ -60,21 +71,23 @@ export async function cpOut(box, from, to) {
   throw new Error(`${from} in ${box} is not a plain file`)
 }
 
+// root with the box's capabilities in the box's network namespace, from an image that has the tools whatever the box's has
+const twin = (box, argv) => sp(['docker', 'run', '--rm', ...CAP_DROPS, '--network', `container:${box}`, FW, ...argv])
 const helper = (box, script, what, flags = []) => must(['docker', 'run', '--rm', ...flags, '--network', `container:${box}`, FW, 'sh', '-c', script], what, { timeoutSec: 600 })
 const rulesCommand = (box, script) => ['docker', 'run', '--rm', '--cap-add', 'NET_ADMIN', '--network', `container:${box}`, FW, 'sh', '-c', script]
 
 async function fwImage(scratch) {
-  if ((await sp(['docker', 'image', 'inspect', FW])).code === 0) return
+  if ((await sp(['docker', 'run', '--rm', '--network', 'none', FW, 'python3', '-V'])).code === 0) return // an older tag has no python3
   await scratch('fw', null, async (dir) => {
-    writeFileSync(join(dir, 'Dockerfile'), 'FROM alpine:3.22\nRUN apk add --no-cache iptables\n')
+    writeFileSync(join(dir, 'Dockerfile'), 'FROM alpine:3.22\nRUN apk add --no-cache iptables python3\n')
     await must(['docker', 'build', '--progress=plain', '-t', FW, dir], `the build of ${FW}`, { timeoutSec: 600 })
   })
 }
 
 // data, task (its file: .repo), id (the task's name), name (the run's), base, repoGit (host path of the fresh .git), cli (host
 // path), turnTimeoutSec. inj: hosts [{ host, ip }], helper (a function of the rules script or an argv: replaces only the step
-// that sets the rules), cli, blocked [{ host, port }] (replaces ruling 3's list: a test on a bridge has no internet to answer it),
-// graceSec (the host's limit past turnTimeoutSec, 120)
+// that sets the rules), cli, blocked [{ host, port }] (replaces ruling 3's public targets: a test on a bridge has no internet to
+// answer them), graceSec (the host's limit past turnTimeoutSec, 120)
 export async function enterBox({ data, task, id, name, base, repoGit, cli, turnTimeoutSec, pluginDirs = [] }, inj = {}) {
   if (pluginDirs.length) throw new Error(NO_PLUGINS)
   const ext = join(data, 'ext'), t = taskOf(ext, id)
@@ -110,12 +123,23 @@ export async function enterBox({ data, task, id, name, base, repoGit, cli, turnT
     await must(['docker', ...boxArgs({ name: box, image: armTag, platform: recipe.platform, hosts, limitSec: (RESUMES + 2) * turnTimeoutSec + 600, memoryGB: MEMORY_GB })], `docker create ${box}`)
     await must(['docker', 'start', box], `docker start ${box}`)
 
+    // a restart gives the box a new namespace with no rules: alive() fails, and nothing runs in it
+    const startedAt = (await must(['docker', 'inspect', '-f', '{{.State.StartedAt}}', box], `docker inspect ${box}`)).trim()
+    const alive = async () => (await sp(['docker', 'inspect', '-f', '{{.State.StartedAt}} {{.State.Running}}', box])).out.trim() === `${startedAt} true`
+    const killed = async () => {
+      await sp(['docker', 'kill', box]) // this run created it
+      await daemon() // a dead daemon is the machine's failure and throws
+      return { out: '', code: 'killed' }
+    }
     const rules = fwScript(ips)
     await (typeof inj.helper === 'function' ? inj.helper(rules) : must(inj.helper ?? rulesCommand(box, rules), 'the firewall rules', { timeoutSec: 600 }))
     // always the real helper: a rule step that did nothing must fail here
-    const blocked = inj.blocked ?? blockedTargets(await helper(box, 'ip -4 route; cat /etc/resolv.conf', 'the box\'s routes'))
-    const why = netOk(await helper(box, netScript(ips, blocked), 'the network check'), ips, blocked)
-    if (why) throw new Error(`the firewall does not hold, run refused: ${why}`)
+    const routes = await helper(box, 'ip -4 route; cat /etc/resolv.conf', 'the box\'s routes')
+    await withListener(async (port) => {
+      const blocked = blockedTargets(routes, port, inj.blocked)
+      const why = netOk(await helper(box, netScript(ips, blocked), 'the network check'), ips, blocked)
+      if (why) throw new Error(`the firewall does not hold, run refused: ${why}`)
+    })
 
     await inBox(['mkdir', '-p', '/arm'], 'mkdir in the box')
     await cpIn(inj.cli ?? cli, CLI)
@@ -136,36 +160,36 @@ export async function enterBox({ data, task, id, name, base, repoGit, cli, turnT
     const turn = async (opts) => {
       if (opts.pluginDirs?.length) throw new Error(NO_PLUGINS)
       if (!existsSync(envFile)) throw new Error(`${envFile} is missing`)
+      if (!(await alive())) return killed()
       const file = `/arm/turn-${turns++}`
       const line = ['timeout', '-k', '30', String(turnTimeoutSec), CLI, ...claudeArgs({ ...opts, settings: SETTINGS })].map(word).join(' ')
       const script = `${line} >${file}.out 2>${file}.err </dev/null` // in files: a background server cannot hold a pipe
       if (Buffer.byteLength(script) >= MAX_ARG) throw new Error(`a turn of ${Buffer.byteLength(script)} bytes is too long for one argument`)
+      const started = Date.now()
       const { code } = await runGroup(['docker', 'exec', '-w', '/work', '--env-file', envFile, ...ENV.flatMap((e) => ['-e', e]), box, 'sh', '-c', script],
         { timeoutSec: turnTimeoutSec + (inj.graceSec ?? 120), stdout: 'ignore', stderr: 'ignore' })
-      if (code === 'timeout') {
-        await sp(['docker', 'kill', box]) // this run created it
-        return { out: '', code: 'killed' }
-      }
-      const state = await sp(['docker', 'inspect', '-f', '{{.State.Running}}', box])
-      if (state.out.trim() !== 'true') {
-        await daemon() // a dead daemon is the machine's failure and throws; a box that died is a killed run
-        return { out: '', code: 'killed' }
-      }
+      const ran = Date.now() - started
+      if (code === 'timeout' || !(await alive())) return killed()
       const out = await scratch('out', null, async (dir) => {
         await cpOut(box, `${file}.out`, join(dir, 'turn.out'))
         return readFileSync(join(dir, 'turn.out'), 'utf8')
       })
-      return { out, code: code === 124 || code === 137 ? 'timeout' : code }
+      // 137 before the limit is not timeout's kill: the kernel took the CLI for memory
+      return { out, code: code === 124 || (code === 137 && ran >= turnTimeoutSec * 1000) ? 'timeout' : code === 137 ? 'memory' : code }
     }
 
     const product = async (destFile) => {
+      if (!(await alive())) return { code: (await killed()).code }
+      // nothing of the agent's stays to swap the bundle or move HEAD; spares PID 1 and this sh, and fails when there is nothing else
+      await inBox(['sh', '-c', 'kill -9 -1; true'], 'kill in the box')
       await inBox(['rm', '-f', '/work/.git/index.lock'], 'rm in the box') // a turn cut in a git command leaves it
       await commit(name)
       await inBox([...GIT, 'bundle', 'create', '/arm/product.bundle', 'HEAD'], 'git bundle in the box')
       await cpOut(box, '/arm/product.bundle', destFile)
+      return { code: 0 }
     }
 
-    return { envCommit, turn, product, leave, box: { name: box, image: imageId, memoryGB: MEMORY_GB, ips, blocked } }
+    return { envCommit, turn, product, leave, box: { name: box, image: imageId, memoryGB: MEMORY_GB, ips, routes } }
   } catch (e) {
     await leave()
     throw e
@@ -178,15 +202,14 @@ const answersScript = (targets) => [...targets.map(({ host, port }) => `r=$(nc -
   'nslookup host.docker.internal >/dev/null 2>&1 && echo open dns || echo silent dns', ''].join('\n')
 const answers = (text) => new Map(text.trim().split('\n').map((l) => l.split(' ').reverse()))
 
-async function proofRows(b, { data, repo, token, cfg, print }) {
-  const box = b.box.name, rows = []
+async function proofRows(b, { data, repo, token, cfg, print, port, outside }) {
+  const box = b.box.name, rows = [], targets = blockedTargets(b.box.routes, port, outside)
   const row = (name, why) => {
     const result = why === null ? 'ok' : why === SKIP ? SKIP : 'FAILED'
     rows.push({ row: name, result, detail: why })
     print(`${name} ${result}`)
   }
   const inBox = (script) => must(['docker', 'exec', box, 'sh', '-c', `${script}\ntrue`], 'a check in the box', { quiet: true })
-  const refused = async (script) => (await sp(['docker', 'exec', box, 'sh', '-c', script])).code !== 0
 
   const paths = [data, repo, join(data, 'seeded'), ROOT, join(homedir(), '.claude')]
   const present = (await inBox(paths.map((p) => `test -e ${word(p)} && echo ${word(p)}`).join('\n'))).trim()
@@ -194,13 +217,13 @@ async function proofRows(b, { data, repo, token, cfg, print }) {
 
   const c = JSON.parse(await must(['docker', 'inspect', box], 'docker inspect'))[0], [, cap] = /CapEff:\s*([0-9a-f]+)/.exec(await inBox('cat /proc/self/status'))
   const open = [c.Mounts.length && 'a mount', c.HostConfig.CapAdd?.length && 'an added capability', c.HostConfig.Privileged && 'privileged',
-    (await inBox('test -e /var/run/docker.sock && echo yes')).trim() && 'the Docker socket', ((BigInt(`0x${cap}`) >> 12n) & 1n) && 'NET_ADMIN', ((BigInt(`0x${cap}`) >> 13n) & 1n) && 'NET_RAW'].filter(Boolean)
-  row('no mount, capability or socket', open.length ? open.join(', ') : null)
+    (await inBox('test -e /var/run/docker.sock && echo yes')).trim() && 'the Docker socket', BigInt(`0x${cap}`) !== KEPT_CAP_MASK && `CapEff ${cap}`].filter(Boolean)
+  row('no mount, no socket, only the six capabilities', open.length ? open.join(', ') : null)
 
   const names = (await inBox('env | cut -d= -f1')).split('\n').filter((n) => /^(BENCH_|PG|DATABASE_URL$|HSTACK_BENCH_MACHINE$)/.test(n))
   row('no bench or database env', names.length ? `present: ${names.join(' ')}` : null)
 
-  const keys = [...b.box.blocked.map((t) => `${t.host}:${t.port}`), 'dns'], script = answersScript(b.box.blocked)
+  const key = (t) => `${t.host}:${t.port}`, keys = [...targets.map(key), 'dns'], script = answersScript(targets)
   const before = answers(await must(['docker', 'run', '--rm', FW, 'sh', '-c', script], 'the check with no rules', { timeoutSec: 600 }))
   const after = answers(await helper(box, script, 'the check under the rules'))
   const unproved = keys.filter((k) => (before.get(k) ?? 'silent') === 'silent'), through = keys.filter((k) => after.get(k) !== 'silent')
@@ -223,12 +246,15 @@ async function proofRows(b, { data, repo, token, cfg, print }) {
     row('init lists no web tool', web.length ? web.join('; ') : null)
   }
 
-  const iptables = await refused('iptables -P OUTPUT ACCEPT'), link = await refused('ip link set eth0 down')
-  row('root cannot undo it', iptables && link ? null : `${iptables ? '' : 'iptables ran '}${link ? '' : 'eth0 went down'}`)
+  const iptables = rootRefused(await twin(box, ['iptables', '-P', 'OUTPUT', 'ACCEPT'])), link = rootRefused(await twin(box, ['ip', 'link', 'set', 'eth0', 'down']))
+  row('root cannot undo it', iptables && link ? null : `${iptables ? '' : 'iptables was not refused '}${link ? '' : 'ip link was not refused'}`)
 
-  const reach = b.box.blocked.filter((t) => t.port === 5432).map((t) => `${t.host}:${t.port}`).filter((k) => after.get(k) !== 'silent')
-  const strings = Number((await inBox("env | grep -Eic 'postgres(ql)?://' || true")).trim())
-  row('a real database is out of reach', reach.length || strings ? `answer: [${reach}]; ${strings} connection string(s) in the env` : null)
+  row('no vsock', vsockRefused(await twin(box, ['python3', '-c', 'import socket; socket.socket(40, 1)'])) ? null : 'AF_VSOCK was not refused')
+
+  const local = targets.filter((t) => t.port === port).map(key), named = key({ host: 'host.docker.internal', port })
+  const closed = local.filter((k) => (before.get(k) ?? 'silent') === 'silent' || after.get(k) !== 'silent')
+  const strings = Number((await inBox("env | grep -ic 'real_estate' || true")).trim())
+  row('a real database is out of reach', before.get(named) === 'open' && !closed.length && !strings ? null : `the host with no rules: ${before.get(named)}; not proved: [${closed}]; ${strings} real_estate string(s) in the env`)
   return rows
 }
 
@@ -239,7 +265,9 @@ export async function proof(id, inj, print) {
     await freshRepo(dir, t.base)
     const b = await enterBox({ data, task, id, name, base: t.base, repoGit: join(dir, '.git'), cli: join(data, cfg.cli), turnTimeoutSec: cfg.turnTimeoutSec }, inj)
     let rows
-    try { rows = await proofRows(b, { data, repo: task.repo, token: existsSync(join(data, 'arm/box.env')), cfg, print }) } finally { await b.leave() }
+    try {
+      rows = await withListener((port) => proofRows(b, { data, repo: task.repo, token: existsSync(join(data, 'arm/box.env')), cfg, print, port, outside: inj.blocked }))
+    } finally { await b.leave() }
     writeFileSync(join(data, 'arm', `proof-${id}.json`), JSON.stringify({ task: id, rows }, null, 2) + '\n')
     return rows.some((r) => r.result === 'FAILED') ? 1 : 0
   })

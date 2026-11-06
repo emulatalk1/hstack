@@ -36,9 +36,12 @@ export function probeOk(arm, info, expectedPlugins, userSkills) {
   return bad.length ? `arm ${arm} loads a plugin command or user skill: ${bad.join(', ')}` : null
 }
 
-// No -v, --mount, added capability, --pid, --ipc or --network, and no swap flag: the box has only its image and the firewall set from
-// outside. NET_RAW, a Docker default, goes: with it root sends AF_PACKET frames, which no iptables rule in the box sees.
-export const boxArgs = ({ name, image, platform, hosts, limitSec, memoryGB }) => ['create', '--name', name, '--platform', platform, '--memory', `${memoryGB}g`, '--cap-drop', 'NET_RAW',
+// Docker's default capabilities but CHOWN, DAC_OVERRIDE, FOWNER, KILL, SETUID, SETGID, which a task's own services may need in a box.
+// NET_RAW above all: with it root sends AF_PACKET frames, which no iptables rule in the box sees.
+export const CAP_DROPS = ['NET_RAW', 'MKNOD', 'SYS_CHROOT', 'SETFCAP', 'SETPCAP', 'AUDIT_WRITE', 'NET_BIND_SERVICE', 'FSETID'].flatMap((c) => ['--cap-drop', c])
+export const KEPT_CAP_MASK = 0xebn // bits 0, 1, 3, 5, 6, 7: the six above, as CapEff shows them
+// No -v, --mount, added capability, --pid, --ipc or --network, and no swap flag: the box has only its image and the firewall set from outside.
+export const boxArgs = ({ name, image, platform, hosts, limitSec, memoryGB }) => ['create', '--name', name, '--platform', platform, '--memory', `${memoryGB}g`, ...CAP_DROPS,
   ...hosts.flatMap((h) => ['--add-host', `${h.host}:${h.ip}`]), '--entrypoint', 'sleep', image, String(limitSec)]
 
 // both go into `sh -c`, so a value is checked before it is placed

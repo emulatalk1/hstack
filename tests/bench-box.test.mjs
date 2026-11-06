@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, main, pinHosts } from '../bench/box.mjs'
+import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, main, pinHosts, rootRefused, vsockRefused, withListener } from '../bench/box.mjs'
 import { withExport } from '../bench/env.mjs'
 import { API_HOSTS, RESUMES } from '../bench/lib/arm.mjs'
 import { releaseRoot } from './bench-root.mjs'
@@ -45,6 +45,9 @@ case "$2" in
   env) echo "$IS_SANDBOX $CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC $DISABLE_TELEMETRY $DISABLE_AUTOUPDATER $BOX_TEST"; echo "$*"; pwd ;;
   change) echo agent > src/agent.txt; echo more > dist/agent.bin ;;
   hang) echo late > src/late.txt; setsid sleep 1000 & sleep 1000 ;;
+  die) kill -9 $$ ;;
+  stubborn) trap '' TERM; sleep 1000 ;;
+  mark) touch "$HOME/marker" ;;
   'Reply OK.')
     case "$*" in *webby*) t='"WebSearch"' ;; *) t='"Bash"' ;; esac
     echo "{\\"type\\":\\"system\\",\\"subtype\\":\\"init\\",\\"tools\\":[$t],\\"plugins\\":[],\\"slash_commands\\":[]}"
@@ -116,9 +119,39 @@ test('the arm layer takes the bench files and any .git out of /work and installs
   expect(lines).toContain('command -v git')
 })
 
-test('the blocked targets are the five of ruling 3, gateway and resolver from the box', () => {
-  expect(blockedTargets('default via 172.17.0.1 dev eth0\n172.17.0.0/16 dev eth0\n# x\nnameserver 192.168.65.7\n')).toEqual([{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 },
-    { host: 'host.docker.internal', port: 5432 }, { host: '172.17.0.1', port: 5432 }, { host: '192.168.65.7', port: 53 }])
+const ROUTES = 'default via 172.17.0.1 dev eth0\n172.17.0.0/16 dev eth0\n# x\nnameserver 192.168.65.7\n'
+test('the blocked targets are the five of ruling 3: the host on the listener\'s port, gateway and resolver from the box', () => {
+  const local = [{ host: 'host.docker.internal', port: 40001 }, { host: '172.17.0.1', port: 40001 }, { host: '192.168.65.7', port: 53 }]
+  expect(blockedTargets(ROUTES, 40001)).toEqual([{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 }, ...local])
+  expect(blockedTargets(ROUTES, 40001, [{ host: '10.0.0.9', port: 443 }])).toEqual([{ host: '10.0.0.9', port: 443 }, ...local]) // a test on a bridge: only the public part is replaced
+})
+
+test('nothing in the box tool names the port of the host\'s database', () => {
+  expect(readFileSync(join(import.meta.dir, '../bench/box.mjs'), 'utf8')).not.toContain('5432')
+})
+
+test('the listener takes an ephemeral port and closes in every outcome', async () => {
+  const connects = (port) => Bun.connect({ hostname: '127.0.0.1', port, socket: { data() {} } }).then((s) => (s.end(), true), () => false)
+  let port
+  expect(await withListener(async (p) => { port = p; expect(await connects(p)).toBe(true); return 'done' })).toBe('done')
+  expect(port).toBeGreaterThan(1023)
+  expect(await connects(port)).toBe(false)
+  await expect(withListener(async (p) => { port = p; throw new Error('no') })).rejects.toThrow('no')
+  expect(await connects(port)).toBe(false)
+})
+
+test('only the kernel\'s refusal counts: a tool that is not there proves nothing', () => {
+  expect(rootRefused({ code: 2, err: 'ip: SIOCSIFFLAGS: Operation not permitted\n' })).toBe(true)
+  expect(rootRefused({ code: 4, err: 'iptables: Could not fetch rule set generation id: Permission denied (you must be root)\n' })).toBe(true)
+  expect(rootRefused({ code: 127, err: 'sh: ip: not found\n' })).toBe(false)
+  expect(rootRefused({ code: 0, err: '' })).toBe(false)
+})
+
+test('a vsock open fails only by the OS: a missing python proves nothing', () => {
+  expect(vsockRefused({ code: 1, err: 'PermissionError: [Errno 1] Operation not permitted\n' })).toBe(true)
+  expect(vsockRefused({ code: 1, err: 'OSError: [Errno 97] Address family not supported by protocol\n' })).toBe(true)
+  expect(vsockRefused({ code: 127, err: 'sh: python3: not found\n' })).toBe(false)
+  expect(vsockRefused({ code: 0, err: '' })).toBe(false)
 })
 
 test('a box with no gateway or no resolver to check is refused', () => {
@@ -150,7 +183,7 @@ test('a base other than the task\'s is refused', async () => {
 dtest('a box holds no host path', async () => {
   const { s, box, inBox } = await shared()
   for (const p of [s.data, fx, '/tmp/hstack-bench', join(homedir(), '.claude'), '/var/run/docker.sock']) expect(inBox('test', '-e', p).exitCode).toBe(1)
-  expect(text(docker('inspect', '-f', '{{len .Mounts}} {{.HostConfig.CapAdd}} {{.HostConfig.Privileged}} {{.HostConfig.Memory}}', box))).toBe(`0 [] false ${6 * 2 ** 30}`)
+  expect(text(docker('inspect', '-f', '{{len .Mounts}} {{.HostConfig.CapAdd}} {{.HostConfig.Privileged}} {{.HostConfig.Memory}} {{.HostConfig.RestartPolicy.Name}}', box))).toBe(`0 [] false ${6 * 2 ** 30} no`)
 }, 600000)
 
 dtest('the box ends by itself after (RESUMES + 2) turns and 600 s', async () => {
@@ -178,11 +211,10 @@ dtest('root in the box cannot change a rule', async () => {
 }, 600000)
 
 // checked by hand on 2026-11-06: with the rules on and Docker's default NET_RAW, an AF_PACKET frame got a DNS answer from the resolver
-dtest('root in the box cannot send a raw frame past the rules', async () => {
-  const { box, inBox } = await shared()
+dtest('the box keeps exactly the six capabilities of ruling 3, so no NET_RAW for a raw frame', async () => {
+  const { inBox } = await shared()
   const cap = /CapEff:\s*([0-9a-f]+)/.exec(text(inBox('cat', '/proc/1/status')))[1]
-  expect((BigInt(`0x${cap}`) >> 13n) & 1n).toBe(0n) // CAP_NET_RAW, which AF_PACKET needs
-  expect(text(docker('inspect', '-f', '{{.HostConfig.CapDrop}}', box))).toBe('[CAP_NET_RAW]')
+  expect(BigInt(`0x${cap}`)).toBe(0xebn) // CHOWN 0, DAC_OVERRIDE 1, FOWNER 3, KILL 5, SETGID 6, SETUID 7
 }, 600000)
 
 dtest('a firewall that does not hold refuses the run before any turn', async () => {
@@ -233,6 +265,16 @@ dtest('a missing box.env throws before any Docker call', async () => {
   writeFileSync(f, keep)
 }, 600000)
 
+dtest('a turn the kernel killed before the limit is memory, not the arm\'s timeout', async () => {
+  const { b } = await shared()
+  expect(await b.turn({ prompt: 'die' })).toMatchObject({ code: 'memory' })
+}, 600000)
+
+dtest('an exit 137 past the limit is the arm\'s timeout', async () => {
+  const { b } = await shared()
+  expect(await b.turn({ prompt: 'stubborn' })).toMatchObject({ code: 'timeout' }) // 3 s, then -k 30
+}, 600000)
+
 dtest('a session survives between turns', async () => {
   const { b } = await shared()
   expect((await b.turn({ prompt: 'save' })).out).toBe('saved\n')
@@ -262,24 +304,27 @@ dtest('the agent starts on a clean tree', async () => {
 // the last of the shared box: the agent's work, a turn over its limit, the product, leave
 let product
 const fetchProduct = async () => {
-  const { b } = await shared()
+  const { b, inBox } = await shared()
   await b.turn({ prompt: 'change' })
   const over = await b.turn({ prompt: 'hang' })
-  const bundle = join(tmp, 'product.bundle')
-  await b.product(bundle)
+  const left = () => text(inBox('sh', '-c', 'ps -o args | grep -c "^sleep 1000" || true'))
+  const survivors = left(), bundle = join(tmp, 'product.bundle')
+  expect(await b.product(bundle)).toEqual({ code: 0 })
+  const afterProduct = left()
   const repo = join(tmp, 'product.git')
   hostGit(tmp, 'init', '-q', '--bare', repo)
   hostGit(repo, '-c', 'gc.auto=0', 'fetch', '-q', bundle, 'HEAD:refs/heads/p')
-  return { over, repo, files: hostGit(repo, 'ls-tree', '-r', '--name-only', 'p').split('\n') }
+  return { over, repo, survivors, afterProduct, files: hostGit(repo, 'ls-tree', '-r', '--name-only', 'p').split('\n') }
 }
 
 dtest('a turn over its limit returns, the product comes back, and leave ends what is left', async () => {
-  const { box, inBox, b } = await shared()
-  const started = Date.now(), { over, files } = await (product ??= fetchProduct())
+  const { box, b } = await shared()
+  const started = Date.now(), { over, files, survivors, afterProduct } = await (product ??= fetchProduct())
   expect(over.code).toBe('timeout')
   expect(Date.now() - started).toBeLessThan(60000) // the limit is 3 s; -k 30 was not needed
   expect(files).toContain('src/late.txt') // written in the turn that was cut
-  expect(text(inBox('sh', '-c', 'ps -o args | grep -c "^sleep 1000" || true'))).not.toBe('0') // left running by the cut turn
+  expect(survivors).not.toBe('0') // the cut turn left it running
+  expect(afterProduct).toBe('0') // none of the agent's processes lives through product: it could swap the bundle
   await b.leave()
   expect(seen('container', box)).toBe(false)
 }, 600000)
@@ -303,9 +348,24 @@ dtest('past the host\'s limit the box is killed, and a box that died gives kille
     expect(await b.turn({ prompt: 'hang' })).toEqual({ out: '', code: 'killed' })
     expect(running(box)).toBe(false)
     expect(await b.turn({ prompt: 'read' })).toEqual({ out: '', code: 'killed' })
-    await expect(b.product(join(tmp, `dead-${rand()}`))).rejects.toThrow(/in the box/)
+    expect(await b.product(join(tmp, `dead-${rand()}`))).toEqual({ code: 'killed' })
   } finally { await b.leave() }
   expect(seen('container', box)).toBe(false)
+}, 600000)
+
+dtest('a box that restarted runs no turn', async () => {
+  const s = setup(), name = `${id}-B-6`, b = await enter(s, name, { blocked: denyOnly }), box = s.boxName(name), dest = join(tmp, `restarted-${rand()}`)
+  try {
+    expect(docker('restart', '-t', '0', box).exitCode).toBe(0) // a new namespace: no rules
+    expect(running(box)).toBe(true)
+    expect(await b.turn({ prompt: 'mark' })).toEqual({ out: '', code: 'killed' })
+    expect(running(box)).toBe(false)
+    expect(docker('cp', `${box}:/root/marker`, join(tmp, `marker-${rand()}`)).exitCode).not.toBe(0) // the stub never ran
+    expect(docker('start', box).exitCode).toBe(0)
+    expect(await b.product(dest)).toEqual({ code: 'killed' })
+    expect(running(box)).toBe(false)
+    expect(existsSync(dest)).toBe(false)
+  } finally { await b.leave() }
 }, 600000)
 
 dtest('leave removes the box and its images by their recorded names, and only those', async () => {
@@ -339,7 +399,7 @@ const prove = async (s) => {
     else process.env.HSTACK_BENCH_MACHINE = before
   }
 }
-const ROWS = ['host paths absent', 'no mount, capability or socket', 'no bench or database env', 'blocked targets', 'no IPv6 route out', 'the API answers', 'init lists no web tool', 'root cannot undo it', 'a real database is out of reach']
+const ROWS = ['host paths absent', 'no mount, no socket, only the six capabilities', 'no bench or database env', 'blocked targets', 'no IPv6 route out', 'the API answers', 'init lists no web tool', 'root cannot undo it', 'no vsock', 'a real database is out of reach']
 const arms = (s, smallModel) => writeFileSync(join(s.data, 'arms.json'), JSON.stringify({ model: 'm', smallModel, cli: 'arm/claude', turnTimeoutSec: 5 }))
 
 dtest('proof with no token skips the real-turn rows and passes on the rest', async () => {
@@ -349,6 +409,7 @@ dtest('proof with no token skips the real-turn rows and passes on the rest', asy
   expect(lines).toEqual(ROWS.map((r) => (r === 'the API answers' || r === 'init lists no web tool' ? `${r} skipped: no box.env` : `${r} ok`)))
   expect(code).toBe(0)
   expect(record.rows.map((r) => r.row)).toEqual(ROWS)
+  expect(JSON.stringify(record)).not.toContain('5432')
   expect(seen('container', s.boxName(`${id}-proof`))).toBe(false)
 }, 600000)
 

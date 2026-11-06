@@ -1,8 +1,8 @@
 import { test, expect, afterAll } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, removeOut, runEnd, word } from '../bench/ext.mjs'
+import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, removeOut, runEnd, word } from '../bench/ext.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // A local fixture repo stands in for GitHub, a fake gh answers the PR and issue queries, and a fixed recipe (or a fake
@@ -766,6 +766,29 @@ dtest('a run past the container limit ends inside the container: timeout, no JUn
   expect(d.containers).toEqual([box(s, c1)])
   for (const c of d.containers) expect(exists('container', c)).toBe(false)
   for (const i of d.images) expect(exists('image', i.name)).toBe(false)
+}, 900000)
+
+dtest('a product\'s symlink named as a bench file is not written through (needs BENCH_EXT_DOCKER=1)', async () => {
+  const dir = join(tmp, `ctx-${rand()}`), kept = join(tmp, `kept-${rand()}`), absent = join(tmp, `absent-${rand()}`)
+  mkdirSync(dir)
+  writeFileSync(kept, 'kept\n')
+  symlinkSync(kept, join(dir, '.bench-test.sh'))
+  symlinkSync(kept, join(dir, '.bench.Dockerfile'))
+  symlinkSync(absent, join(dir, '.bench.Dockerfile.dockerignore'))
+  const id = await buildImage({ scratch: (what, commit, fn) => fn(dir), dockerfile: 'FROM scratch\nRUN false\n', test: 'true\n', platform, commit: null, tag: `bench-ext/link-${rand()}:x`, log: join(tmp, `link-${rand()}.log`), diskFree: async () => 100 })
+  expect(id).toBe(false) // a build that cannot pass: nothing tagged
+  expect(readFileSync(kept, 'utf8')).toBe('kept\n')
+  expect(existsSync(absent)).toBe(false)
+  for (const f of ['.bench-test.sh', '.bench.Dockerfile', '.bench.Dockerfile.dockerignore']) expect(lstatSync(join(dir, f)).isFile()).toBe(true)
+}, 600000)
+
+dtest('a junit.xml that is a link gives no JUnit and is not followed on the host (needs BENCH_EXT_DOCKER=1)', async () => {
+  const secret = join(tmp, `secret-${rand()}.xml`)
+  writeFileSync(secret, '<testsuite><testcase classname="x" name="stolen"/></testsuite>\n')
+  const s = oracleTask({ runner: { layer: [], run: `ln -sf ${secret} /out/junit.xml` } })
+  const r = await grade(s, ['--at', c1, '--sealed'])
+  expect(r).toMatchObject({ code: 1, stderr: '' })
+  expect(r.stdout).toStartWith(`${c17} junit=missing `)
 }, 900000)
 
 test('oracle-run refuses an absent or malformed runner.json before any Docker call', async () => {
