@@ -4,6 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readd
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { canary } from '../bench/canary.mjs'
+import { loadTask } from '../bench/lib/task.mjs'
 import { queuePick } from '../bench/lib/oracle.mjs'
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-canary-')))
@@ -37,6 +38,9 @@ function world(name, { small = 'S' } = {}) {
   writeFileSync(join(d, 'ext/sample.tsv'), [head, ...TASKS.map((t) => `${t}\t${t.slice(0, 2)}\t1\t1\town/${t}#1\tu\t1\t1\tbase-${t}\tend-${t}`), ''].join('\n'))
   writeFileSync(join(d, 'ext/groups.json'), JSON.stringify({ seed: SEED, groups: [] }))
   writeFileSync(join(d, 'arms.json'), JSON.stringify({ model: 'M', smallModel: small, cli: 'x', plugins: { H: [], W: [] } }))
+  writeFileSync(join(d, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
+  for (const t of TASKS) writeFileSync(join(d, 'env', `${t}.json`), JSON.stringify({ name: t, repo: join(d, 'repo'), db: null, port: 4000, start: null, ready: null, setup: [], teardown: [],
+    oracle: `bun /main/bench/ext.mjs oracle-run ${t}`, junit: 'out/junit.xml', timeoutSec: 60 }))
   for (const t of TASKS) writeFileSync(join(d, t, 'step.json'), JSON.stringify(NO_STEP.includes(t) ? { oracle: 'step/oracle', ids: [], candidates: 0, seed: 's' } : { oracle: 'oracle', ids: ['a1'], candidates: 1, seed: 's' }))
   return d
 }
@@ -75,6 +79,7 @@ function fakes(d, { runPlan = {}, gradePlan = {}, passOf = (arm) => (arm === 'B'
   }
   const grade = async (args) => {
     const [taskFile, oracle, at, sha, sealed, ...more] = args, task = taskFile.replace(/^.*\/(.+)\.json$/, '$1')
+    expect(taskFile).toBe(join(d, 'env/canary', `${task}.json`)) // never the task file whose oracle is the main checkout's
     expect([at, sealed, more.length]).toEqual(['--at', '--sealed', 0]) // sealed, and no --reuse
     expect(oracle).toBe(join(d, task, 'oracle'))
     calls.push(`grade ${task} ${sha.slice(0, 7)}`)
@@ -384,7 +389,7 @@ test('diagnose runs only on B- products and prints only counts', async () => {
   expect(json(join(d2, 'canary/report.json')).verdict).toBe('fail')
   const graded = [], diffs = []
   const inj = { ...f, grade: async (args) => { graded.push(args); const sha = args[3], t = args[0].replace(/^.*\/(.+)\.json$/, '$1')
-      expect(args[1]).toBe(join(d2, t, 'seeded/oracle')); expect(args.slice(4)).toEqual(['--sealed'])
+      expect(args[0]).toBe(join(d2, 'env/canary', `${t}.json`)); expect(args[1]).toBe(join(d2, t, 'seeded/oracle')); expect(args.slice(4)).toEqual(['--sealed'])
       mkdirSync(join(d2, t, 'seeded/grades'), { recursive: true })
       writeFileSync(join(d2, t, 'seeded/grades', `${sha.slice(0, 7)}.json`), JSON.stringify({ commit: sha, junit: 'ok', excluded: [{ id: 'x3', verdict: 'weak' }],
         checks: [['x1', 'pass'], ['x2', 'fail'], ['x3', 'pass'], ['x4', 'precondition'], ['x5', 'error'], ['x6', 'fail']].map(([id, result]) => ({ id, result }))}))
@@ -407,4 +412,17 @@ test('diagnose runs only on B- products and prints only counts', async () => {
   const files = readdirSync(join(d2, 'canary/pairs')).sort()
   expect(files).toEqual(lowest.flatMap((t) => [`${t}-B-.diff`, `${t}-B.diff`]).sort())
   expect(readFileSync(join(d2, 'canary/pairs', `${lowest[0]}-B.diff`), 'utf8')).toContain(`diff of ${lowest[0]} env-${lowest[0]} ${shaOf(`bench/${nameOf(lowest[0], 'B', 1)}`)}`)
+})
+
+test('the canary grades through its own task file, which differs only in oracle', async () => {
+  const d = world('ownfile'), f = fakes(d)
+  await go(d, ['run', 's1-02'], f)
+  const own = json(join(d, 'env/canary/s1-02.json')), orig = json(join(d, 'env/s1-02.json'))
+  expect(own).toEqual({ ...orig, oracle: `bun ${join(import.meta.dir, '../bench/ext.mjs')} oracle-run s1-02` })
+  expect(json(join(d, 'env/s1-02.json')).oracle).toBe('bun /main/bench/ext.mjs oracle-run s1-02') // the original is not touched
+  expect(existsSync(join(d, 'env/canary/s1-01.json'))).toBe(false) // only a task that is graded gets one
+  expect((await withData(d, () => loadTask(join(d, 'env/canary/s1-02.json')))).oracle).toBe(own.oracle)
+  writeFileSync(join(d, 'env/canary/s1-02.json'), '{}') // a stale file is written again
+  await go(d, ['run', 's1-02'], fakes(d))
+  expect(json(join(d, 'env/canary/s1-02.json'))).toEqual(own)
 })

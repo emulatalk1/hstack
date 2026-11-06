@@ -40,6 +40,14 @@ const readiness = (data, task, sha7) => {
   for (const l of existsSync(f) ? readFileSync(f, 'utf8').split('\n') : []) { const [s, r] = l.split('\t'); if (s === sha7 && r) last = r }
   return last
 }
+// the task file the grades use: the task's own with only `oracle` changed, so the oracle-run is this checkout's, not the one the
+// task file (hashed in the locks) names. Written when missing or different; runArm keeps env/<task>.json, it never runs the oracle.
+function canaryTaskFile(data, task) {
+  const t = JSON.parse(readFileSync(join(data, 'env', `${task}.json`), 'utf8')), file = join(data, 'env/canary', `${task}.json`)
+  const text = JSON.stringify({ ...t, oracle: `bun ${join(import.meta.dir, 'ext.mjs')} oracle-run ${task}` }, null, 2) + '\n'
+  if (!existsSync(file) || readFileSync(file, 'utf8') !== text) { mkdirSync(join(data, 'env/canary'), { recursive: true }); writeFileSync(file, text) }
+  return file
+}
 const gradeFile = (data, task, sha) => join(data, task, 'grades', `${sha.slice(0, 7)}.json`)
 // a grade is good when it is this commit's, has a JUnit, the app got ready and some check gave a result (a runner that dies
 // after ready leaves a placeholder JUnit, every check `error`)
@@ -65,7 +73,7 @@ async function machineDown(c) {
 
 // grade the run's product until it has a good grade or ATTEMPTS grades; { label, did }
 async function gradeProduct(c, task, rec) {
-  const sha = await shaOf(c, task, rec), env = join(c.data, 'env', `${task}.json`), file = gradeFile(c.data, task, sha)
+  const sha = await shaOf(c, task, rec), env = canaryTaskFile(c.data, task), file = gradeFile(c.data, task, sha)
   let did = false
   while (!good(c.data, task, sha) && (attemptsOf(c.data)[sha] ?? 0) < ATTEMPTS) {
     did = true
@@ -172,7 +180,7 @@ async function diagnose(c) {
   const mine = rep.runs.filter((r) => r.standing && r.score !== null)
   for (const r of mine.filter((x) => x.arm === 'B-')) {
     const sha7 = r.sha.slice(0, 7)
-    await c.grade([join(c.data, 'env', `${r.task}.json`), join(c.data, r.task, 'seeded/oracle'), '--at', r.sha, '--sealed'])
+    await c.grade([canaryTaskFile(c.data, r.task), join(c.data, r.task, 'seeded/oracle'), '--at', r.sha, '--sealed'])
     const g = readJson(join(c.data, r.task, 'seeded/grades', `${sha7}.json`))
     if (!g) { console.log(`${r.task} B- ${r.run} seeded no grade`); continue }
     const out = new Set((g.excluded ?? []).map((e) => e.id)), n = (k) => g.checks.filter((x) => !out.has(x.id) && x.result === k).length
