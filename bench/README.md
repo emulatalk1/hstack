@@ -134,10 +134,23 @@ The scored new checks of the splits that stand are classified as above, each rou
 
 `replay-summary` counts the verdicts in `<results dir>` per layer and bug set and prints markdown: n, caught, missed, error and the catch rate over caught + missed; `unit+int` (a bug caught by either; else error if either errored, else missed); the severity-weighted rate (high 3, medium 2, low 1; error runs and bugs without a severity left out, those bugs counted on an `unweighted bugs` line) for a set with severities; the summed `layer` + `judge` usage and models per agent layer (every run's tokens, an `.error1.json` too; the verdict is the good record's); a per-bug table. A `<id>-<layer>.out` that is empty or has no `<id> caught|missed|error` last line, a record that is not a verdict, and a bug whose only file is `.error1.*` count as `error`; a good rerun file wins over its `.error1.*`; `baseline-*.xml` and a bug in no given set (or `dropped`) are ignored. It prints ids, verdicts, severity-based aggregates, usage and model names (`claude-<a-z0-9->`, else `other-value`) only, never a description, quote, finding, fix, file or hunk, so it is safe on a sealed folder.
 
+## The arm box (`bench/box.mjs`)
+
+`enterBox` is the only way in for an arm agent; a failure on the way in removes what it made and throws, and no turn runs. In order: the disk floor; `bench-arm/fw:1` (`alpine:3.22` plus iptables, built if missing, the one name outside `docker.json`); the task's serve image at the base and the arm layer `FROM` it (`ARM_LAYER`: takes the bench files and any `.git` out of `/work`, installs git when the image has none), both recorded before each build; `API_HOSTS` resolved to IPv4 (a name with none throws); `docker create` from `boxArgs` (no mount, no added capability, NET_RAW dropped, 6 GB, `sleep` of `(RESUMES + 2) × turnTimeoutSec + 600` s, so a box ends by itself if the host process dies) and `docker start`; the rules set by the helper in the box's network namespace with `NET_ADMIN`, the box never has it; the check of ruling 3 from the same namespace, always by the real helper, so a rule step that did nothing fails it; only then `docker cp` of the CLI, the fresh `.git` (as a tar) and the empty settings, and the `env` commit of what the image build changed, so the agent starts on a clean tree.
+
+It gives `{ envCommit, turn(opts) -> { out, code }, product(destFile), leave(), box: { name, image, memoryGB, ips, blocked } }`. A turn is `docker exec` with `--env-file <data>/arm/box.env` of `timeout -k 30 <turnTimeoutSec> /arm/claude …`, stdout and stderr in files in the box, so a background server cannot hold a pipe; the stdout file is copied out and read only if it is a plain file. A missing `box.env` throws before any Docker call, and its content is never printed. `code` is the exit code, `'timeout'` for 124 or 137 from `timeout`, or `'killed'` when the host's limit (`turnTimeoutSec + 120`) passes or the box died; the host's limit kills the box. A plugin dir is refused (the plan of step 11). `product` commits with a plain `git add -A`, so ignored build outputs stay out, and copies out a `git bundle` of HEAD: the folder never comes back. `leave` is `removeRecorded`, and can be called twice; `bun bench/ext.mjs remove <task>` clears what a killed run left.
+
+```sh
+bun bench/box.mjs proof <task>                     # one line per row of step 8's boundary table, `<row> ok|FAILED`; exit 1 on any FAILED; writes <data>/arm/proof-<task>.json
+```
+
+`proof` enters a box at the task's base and needs `<data>/arms.json`. With no `box.env` the two rows that need a real turn print `skipped: no box.env`. `blocked targets` runs each target and DNS from a plain container with no rules, where each must answer (a refusal is an answer), then under the rules, where each must be silent.
+
 ## Data layout (`<data>` = the machine file's folder)
 
 ```
 machine.json  arms.json
+arm/claude-<version>  arm/box.env  arm/proof-<task>.json   the Linux CLI that goes into a box, the token (mode 600, never read by a tool or printed), `box.mjs proof`'s rows
 tasks.json                                { "<task>": { plan, no, base, end, n, harness } } per task
 tasks/<task>.tsv                          per fix hunk the task touched: commit file old_lines task_lines tests_changed subject (task_lines: its old-side lines from this task)
 briefs/                                   sealed-agent briefs: filter.md, interface.md (interface-v1.md superseded), label.md and label-settings.json (source labellers), oracle-re.md and oracle-re.json (source commits' oracle writers and their check rules), classify.md and split.md (the classifiers and the splitter), fix.md and compare.md (oracle validate's fixers and comparers)
@@ -182,7 +195,7 @@ ext/env/<key>.json                        the task file sealed-agent reads for t
 ext/recipes/<key>/{recipe.json, rounds.tsv, rounds/}   the repo's recipe, its rounds, their prompts, replies and base logs
 ext/tasks/<slug>/{meta.json, issue.json, check.err}    a candidate's record, its requirement text, a tool failure's message
 ext/tasks/<slug>/{task-recipe.json, serve.err}         a step 5 task's recipe (task-env), a serve failure's message
-<task>/docker.json                        a step 5 external task's images ({ name, id }), containers and digests
+<task>/docker.json                        an external task's images ({ name, id }), containers and digests, from step 5, oracle-run and the box
 <task>/build/{readiness.tsv, <sha7>-<n>.serve.build.log}   oracle-run's readable side: one `<sha7> ready|not ready|timeout` per run, the base's serve build log
 ext/sealed/<slug>/{pr.json, f2p.json, logs/}           sealed: the PR's fields, its fail-to-pass ids, the runs with its tests, oracle-run's logs (grade-<sha7>-<n>.*)
 ext/walk.tsv  ext/removed.txt             the walk's verdicts (and step 5's `dropped`); the names --remove-out and step 5 removed

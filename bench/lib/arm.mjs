@@ -36,8 +36,9 @@ export function probeOk(arm, info, expectedPlugins, userSkills) {
   return bad.length ? `arm ${arm} loads a plugin command or user skill: ${bad.join(', ')}` : null
 }
 
-// No -v, --mount, capability, --pid, --ipc or --network, and no swap flag: the box has only its image and the firewall set from outside.
-export const boxArgs = ({ name, image, platform, hosts, limitSec, memoryGB }) => ['create', '--name', name, '--platform', platform, '--memory', `${memoryGB}g`,
+// No -v, --mount, added capability, --pid, --ipc or --network, and no swap flag: the box has only its image and the firewall set from
+// outside. NET_RAW, a Docker default, goes: with it root sends AF_PACKET frames, which no iptables rule in the box sees.
+export const boxArgs = ({ name, image, platform, hosts, limitSec, memoryGB }) => ['create', '--name', name, '--platform', platform, '--memory', `${memoryGB}g`, '--cap-drop', 'NET_RAW',
   ...hosts.flatMap((h) => ['--add-host', `${h.host}:${h.ip}`]), '--entrypoint', 'sleep', image, String(limitSec)]
 
 // both go into `sh -c`, so a value is checked before it is placed

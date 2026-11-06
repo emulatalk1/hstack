@@ -341,7 +341,7 @@ export function freeGB(limit, sizes) {
 
 // Docker's free disk in GB without a container: the disk limit (Docker Desktop's DiskSizeMiB, else the VM disk image's
 // apparent size), see freeGB; null when it cannot be told
-async function dockerDiskFree() {
+export async function dockerDiskFree() {
   const store = join(homedir(), 'Library/Group Containers/group.com.docker/settings-store.json')
   const raw = join(homedir(), 'Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw')
   let limit = null
@@ -365,7 +365,7 @@ const tail = (file) => readFileSync(file, 'utf8').split('\n').slice(-200).join('
 const retryText = (f) => f.what === 'end' ? `\nA previous recipe served at this commit and not at the later commit it must also serve. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n` : f.what === 'brief' ? `\nA recipe written under an earlier version of this brief follows. Start from it and change what this brief asks for:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n` : f.what === 'reply' ? `\nThe previous reply was not a valid recipe: ${f.message}\n` : `\nA previous recipe failed. The recipe:\n\n\`\`\`json\n${JSON.stringify(f.r, null, 2)}\n\`\`\`\n\nThe last 200 lines of its ${f.what} log:\n\n\`\`\`\n${tail(f.log)}\n\`\`\`\n`
 
 // every external call has a limit: its process group is killed after timeoutSec and code is 'timeout'
-async function sp(argv, timeoutSec = 300) {
+export async function sp(argv, timeoutSec = 300) {
   const p = Bun.spawn(argv, { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', detached: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
   let timedOut = false
   const timer = setTimeout(() => { timedOut = true; try { process.kill(-p.pid, 'SIGKILL') } catch {} }, timeoutSec * 1000)
@@ -374,7 +374,7 @@ async function sp(argv, timeoutSec = 300) {
   return { out, err, code: timedOut ? 'timeout' : code }
 }
 // quiet: the message has the exit code only (the stderr of a sealed-phase call can name the PR's test files)
-const must = async (argv, what, { timeoutSec = 300, quiet = false } = {}) => {
+export const must = async (argv, what, { timeoutSec = 300, quiet = false } = {}) => {
   const r = await sp(argv, timeoutSec)
   if (r.code === 'timeout') throw new Error(`${what} timed out after ${timeoutSec} s`)
   if (r.code) throw new Error(`${what} failed (exit ${r.code})${quiet ? '' : `: ${r.err.trim().slice(-500)}`}`)
@@ -384,7 +384,7 @@ const limit = (promise, sec, what) => {
   let t
   return Promise.race([promise, new Promise((_, no) => { t = setTimeout(() => no(new Error(`${what} timed out after ${sec} s`)), sec * 1000) })]).finally(() => clearTimeout(t))
 }
-const dataOf = (data) => {
+export const dataOf = (data) => {
   const d = data ?? (process.env.HSTACK_BENCH_MACHINE && dirname(process.env.HSTACK_BENCH_MACHINE))
   if (!d) throw new Error('set HSTACK_BENCH_MACHINE to the machine file (for example .evidence/bench/machine.json)')
   return d
@@ -399,7 +399,7 @@ export const appendWalk = (ext, row, result) => {
   appendFileSync(f, [row.stack, row.tier, row.rank, row.id, result].join('\t') + '\n')
 }
 
-const daemon = async () => {
+export const daemon = async () => {
   const r = await sp(['docker', 'version', '--format', '{{.Server.Version}}'])
   if (r.code) throw new Error(`docker daemon: ${r.code === 'timeout' ? 'no answer in 300 s' : r.err.trim().slice(-300)}`)
 }
@@ -407,7 +407,7 @@ const daemon = async () => {
 // the image of commit (its files by scratch, plus .bench.Dockerfile, an empty .bench.Dockerfile.dockerignore and
 // .bench-test.sh) tagged tag: its id; false when the build fails (the repo's failure), a throw when the daemon, the
 // network or a low disk does
-async function buildImage({ scratch, dockerfile, test, platform, commit, tag, log, diskFree }) {
+export async function buildImage({ scratch, dockerfile, test, platform, commit, tag, log, diskFree }) {
   return scratch('ctx', commit, async (dir) => {
     writeFileSync(join(dir, '.bench.Dockerfile'), dockerfile)
     writeFileSync(join(dir, '.bench.Dockerfile.dockerignore'), '') // BuildKit reads it instead of the repo's .dockerignore
@@ -751,7 +751,7 @@ export async function removeRecorded(data, task, slug) {
   return removeNames(join(data, 'ext'), slug, { containers: d.containers, images: present, ids: d.images.map((i) => i.id).filter(Boolean) })
 }
 // <data>/<task>/docker.json changed by f, written back
-function recordDocker(file, f) {
+export function recordDocker(file, f) {
   const d = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { images: [], containers: [] }
   f(d)
   writeFileSync(file, JSON.stringify(d, null, 2) + '\n')
@@ -866,6 +866,21 @@ export function parseServe(text) {
   if (r.layer.some((l) => UNSAFE.test(l))) throw new Error('the layer may not use --network=host, --security=insecure or an ssh or secret mount')
   if (!r.start.trim()) throw new Error('start is empty: it must start the app') // an empty recipe would pass with nothing served
   return { layer: r.layer, start: r.start, ready: r.ready, notes: r.notes }
+}
+// a task's recipe and serve layer, the two Dockerfile halves of its serve image
+export function serveRecipe(ext, t) {
+  const recipe = parseRecipe(readFileSync(join(ext, 'tasks', t.slug, 'task-recipe.json'), 'utf8'))
+  const text = readFileSync(join(ext, 'serve', t.key, 'serve.json'), 'utf8')
+  const sv = JSON.parse(text).briefSha === null ? SERVE_EMPTY : parseServe(text) // null: a stack with no serve check
+  return { recipe, serveDockerfile: `${recipe.dockerfile.trimEnd()}\n${sv.layer.join('\n')}\n`, sv }
+}
+// the name is recorded before the build, so a run killed meanwhile still leaves it to `remove`; the id when it built
+export const imageBuilder = ({ record, scratch, recipe, diskFree }) => async (tag, dockerfile, commit, buildLog) => {
+  record((d) => d.images.push({ name: tag, id: null }))
+  const id = await buildImage({ scratch, dockerfile, test: recipe.test, platform: recipe.platform, commit, tag, log: buildLog, diskFree })
+  if (!id) throw new Error(`${tag}: the build failed`)
+  record((d) => { d.images.findLast((i) => i.name === tag && i.id === null).id = id })
+  return id
 }
 // the container's static command: in /work, start (dir/.bench-start.sh) in the background, then ready every 2 s until it
 // exits 0 (then the sh line `then`, by default exit 0) or readySec pass by the clock (a background timer's file; exit 3,
@@ -985,7 +1000,7 @@ export async function serve(args, inj = {}) {
 
 // step 5's disk floor: below it the BuildKit cache goes first (the user's decision of 2026-11-03); the stop line when it
 // stays low, else null
-async function diskFloor(task, inj, onPrune = () => {}) {
+export async function diskFloor(task, inj, onPrune = () => {}) {
   const told = {}
   if (!(await diskStop(task, inj, told))) return null
   onPrune()
@@ -1011,9 +1026,7 @@ export async function oracleRun(args, inj = {}) {
   if (!dir || !oracle || !junit) throw new Error('oracle-run is grade\'s oracle command: BENCH_DIR, BENCH_ORACLE and BENCH_JUNIT must be set')
   const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
   const runner = parseRunner(readFileSync(join(oracle, 'runner.json'), 'utf8'))
-  const recipe = parseRecipe(readFileSync(join(ext, 'tasks', t.slug, 'task-recipe.json'), 'utf8'))
-  const serveText = readFileSync(join(ext, 'serve', t.key, 'serve.json'), 'utf8')
-  const sv = JSON.parse(serveText).briefSha === null ? SERVE_EMPTY : parseServe(serveText) // null: a stack with no serve check
+  const { recipe, serveDockerfile, sv } = serveRecipe(ext, t)
   const low = await diskFloor(task, inj)
   if (low) throw new Error(low)
 
@@ -1029,13 +1042,7 @@ export async function oracleRun(args, inj = {}) {
   const name = `bench-ext-${t.slug}-grade-${sha7}-${n}`, sealed = (what) => join(logs, `grade-${sha7}-${n}.${what}`), log = sealed('log')
   let seq = 0
   const scratch = (what, commit, fn) => withExport({ name: t.key, repo: dir }, commit, `${what}-${t.slug}-${process.pid}-${seq++}`, fn)
-  // the name is recorded before the build, so a run killed meanwhile still leaves it to `remove`
-  const image = async (tag, dockerfile, commit, buildLog) => {
-    record((d) => d.images.push({ name: tag, id: null }))
-    const id = await buildImage({ scratch, dockerfile, test: recipe.test, platform: recipe.platform, commit, tag, log: buildLog, diskFree })
-    if (!id) throw new Error(`${tag}: the build failed`)
-    record((d) => { d.images.findLast((i) => i.name === tag && i.id === null).id = id })
-  }
+  const image = imageBuilder({ record, scratch, recipe, diskFree })
   let box = null
   const stop = async () => {
     if (box) await sp(['docker', 'kill', box]) // this run created it
@@ -1046,7 +1053,7 @@ export async function oracleRun(args, inj = {}) {
   process.on('SIGINT', stop)
   try {
     // the base's serve build log is readable; any other commit may hold the PR or an arm's product
-    await image(serveTag, `${recipe.dockerfile.trimEnd()}\n${sv.layer.join('\n')}\n`, 'HEAD', head === t.base ? join(build, `${sha7}-${n}.serve.build.log`) : sealed('serve.build.log'))
+    await image(serveTag, serveDockerfile, 'HEAD', head === t.base ? join(build, `${sha7}-${n}.serve.build.log`) : sealed('serve.build.log'))
     await image(gradeTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, sealed('grade.build.log'))
     const r = await runContainer({ scratch, name, image: gradeTag, platform: recipe.platform, cmd: ['sh', '/oracle/.bench-grade.sh'], dest: '/oracle', log, timeoutSec: 1800, diskFree,
       stage: () => {}, created: () => { box = name; record((d) => d.containers.push(name)) },
