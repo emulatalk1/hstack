@@ -10,13 +10,12 @@ import { agentEnv, runClaude } from './agent-replay.mjs'
 import { git, gitWith, ROOT, withExport } from './env.mjs'
 import { resolveCommit } from './grade.mjs'
 import { finalText, usage } from './lib/agent.mjs'
-import { armArgs, countInterventions, initInfo, probeOk } from './lib/arm.mjs'
+import { armArgs, countInterventions, initInfo, probeOk, RESUMES } from './lib/arm.mjs'
 import { loadTask } from './lib/task.mjs'
 
 const USAGE = 'usage: bun bench/run-arm.mjs <task.json> <B|B-|H|W> <run-no> --input <data>/<task>/input.md --at <base>'
 const DONE_LINE = '\n\nWhen the task is done, reply exactly DONE.' // so a main turn that ends without DONE is a stop before the work is done
 const CONTINUE = 'No more information; decide from the requirement. Continue until the task is done. When it is done, reply exactly DONE.' // the 9.3 answer
-const RESUMES = 5
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
 // the product repo is the agent's: none of its hooks or fsmonitor runs, with the agent's env scrub and a time limit
 const SAFE = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false']
@@ -81,7 +80,7 @@ export async function runArm(args, { root = ROOT } = {}) {
   if (task.db !== null) throw new Error('arm runs have no database guard yet')
   const data = dirname(resolve(process.env.HSTACK_BENCH_MACHINE))
   const cfg = await loadArms(join(data, 'arms.json'))
-  const { model, pluginDirs, appendSystemPrompt } = armArgs(arm, cfg)
+  const { model, pluginDirs, appendSystemPrompt, disallow } = armArgs(arm, cfg)
   const plugins = await Promise.all(pluginDirs.map(pluginInfo)), expected = plugins.map((p) => p.name)
   const inputPath = resolve(flags.input), id = basename(dirname(inputPath))
   if (!ID.test(id)) throw new Error(`task id ${id} (the input's folder) must match ${ID.source}`)
@@ -105,7 +104,7 @@ export async function runArm(args, { root = ROOT } = {}) {
   await Bun.write(settings, '{}\n')
   const turns = []
   const turn = async (o, cwd, label) => {
-    const r = await runClaude({ model, pluginDirs, appendSystemPrompt, settings, permissionMode: 'bypassPermissions', ...o }, cwd, { timeoutSec: cfg.turnTimeoutSec })
+    const r = await runClaude({ model, pluginDirs, appendSystemPrompt, disallow, settings, permissionMode: 'bypassPermissions', ...o }, cwd, { timeoutSec: cfg.turnTimeoutSec })
     await Bun.write(join(runDir, `${turns.length}-${label}.jsonl`), r.out)
     turns.push({ turn: label, code: r.code === 'timeout' ? null : r.code, timedOut: r.code === 'timeout' })
     return r

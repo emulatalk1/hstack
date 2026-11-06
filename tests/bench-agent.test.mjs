@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { claudeArgs, finalText, judgeVerdict, usage } from '../bench/lib/agent.mjs'
+import { apiError, claudeArgs, finalText, judgeVerdict, usage } from '../bench/lib/agent.mjs'
 import { clean } from '../bench/env.mjs'
 import { ROOT, releaseRoot } from './bench-root.mjs'
 
@@ -275,4 +275,18 @@ test('refuses a bad layer, a missing brief, missing bug fields and a missing inp
   await err([t, bug('c1', { end: fix }), 'review'], 'already in end')
   await err([t, bug('c1', { fix: base }), 'audit'], 'already in end')
   await err([t, bug('b1'), 'review'], 'b1-review.json exist') // a layer run already recorded
+})
+
+test('claudeArgs passes the disallowed tools only when given', () => {
+  expect(claudeArgs({ prompt: 'x', disallow: ['WebSearch', 'WebFetch'] }).slice(8)).toEqual(['--disallowedTools', 'WebSearch,WebFetch'])
+  expect(claudeArgs({ prompt: 'x' })).not.toContain('--disallowedTools')
+})
+
+test('apiError reads the last result', () => {
+  const r = (o) => JSON.stringify({ type: 'result', ...o })
+  expect(apiError([r({ is_error: false }), r({ is_error: true })].join('\n'))).toBe(true)
+  expect(apiError([r({ is_error: true }), r({ is_error: false })].join('\n'))).toBe(false)
+  expect(apiError(r({ subtype: 'success' }))).toBe(false)
+  expect(apiError('not json\n{"type":"assistant"}')).toBe(false)
+  expect(apiError('')).toBe(false)
 })

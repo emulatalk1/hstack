@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { armArgs, countInterventions, initInfo, probeOk } from '../bench/lib/arm.mjs'
+import { API_HOSTS, WEB_OFF, armArgs, boxArgs, countInterventions, fwScript, initInfo, netOk, netScript, probeOk, RESUMES } from '../bench/lib/arm.mjs'
 import { claudeArgs } from '../bench/lib/agent.mjs'
 import { clean } from '../bench/env.mjs'
 import { ROOT, releaseRoot } from './bench-root.mjs'
@@ -40,10 +40,10 @@ test('a run that stops without DONE counts one intervention per resume', () => {
 
 test('B and B- load no plugin, H and W load their list', () => {
   const cfg = { model: 'big', smallModel: 'small', plugins: { H: ['/h', '/dep'], W: ['/w'] } }
-  expect(armArgs('B', cfg)).toEqual({ model: 'big', pluginDirs: [], appendSystemPrompt: undefined })
-  expect(armArgs('B-', cfg)).toEqual({ model: 'small', pluginDirs: [], appendSystemPrompt: 'Write no tests. Do not run or check your work. Stop after one pass.' })
-  expect(armArgs('H', cfg)).toEqual({ model: 'big', pluginDirs: ['/h', '/dep'], appendSystemPrompt: undefined })
-  expect(armArgs('W', cfg)).toEqual({ model: 'big', pluginDirs: ['/w'], appendSystemPrompt: undefined })
+  expect(armArgs('B', cfg)).toEqual({ model: 'big', pluginDirs: [], appendSystemPrompt: undefined, disallow: ['WebSearch', 'WebFetch'] })
+  expect(armArgs('B-', cfg)).toEqual({ model: 'small', pluginDirs: [], appendSystemPrompt: 'Write no tests. Do not run or check your work. Stop after one pass.', disallow: ['WebSearch', 'WebFetch'] })
+  expect(armArgs('H', cfg)).toEqual({ model: 'big', pluginDirs: ['/h', '/dep'], appendSystemPrompt: undefined, disallow: ['WebSearch', 'WebFetch'] })
+  expect(armArgs('W', cfg)).toEqual({ model: 'big', pluginDirs: ['/w'], appendSystemPrompt: undefined, disallow: ['WebSearch', 'WebFetch'] })
   expect(armArgs('B', { ...cfg, model: undefined }).model).toBeUndefined()
   expect(() => armArgs('X', cfg)).toThrow()
 })
@@ -246,4 +246,76 @@ test('run-arm kills a turn that outlives turnTimeoutSec and abandons the run', a
   expect(result('p1-W-4')).toMatchObject({ status: 'abandoned', resumes: [], interventions: 3, reason: 'timeout' })
   expect(result('p1-W-4').turns.at(-1)).toEqual({ turn: 'main', code: null, timedOut: true })
   expect(show('bench/p1-W-4:a.txt')).toBe('base\n')
+})
+
+test('every arm has the web tools off and B- alone has the three instructions', () => {
+  const cfg = { model: 'big', smallModel: 'small', plugins: { H: [], W: [] } }
+  expect(WEB_OFF).toEqual(['WebSearch', 'WebFetch'])
+  for (const arm of ['B', 'B-', 'H', 'W']) expect(armArgs(arm, cfg).disallow).toEqual(WEB_OFF)
+  expect(armArgs('B-', cfg).appendSystemPrompt.split('. ').length).toBe(3)
+  for (const arm of ['B', 'H', 'W']) expect(armArgs(arm, cfg).appendSystemPrompt).toBeUndefined()
+  expect(RESUMES).toBe(5)
+})
+
+test('probeOk refuses a web tool at init, for every arm', () => {
+  for (const arm of ['B', 'B-', 'H', 'W']) {
+    expect(probeOk(arm, initInfo(init({ tools: ['Bash', 'WebFetch'] })), [], [])).toContain('WebFetch')
+    expect(probeOk(arm, initInfo(init({ tools: ['WebSearch'] })), [], [])).toContain('WebSearch')
+  }
+  expect(probeOk('H', initInfo(init({ tools: ['Bash'] })), [], [])).toBeNull()
+})
+
+const hosts = [{ host: 'api.example', ip: '10.0.0.1' }, { host: 'claude.example', ip: '10.0.0.2' }]
+const box = { name: 'bench-ext-x-arm-t-B-1', image: 'img:1-arm', platform: 'linux/arm64', hosts, limitSec: 90000, memoryGB: 6 }
+test('boxArgs mounts nothing and asks for no capability', () => {
+  const a = boxArgs(box)
+  expect(a.slice(0, 2)).toEqual(['create', '--name'])
+  expect(a.slice(-2)).toEqual(['img:1-arm', '90000'])
+  expect(a.join(' ')).toContain('--memory 6g')
+  expect(a.join(' ')).toContain('--entrypoint sleep img:1-arm')
+  expect(a.join(' ')).toContain('--platform linux/arm64')
+  expect(a.filter((x) => x === '--add-host').length).toBe(2)
+  expect(a).toContain('api.example:10.0.0.1')
+  for (const bad of ['-v', '--volume', '--mount', '--privileged', '--cap-add', '--pid', '--ipc', '--network', '--memory-swap']) expect(a).not.toContain(bad)
+  expect(a.join(' ')).not.toContain('docker.sock')
+  expect(boxArgs({ ...box, hosts: [] })).not.toContain('--add-host')
+  expect(API_HOSTS).toEqual(['api.anthropic.com', 'console.anthropic.com', 'platform.claude.com', 'claude.ai'])
+})
+
+test('fwScript drops by default and opens only 443 to the given addresses', () => {
+  const s = fwScript(['10.0.0.1', '172.17.0.9'])
+  expect(s.startsWith('set -e')).toBe(true)
+  for (const c of ['iptables', 'ip6tables']) for (const ch of ['INPUT', 'OUTPUT', 'FORWARD']) expect(s).toContain(`${c} -P ${ch} DROP`)
+  expect(s).toContain('-o lo -j ACCEPT')
+  expect(s).toContain('-i lo -j ACCEPT')
+  expect(s.match(/ESTABLISHED,RELATED/g).length).toBe(4)
+  const opens = s.split('\n').filter((l) => l.includes('--dport'))
+  expect(opens).toEqual(['iptables -A OUTPUT -p tcp --dport 443 -d 10.0.0.1/32 -j ACCEPT', 'iptables -A OUTPUT -p tcp --dport 443 -d 172.17.0.9/32 -j ACCEPT'])
+  expect(fwScript([])).not.toContain('--dport')
+  expect(() => fwScript(['1.2.3.4; reboot'])).toThrow()
+  expect(() => fwScript(['::1'])).toThrow()
+})
+
+test('netScript probes each address on 443 and each blocked target; netOk reads the lines', () => {
+  const blocked = [{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 }, { host: '172.17.0.1', port: 5432 }]
+  const s = netScript(['10.0.0.1'], blocked)
+  expect(s).toContain('nc -zw4 10.0.0.1 443')
+  expect(s).toContain('nc -zw4 172.17.0.1 5432')
+  expect(s).toContain('ip -6 addr show dev eth0 | grep -c inet6')
+  expect(() => netScript(['10.0.0.1'], [{ host: 'a;b', port: 1 }])).toThrow()
+  const good = 'reach 10.0.0.1:443\nblocked 1.1.1.1:443\nblocked github.com:443\nblocked 172.17.0.1:5432\nv6 0\n'
+  expect(netOk(good, ['10.0.0.1'], blocked)).toBeNull()
+})
+
+test('netOk refuses a blocked address that answers and an allowed one that does not', () => {
+  const blocked = [{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 }]
+  const ok = ['reach 10.0.0.1:443', 'blocked 1.1.1.1:443', 'blocked github.com:443', 'v6 0']
+  const with_ = (f) => f(ok).join('\n')
+  expect(netOk(with_((l) => l.map((x) => x === 'blocked 1.1.1.1:443' ? 'reach 1.1.1.1:443' : x)), ['10.0.0.1'], blocked)).toContain('1.1.1.1:443')
+  expect(netOk(with_((l) => l.map((x) => x === 'reach 10.0.0.1:443' ? 'blocked 10.0.0.1:443' : x)), ['10.0.0.1'], blocked)).toContain('10.0.0.1:443')
+  expect(netOk(with_((l) => l.filter((x) => !x.includes('github'))), ['10.0.0.1'], blocked)).toContain('github.com:443')
+  expect(netOk(with_((l) => l.map((x) => x === 'v6 0' ? 'v6 1' : x)), ['10.0.0.1'], blocked)).toContain('IPv6')
+  expect(netOk(with_((l) => l.filter((x) => !x.startsWith('v6'))), ['10.0.0.1'], blocked)).toContain('IPv6')
+  expect(netOk('', ['10.0.0.1'], blocked)).not.toBeNull()
+  expect(netOk(ok.join('\n'), [], blocked)).not.toBeNull() // no allowed address: nothing proves the firewall lets the API through
 })

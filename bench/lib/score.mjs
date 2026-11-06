@@ -98,3 +98,28 @@ export function killsOf(endGrade, bugGrade) {
   const live = endGrade.checks.filter((c) => !out.has(c.id) && c.result === 'pass')
   return { killed: live.filter((c) => ['fail', 'precondition'].includes(atBug.get(c.id))).length, of: live.length }
 }
+
+// ruling 9 of step 8: a null term adds nothing, for both arms alike
+export const canaryScore = (build, requirement) => (build ?? 0) + (requirement ?? 0)
+
+// rows: scored runs only. Judged when each of the 6 tasks has exactly 2 scored runs in each arm; d is B minus B-, a tie favours nobody.
+// Rounded to 1e-9 so that float noise in a mean of two scores cannot turn a tie into a win.
+const CANARY_TASKS = 6
+const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null
+const r9 = (x) => Math.round(x * 1e9) / 1e9
+export function canaryVerdict(rows) {
+  const scored = rows.filter((r) => typeof r.build === 'number' || typeof r.requirement === 'number')
+  const tasks = [...new Set(scored.map((r) => r.task))].map((task) => {
+    const of = (arm) => scored.filter((r) => r.task === task && r.arm === arm)
+    const [B, M] = [of('B'), of('B-')]
+    const m = (rs, k) => mean(rs.map((r) => k ? r[k] ?? 0 : canaryScore(r.build, r.requirement)))
+    const dOf = (k) => B.length && M.length ? r9(m(B, k) - m(M, k)) : null
+    const d = dOf()
+    return { task, ok: B.length === 2 && M.length === 2, b: m(B), bMinus: m(M), d, dBuild: dOf('build'), dRequirement: dOf('requirement'),
+      spread: B.length === 2 ? r9(Math.abs(canaryScore(B[0].build, B[0].requirement) - canaryScore(B[1].build, B[1].requirement))) : null, favour: d > 0 }
+  })
+  const judged = tasks.length === CANARY_TASKS && tasks.every((t) => t.ok)
+  const ds = tasks.map((t) => t.d).filter((d) => d !== null)
+  const favour = tasks.filter((t) => t.favour).length, avg = mean(ds)
+  return { tasks: tasks.map(({ ok, ...t }) => t), mean: avg, favour, pass: judged && avg > 0 && favour >= 5, judged }
+}

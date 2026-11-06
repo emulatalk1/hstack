@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { results, score, verdict, checksFrom, fixMatches, unscored, floorScore, ownVerdict, killsOf } from '../bench/lib/score.mjs'
+import { canaryScore, canaryVerdict, results, score, verdict, checksFrom, fixMatches, unscored, floorScore, ownVerdict, killsOf } from '../bench/lib/score.mjs'
 import { grade } from '../bench/grade.mjs'
 import { clean } from '../bench/env.mjs'
 import { ROOT, releaseRoot } from './bench-root.mjs'
@@ -428,4 +428,47 @@ test('killsOf reads excluded from the bug grade, not a stale end grade', () => {
   const bug = g({ a: 'fail', b: 'fail' }, [{ id: 'b', verdict: 'weak' }])
   expect(killsOf(end, bug)).toEqual({ killed: 1, of: 1 })
   expect(killsOf(end, g({ a: 'fail', b: 'fail' }))).toEqual({ killed: 2, of: 2 })
+})
+
+test('a null term adds nothing', () => {
+  expect(canaryScore(0.5, 0.25)).toBe(0.75)
+  expect(canaryScore(null, 0.25)).toBe(0.25)
+  expect(canaryScore(0.5, null)).toBe(0.5)
+  expect(canaryScore(null, null)).toBe(0)
+})
+
+// per task: the two B runs score bs, the two B- runs score ms (requirement only)
+const rows = (specs) => specs.flatMap(([task, bs, ms]) => [...bs.map((s, i) => ({ task, arm: 'B', n: i + 1, build: null, requirement: s })), ...ms.map((s, i) => ({ task, arm: 'B-', n: i + 1, build: null, requirement: s }))])
+const six = (ds) => ds.map((d, i) => [`t${i}`, [0.5 + d, 0.5 + d], [0.5, 0.5]])
+test('a tie favours nobody', () => {
+  const pass = canaryVerdict(rows(six([0.2, 0.2, 0.2, 0.2, 0.2, 0])))
+  expect(pass).toMatchObject({ favour: 5, judged: true, pass: true })
+  expect(pass.tasks[5]).toMatchObject({ d: 0, favour: false })
+  expect(canaryVerdict(rows(six([0.2, 0.2, 0.2, 0.2, 0, 0]))).pass).toBe(false)
+  expect(canaryVerdict(rows([['t', [0.3, 0.6], [0.9, 0.9]]])).tasks[0].favour).toBe(false)
+  const fl = canaryVerdict(rows([['t', [0.1, 0.2], [0.15, 0.15]]])).tasks[0] // 0.15 vs 0.15000000000000002 must not favour B
+  expect(fl.d).toBe(0)
+})
+
+test('the mean must be above 0 as well', () => {
+  const v = canaryVerdict(rows(six([0.1, 0.1, 0.1, 0.1, 0.1, -1])))
+  expect(v.favour).toBe(5)
+  expect(v.mean).toBeLessThan(0)
+  expect(v).toMatchObject({ judged: true, pass: false })
+})
+
+test('a task with one scored run is not judged', () => {
+  const r = rows(six([0.2, 0.2, 0.2, 0.2, 0.2, 0.2]))
+  const v = canaryVerdict(r.slice(1)) // one run of t0/B missing
+  expect(v).toMatchObject({ judged: false, pass: false })
+  expect(canaryVerdict(r.filter((x) => x.task !== 't5'))).toMatchObject({ judged: false, pass: false })
+  expect(canaryVerdict([])).toMatchObject({ judged: false, pass: false })
+  expect(canaryVerdict(r.map((x) => x.task === 't0' && x.arm === 'B' ? { ...x, requirement: null } : x))).toMatchObject({ judged: false }) // no score at all is no score
+})
+
+test('canaryVerdict reports d, d on build and on requirement apart, and the spread of B', () => {
+  const r = [{ task: 'a', arm: 'B', n: 1, build: 1, requirement: 0.5 }, { task: 'a', arm: 'B', n: 2, build: 0.5, requirement: 0.5 },
+    { task: 'a', arm: 'B-', n: 1, build: 0.5, requirement: 0 }, { task: 'a', arm: 'B-', n: 2, build: 0.5, requirement: 0.25 }]
+  expect(canaryVerdict(r).tasks[0]).toEqual({ task: 'a', b: 1.25, bMinus: 0.625, d: 0.625, dBuild: 0.25, dRequirement: 0.375, spread: 0.5, favour: true })
+  expect(canaryVerdict(r).mean).toBe(0.625)
 })

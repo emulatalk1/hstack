@@ -1,6 +1,6 @@
 // Headless claude: the argument list, and what a stream-json transcript and a judge reply say. Pure.
 
-export function claudeArgs({ prompt, model, settings, pluginDirs = [], addDirs = [], appendSystemPrompt, permissionMode, noPersist, tools, allow, sessionId, resume }) {
+export function claudeArgs({ prompt, model, settings, pluginDirs = [], addDirs = [], appendSystemPrompt, permissionMode, noPersist, tools, allow, disallow, sessionId, resume }) {
   const a = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--setting-sources', 'project,local', '--strict-mcp-config']
   if (model) a.push('--model', model)
   for (const d of pluginDirs) a.push('--plugin-dir', d)
@@ -11,6 +11,7 @@ export function claudeArgs({ prompt, model, settings, pluginDirs = [], addDirs =
   if (noPersist) a.push('--no-session-persistence') // no transcript under ~/.claude/projects that a later agent could read
   if (tools) a.push('--tools', tools.join(',')) // [] -> '', which turns every tool off
   if (allow) a.push('--allowedTools', allow.join(','))
+  if (disallow) a.push('--disallowedTools', disallow.join(','))
   if (sessionId) a.push('--session-id', sessionId)
   if (resume) a.push('--resume', resume)
   return a
@@ -24,6 +25,9 @@ export function finalText(streamJson) {
   if (typeof r?.result !== 'string') throw new Error('transcript has no result') // error_* results carry no text
   return r.result
 }
+
+// a rate limit or an outage ends the last result with is_error: the machine's failure, never the arm's
+export const apiError = (streamJson) => events(streamJson).filter((e) => e?.type === 'result').at(-1)?.is_error === true
 
 export function usage(streamJson) {
   const ev = events(streamJson), byId = new Map(), models = []
