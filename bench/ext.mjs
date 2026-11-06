@@ -1076,7 +1076,7 @@ export async function oracleRun(args, inj = {}) {
       const out = join(o, 'out'), plain = lstatSync(out).isDirectory()
       if (plain && existsSync(join(out, '.bench-timeout'))) { readiness('timeout'); throw new Error(`${name}: not done in ${limitSec} s, killed inside`) }
       readiness(plain && existsSync(join(out, '.bench-ready')) ? 'ready' : 'not ready')
-      if (r.how === 'oom') throw new Error(`${name} was killed for memory (OOMKilled)`)
+      if (r.how === 'oom') { readiness('memory'); throw new Error(`${name} was killed for memory (OOMKilled)`) } // the last line says it, so the canary can tell it apart
       if (plain && lstatSync(join(out, 'junit.xml')).isFile()) copyFileSync(join(out, 'junit.xml'), junit)
     })
   } finally {

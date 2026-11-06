@@ -64,7 +64,9 @@ function fakes(d, { runPlan = {}, gradePlan = {}, passOf = (arm) => (arm === 'B'
     calls.push(`run ${name}`)
     expect(args.slice(3)).toEqual(['--input', join(d, task, 'input.md'), '--at', `base-${task}`])
     expect(taskFile).toBe(join(d, 'env', `${task}.json`))
-    const plan = runPlan[name] ?? 0, code = typeof plan === 'number' ? plan : plan.code ?? 0
+    const plan = runPlan[name] ?? 0
+    if (plan === 'throw') throw new Error('runArm blew up')
+    const code = typeof plan === 'number' ? plan : plan.code ?? 0
     if (code === 2) return 2
     const { code: _c, ...extra } = typeof plan === 'number' ? {} : plan
     writeFileSync(join(d, 'results', `${name}.json`), JSON.stringify(record(task, arm, Number(n), { model: arm === 'B' ? 'M' : json(join(d, 'arms.json')).smallModel, ...(code === 3 ? { status: 'abandoned', reason: 'machine', machine: 'killed', branch: null, ...extra } : extra) })))
@@ -80,7 +82,10 @@ function fakes(d, { runPlan = {}, gradePlan = {}, passOf = (arm) => (arm === 'B'
     if (step === 'throw') throw new Error('grade blew up')
     if (step === 'daemon') throw new Error('docker daemon: gone')
     const arm = [...Object.entries(armOf)].find(([s]) => s === sha)?.[1] ?? 'B'
+    if (step === 'nofile') return 1 // a grade that wrote nothing
     if (step === 'ok') putGrade(d, task, sha, { pass: passOf(arm) })
+    else if (step === 'allerror') { putGrade(d, task, sha); const f = join(d, task, 'grades', `${sha.slice(0, 7)}.json`), g = json(f); g.checks.forEach((c) => { c.result = 'error' }); writeFileSync(f, JSON.stringify(g)) } // ready, JUnit ok, no result
+    else if (step === 'memory') { putGrade(d, task, sha, { junit: 'missing', ready: 'memory' }); return 1 }
     else putGrade(d, task, sha, { junit: step === 'nojunit' ? 'missing' : 'ok', ready: step === 'notready' ? 'not ready' : 'ready', pass: [] })
     return step === 'ok' ? 0 : 1
   }
@@ -156,6 +161,12 @@ test('no JUnit is graded once more and the second stands', async () => {
 test('a product with no result scores 0 and is counted', async () => {
   const d = world('noresult')
   for (const t of SIX) for (const [arm, n] of [['B', 1], ['B', 2], ['B-', 1], ['B-', 2]]) putRun(d, t, arm, n, { grade: arm === 'B' && t === 's2-01' && n === 1 ? { junit: 'missing' } : {} })
+  // not final yet (no attempt counted): no score, so no verdict
+  const early = await go(d, ['report'], fakes(d))
+  expect(early.out).toContain('verdict=not judged')
+  expect(json(join(d, 'canary/report.json')).runs.find((x) => x.task === 's2-01' && x.arm === 'B' && x.run === 1).score).toBe(null)
+  mkdirSync(join(d, 'canary'), { recursive: true })
+  writeFileSync(join(d, 'canary/attempts.json'), JSON.stringify({ [shaOf('bench/s2-01-B-1')]: 2 })) // two attempts: final
   const r = await go(d, ['report'], fakes(d))
   expect(r.code).toBe(0)
   const rep = json(join(d, 'canary/report.json'))
@@ -182,14 +193,91 @@ test('a daemon failure is no score', async () => {
 })
 
 test('a low disk after a grade that gave nothing is the machine too', async () => {
-  const d = world('disk'), g = fakes(d, { gradePlan: { [shaOf(`bench/${nameOf('s1-02', order('s1-02')[0], 1)}`).slice(0, 7)]: ['throw'] }, free: 3 })
+  const d = world('disk'), g = fakes(d, { gradePlan: { [shaOf(`bench/${nameOf('s1-02', order('s1-02')[0], 1)}`).slice(0, 7)]: ['nojunit'] }, free: 3 })
   const r = await go(d, ['run', 's1-02'], g)
   expect(r.code).toBe(3)
   expect(r.out).toContain('s1-02 stopped: machine')
-  // a throw with the daemon up and the disk fine counts as an attempt
-  const d2 = world('throw'), s = shaOf(`bench/${nameOf('s1-02', order('s1-02')[0], 1)}`), g2 = fakes(d2, { gradePlan: { [s.slice(0, 7)]: ['throw', 'ok'] } })
-  expect((await go(d2, ['run', 's1-02'], g2)).code).toBe(0)
-  expect(json(join(d2, 'canary/attempts.json'))[s]).toBe(2)
+})
+
+test('a throw from grade is never an attempt: it stops the driver with no file and no count', async () => {
+  const d = world('throw'), s = shaOf(`bench/${nameOf('s1-02', order('s1-02')[0], 1)}`), g = fakes(d, { gradePlan: { [s.slice(0, 7)]: ['throw', 'ok'] } })
+  const r = await go(d, ['run', 's1-02'], g)
+  expect(r.code).toBe(3)
+  expect(r.out).toContain('s1-02 stopped: machine')
+  expect(existsSync(join(d, 'canary/attempts.json'))).toBe(false)
+  const g2 = fakes(d, { gradePlan: { [s.slice(0, 7)]: ['ok'] } })
+  expect((await go(d, ['run', 's1-02'], g2)).code).toBe(0)
+  expect(json(join(d, 'canary/attempts.json'))[s]).toBe(1)
+})
+
+test('the daemon failure in its real shape (exit 1, a grade file written) is no score, and the report is not judged after it', async () => {
+  const d = world('realdaemon'), sha = shaOf(`bench/${nameOf('s1-02', order('s1-02')[0], 1)}`)
+  const g = fakes(d, { gradePlan: { [sha.slice(0, 7)]: ['nojunit'] }, daemonDown: () => true })
+  const r = await go(d, ['run', 's1-02'], g)
+  expect(r.code).toBe(3)
+  expect(r.out).toContain('s1-02 stopped: machine')
+  expect(existsSync(join(d, 's1-02/grades', sha.slice(0, 7) + '.json'))).toBe(false) // the spoiled file is gone
+  expect(existsSync(join(d, 'canary/attempts.json'))).toBe(false)
+  const rep = await go(d, ['report'], fakes(d))
+  expect(rep.out).toContain('verdict=not judged')
+  expect(json(join(d, 'canary/report.json')).runs.find((x) => x.task === 's1-02').score).toBe(null)
+})
+
+test('a second attempt that writes nothing leaves no grade of the first, and the run has no score', async () => {
+  const d = world('nofile'), s = shaOf(`bench/${nameOf('s1-02', order('s1-02')[0], 1)}`)
+  const g = fakes(d, { gradePlan: { [s.slice(0, 7)]: ['nojunit', 'nofile'] } })
+  const r = await go(d, ['run', 's1-02'], g)
+  expect(r.code).toBe(0)
+  expect(r.out).toContain('grade=noresult')
+  expect(json(join(d, 'canary/attempts.json'))[s]).toBe(2)
+  expect(existsSync(join(d, 's1-02/grades', s.slice(0, 7) + '.json'))).toBe(false)
+})
+
+test('a ready grade with every check error is graded once more and counted', async () => {
+  const d = world('allerror'), s = shaOf(`bench/${nameOf('s1-02', order('s1-02')[0], 1)}`)
+  const g = fakes(d, { gradePlan: { [s.slice(0, 7)]: ['allerror', 'ok'] } })
+  const r = await go(d, ['run', 's1-02'], g)
+  expect(r.code).toBe(0)
+  expect(g.calls.filter((c) => c === `grade s1-02 ${s.slice(0, 7)}`).length).toBe(2)
+  expect(json(join(d, 'canary/attempts.json'))[s]).toBe(2)
+})
+
+test('two machine runs in a row for one slot stop the driver', async () => {
+  const d = world('cap'), arm = order('s1-02')[0], f = fakes(d, { runPlan: { [nameOf('s1-02', arm, 1)]: { code: 3, machine: 'killed' }, [nameOf('s1-02', arm, 2)]: { code: 3, machine: 'killed' } } })
+  const r = await go(d, ['run', 's1-02'], f)
+  expect(r.code).toBe(3)
+  expect(r.out).toContain('s1-02 stopped: machine')
+  expect(f.calls).toEqual([`run ${nameOf('s1-02', arm, 1)}`, `run ${nameOf('s1-02', arm, 2)}`])
+})
+
+test('a throw from runArm is told on stderr and stops with exit 3: refused, or machine when the daemon is down', async () => {
+  const d = world('runthrow'), arm = order('s1-02')[0], plan = { runPlan: { [nameOf('s1-02', arm, 1)]: 'throw' } }
+  const r = await go(d, ['run', 's1-02'], fakes(d, plan))
+  expect(r.code).toBe(3)
+  expect(r.out).toContain('runArm blew up')
+  expect(r.out).toContain('s1-02 stopped: refused')
+  const r2 = await go(d, ['run', 's1-02'], fakes(d, { ...plan, daemonDown: () => true }))
+  expect(r2.code).toBe(3)
+  expect(r2.out).toContain('s1-02 stopped: machine')
+})
+
+test('a run that ended abandoned with no machine failure is graded as it stands', async () => {
+  const d = world('abandoned'), arm = order('s1-02')[0], name = nameOf('s1-02', arm, 1)
+  const f = fakes(d, { runPlan: { [name]: { status: 'abandoned', reason: 'timeout' } } })
+  const r = await go(d, ['run', 's1-02'], f)
+  expect(r.code).toBe(0)
+  expect(f.calls).toContain(`grade s1-02 ${shaOf(`bench/${name}`).slice(0, 7)}`)
+  expect(r.out).toContain(`s1-02 ${arm} 1 abandoned grade=ok`)
+})
+
+test('the report tells a product killed for memory with its task', async () => {
+  const d = fullWorld('memrep')
+  mkdirSync(join(d, 'canary'), { recursive: true })
+  putGrade(d, 's2-02', shaOf('bench/s2-02-B--1'), { junit: 'missing', ready: 'memory' })
+  writeFileSync(join(d, 'canary/attempts.json'), JSON.stringify({ [shaOf('bench/s2-02-B--1')]: 2 }))
+  const r = await go(d, ['report'], fakes(d))
+  expect(r.out).toContain('s2-02 B- 1 killed for memory')
+  expect(json(join(d, 'canary/report.json')).runs.find((x) => x.task === 's2-02' && x.arm === 'B-' && x.run === 1)).toMatchObject({ memory: true, noresult: true, score: 0 })
 })
 
 test('a rerun repeats no finished run or good grade', async () => {
