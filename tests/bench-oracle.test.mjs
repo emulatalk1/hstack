@@ -1,9 +1,12 @@
 import { test, expect, afterAll, spyOn } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick, f2pOf, nextNumber, caseId } from '../bench/lib/oracle.mjs'
-import { diffHunks, oracle } from '../bench/oracle.mjs'
+import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick, f2pOf, nextNumber, caseId, changedRanges, inChanged, applyEdit, EDGES } from '../bench/lib/oracle.mjs'
+import { diffHunks, oracle, seedRepo, seedCommit, highestOf } from '../bench/oracle.mjs'
+import { loadTask } from '../bench/lib/task.mjs'
+import { unscored } from '../bench/lib/score.mjs'
+import { oracleFiles } from '../bench/grade.mjs'
 import { check } from '../bench/input-check.mjs'
 import { taskOf } from '../bench/ext.mjs'
 
@@ -514,7 +517,7 @@ const fakeGrade = (table, calls, events = []) => async (args) => {
     const c = flagOf(args, '--at')
     events.push(`at ${c.slice(0, 7)}`)
     mkdirSync(join(ev, 'grades'), { recursive: true })
-    writeFileSync(join(ev, 'grades', `${c.slice(0, 7)}.json`), JSON.stringify({ commit: c, checks: list.map((m) => ({ id: m.id, result: table(c, m.id, o) })) }))
+    writeFileSync(join(ev, 'grades', `${c.slice(0, 7)}.json`), JSON.stringify({ commit: c, junit: 'ok', checks: list.map((m) => ({ id: m.id, result: table(c, m.id, o) })) }))
     return 0
   }
   const ref = flagOf(args, '--validate')
@@ -1771,4 +1774,685 @@ test('a writer folder reached through a symlink is granted by its real path', as
     expect(readFileSync(argOf(a, '--prompt'), 'utf8')).not.toContain(real) // the prompt names the folder as the tool gives it
   }
   expect(calls.map((a) => a[1])).toContain(`fix-step-1-r1-${E7}`)
+})
+
+test('changedRanges reads added, changed and deleted hunks', () => {
+  const diff = [
+    'diff --git a/a.js b/a.js', 'index 1..2 100644', '--- a/a.js', '+++ b/a.js',
+    '@@ -3 +3 @@', '-x', '+y',
+    '@@ -10,0 +11,2 @@', '+p', '+q',
+    '@@ -20,2 +22,0 @@', '--- gone', '-b',
+    'diff --git a/new.js b/new.js', '--- /dev/null', '+++ b/new.js', '@@ -0,0 +1,3 @@', '+1', '+2', '+3',
+    'diff --git a/old.js b/old.js', '--- a/old.js', '+++ /dev/null', '@@ -1,2 +0,0 @@', '-a', '-b',
+  ].join('\n')
+  expect(changedRanges(diff)).toEqual([
+    { file: 'a.js', start: 3, end: 3 }, { file: 'a.js', start: 11, end: 12 }, { file: 'a.js', start: 22, end: 22 },
+    { file: 'new.js', start: 1, end: 3 }, { file: 'old.js', start: 0, end: 0 },
+  ])
+  expect(EDGES).toEqual(['empty', 'null', 'duplicate', 'case', 'deleted', 'boundary'])
+})
+
+test('inChanged takes a line within pad and refuses another file', () => {
+  const ranges = [{ file: 'a.js', start: 10, end: 12 }]
+  expect(inChanged({ file: 'a.js', old: 7 }, ranges)).toBe(true)
+  expect(inChanged({ file: 'a.js', old: 15 }, ranges)).toBe(true)
+  expect(inChanged({ file: 'a.js', old: 6 }, ranges)).toBe(false)
+  expect(inChanged({ file: 'a.js', old: 16 }, ranges)).toBe(false)
+  expect(inChanged({ file: 'a.js', old: 16 }, ranges, 4)).toBe(true)
+  expect(inChanged({ file: 'b.js', old: 10 }, ranges)).toBe(false)
+})
+
+test('applyEdit refuses zero, two and identical matches', () => {
+  expect(applyEdit('a b c', 'b', 'X')).toBe('a X c')
+  expect(applyEdit('a b c', 'z', 'X')).toBeNull()
+  expect(applyEdit('a b b', 'b', 'X')).toBeNull()
+  expect(applyEdit('aaa', 'aa', 'X')).toBeNull() // overlapping matches count
+  expect(applyEdit('a b c', 'b', 'b')).toBeNull()
+  expect(applyEdit('a b c', '', 'X')).toBeNull()
+  expect(applyEdit('a.c abc', 'a.c', '$&')).toBe('$& abc') // plain text, not a pattern
+})
+
+// --- seeded bugs (step 7, task 3): the sealed repo and the bug commit ---
+// sd: base B (30 lines in src/m.js), end E changes line 10 and a test; the branch is then reset to B so E is dangling in the source
+const sd = join(tmp, 'sd'), sdata = join(tmp, 'sdata'), sdTask = join(tmp, 'sd-task.json')
+const sg = (...a) => Bun.spawnSync(['git', '-C', sd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
+const lines = (n) => Array.from({ length: 30 }, (_, i) => `const l${i + 1} = ${n(i + 1)}`).join('\n') + '\n'
+mkdirSync(join(sd, 'src'), { recursive: true }); mkdirSync(join(sd, 'tests'), { recursive: true }); sg('init', '-q')
+writeFileSync(join(sd, 'src/m.js'), lines((i) => i)); writeFileSync(join(sd, 'tests/m.test.js'), 'one\n'); sg('add', '-A'); sg('commit', '-qm', 'base')
+const sdBase = sg('rev-parse', 'HEAD')
+writeFileSync(join(sd, 'src/m.js'), lines((i) => (i === 10 ? 'ten' : i))); writeFileSync(join(sd, 'tests/m.test.js'), 'two\n'); sg('commit', '-qam', 'end')
+const sdEnd = sg('rev-parse', 'HEAD'); sg('reset', '-q', '--hard', sdBase)
+writeFileSync(sdTask, JSON.stringify({ name: 're', repo: sd, db: null, port: 3998, start: 'true', ready: 'http://127.0.0.1:3998/', oracle: 'true', junit: 'r.xml' }))
+const sealed = join(sdata, 'seeded/repos/sd.git')
+const sOpts = { base: sdBase }
+const bug = (find, replace, over = {}) => ({ file: 'src/m.js', find, replace, edge: 'boundary', ...over })
+
+test('seedRepo makes a bare repo on the source\'s objects and an env file that differs only in repo', async () => {
+  const env = await seedRepo(sdata, sdTask)
+  expect(env).toBe(join(sdata, 'env/seeded/sd-task.json'))
+  expect(sg('rev-parse', '--is-bare-repository')).toBe('false')
+  expect(Bun.spawnSync(['git', '-C', sealed, 'rev-parse', '--is-bare-repository']).stdout.toString().trim()).toBe('true')
+  expect(JSON.parse(readFileSync(env, 'utf8'))).toEqual({ ...JSON.parse(readFileSync(sdTask, 'utf8')), repo: sealed })
+  expect(readFileSync(join(sealed, 'objects/info/alternates'), 'utf8')).toBe(`${join(sd, '.git/objects')}\n`)
+  expect(await seedRepo(sdata, sdTask)).toBe(env) // idempotent
+  expect(readFileSync(join(sealed, 'objects/info/alternates'), 'utf8')).toBe(`${join(sd, '.git/objects')}\n`)
+})
+
+test('seedRepo sees a dangling end through its alternates', async () => {
+  await seedRepo(sdata, sdTask)
+  expect(sg('for-each-ref', '--contains', sdEnd)).toBe('') // no ref of the source reaches the end
+  expect(Bun.spawnSync(['git', '-C', sealed, 'cat-file', '-t', sdEnd]).stdout.toString().trim()).toBe('commit')
+})
+
+test('seedRepo works from a bare source fetched at depth 2, and takes its shallow file again when it deepens', async () => {
+  const deep = join(tmp, 'deep'), src = join(tmp, 'shallow-src'), d = join(tmp, 'sdata-shallow'), file = join(tmp, 'shallow-task.json'), wt = join(tmp, 'shallow-wt')
+  const run = (cwd, ...a) => Bun.spawnSync(['git', '-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]), text = (cwd, ...a) => run(cwd, ...a).stdout.toString().trim()
+  mkdirSync(deep, { recursive: true }); mkdirSync(src, { recursive: true }); mkdirSync(join(deep, 'src')); mkdirSync(d)
+  run(deep, 'init', '-q'); run(src, 'init', '-q', '--bare')
+  const commit = (n, i) => { writeFileSync(join(deep, 'src/m.js'), lines((l) => (l === 10 ? n : l))); run(deep, 'add', '-A'); run(deep, 'commit', '-qm', `c${i}`); return text(deep, 'rev-parse', 'HEAD') }
+  const [c1, c2, c3] = ['one', 'two', 'three'].map(commit)
+  expect(run(src, 'fetch', '-q', '--depth', '2', `file://${deep}`, 'HEAD:refs/heads/main').exitCode).toBe(0)
+  expect(existsSync(join(src, 'shallow'))).toBe(true)
+  writeFileSync(file, JSON.stringify({ name: 'sh', repo: src, db: null, port: 3997, start: 'true', ready: 'http://127.0.0.1:3997/', oracle: 'true', junit: 'r.xml' }))
+  const env = await seedRepo(d, file), repo = join(d, 'seeded/repos/shallow-src.git')
+  expect((await loadTask(env)).repo).toBe(repo)
+  for (const c of [c2, c3]) expect(text(repo, 'cat-file', '-t', c)).toBe('commit')
+  expect(run(repo, 'cat-file', '-e', c1).exitCode).not.toBe(0)
+  expect(text(repo, 'rev-list', '--count', c3)).toBe('2')
+  const r = await seedCommit(repo, c3, bug('const l12 = 12', 'const l12 = 13'), 'sb-sh-1', { base: c2 })
+  expect(r.hunk).toEqual({ file: 'src/m.js', old: 12 })
+  expect(text(repo, 'rev-parse', `${r.commit}^`)).toBe(c3)
+  expect(run(src, 'cat-file', '-e', r.commit).exitCode).not.toBe(0)
+  expect(run(repo, 'worktree', 'add', '-q', '--detach', wt, r.commit).exitCode).toBe(0)
+  const out = Bun.spawnSync(['sh', '-c', `git -C ${wt} archive HEAD | tar -xO src/m.js`]).stdout.toString()
+  run(repo, 'worktree', 'remove', '--force', wt)
+  expect(out).toContain('const l12 = 13')
+  expect(out).toContain('const l10 = three')
+  expect(run(src, 'fetch', '-q', '--depth', '3', `file://${deep}`, 'HEAD:refs/heads/main').exitCode).toBe(0)
+  await seedRepo(d, file)
+  expect(text(repo, 'rev-list', '--count', c3)).toBe('3')
+})
+
+test('a seeded commit exists only in the sealed repo', async () => {
+  await seedRepo(sdata, sdTask)
+  const r = await seedCommit(sealed, sdEnd, bug('const l12 = 12', 'const l12 = 13'), 'sb-x-1', sOpts)
+  expect(r.hunk).toEqual({ file: 'src/m.js', old: 12 })
+  const s = (...a) => Bun.spawnSync(['git', '-C', sealed, ...a])
+  expect(s('rev-parse', 'refs/seeded/sb-x-1').stdout.toString().trim()).toBe(r.commit)
+  expect(s('log', '-1', '--format=%P|%an|%ae|%cn|%ad|%s', '--date=iso-strict', r.commit).stdout.toString().trim()).toBe(`${sdEnd}|bench|bench@localhost|bench|2026-10-27T00:00:00+00:00|seeded`)
+  expect(Bun.spawnSync(['git', '-C', sd, 'cat-file', '-e', r.commit]).exitCode).not.toBe(0) // the source does not have it
+  expect(sg('for-each-ref', 'refs/seeded')).toBe('')
+  expect(readdirSync(sealed).filter((f) => f.includes('index'))).toEqual([]) // the temp index is gone
+})
+
+test('the same edit gives the same sha', async () => {
+  await seedRepo(sdata, sdTask)
+  const a = await seedCommit(sealed, sdEnd, bug('const l12 = 12', 'const l12 = 13'), 'sb-x-1', sOpts)
+  const b = await seedCommit(sealed, sdEnd, bug('const l12 = 12', 'const l12 = 13'), 'sb-x-2', sOpts)
+  expect(b.commit).toBe(a.commit)
+})
+
+test('seedCommit refuses a test file, a two-hunk edit and a line outside the changed ranges', async () => {
+  await seedRepo(sdata, sdTask)
+  const refs = () => Bun.spawnSync(['git', '-C', sealed, 'for-each-ref', 'refs/seeded/r-']).stdout.toString().trim()
+  const why = async (e, id, o = sOpts) => (await seedCommit(sealed, sdEnd, e, id, o)).why
+  expect(await why(bug('const l12 = 12', 'x', { edge: 'nope' }), 'r-1')).toBe('edge')
+  expect(await why(bug('two', 'three', { file: 'tests/m.test.js' }), 'r-2')).toBe('test file')
+  expect(await why(bug('const l12 = 12', 'x', { file: 'lib/a.js' }), 'r-3', { ...sOpts, testPaths: ['^lib/'] })).toBe('test file')
+  expect(await why(bug('const l12 = 12', 'x', { file: 'src/gone.js' }), 'r-4')).toBe('no file')
+  expect(await why(bug('const l12 = 99', 'x'), 'r-5')).toBe('find')
+  expect(await why(bug('const l12 = 12', 'const l12 = 12'), 'r-5b')).toBe('find') // find equal to replace
+  const span = Array.from({ length: 12 }, (_, i) => `const l${i + 12} = ${i + 12}`).join('\n')
+  expect(await why(bug(span, span.replace('l12 = 12', 'l12 = 0').replace('l23 = 23', 'l23 = 0')), 'r-6')).toBe('hunks')
+  expect(await why(bug('const l30 = 30', 'const l30 = 31'), 'r-7')).toBe('outside')
+  for (const file of ['../x.js', '', '/etc/hosts', ':(top)src/m.js', './src/m.js', 'src/../src/m.js', 'src//m.js']) expect(await why(bug('const l12 = 12', 'x', { file }), 'r-8')).toBe('no file') // git would refuse or read another path
+  expect(refs()).toBe('') // a refused candidate has no ref
+  await expect(seedCommit(sealed, '0'.repeat(40), bug('const l12 = 12', 'x'), 'r-9', sOpts)).rejects.toThrow('git ls-tree failed') // a plumbing failure is no refusal
+})
+
+test('a worktree of the sealed repo archives the bug at HEAD', async () => {
+  await seedRepo(sdata, sdTask)
+  const { commit } = await seedCommit(sealed, sdEnd, bug('const l12 = 12', 'const l12 = 13'), 'sb-x-1', sOpts)
+  const wt = join(tmp, 'sd-wt')
+  Bun.spawnSync(['git', '-C', sealed, 'worktree', 'add', '-q', '--detach', wt, commit])
+  const out = Bun.spawnSync(['sh', '-c', `git -C ${wt} archive HEAD | tar -xO src/m.js`]).stdout.toString()
+  Bun.spawnSync(['git', '-C', sealed, 'worktree', 'remove', '--force', wt])
+  expect(out).toContain('const l12 = 13')
+  expect(out).toContain('const l10 = ten')
+})
+
+test('loadTask accepts the seeded env file', async () => {
+  const env = await seedRepo(sdata, sdTask)
+  expect(await loadTask(env)).toMatchObject({ name: 're', repo: sealed, port: 3998 })
+})
+
+test('highestOf counts seeded manifests', () => {
+  const d = join(tmp, 'hd')
+  mkdirSync(join(d, 't1/seeded/oracle'), { recursive: true }); mkdirSync(join(d, 't1/oracle'), { recursive: true })
+  writeFileSync(join(d, 't1/oracle/manifest.json'), JSON.stringify([{ id: 'abc1234-T2' }]))
+  writeFileSync(join(d, 't1/seeded/oracle/manifest.json'), JSON.stringify([{ id: 'abc1234-T5', dropped: true }]))
+  expect(highestOf(d, 'abc1234')).toBe(5)
+})
+
+// --- seeded bugs (step 7, task 4): seed and kills ---
+// the sd repo again: a data folder with one real-estate task r1 and one external task x1-01 on it
+const S7 = sdEnd.slice(0, 7), ST = (n) => `${S7}-T${n}`, RE_ARGS = (d) => [join(d, 'env/re.json'), 'r1'], EXT_ARGS = () => ['x1-01']
+const seedData = (name) => {
+  const d = join(tmp, name), ext = join(d, 'ext')
+  for (const x of ['briefs', 'ext/briefs', 'env', 'r1', 'x1-01', 'oracle-scaffold/node_modules']) mkdirSync(join(d, x), { recursive: true })
+  writeFileSync(join(d, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
+  writeFileSync(join(d, 'tasks.json'), JSON.stringify({ r1: { base: sdBase.slice(0, 7), end: S7 } }))
+  writeFileSync(join(ext, 'groups.json'), JSON.stringify({ seed: SEED, groups: [{ id: 's9', testPaths: ['^checks/'] }] }))
+  writeFileSync(join(ext, 'sample.tsv'), `task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend\nx1-01\ts9\t1\t1\town/rp#7\tu\t7\t6\t${sdBase}\t${sdEnd}\n`)
+  for (const f of ['re.json', 'x1-01.json']) writeFileSync(join(d, 'env', f), readFileSync(sdTask))
+  for (const [f, text] of [['briefs/seed-re.md', 'SEED-RE-BRIEF'], ['briefs/oracle-re.md', 'RE-RULES'], ['ext/briefs/seed.md', 'SEED-EXT-BRIEF'], ['ext/briefs/oracle.md', 'EXT-RULES'], ['briefs/fix.md', 'FIX-BRIEF'], ['briefs/compare.md', 'COMPARE-BRIEF'], ['oracle-scaffold/run.config.ts', 'SCAFFOLD-CONFIG'], ['r1/input.md', 'SENTINEL-INPUT'], ['x1-01/input.md', 'SENTINEL-INPUT']]) writeFileSync(join(d, f), `${text}\n`)
+  writeFileSync(join(d, 'briefs/oracle-re.json'), JSON.stringify({ suffix: '.spec.ts', imports: ['@playwright/test'], kinds: ['browser', 'http', 'api', 'none'] }))
+  const t = taskOf(ext, 'x1-01')
+  for (const x of [`serve/${t.key}`, `tasks/${t.slug}`]) mkdirSync(join(ext, x), { recursive: true })
+  writeFileSync(join(ext, 'serve', t.key, 'serve.json'), JSON.stringify({ briefSha: 'SENTINEL-BRIEFSHA', layer: [], start: 'SERVE-START', ready: 'true' }))
+  writeFileSync(join(ext, 'tasks', t.slug, 'task-recipe.json'), JSON.stringify({ dockerfile: 'RECIPE-DOCKERFILE', test: 'RECIPE-TEST' }))
+  return d
+}
+// five candidates, each one line within 3 of the changed line 10 of src/m.js, each a check file of its id
+const LINES = [7, 8, 9, 11, 12]
+const candidate = (id, i) => ({ id, origin: `src/m.js::${EDGES[i]}`, behaviour: `SENTINEL-BEHAVIOUR ${id}`, description: `SENTINEL-DESCRIPTION ${id}`, interface: 'browser', severity: 'medium', edge: EDGES[i],
+  edit: { file: 'src/m.js', find: `const l${LINES[i]} = ${LINES[i]}`, replace: `const l${LINES[i]} = SENTINEL` } })
+const CHECK = "import { test } from '@playwright/test'\n", FIXED = `${CHECK}// fixed\n`
+// a seeder writes a candidate per id its prompt gives (tweak may change one, or drop it with null); fixers and comparers are fakeAgents'
+const seeder = (calls, { tweak = (e) => e, fix, runner = JSON.stringify({ layer: ['RUN true'], run: 'true' }), manifest } = {}) => {
+  const fa = fakeAgents(fix, calls)
+  return async (args) => {
+    const label = args[1], out = argOf(args, '--out')
+    if (/^(fix|compare)-/.test(label)) return fa(args)
+    calls.push(args)
+    const dir = JSON.parse(readFileSync(argOf(args, '--settings'), 'utf8')).permissions.additionalDirectories[0]
+    const ids = [...readFileSync(argOf(args, '--prompt'), 'utf8').matchAll(/^- `([0-9a-f]{7}-T\d+)`$/gm)].map((m) => m[1]), grouped = label.startsWith('seed-x')
+    const entries = ids.map((id, i) => tweak({ ...candidate(id, i), ...(grouped ? { file: `${id}.spec.ts` } : {}) }, i)).filter(Boolean)
+    for (const e of entries) writeFileSync(join(dir, `${e.id}.spec.ts`), CHECK)
+    if (grouped && runner !== null) writeFileSync(join(dir, 'runner.json'), runner)
+    if (manifest !== null) writeFileSync(join(dir, 'manifest.json'), JSON.stringify(entries))
+    writeFileSync(out, 'SENTINEL-REPLY')
+    writeFileSync(`${out}.run.json`, JSON.stringify({ code: 0 }))
+    return 0
+  }
+}
+const sealedGit = (d, ...a) => Bun.spawnSync(['git', '-C', join(d, 'seeded/repos/sd.git'), ...a]).stdout.toString().trim()
+const bugSha = (d, id) => sealedGit(d, 'rev-parse', '-q', '--verify', `refs/seeded/${id}`)
+const kOf = (d, c) => Number(sealedGit(d, 'for-each-ref', '--format=%(refname)', '--points-at', c, 'refs/seeded').match(/-(\d+)$/)?.[1])
+// each check passes at the end; at a bug its own check gives own(k) and the others pass
+const ownFails = (d, own = () => 'fail') => (c, id) => (c === sdEnd || id !== ST(kOf(d, c)) ? 'pass' : own(kOf(d, c)))
+// over: by commit, how the grade ends: 'throw', 'exit' (exit 1, no file), 'missing' (a run with no JUnit), 'not ready' (its empty JUnit reads ok)
+const seedGrade = (table, calls = [], over = () => null, events = []) => async (args) => {
+  const c = argOf(args, '--at'), how = over(c)
+  if (how === 'throw' || how === 'exit') { calls.push(args); if (how === 'throw') throw new Error('SENTINEL-THROW'); return 1 }
+  if (how === 'not ready') {
+    const build = join(args[1].replace(/(\/seeded|\/step)?\/oracle$/, ''), 'build')
+    mkdirSync(build, { recursive: true })
+    appendFileSync(join(build, 'readiness.tsv'), `${c.slice(0, 7)}\tnot ready\n`)
+    return fakeGrade(() => 'error', calls, events)(args)
+  }
+  await fakeGrade(table, calls, events)(args)
+  if (how !== 'missing') return 0
+  const f = join(args[1], '..', 'grades', `${c.slice(0, 7)}.json`)
+  writeFileSync(f, JSON.stringify({ ...jsonAt(f), junit: 'missing' }))
+  return 1
+}
+const seedRun = (d, args, calls, opts, grade) => withData(d, () => quiet(() => oracle(['seed', ...args], { agent: seeder(calls, opts), grade })))
+const bugsOf = (d, t) => jsonAt(join(d, t, 'seeded/bugs.json'))
+const validationIn = (d, t) => jsonAt(join(d, t, `seeded/validation-${S7}.json`))
+const atCalls = (grades) => grades.map((g) => argOf(g, '--at'))
+const seedTree = (d) => filesIn(d).filter((f) => !f.includes('/work/') && !f.includes('/seeded/repos/') && !f.endsWith('node_modules') && !f.includes('validation-')).map((f) => [f, readFileSync(f, 'utf8')])
+
+test('seed writes only under seeded', async () => {
+  const d = seedData('sb1'), calls = [], grades = [], env = join(d, 'env/seeded/re.json'), o = join(d, 'r1/seeded/oracle')
+  const before = new Map(filesIn(d).map((f) => [f, readFileSync(f, 'utf8')]))
+  const r = await seedRun(d, RE_ARGS(d), calls, {}, seedGrade(ownFails(d), grades))
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('r1 seed candidates=2 refused=0 pass-at-end=2 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1')
+  for (const [f, text] of before) expect(readFileSync(f, 'utf8')).toBe(text)
+  const fresh = filesIn(d).filter((f) => !before.has(f))
+  expect(fresh.every((f) => [join(d, 'r1/seeded/'), join(d, 'seeded/repos/'), join(d, 'env/seeded/')].some((p) => f.startsWith(p)))).toBe(true)
+  // the seeder on the sealed repo's env file, at the end, granted its own folder
+  const [a] = calls, dir = join(d, 'r1/seeded/work/seed')
+  expect(calls).toHaveLength(1)
+  expect([a[0], a[1], argOf(a, '--at'), argOf(a, '--tools'), argOf(a, '--out')]).toEqual([env, 'seed-r1', sdEnd, 'Read,Glob,Grep,Write,Edit', join(d, 'r1/seeded/work/seed.reply.md')])
+  expect(JSON.parse(readFileSync(argOf(a, '--settings'), 'utf8')).permissions.additionalDirectories).toEqual([dir])
+  const p = readFileSync(argOf(a, '--prompt'), 'utf8')
+  expect(p).toStartWith('SEED-RE-BRIEF\n')
+  expect(p).toContain(`RE-RULES\n\n## The requirement\n\n\`\`\`\`markdown\nSENTINEL-INPUT\n\`\`\`\`\n\n## The changed ranges\n\nsrc/m.js:10-10\n\n## The bugs to write\n\n2 bugs, one check each, with these ids:\n\n- \`${ST(1)}\`\n- \`${ST(2)}\`\n`)
+  expect(p).toContain('### run.config.ts\n\n````\nSCAFFOLD-CONFIG\n````')
+  expect(p.trimEnd()).toEndWith(`## Your output folder\n\n\`${dir}\``)
+  expect(p).not.toContain('tests/m.test.js')
+  // the checks into the oracle with the scaffold; edge, edit and description stay in bugs.json
+  expect(ls(o)).toEqual([`${ST(1)}.spec.ts`, `${ST(2)}.spec.ts`, 'manifest.json', 'node_modules', 'run.config.ts'].sort())
+  expect(jsonAt(join(o, 'manifest.json'))).toEqual([1, 2].map((n) => ({ id: ST(n), fix_commit: sdEnd, task: 'r1', origin: `src/m.js::${EDGES[n - 1]}`, behaviour: `SENTINEL-BEHAVIOUR ${ST(n)}`, interface: 'browser', severity: 'medium' })))
+  const order = queuePick(['sb-r1-1', 'sb-r1-2'], 2, SEED), kept = order[0], k = Number(kept.at(-1))
+  expect(grades).toEqual([[env, o, '--at', sdEnd, '--sealed', '--reuse'], [env, o, '--at', bugSha(d, kept), '--sealed', '--reuse']])
+  const bugs = bugsOf(d, 'r1')
+  expect(bugs.map((b) => [b.id, b.state, b.why])).toEqual([1, 2].map((n) => [`sb-r1-${n}`, n === k ? 'kept' : 'ungraded', null]))
+  expect(bugs[k - 1]).toEqual({ id: kept, task: 'r1', base: sdBase, end: bugSha(d, kept), fix: sdEnd, check: ST(k), edge: EDGES[k - 1], severity: 'medium', description: `SENTINEL-DESCRIPTION ${ST(k)}`, behaviour: `SENTINEL-BEHAVIOUR ${ST(k)}`,
+    hunk: { file: 'src/m.js', old: LINES[k - 1] }, edit: candidate(ST(k), k - 1).edit, state: 'kept', why: null })
+  expect(jsonAt(join(d, 'r1/seeded/work/seed.reply.md.run.json')).ids).toEqual([ST(1), ST(2)])
+  expect(Bun.spawnSync(['git', '-C', sd, 'for-each-ref', 'refs/seeded']).stdout.toString()).toBe('')
+})
+
+test('external seed writes five candidates with the recipes, keeps its runner and grades the first three', async () => {
+  const d = seedData('sb2'), calls = [], grades = [], o = join(d, 'x1-01/seeded/oracle')
+  const r = await seedRun(d, EXT_ARGS(), calls, {}, seedGrade(ownFails(d), grades))
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('x1-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3')
+  expect(calls[0][0]).toBe(join(d, 'env/seeded/x1-01.json'))
+  const p = readFileSync(argOf(calls[0], '--prompt'), 'utf8')
+  expect(p).toStartWith('SEED-EXT-BRIEF\n')
+  expect(p).toContain(`EXT-RULES\n\n## The requirement`)
+  expect(p).toContain(`\n5 bugs, one check each, with these ids:\n\n${[1, 2, 3, 4, 5].map((n) => `- \`${ST(n)}\``).join('\n')}\n`)
+  for (const x of ['RECIPE-DOCKERFILE', 'RECIPE-TEST', 'SERVE-START', `\`${join(d, 'x1-01/seeded/work/seed')}\` (copied to \`/oracle\` in the container)`]) expect(p).toContain(x)
+  for (const x of ['SENTINEL-BRIEFSHA', 'SCAFFOLD-CONFIG']) expect(p).not.toContain(x)
+  expect(ls(o)).toEqual([...[1, 2, 3, 4, 5].map((n) => `${ST(n)}.spec.ts`), 'manifest.json', 'runner.json'].sort())
+  expect(jsonAt(join(o, 'manifest.json'))[0].file).toBe(`${ST(1)}.spec.ts`)
+})
+
+test('bugs are graded in queuePick order and stop at the count', async () => {
+  const d = seedData('sb3'), grades = []
+  await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d), grades))
+  const order = queuePick([1, 2, 3, 4, 5].map((k) => `sb-x1-01-${k}`), 5, SEED)
+  expect(atCalls(grades)).toEqual([sdEnd, ...order.slice(0, 3).map((id) => bugSha(d, id))])
+  const states = Object.fromEntries(bugsOf(d, 'x1-01').map((b) => [b.id, b.state]))
+  expect(order.map((id) => states[id])).toEqual(['kept', 'kept', 'kept', 'ungraded', 'ungraded'])
+})
+
+test('a check that passes on another bug stays valid', async () => {
+  const d = seedData('sb4')
+  await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d)))
+  const kept = bugsOf(d, 'x1-01').filter((b) => b.state === 'kept'), v = validationIn(d, 'x1-01')
+  expect(kept).toHaveLength(3)
+  for (const b of kept) {
+    expect(jsonAt(join(d, 'x1-01/seeded/grades', `${b.end.slice(0, 7)}.json`)).checks.filter((c) => c.result === 'pass')).toHaveLength(4) // the other checks pass at this bug
+    expect(v.checks.find((c) => c.id === b.check)).toEqual({ id: b.check, ref: 'pass', bad: ['fail'], verdict: 'valid' })
+  }
+  expect(v).toMatchObject({ ref: sdEnd, base: null })
+  expect(v.bad).toEqual(queuePick(kept.map((b) => b.id), 3, SEED).map((id) => bugSha(d, id)))
+})
+
+test('a bug with no results is error and the next spare is graded', async () => {
+  const d = seedData('sb5'), grades = [], order = queuePick([1, 2, 3, 4, 5].map((k) => `sb-x1-01-${k}`), 5, SEED)
+  const over = (c) => (c === bugSha(d, order[0]) ? 'missing' : c === bugSha(d, order[1]) ? 'throw' : null)
+  const r = await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d), grades, over))
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('x1-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=5 valid=3 weak=0 broken=0 error=2 kept=3')
+  expect(atCalls(grades)).toEqual([sdEnd, ...order.map((id) => bugSha(d, id))])
+  const bugs = new Map(bugsOf(d, 'x1-01').map((b) => [b.id, b]))
+  expect(order.map((id) => [bugs.get(id).state, bugs.get(id).why])).toEqual([['dropped', 'error'], ['dropped', 'error'], ['kept', null], ['kept', null], ['kept', null]])
+  const v = validationIn(d, 'x1-01')
+  expect(v.checks.find((c) => c.id === bugs.get(order[0]).check)).toEqual({ id: bugs.get(order[0]).check, ref: 'pass', bad: ['error'], verdict: 'error', stage: 'grade exit 1' })
+  expect(v.checks.find((c) => c.id === bugs.get(order[1]).check).stage).toBe('SENTINEL-THROW')
+  expect(v.checks.find((c) => c.id === bugs.get(order[2]).check).stage).toBeUndefined()
+})
+
+test('a bug run that never gets ready is error, its grade is not reused, and the rerun\'s result stands', async () => {
+  const d = seedData('sb35'), order = queuePick([1, 2, 3, 4, 5].map((k) => `sb-x1-01-${k}`), 5, SEED), first = () => bugSha(d, order[0])
+  const r = await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d), [], (c) => (c === first() ? 'not ready' : null)))
+  expect(r.out).toBe('x1-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=4 valid=3 weak=0 broken=0 error=1 kept=3')
+  const sha = first().slice(0, 7), bug1 = bugsOf(d, 'x1-01').find((b) => b.id === order[0])
+  expect(existsSync(join(d, 'x1-01/seeded/grades', `${sha}.json`))).toBe(false)
+  expect(validationIn(d, 'x1-01').checks.find((c) => c.id === bug1.check)).toEqual({ id: bug1.check, ref: 'pass', bad: ['error'], verdict: 'error', stage: `not ready at ${sha}` })
+  appendFileSync(join(d, 'x1-01/build/readiness.tsv'), `${sha}\tready\n`)
+  await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d)))
+  expect(bugsOf(d, 'x1-01').find((b) => b.id === order[0]).state).toBe('kept')
+})
+
+test('a bug whose run gave no result at all is error, its grade file goes, and the rerun\'s result stands', async () => {
+  const d = seedData('sb43'), order = queuePick([1, 2, 3, 4, 5].map((k) => `sb-x1-01-${k}`), 5, SEED), first = () => bugSha(d, order[0])
+  const grades = [], table = (c, id) => (c === first() ? 'error' : ownFails(d)(c, id))
+  const r = await seedRun(d, EXT_ARGS(), [], {}, seedGrade(table, grades))
+  expect(r.out).toBe('x1-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=4 valid=3 weak=0 broken=0 error=1 kept=3')
+  const bug1 = bugsOf(d, 'x1-01').find((b) => b.id === order[0])
+  expect([bug1.state, bug1.why]).toEqual(['dropped', 'error'])
+  expect(existsSync(join(d, 'x1-01/seeded/grades', `${first().slice(0, 7)}.json`))).toBe(false)
+  grades.length = 0
+  await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d), grades))
+  expect(atCalls(grades)).toContain(first())
+  expect(bugsOf(d, 'x1-01').find((b) => b.id === order[0]).state).toBe('kept')
+})
+
+test('a bug\'s check with no case in a good grade is error with a stage', async () => {
+  const d = seedData('sb36'), order = queuePick(['sb-r1-1', 'sb-r1-2'], 2, SEED), first = Number(order[0].at(-1))
+  await seedRun(d, RE_ARGS(d), [], {}, seedGrade(ownFails(d, (k) => (k === first ? 'error' : 'fail'))))
+  expect(validationIn(d, 'r1').checks.find((c) => c.id === ST(first))).toEqual({ id: ST(first), ref: 'pass', bad: ['error'], verdict: 'error', stage: 'no result for this check' })
+})
+
+test('a check that fails at the end gets a fixer round and bugs wait for it', async () => {
+  const d = seedData('sb6'), calls = [], grades = [], events = [], agents = []
+  const table = (c, id, o) => (c === sdEnd ? (id === ST(2) && readFileSync(join(o, `${id}.spec.ts`), 'utf8') !== FIXED ? 'fail' : 'pass') : ownFails(d)(c, id))
+  const agent = seeder(calls, { fix: { edit: () => FIXED } })
+  const logged = async (a) => { events.push(a[1]); agents.push(a); return agent(a) }
+  const r = await withData(d, () => quiet(() => oracle(['seed', ...RE_ARGS(d)], { agent: logged, grade: seedGrade(table, grades, () => null, events) })))
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('r1 seed candidates=2 refused=0 pass-at-end=2 fixer=1 graded=1 valid=1 weak=0 broken=0 error=0 kept=1')
+  const end = `at ${S7}`
+  expect(events.slice(0, 5)).toEqual(['seed-r1', end, `fix-seeded-1-r1-${S7}`, `compare-seeded-1-r1-${S7}`, end])
+  expect(events.slice(5)).toHaveLength(1)
+  const fix = agents.find((a) => a[1].startsWith('fix-'))
+  expect(argOf(fix, '--at')).toBe(sdEnd)
+  expect(argOf(fix, '--out')).toBe(join(d, 'r1/seeded/work/fix-seeded-1', `${S7}.fix.reply.md`))
+  const fp = readFileSync(argOf(fix, '--prompt'), 'utf8')
+  expect(fp).toContain(ST(2))
+  expect(fp).not.toContain(`"id": "${ST(1)}"`)
+  for (const x of ['edit', 'SENTINEL-DESCRIPTION']) expect(fp).not.toContain(x) // the bug stays out of the fixer's prompt
+  expect(readFileSync(join(d, 'r1/seeded/oracle', `${ST(2)}.spec.ts`), 'utf8')).toBe(FIXED)
+})
+
+test('a check that still fails at the end after two rounds is broken and its bug is dropped', async () => {
+  const d = seedData('sb7'), calls = [], grades = []
+  const table = (c, id) => (c === sdEnd ? (id === ST(2) ? 'fail' : 'pass') : ownFails(d)(c, id))
+  let round = 0
+  const r = await seedRun(d, RE_ARGS(d), calls, { fix: { edit: () => `${CHECK}// fixed ${++round}\n` } }, seedGrade(table, grades))
+  expect(r.out).toBe('r1 seed candidates=2 refused=0 pass-at-end=1 fixer=2 graded=1 valid=1 weak=0 broken=1 error=0 kept=1')
+  expect(calls.filter((a) => a[1].startsWith('fix-')).map((a) => a[1])).toEqual([`fix-seeded-1-r1-${S7}`, `fix-seeded-2-r1-${S7}`])
+  expect(atCalls(grades)).toEqual([sdEnd, sdEnd, sdEnd, bugSha(d, 'sb-r1-1')])
+  const [one, two] = bugsOf(d, 'r1')
+  expect([one.state, two.state, two.why, two.end]).toEqual(['kept', 'dropped', 'end', bugSha(d, 'sb-r1-2')])
+  expect(validationIn(d, 'r1').checks.find((c) => c.id === ST(2))).toEqual({ id: ST(2), ref: 'fail', bad: [], verdict: 'broken' })
+})
+
+test('a refused fixer run counts no round', async () => {
+  const d = seedData('sb37'), work = join(d, 'r1/seeded/work'), calls = []
+  for (const r of [1, 2]) { mkdirSync(join(work, `fix-seeded-${r}`), { recursive: true }); writeFileSync(join(work, `fix-seeded-${r}`, `${S7}.fix.reply.md.run.json`), '{"promptSha":"old"}') }
+  const r = await seedRun(d, RE_ARGS(d), calls, {}, seedGrade((c, id) => (c === sdEnd && id === ST(2) ? 'fail' : ownFails(d)(c, id))))
+  expect(r.out.split('\n').at(-1)).toBe('r1 seed candidates=2 refused=0 pass-at-end=1 fixer=0 graded=1 valid=1 weak=0 broken=1 error=0 kept=1')
+  expect(calls.map((a) => a[1])).toEqual(['seed-r1'])
+})
+
+test('a verdict at a bug gets no fixer', async () => {
+  const d = seedData('sb8'), calls = [], order = queuePick([1, 2, 3, 4, 5].map((k) => `sb-x1-01-${k}`), 5, SEED), res = ['pass', 'precondition', 'fail', 'fail', 'fail']
+  const r = await seedRun(d, EXT_ARGS(), calls, {}, seedGrade(ownFails(d, (k) => res[order.indexOf(`sb-x1-01-${k}`)])))
+  expect(r.out).toBe('x1-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=5 valid=3 weak=1 broken=1 error=0 kept=3')
+  expect(calls).toHaveLength(1) // the seeder alone
+  const by = new Map(bugsOf(d, 'x1-01').map((b) => [b.id, b]))
+  expect(order.map((id) => [by.get(id).state, by.get(id).why])).toEqual([['dropped', 'weak'], ['dropped', 'broken'], ['kept', null], ['kept', null], ['kept', null]])
+})
+
+test('a refused candidate gets no commit and no run', async () => {
+  const d = seedData('sb9'), grades = [], calls = []
+  const tweak = (e, i) => [
+    { ...e, edit: { ...e.edit, file: '../SENTINEL-OUT.js' }, origin: `../SENTINEL-OUT.js::${e.edge}` }, // git refuses a path outside the repo: no file, no crash
+    { ...e, interface: 'none', file: undefined },
+    { ...e, edit: { ...e.edit, find: 'SENTINEL-ABSENT' } },
+    { ...e, edit: { file: 'src/m.js' } },
+    e,
+  ][i]
+  const r = await seedRun(d, EXT_ARGS(), calls, { tweak }, seedGrade(ownFails(d), grades))
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('x1-01 seed candidates=5 refused=4 pass-at-end=1 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1')
+  expect(sealedGit(d, 'for-each-ref', '--format=%(refname)', 'refs/seeded')).toBe('refs/seeded/sb-x1-01-5')
+  expect(bugsOf(d, 'x1-01').map((b) => [b.state, b.why, b.end])).toEqual([['dropped', 'no file', null], ['dropped', 'interface', null], ['dropped', 'find', null], ['dropped', 'fields', null], ['kept', null, bugSha(d, 'sb-x1-01-5')]])
+  expect(jsonAt(join(d, 'x1-01/seeded/oracle/manifest.json')).map((m) => m.id)).toEqual([ST(5)])
+  expect(ls(join(d, 'x1-01/seeded/oracle'))).toEqual([`${ST(5)}.spec.ts`, 'manifest.json', 'runner.json'].sort())
+  expect(validationIn(d, 'x1-01').checks.map((c) => c.id)).toEqual([ST(5)])
+  expect(atCalls(grades)).toEqual([sdEnd, bugSha(d, 'sb-x1-01-5')])
+})
+
+test('seed refuses an origin that does not match its edit', async () => {
+  const d = seedData('sb10'), grades = []
+  const tweak = (e, i) => (i ? e : { ...e, origin: `src/m.js::${EDGES[3]}` })
+  const r = await seedRun(d, RE_ARGS(d), [], { tweak }, seedGrade(ownFails(d), grades))
+  expect(r.out).toBe('r1 seed candidates=2 refused=1 pass-at-end=1 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1')
+  expect(bugsOf(d, 'r1').map((b) => [b.check, b.state, b.why, b.end])).toEqual([[ST(1), 'dropped', 'origin', null], [ST(2), 'kept', null, bugSha(d, 'sb-r1-2')]])
+  expect(bugSha(d, 'sb-r1-1')).toBe('')
+})
+
+test('seed refuses a later candidate with the same edit', async () => {
+  const d = seedData('sb38'), grades = []
+  const tweak = (e, i) => (i ? { ...e, edit: candidate(ST(1), 0).edit } : e) // another edge and check, one commit
+  const r = await seedRun(d, RE_ARGS(d), [], { tweak }, seedGrade(ownFails(d), grades))
+  expect(r.out).toBe('r1 seed candidates=2 refused=1 pass-at-end=1 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1')
+  expect(bugsOf(d, 'r1').map((b) => [b.id, b.state, b.why, b.end])).toEqual([['sb-r1-1', 'kept', null, bugSha(d, 'sb-r1-1')], ['sb-r1-2', 'dropped', 'duplicate', null]])
+  expect(bugSha(d, 'sb-r1-2')).toBe('')
+  expect(jsonAt(join(d, 'r1/seeded/oracle/manifest.json')).map((m) => m.id)).toEqual([ST(1)])
+})
+
+test('seed refuses a later candidate that gives the same commit', async () => {
+  const d = seedData('sb42'), grades = [], one = (find, replace) => ({ file: 'src/m.js', find, replace })
+  const tweak = (e, i) => ({ ...e, edit: i ? one('l7 = 7', 'l7 = 8') : one('const l7 = 7', 'const l7 = 8') }) // other text, same effect
+  const r = await seedRun(d, RE_ARGS(d), [], { tweak }, seedGrade(ownFails(d), grades))
+  expect(r.out).toBe('r1 seed candidates=2 refused=1 pass-at-end=1 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1')
+  expect(bugsOf(d, 'r1').map((b) => [b.id, b.state, b.why, b.end, b.hunk])).toEqual([['sb-r1-1', 'kept', null, bugSha(d, 'sb-r1-1'), { file: 'src/m.js', old: 7 }], ['sb-r1-2', 'dropped', 'duplicate', null, null]])
+  expect(bugSha(d, 'sb-r1-2')).toBe('')
+  expect(jsonAt(join(d, 'r1/seeded/oracle/manifest.json')).map((m) => m.id)).toEqual([ST(1)])
+  // a rerun refuses it again and leaves the earlier bug
+  const again = await seedRun(d, RE_ARGS(d), [], { tweak }, seedGrade(ownFails(d)))
+  expect(again.out).toBe(r.out)
+  expect(bugSha(d, 'sb-r1-2')).toBe('')
+  expect(bugSha(d, 'sb-r1-1')).not.toBe('')
+})
+
+test('seed refuses an id it did not give and a check that names the seeded file', async () => {
+  const d = seedData('sb11')
+  const tweak = (e, i) => (i ? { ...e, id: ST(9) } : e)
+  const agent = seeder([], { tweak })
+  const naming = async (a) => { const code = await agent(a); if (a[1].startsWith('seed-')) { const dir = join(d, 'r1/seeded/work/seed'); writeFileSync(join(dir, `${ST(1)}.spec.ts`), `${CHECK}// src/m.js\n`) } return code }
+  const r = await withData(d, () => quiet(() => oracle(['seed', ...RE_ARGS(d)], { agent: naming, grade: seedGrade(ownFails(d)) })))
+  expect(r.out).toBe('r1 seed candidates=2 refused=2 pass-at-end=0 fixer=0 graded=0 valid=0 weak=0 broken=0 error=0 kept=0')
+  expect(bugsOf(d, 'r1').map((b) => [b.id, b.why])).toEqual([['sb-r1-1', 'leak'], ['sb-r1-2', 'id']])
+  expect(jsonAt(join(d, 'r1/seeded/oracle/manifest.json'))).toEqual([])
+})
+
+test('an external seed with no valid runner.json or no manifest stops before any commit', async () => {
+  for (const [name, opts, line] of [['sb12', { runner: '{}' }, 'x1-01 seed runner.json missing or invalid'], ['sb13', { runner: null }, 'x1-01 seed runner.json missing or invalid'], ['sb14', { manifest: null }, 'x1-01 seed no manifest']]) {
+    const d = seedData(name), grades = []
+    const r = await seedRun(d, EXT_ARGS(), [], opts, seedGrade(ownFails(d), grades))
+    expect([r.code, r.out.split('\n').at(-1)]).toEqual([1, line])
+    expect(grades).toHaveLength(0)
+    expect(sealedGit(d, 'for-each-ref', 'refs/seeded')).toBe('')
+  }
+})
+
+test('an end run that never gets ready is not judged', async () => {
+  const d = seedData('sb15'), docker = join(d, 'x1-01/docker.json'), grades = [], g = join(d, 'x1-01/seeded/grades', `${S7}.json`)
+  mkdirSync(join(d, 'x1-01/build'), { recursive: true })
+  writeFileSync(docker, JSON.stringify({ images: [], containers: [] }))
+  writeFileSync(join(d, 'x1-01/build/readiness.tsv'), `${S7}\tnot ready\n`)
+  const r = await seedRun(d, EXT_ARGS(), [], {}, seedGrade(() => 'error', grades))
+  expect([r.code, r.out]).toEqual([1, 'x1-01 seed not judged'])
+  expect(existsSync(g)).toBe(false) // so --reuse runs it again
+  for (const f of ['bugs.json', `validation-${S7}.json`]) expect(existsSync(join(d, 'x1-01/seeded', f))).toBe(false)
+  expect(jsonAt(docker).digests).toEqual({}) // removeRecorded ran
+  // the task is run again: its end now ready, nothing was dropped
+  writeFileSync(join(d, 'x1-01/build/readiness.tsv'), `${S7}\tnot ready\n${S7}\tready\n`)
+  const again = await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d), grades))
+  expect([again.code, again.out]).toEqual([0, 'x1-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3'])
+})
+
+test('a ready end with no results gets its fixer rounds, then is not judged and its grade goes', async () => {
+  const d = seedData('sb39'), calls = [], grades = []
+  let round = 0
+  const r = await seedRun(d, RE_ARGS(d), calls, { fix: { edit: () => `${CHECK}// fixed ${++round}\n` } }, seedGrade(() => 'error', grades))
+  expect([r.code, r.out]).toEqual([1, 'r1 seed not judged'])
+  expect(calls.filter((a) => a[1].startsWith('fix-'))).toHaveLength(2)
+  expect(atCalls(grades)).toEqual([sdEnd, sdEnd, sdEnd]) // no bug graded
+  expect(existsSync(join(d, 'r1/seeded/grades', `${S7}.json`))).toBe(false)
+  expect(existsSync(join(d, 'r1/seeded/bugs.json'))).toBe(false)
+  // a fix that gives results judges the task
+  const d2 = seedData('sb40')
+  const table = (c, id, o) => (c === sdEnd ? (readFileSync(join(o, `${id}.spec.ts`), 'utf8') === FIXED ? 'pass' : 'error') : ownFails(d2)(c, id))
+  const r2 = await seedRun(d2, RE_ARGS(d2), [], { fix: { edit: () => FIXED } }, seedGrade(table))
+  expect([r2.code, r2.out]).toEqual([0, 'r1 seed candidates=2 refused=0 pass-at-end=2 fixer=1 graded=1 valid=1 weak=0 broken=0 error=0 kept=1'])
+})
+
+test('a grade at the end that throws, exits non-zero or has no JUnit is not judged', async () => {
+  for (const [name, how] of [['sb16', 'throw'], ['sb17', 'exit'], ['sb18', 'missing']]) {
+    const d = seedData(name), r = await seedRun(d, RE_ARGS(d), [], {}, seedGrade(ownFails(d), [], () => how))
+    expect([r.code, r.out]).toEqual([1, 'r1 seed not judged'])
+    expect(existsSync(join(d, 'r1/seeded/bugs.json'))).toBe(false)
+  }
+  // and after a fixer's round
+  const d = seedData('sb19'), n = { end: 0 }
+  const over = (c) => (c === sdEnd && ++n.end === 2 ? 'missing' : null)
+  const r = await seedRun(d, RE_ARGS(d), [], { fix: { edit: () => FIXED } }, seedGrade((c, id) => (id === ST(1) ? 'fail' : 'pass'), [], over))
+  expect([r.code, r.out]).toEqual([1, 'r1 seed not judged'])
+})
+
+test('a rerun reuses the seeder record, the grades and a fixer\'s work and keeps the ids when another manifest grew', async () => {
+  const d = seedData('sb20'), calls = [], grades = []
+  mkdirSync(join(d, 'x9/oracle'), { recursive: true })
+  writeFileSync(join(d, 'x9/oracle/manifest.json'), JSON.stringify([{ id: ST(4) }]))
+  const table = (c, id, o) => (c === sdEnd ? (readFileSync(join(o, `${id}.spec.ts`), 'utf8') === FIXED || id !== ST(6) ? 'pass' : 'fail') : id === ST(4 + kOf(d, c)) ? 'fail' : 'pass')
+  const opts = { fix: { edit: () => FIXED } }
+  const r = await seedRun(d, RE_ARGS(d), calls, opts, seedGrade(table, grades))
+  expect(r.out).toBe('r1 seed candidates=2 refused=0 pass-at-end=2 fixer=1 graded=1 valid=1 weak=0 broken=0 error=0 kept=1')
+  expect(jsonAt(join(d, 'r1/seeded/oracle/manifest.json')).map((m) => m.id)).toEqual([ST(5), ST(6)])
+  const made = calls.length, tree = seedTree(d)
+  writeFileSync(join(d, 'x9/oracle/manifest.json'), JSON.stringify([{ id: ST(50) }]))
+  const again = await seedRun(d, RE_ARGS(d), calls, opts, seedGrade(table, grades))
+  expect(again.out).toBe(r.out.replace('fixer=1', 'fixer=0')) // the fixed check passes now: no round this time
+  expect(calls).toHaveLength(made) // no seeder and no fixer ran
+  expect(seedTree(d).filter(([f]) => !f.includes('/x9/'))).toEqual(tree.filter(([f]) => !f.includes('/x9/')))
+  expect(readFileSync(join(d, 'r1/seeded/oracle', `${ST(6)}.spec.ts`), 'utf8')).toBe(FIXED)
+  expect(grades.at(-1).slice(-2)).toEqual(['--sealed', '--reuse'])
+})
+
+test('a seeder run whose prompt changed is refused', async () => {
+  const d = seedData('sb21')
+  await seedRun(d, RE_ARGS(d), [], {}, seedGrade(ownFails(d)))
+  writeFileSync(join(d, 'r1/input.md'), 'SENTINEL-CHANGED\n')
+  const r = await seedRun(d, RE_ARGS(d), [], {}, seedGrade(ownFails(d)))
+  expect([r.code, r.out]).toEqual([1, 'r1 seed refused a run whose prompt differs from the one it ran with'])
+})
+
+test('validation lists a dropped check so unscored excludes it', async () => {
+  const d = seedData('sb22'), order = queuePick([1, 2, 3, 4, 5].map((k) => `sb-x1-01-${k}`), 5, SEED), res = ['pass', 'fail', 'fail', 'fail', 'fail']
+  const table = (c, id) => (c === sdEnd && id === ST(Number(order[1].at(-1))) ? 'fail' : ownFails(d, (k) => res[order.indexOf(`sb-x1-01-${k}`)])(c, id))
+  await seedRun(d, EXT_ARGS(), [], { fix: { edit: () => CHECK } }, seedGrade(table))
+  const bugs = new Map(bugsOf(d, 'x1-01').map((b) => [b.id, b]))
+  expect(order.map((id) => bugs.get(id).why)).toEqual(['weak', 'end', null, null, null])
+  const ids = jsonAt(join(d, 'x1-01/seeded/oracle/manifest.json')).map((m) => m.id)
+  expect(unscored([validationIn(d, 'x1-01')], ids)).toEqual([bugs.get(order[0]).check, bugs.get(order[1]).check].map((id) => ({ id, verdict: id === bugs.get(order[0]).check ? 'weak' : 'broken' })).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id)))
+})
+
+test('an ungraded spare is excluded by unscored', async () => {
+  const d = seedData('sb23'), order = queuePick([1, 2, 3, 4, 5].map((k) => `sb-x1-01-${k}`), 5, SEED)
+  await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d)))
+  const spares = bugsOf(d, 'x1-01').filter((b) => b.state === 'ungraded')
+  expect(spares.map((b) => b.id).sort()).toEqual(order.slice(3).sort())
+  const v = validationIn(d, 'x1-01')
+  for (const b of spares) expect(v.checks.find((c) => c.id === b.check)).toEqual({ id: b.check, ref: 'pass', bad: [], verdict: 'error', stage: 'not graded' })
+  const out = unscored([v], [1, 2, 3, 4, 5].map(ST))
+  expect(out.map((e) => e.id).sort()).toEqual(spares.map((b) => b.check).sort())
+  expect(out.every((e) => e.verdict === 'error')).toBe(true)
+})
+
+// kills: r1 seeded with one kept bug, then its fix oracle and, as given, its step oracle
+const killData = async (name, step) => {
+  const d = seedData(name)
+  await seedRun(d, RE_ARGS(d), [], {}, seedGrade(ownFails(d)))
+  for (const [o, ids] of [['r1/oracle', ['F1', 'F2', 'F3']], ['r1/step/oracle', ['S1', 'S2']]]) {
+    mkdirSync(join(d, o), { recursive: true })
+    writeFileSync(join(d, o, 'manifest.json'), JSON.stringify(ids.map((id) => ({ id }))))
+  }
+  if (step) writeFileSync(join(d, 'r1/step.json'), JSON.stringify(step))
+  return d
+}
+const killRun = (d, args, grade) => withData(d, () => quiet(() => oracle(['kills', ...args], { grade })))
+
+test('kills grades the step oracle only when step.json names it', async () => {
+  const d = await killData('sb24', { oracle: 'step/oracle', ids: ['S1'] }), grades = [], env = join(d, 'env/seeded/re.json')
+  const b = bugsOf(d, 'r1').find((x) => x.state === 'kept'), before = seedTree(d)
+  const table = (c, id) => (c === sdEnd ? (id === 'F3' ? 'fail' : 'pass') : { F1: 'fail', F2: 'pass', F3: 'fail', S1: 'precondition', S2: 'error' }[id])
+  const r = await killRun(d, RE_ARGS(d), seedGrade(table, grades))
+  expect([r.code, r.out]).toEqual([0, 'r1 kills bugs=1 fix=1/1 step=1/1'])
+  const at = (o, c) => [env, join(d, o), '--at', c, '--sealed', '--reuse']
+  expect(grades).toEqual([at('r1/oracle', sdEnd), at('r1/oracle', b.end), at('r1/step/oracle', sdEnd), at('r1/step/oracle', b.end)])
+  expect(jsonAt(join(d, 'r1/seeded/kills.json'))).toEqual([{ id: b.id, fix: { killed: 1, of: 2 }, step: { killed: 1, of: 2 } }]) // F3 failed at the end; an error is no kill
+  // only kills.json and the new grades
+  const was = new Map(before)
+  expect(seedTree(d).filter(([f, text]) => was.get(f) !== text).map(([f]) => f.slice(d.length + 1)).sort())
+    .toEqual(['r1/grades/' + `${S7}.json`, `r1/grades/${b.end.slice(0, 7)}.json`, 'r1/seeded/kills.json', `r1/step/grades/${S7}.json`, `r1/step/grades/${b.end.slice(0, 7)}.json`].sort())
+  // an oracle: 'oracle' step, no step ids, no step.json: the fix oracle alone
+  for (const [name, step] of [['sb25', { oracle: 'oracle', ids: ['S1'] }], ['sb26', { oracle: 'step/oracle', ids: [] }], ['sb27', null]]) {
+    const dd = await killData(name, step), gg = []
+    const x = await killRun(dd, RE_ARGS(dd), seedGrade(ownFails(dd), gg))
+    expect([x.code, x.out]).toEqual([0, 'r1 kills bugs=1 fix=0/1 step=none'])
+    expect(gg.every((g) => g[1] === join(dd, 'r1/oracle'))).toBe(true)
+    expect(jsonAt(join(dd, 'r1/seeded/kills.json'))[0].step).toBeNull()
+  }
+})
+
+test('kills leaves a good end grade byte for byte', async () => {
+  const d = await killData('sb41', { oracle: 'step/oracle', ids: ['S1'] }), bug7 = bugsOf(d, 'r1').find((x) => x.state === 'kept').end, sets = ['r1/oracle', 'r1/step/oracle']
+  const put = (o, over = {}) => {
+    const f = join(d, o, '..', 'grades', `${S7}.json`), ids = jsonAt(join(d, o, 'manifest.json')).map((m) => m.id)
+    mkdirSync(join(f, '..'), { recursive: true })
+    writeFileSync(f, `${JSON.stringify({ commit: sdEnd, junit: 'ok', oracleSha: oracleSha(oracleFiles(join(d, o))), excluded: [], checks: ids.map((id) => ({ id, result: 'pass' })), ...over }, null, 7)}\n`)
+    return f
+  }
+  const table = (c) => (c === sdEnd ? 'pass' : 'fail')
+  const files = sets.map((o) => put(o)), bytes = files.map((f) => readFileSync(f, 'utf8')), grades = []
+  const r = await killRun(d, RE_ARGS(d), seedGrade(table, grades))
+  expect([r.code, r.out]).toEqual([0, 'r1 kills bugs=1 fix=1/1 step=1/1'])
+  expect(files.map((f) => readFileSync(f, 'utf8'))).toEqual(bytes)
+  expect(atCalls(grades)).toEqual([bug7, bug7])
+  // another commit, a JUnit that was not ok, a changed folder or a not-ready line: it grades
+  for (const [over, ready] of [[{ commit: sdBase }], [{ junit: 'missing' }], [{ oracleSha: 'old' }], [{}, `${S7}\tnot ready\n`]]) {
+    put('r1/oracle', over)
+    rmSync(join(d, 'r1/build'), { recursive: true, force: true })
+    if (ready) { mkdirSync(join(d, 'r1/build')); writeFileSync(join(d, 'r1/build/readiness.tsv'), ready) }
+    const again = []
+    await killRun(d, RE_ARGS(d), seedGrade(table, again))
+    expect(atCalls(again)[0]).toBe(sdEnd)
+  }
+})
+
+test('kills not judged keeps nothing, a not-ready grade goes, and an external task cleans up', async () => {
+  const d = await killData('sb28', { oracle: 'step/oracle', ids: ['S1'] }), f = join(d, 'r1/seeded/kills.json')
+  const r = await killRun(d, RE_ARGS(d), seedGrade(() => 'pass', [], (c) => (c === sdEnd ? 'missing' : null)))
+  expect([r.code, r.out]).toEqual([1, 'r1 kills not judged'])
+  expect(existsSync(f)).toBe(false)
+  const empty = await killRun(d, RE_ARGS(d), seedGrade(() => 'error'))
+  expect([empty.code, empty.out]).toEqual([1, 'r1 kills not judged'])
+  expect(existsSync(f)).toBe(false)
+  expect(existsSync(join(d, 'r1/grades', `${S7}.json`))).toBe(false) // --reuse would keep it
+  // a bug grade with no results is no zero kill: it threw, had no JUnit, never got ready, or every check is `error`
+  const bug7 = bugsOf(d, 'r1').find((x) => x.state === 'kept').end.slice(0, 7), end = (c) => c === sdEnd
+  for (const [table, how] of [[() => 'fail', 'throw'], [() => 'fail', 'exit'], [() => 'fail', 'missing'], [() => 'fail', 'not ready'], [() => 'error', null]]) {
+    const x = await killRun(d, RE_ARGS(d), seedGrade((c, id) => (end(c) ? 'pass' : table(c, id)), [], (c) => (end(c) ? null : how)))
+    expect([x.code, x.out]).toEqual([1, 'r1 kills not judged'])
+    expect(existsSync(f)).toBe(false)
+    if (how === 'not ready' || how === null) expect(existsSync(join(d, 'r1/grades', `${bug7}.json`))).toBe(false)
+    rmSync(join(d, 'r1/build'), { recursive: true, force: true })
+  }
+  // an `error` beside real results is no kill and no failure
+  const mixed = await killRun(d, RE_ARGS(d), seedGrade((c, id) => (end(c) || id === 'F2' || id === 'S2' ? 'pass' : 'error')))
+  expect([mixed.code, mixed.out]).toEqual([0, 'r1 kills bugs=1 fix=0/1 step=0/1'])
+  expect(jsonAt(f)[0].fix).toEqual({ killed: 0, of: 3 })
+  // no seed yet: nothing to grade
+  const fresh = seedData('sb29')
+  expect(await killRun(fresh, RE_ARGS(fresh), seedGrade(() => 'pass'))).toEqual({ code: 1, out: 'r1 kills not judged' })
+  // external, three kept, no bug killed by a check that passes; the task's images removed after
+  const e = seedData('sb30'), docker = join(e, 'x1-01/docker.json')
+  await seedRun(e, EXT_ARGS(), [], {}, seedGrade(ownFails(e)))
+  mkdirSync(join(e, 'x1-01/oracle'), { recursive: true })
+  writeFileSync(join(e, 'x1-01/oracle/manifest.json'), JSON.stringify([{ id: 'F1' }]))
+  writeFileSync(docker, JSON.stringify({ images: [], containers: [] }))
+  const x = await killRun(e, EXT_ARGS(), seedGrade((c) => (c === sdEnd ? 'pass' : kOf(e, c) === bugsOf(e, 'x1-01').find((b) => b.state === 'kept').id.at(-1) * 1 ? 'fail' : 'pass')))
+  expect([x.code, x.out]).toEqual([0, 'x1-01 kills bugs=3 fix=1/3 step=none'])
+  expect(jsonAt(docker).digests).toEqual({})
+})
+
+test('seed and kills print only counts', async () => {
+  const d = await killData('sb31', null)
+  const tweak = (e, i) => (i ? { ...e, interface: 'none', file: undefined } : e)
+  const e = seedData('sb32')
+  const seeded = await seedRun(e, EXT_ARGS(), [], { tweak }, seedGrade(ownFails(e)))
+  const k = await killRun(d, RE_ARGS(d), seedGrade(ownFails(d)))
+  const notJudged = await seedRun(seedData('sb33'), EXT_ARGS(), [], {}, seedGrade(() => 'pass', [], () => 'throw'))
+  expect(seeded.out).toMatch(/^x1-01 seed candidates=\d+ refused=\d+ pass-at-end=\d+ fixer=\d+ graded=\d+ valid=\d+ weak=\d+ broken=\d+ error=\d+ kept=\d+$/)
+  expect(k.out).toMatch(/^r1 kills bugs=\d+ fix=\d+\/\d+ step=(\d+\/\d+|none)$/)
+  for (const x of [seeded.out, k.out, notJudged.out]) for (const s of ['SENTINEL', 'src/m.js', 'const l', 'boundary', 'empty']) expect(x).not.toContain(s)
+})
+
+test('seed and kills take the task forms step takes', async () => {
+  const d = seedData('sb34')
+  await expect(withData(d, () => oracle(['seed', 'x1-01', 'r1', 'more']))).rejects.toThrow('usage: ')
+  await expect(withData(d, () => oracle(['kills']))).rejects.toThrow('usage: ')
+  await expect(withData(d, () => oracle(['seed', 'r1']))).rejects.toThrow('give its task file')
 })

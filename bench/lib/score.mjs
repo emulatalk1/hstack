@@ -86,3 +86,15 @@ export function floorScore(fix, step, ids) {
     passed: ids.length ? mine.every((c) => c.severity === 'low' || c.result === 'pass') : null,
   }
 }
+
+// ruling 7 of step 7: a check is judged against its own bug only. A bug that stops the build gives `error`, never `valid`
+export const ownVerdict = (end, bug) => (bug === 'error' && end === 'pass' ? 'error' : verdict({ ref: end, bad: bug, base: 'pass' }))
+
+// ruling 10 of step 7: of the non-excluded checks that pass at the end, those the bug turns into a fail or a missing feature.
+// `excluded` comes from the bug's grade, written from today's validations; a kept end grade can hold an older list
+export function killsOf(endGrade, bugGrade) {
+  const out = new Set((bugGrade.excluded ?? []).map((e) => e.id))
+  const atBug = new Map(bugGrade.checks.map((c) => [c.id, c.result]))
+  const live = endGrade.checks.filter((c) => !out.has(c.id) && c.result === 'pass')
+  return { killed: live.filter((c) => ['fail', 'precondition'].includes(atBug.get(c.id))).length, of: live.length }
+}

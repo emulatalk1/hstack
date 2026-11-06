@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { results, score, verdict, checksFrom, fixMatches, unscored, floorScore } from '../bench/lib/score.mjs'
+import { results, score, verdict, checksFrom, fixMatches, unscored, floorScore, ownVerdict, killsOf } from '../bench/lib/score.mjs'
 import { grade } from '../bench/grade.mjs'
 import { clean } from '../bench/env.mjs'
 import { ROOT, releaseRoot } from './bench-root.mjs'
@@ -292,6 +292,18 @@ test('sealed grade prints only counts and writes the oracle output to the log fo
   noValidations()
 }, 30000)
 
+test('a sealed grade leaves no app log in the temp folder, an unsealed one does', async () => {
+  noValidations()
+  const task = mkTask(byPage), name = JSON.parse(readFileSync(task, 'utf8')).name
+  const logs = () => readdirSync(realpathSync(sub)).filter((n) => n.startsWith(`${name}-`) && n.endsWith('.log'))
+  await gradeCli([task, oracleDir, '--at', c1, '--sealed'])
+  expect(logs()).toEqual([])
+  await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))
+  expect(logs()).toHaveLength(1)
+  for (const f of logs()) rmSync(join(realpathSync(sub), f))
+  noValidations()
+}, 30000)
+
 const counter = () => {
   const f = join(tmp, `runs-${rand()}`)
   return { f, n: () => (existsSync(f) ? readFileSync(f, 'utf8').length / 2 : 0) }
@@ -393,4 +405,27 @@ test('passed needs every high and medium step check to pass', () => {
   for (const bad of ['fail', 'precondition', 'error'])
     expect(floorScore(fix, g([['s1', 'pass', 'high'], ['s2', bad, 'medium']]), ['s1', 's2']).passed).toBe(false)
   expect(floorScore(fix, g([['s1', 'fail', 'low'], ['s2', 'error', 'low']]), ['s1', 's2']).passed).toBe(true) // all low: passes on that clause alone
+})
+
+test('ownVerdict judges a check against its own bug only', () => {
+  expect(ownVerdict('pass', 'fail')).toBe('valid')
+  expect(ownVerdict('pass', 'pass')).toBe('weak')
+  expect(ownVerdict('pass', 'precondition')).toBe('broken')
+  expect(ownVerdict('pass', 'error')).toBe('error')
+  expect(ownVerdict('fail', 'fail')).toBe('broken')
+})
+
+test('killsOf counts only checks that passed at the end and leaves out excluded and error', () => {
+  const g = (rs, excluded = []) => ({ checks: Object.entries(rs).map(([id, result]) => ({ id, result, severity: 'high', bucket: 'build' })), excluded })
+  const end = g({ a: 'pass', b: 'pass', c: 'pass', d: 'pass', e: 'fail', f: 'pass' })
+  const bug = g({ a: 'fail', b: 'precondition', c: 'error', d: 'fail', e: 'fail', f: 'pass' }, [{ id: 'd', verdict: 'weak' }])
+  expect(killsOf(end, bug)).toEqual({ killed: 2, of: 4 })
+})
+
+test('killsOf reads excluded from the bug grade, not a stale end grade', () => {
+  const g = (rs, excluded) => ({ checks: Object.entries(rs).map(([id, result]) => ({ id, result, severity: 'high', bucket: 'build' })), excluded })
+  const end = g({ a: 'pass', b: 'pass' }, [{ id: 'a', verdict: 'broken' }])
+  const bug = g({ a: 'fail', b: 'fail' }, [{ id: 'b', verdict: 'weak' }])
+  expect(killsOf(end, bug)).toEqual({ killed: 1, of: 1 })
+  expect(killsOf(end, g({ a: 'fail', b: 'fail' }))).toEqual({ killed: 2, of: 2 })
 })

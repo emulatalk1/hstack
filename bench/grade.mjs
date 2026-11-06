@@ -32,12 +32,12 @@ export function checkJunitPath(task) {
   if (isAbsolute(task.junit) || relative('/w', resolve('/w', task.junit)).startsWith('..')) throw new Error(`task junit ${task.junit} must be a relative path inside the worktree`)
 }
 
-const runOracle = (task, oracleDir, commit, root, stdio) =>
-  withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir }, stdio), { root, start: task.start !== null })
+const runOracle = (task, oracleDir, commit, root, stdio, quiet) =>
+  withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir }, stdio), { root, start: task.start !== null, quiet })
 
 // every file of the oracle folder but node_modules (a symlink by that name too), paths relative to it; latin1 keeps every byte.
 // Any other symlink counts by its target, never followed: it may point at a folder or nowhere.
-const oracleFiles = (dir, rel = '') => readdirSync(join(dir, rel), { withFileTypes: true }).flatMap((d) => {
+export const oracleFiles = (dir, rel = '') => readdirSync(join(dir, rel), { withFileTypes: true }).flatMap((d) => {
   const p = rel ? `${rel}/${d.name}` : d.name
   if (d.name === 'node_modules') return []
   if (d.isSymbolicLink()) return [{ path: p, text: 'link:' + readlinkSync(join(dir, p)) }]
@@ -88,7 +88,7 @@ export async function grade(args, { root = ROOT } = {}) {
         stdio = openSync(join(evDir, 'logs', `${sha7}-${n}.log`), 'wx')
       }
       let cases
-      try { ({ cases, junit } = await runOracle(task, oracleDir, full, root, stdio)) } finally { if (flags.sealed) closeSync(stdio) }
+      try { ({ cases, junit } = await runOracle(task, oracleDir, full, root, stdio, flags.sealed)) } finally { if (flags.sealed) closeSync(stdio) }
       res = results(cases, ids)
     }
     const g = { commit: full, task: task.name, at: reused ? old.at : new Date().toISOString(), oracleSha: sha, junit,

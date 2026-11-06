@@ -83,3 +83,32 @@ export function f2pOf(origin, f2p, p2p) {
   const [sf, sp] = [has(f2p), has(p2p)]
   return sf !== sp ? { verdict: sf ? 'f2p' : 'p2p', by: 'segment' } : { verdict: 'ask', by: null }
 }
+
+// seeded bugs (step 7). The edges a candidate may name
+export const EDGES = ['empty', 'null', 'duplicate', 'case', 'deleted', 'boundary']
+
+// the new-side ranges of a -U0 diff. File headers are read as diffHunks does (a deleted file keeps its old path).
+// `+c,0` is a pure deletion: c is the line it follows, so start = end = c
+export function changedRanges(diff) {
+  const out = []
+  let file = null, head = false
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('diff --git ')) { head = true; file = null }
+    else if (head && line.startsWith('--- ')) file = line === '--- /dev/null' ? null : line.slice(6)
+    else if (head && line.startsWith('+++ ') && line !== '+++ /dev/null') file = line.slice(6)
+    const m = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/)
+    if (m) head = false
+    if (m && file) { const c = Number(m[1]), d = m[2] === undefined ? 1 : Number(m[2]); out.push({ file, start: c, end: d === 0 ? c : c + d - 1 }) }
+  }
+  return out
+}
+
+export const inChanged = ({ file, old }, ranges, pad = 3) => ranges.some((r) => r.file === file && old >= r.start - pad && old <= r.end + pad)
+
+// null unless `find` occurs exactly once (overlaps count) and differs from `replace`; slices, so `$` in replace stays literal
+export function applyEdit(text, find, replace) {
+  if (!find || find === replace) return null
+  const at = text.indexOf(find)
+  if (at < 0 || text.indexOf(find, at + 1) >= 0) return null
+  return text.slice(0, at) + replace + text.slice(at + find.length)
+}

@@ -2429,3 +2429,279 @@ Usage: no sealed agent ran (0 tokens of sealed runs). Each script ran in under a
     Final review: opus 206.8k tokens, 13.0 min; fix wave dispatched (sonnet)
     Final fix wave: done 87ff168 3bbc589; 374 pass 21 skip; I3 0 newline titles of 321 entries
     Final fix wave: re-review sonnet: all 8 addressed, no new breakage (commits 2ee12f9..3bbc589)
+
+## 2026-11-06 — seeded bugs plan
+
+### Task 5: Pilot
+
+Four tasks, one at a time, all exit 0, no disk-full exits, no reruns. `HSTACK_BENCH_MACHINE` set; scratch under `.evidence/bench/logs/step7/`.
+
+    s1-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s2-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s3-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    p8a   seed candidates=2 refused=0 pass-at-end=2 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1
+
+Wall clock: s1-01 641 s (10.7 min), s2-01 1014 s (16.9 min), s3-01 1224 s (20.4 min), p8a 172 s (2.9 min); total 3051 s (50.9 min).
+
+Docker: `docker builder prune -f` ran 3 times (before s1-01: 21.24 GB; before s3-01: 18.81 GB; before p8a: 18.59 GB; cache was 10.8 GB before s2-01, so no prune there). None was a disk-full retry. Build Cache after each prune 1.14 GB. Leftovers: `bench-ext-` containers (not fx/other) 0; `bench-ext/*` `-serve`/`-grade` images 0.
+
+pgsnap before and after: equal (cmp). `git status --short`: empty before this commit.
+
+Usage (sum of `*.run.json` under each task's `seeded/work/`, one seeder run per task, model claude-opus-5-5):
+
+| task | input | output | cacheRead | cacheWrite | runs |
+|---|---|---|---|---|---|
+| s1-01 | 10 | 22841 | 130180 | 60459 | 1 |
+| s2-01 | 18 | 32018 | 1274399 | 220992 | 1 |
+| s3-01 | 10 | 18229 | 145002 | 54624 | 1 |
+| p8a | 8 | 7793 | 91007 | 42457 | 1 |
+
+### Task 6: All tasks
+
+Two drivers (`run-ext.sh`, `run-re.sh`) ran detached with `HSTACK_BENCH_MACHINE` set, one task at a time per lane, the real-estate lane beside the external lane; drivers, counts and logs live under `.evidence/bench/logs/step7/`. Every task exit 0. The four pilot tasks (s1-01, s2-01, s3-01, p8a) reused every record in 1 to 2 s and printed the same line as in Task 5.
+
+Every `seed` line (external, sample.tsv order; then real-estate):
+
+    s1-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s1-02 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s1-03 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s1-04 seed candidates=5 refused=0 pass-at-end=5 fixer=1 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s1-05 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s1-06 seed candidates=5 refused=0 pass-at-end=5 fixer=1 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s1-07 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s1-09 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s2-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s2-02 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s2-03 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s2-05 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s2-07 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s2-08 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s2-09 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s2-10 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s3-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s3-02 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s3-03 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s3-04 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s3-05 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s3-06 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s3-07 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+    s3-08 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3
+
+    p1 seed candidates=2 refused=0 pass-at-end=2 fixer=1 graded=2 valid=1 weak=1 broken=0 error=0 kept=1
+    p2 seed candidates=2 refused=0 pass-at-end=2 fixer=1 graded=1 valid=1 weak=0 broken=0 error=0 kept=1
+    p3 seed candidates=2 refused=0 pass-at-end=2 fixer=1 graded=1 valid=1 weak=0 broken=0 error=0 kept=1
+    p4 seed candidates=2 refused=0 pass-at-end=2 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1
+    p6a seed candidates=2 refused=0 pass-at-end=2 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1
+    p8a seed candidates=2 refused=0 pass-at-end=2 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1
+    p8c seed candidates=2 refused=0 pass-at-end=2 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1
+    p8d seed candidates=2 refused=0 pass-at-end=2 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1
+    p8e seed candidates=2 refused=0 pass-at-end=2 fixer=0 graded=1 valid=1 weak=0 broken=0 error=0 kept=1
+
+Wall clock: external lane 31793 s (8.83 h, 24 tasks, the 3 reused pilot tasks about 2 s each); real-estate lane 2010 s (33.5 min, 9 tasks, p8a reused 1 s). Per-task start and end epochs are in `run-ext.lines` and `run-re.lines`.
+
+Docker: `docker builder prune -f` ran 13 times, all by the Build Cache above 15 GB rule before a task (s1-04 22.87 GB, s1-05 17.28, s1-07 20.12, s2-03 20.96, s2-05 25.59, s2-07 24.85, s2-09 20.53, s3-01 21.64, s3-03 30.80, s3-04 25.83, s3-05 24.42, s3-06 22.21, s3-08 27.47); none was a disk-full retry (no exit 3, no `disk` line). The real-estate lane ran no prune.
+
+Reruns: none. No `seed not judged` line, no `error` in any line, no tool throw, no non-zero exit.
+
+counts.mjs (reads only the fields state, why, edge, severity of each `bugs.json`; `ungraded` = candidates left over once the count of valid bugs was reached): The per-task edge and severity columns were removed at the final review (ruling M3); the per-set counts stay.
+
+    --- external
+    s1-01 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s1-02 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s1-03 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s1-04 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s1-05 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s1-06 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s1-07 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s1-09 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s2-01 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s2-02 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s2-03 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s2-05 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s2-07 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s2-08 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s2-09 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s2-10 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s3-01 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s3-02 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s3-03 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s3-04 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s3-05 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s3-06 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s3-07 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    s3-08 candidates=5 refused=0[-] end-fail=0 valid=3 weak=0 broken=0 error=0 ungraded=2 kept=3
+    TOTAL external: candidates=120 refused[-] end-fail=0 valid=72 weak=0 broken=0 error=0 ungraded=48 kept=72
+      kept by edge boundary:11,case:6,deleted:9,duplicate:15,empty:15,null:16
+      kept by severity high:11,low:3,medium:58
+      below count: none; missing: none
+    --- real-estate
+    p1 candidates=2 refused=0[-] end-fail=0 valid=1 weak=1 broken=0 error=0 ungraded=0 kept=1
+    p2 candidates=2 refused=0[-] end-fail=0 valid=1 weak=0 broken=0 error=0 ungraded=1 kept=1
+    p3 candidates=2 refused=0[-] end-fail=0 valid=1 weak=0 broken=0 error=0 ungraded=1 kept=1
+    p4 candidates=2 refused=0[-] end-fail=0 valid=1 weak=0 broken=0 error=0 ungraded=1 kept=1
+    p6a candidates=2 refused=0[-] end-fail=0 valid=1 weak=0 broken=0 error=0 ungraded=1 kept=1
+    p8a candidates=2 refused=0[-] end-fail=0 valid=1 weak=0 broken=0 error=0 ungraded=1 kept=1
+    p8c candidates=2 refused=0[-] end-fail=0 valid=1 weak=0 broken=0 error=0 ungraded=1 kept=1
+    p8d candidates=2 refused=0[-] end-fail=0 valid=1 weak=0 broken=0 error=0 ungraded=1 kept=1
+    p8e candidates=2 refused=0[-] end-fail=0 valid=1 weak=0 broken=0 error=0 ungraded=1 kept=1
+    TOTAL real-estate: candidates=18 refused[-] end-fail=0 valid=9 weak=1 broken=0 error=0 ungraded=8 kept=9
+      kept by edge boundary:4,case:2,empty:1,null:2
+      kept by severity high:1,medium:8
+      below count: none; missing: none
+    final n=81 of 81; half-width at p=0.3: 10.0 points (target n=81: 10.0)
+
+Final n = 81 of 81 (external 72 = 24 x 3, real-estate 9 = 9 x 1). Half-width at p = 0.3: 1.96 x sqrt(0.21 / 81) = 0.0998, 10.0 points (the plan quotes 10.2). No task is below its count.
+
+pgsnap: `pg-before.txt` and `pg-after.txt` equal (cmp), 6 databases. `git status --short`: empty before this commit. Leftovers: `bench-ext-` containers other than fx*/other 0; `bench-ext/*` images with a tag ending `-serve` or `-grade` 0. Docker after the run: Images 4.807 GB, Containers 5.565 MB, Volumes 386 MB, Build Cache 23.08 GB (grew after the last prune; the rule prunes before the next task).
+
+Usage (sum of `usage` of every `*.run.json` under each task's `seeded/work/`; model claude-opus-5-5; 43 sealed-agent runs):
+
+    s1-01  input=10 output=22841 cacheRead=130180 cacheWrite=60459 runs=1
+    s1-02  input=26 output=37258 cacheRead=675465 cacheWrite=114731 runs=1
+    s1-03  input=14 output=32515 cacheRead=217074 cacheWrite=60026 runs=1
+    s1-04  input=48 output=50499 cacheRead=1430188 cacheWrite=256494 runs=3
+    s1-05  input=20 output=35070 cacheRead=631735 cacheWrite=102812 runs=1
+    s1-06  input=30 output=34554 cacheRead=496351 cacheWrite=134813 runs=3
+    s1-07  input=12 output=27029 cacheRead=239203 cacheWrite=72659 runs=1
+    s1-09  input=18 output=32746 cacheRead=528579 cacheWrite=105108 runs=1
+    s2-01  input=18 output=32018 cacheRead=1274399 cacheWrite=220992 runs=1
+    s2-02  input=26 output=52018 cacheRead=1321429 cacheWrite=184000 runs=1
+    s2-03  input=18 output=24005 cacheRead=502667 cacheWrite=101666 runs=1
+    s2-05  input=20 output=31551 cacheRead=622840 cacheWrite=104389 runs=1
+    s2-07  input=12 output=43742 cacheRead=265519 cacheWrite=90303 runs=1
+    s2-08  input=22 output=35562 cacheRead=571644 cacheWrite=111076 runs=1
+    s2-09  input=22 output=49256 cacheRead=1026905 cacheWrite=191617 runs=1
+    s2-10  input=16 output=20378 cacheRead=430082 cacheWrite=87239 runs=1
+    s3-01  input=10 output=18229 cacheRead=145002 cacheWrite=54624 runs=1
+    s3-02  input=8 output=21967 cacheRead=82828 cacheWrite=44551 runs=1
+    s3-03  input=10 output=25663 cacheRead=102722 cacheWrite=51419 runs=1
+    s3-04  input=18 output=25421 cacheRead=358073 cacheWrite=72872 runs=1
+    s3-05  input=13 output=22852 cacheRead=271286 cacheWrite=71710 runs=1
+    s3-06  input=16 output=33326 cacheRead=416116 cacheWrite=93455 runs=1
+    s3-07  input=12 output=25123 cacheRead=177750 cacheWrite=70219 runs=1
+    s3-08  input=22 output=37613 cacheRead=727187 cacheWrite=121736 runs=1
+    p1     input=22 output=16082 cacheRead=135589 cacheWrite=53869 runs=3
+    p2     input=26 output=14756 cacheRead=264242 cacheWrite=77347 runs=3
+    p3     input=22 output=14203 cacheRead=205085 cacheWrite=78003 runs=3
+    p4     input=10 output=11357 cacheRead=159604 cacheWrite=51184 runs=1
+    p6a    input=12 output=17397 cacheRead=242910 cacheWrite=65538 runs=1
+    p8a    input=8 output=7793 cacheRead=91007 cacheWrite=42457 runs=1
+    p8c    input=12 output=9848 cacheRead=267800 cacheWrite=64461 runs=1
+    p8d    input=12 output=8769 cacheRead=232112 cacheWrite=58570 runs=1
+    p8e    input=12 output=10881 cacheRead=187872 cacheWrite=56906 runs=1
+    TOTAL  input=577 output=882322 cacheRead=14431445 cacheWrite=3127305 runs=43 models=claude-opus-5-5
+
+### Task 7: Kills
+
+`bun bench/oracle.mjs kills` on every task with a kept bug, two lanes side by side (drivers `run-kills-ext.sh`, `run-kills-re.sh` in `<data>/logs/step7/`). No tool throw, no `kills not judged`, no non-zero exit, no disk retry, so no rerun.
+
+Kills lines (`fix` = checks of the fix-commit oracle that catch the bug, `step` = same for the step oracle):
+
+- external, 24 tasks, every task `bugs=3`, `step=none`: s1-01 fix=0/3; s1-02 0/3; s1-03 2/3; s1-04 2/3; s1-05 0/3; s1-06 1/3; s1-07 0/3; s1-09 1/3; s2-01 1/3; s2-02 0/3; s2-03 1/3; s2-05 1/3; s2-07 1/3; s2-08 0/3; s2-09 0/3; s2-10 1/3; s3-01 1/3; s3-02 2/3; s3-03 0/3; s3-04 3/3; s3-05 1/3; s3-06 3/3; s3-07 1/3; s3-08 2/3.
+- real-estate, 9 tasks, every task `bugs=1`: p1 fix=0/1 step=none; p2 0/1 none; p3 0/1 none; p4 0/1 none; p6a 1/1 step=0/1; p8a 0/1 step=0/1; p8c 0/1 step=1/1; p8d 0/1 step=1/1; p8e 0/1 step=0/1.
+
+Per-set shares (`kills-count.mjs`):
+
+| set | bugs | fix kills > 0 | with a step oracle | step kills > 0 (of those) | killed by neither |
+|---|---|---|---|---|---|
+| external | 72 | 24 (33%) | 0 | - | 48 (67%) |
+| real-estate | 9 | 1 (11%) | 5 | 2 (40%) | 6 (67%) |
+
+Wall clock: external lane 6 h 23 min (22975 s), real-estate lane about 35 min. Build Cache prunes: 15, all by the above-15-GB rule before a task (s1-01, s1-03, s1-05, s1-07, s2-02, s2-05, s2-07, s2-09, s3-01, s3-02, s3-03, s3-04, s3-05, s3-06, s3-08); none by a disk signal. pgsnap before and after the real-estate lane: equal. After both lanes: 0 `bench-ext-` containers other than `fx*`/`other`, 0 `bench-ext/*` `-serve`/`-grade` images, Docker 4.8 GB images and 17.8 GB build cache.
+
+Correction (Task 8, after `kills` was fixed to read the bug grade's `excluded`; see `progress/step7-lock.md`): external fix oracle kills 28 of 72 bugs (39%), not 24 (33%); killed by neither 44 (61%); s1-02 is now fix=3/3 and s2-01 fix=2/3; real-estate shares unchanged (1 of 9 by fix, 2 of 5 by step, 6 of 9 by neither).
+
+### Task 8: Lock
+
+`progress/step7-lock.md` written from counts-only scripts in `.evidence/bench/logs/step7/` (`lock-hash`, `lock6-compare`, `lock-seed`, `lock-bugs`, `lock-refs`, `lock-files`, `lock-step-sens`, `lock-excluded`), no code change, no grade, no Docker build, no seeder run. Hashes: 1071 files (the `seeded/` files of 33 tasks, 25 env files, 2 briefs, 16 scripts and drivers).
+
+- Compares: `lock5-compare.mjs` hashed 1369, equal 1369, changed 0, missing 0; `lock6-compare.mjs` hashed 572, equal 572, changed 0, missing 0.
+- Refs: 21 sealed repos, 138 refs, 138 candidates with a commit, 0 mismatches; 30 source repos (29 `ext/repos`, the real-estate copy) hold 0 `refs/seeded`.
+- External H1 sensitivity: 20 tasks with a step id, 60 kept bugs, 11 caught by a step id (8 tasks); s1-01, s1-06, s3-01, s3-07 have no step id.
+- Finding, fixed: `kills` read `excluded` from the end grade, stale in 9 of 24 external tasks. `killsOf` now reads the bug grade's list (commit 09818c2, 418 tests pass); `kills` reran on all 33 tasks with every grade reused (86 of 86), giving 28 of 72 external fix kills (was 24). External step sensitivity unchanged: 11 of 60. Compares after the rerun: step 5 1369/1369, step 6 572/572, step 7 1071/1071. `step7-lock.md` "Findings".
+- `bun test ./tests`: 418 pass, 21 skip, 0 fail. `git status --short bench`: empty. `bench/` last commit 09818c2. Docker left: 328 containers, 162 images (as the step 5 lock), 0 `-serve`/`-grade`. pgsnap lists equal for Tasks 5, 6 and 7.
+- Usage: sealed agents 43 runs (claude-opus-5-5), input 577, output 882322, cache read 14431445, cache write 3127305; Task 8 ran none. Wall clock: Task 6 external 31793 s, real-estate 2010 s; Task 7 external 22962 s, real-estate 2094 s. Task 8 implementer: this session, tokens not shown in the hand-back.
+
+### SDD ledger of the seeded bugs plan (copied before the final review)
+
+    # SDD ledger — plan: docs/plans/2026-11-05-bench-seeded-bugs.md
+
+    Preflight scan (2026-11-06). Spec: docs/plans/2026-10-27-benchmark-prereg.md.
+
+    | pair / task | produces vs consumes, or self-agreement | found |
+    |---|---|---|
+    | T1 / all | T1 only writes docs; rulings 1-13 + decisions | clean |
+    | T2 → T3 | applyEdit, changedRanges, inChanged, EDGES consumed by seedCommit | clean; T3 lists gate `edge` so seedCommit needs EDGES though Consumes omits it: Ruling below |
+    | T2 → T4 | ownVerdict, killsOf consumed by seed, kills | clean |
+    | T3 → T4 | seedRepo, seedCommit, highestOf consumed by seed | clean |
+    | T4 → T5/T6/T7 | commands run; T5-7 write no code | clean |
+    | T6 → T8 | counts.mjs, lines | clean |
+    | T7 → T8 | kills.json | clean |
+    | T1 self | one step, one commit | clean |
+    | T2 self | tests match signatures | ownVerdict: `pass,error` error; `fail,fail` broken via verdict: agrees |
+    | T3 self | seedCommit gates: ruling 4 lists six reason conditions; `why` lists edge,test file,no file,find,hunks,outside; find==replace maps to `find` via applyEdit null | clean |
+    | T4 self | step 3 of seed: not judged exits 1; prints fixed line | clean |
+    | T5 self | prune allowed by constraints; pilot tasks s1-01, s2-01, s3-01, p8a | clean |
+    | T8 self | lock5-compare exists at <data>/logs/ (step 6); step 6 compare must be written | Ruling below |
+
+    Ruling: Task 3's Consumes gets EDGES added (seedCommit's `edge` gate reads it) — the plan's Interfaces list omitted it while its `why` names it — cost if wrong: none.
+    Ruling: Task 8 writes the step 6 hash compare as a small counts-only script under <data>/logs/step7/ next to a rerun of lock5-compare — the plan says "the same compare" without a file — cost if wrong: a script.
+    Ruling: tasks run strictly sequentially in this worktree; oracle-run stays the main checkout's bench/ext.mjs through the env files, unchanged by this plan — cost if wrong: an implementer who edits ext.mjs would not take effect until merge.
+    Task 1: implementer sonnet 86.7k tok / 1.4 min, commit 54bb373
+    Task 1: review sonnet 90.1k tok / 1.2 min: spec ok, approved; two cannot-verify items resolved by controller (rulings 33/36/37 exist in step5-lock; section 11 Part 1 has "81 × about 0.1M").
+    Task 1: minor (deferred): prereg 8.3 ruling 8 "(7.1, ruling 11)" should read "step 5 ruling 11".
+    Task 1: complete (commits c836045..54bb373, review clean)
+    Task 2: implementer sonnet 79.4k tok / 3.9 min, commit 2dff58f
+    Task 2: review sonnet 74.2k tok / 0.4 min: spec ok, approved.
+    Task 2: minor (deferred): killsOf with a check missing from the bug grade is not pinned by a test; inChanged not run against a pure-deletion range in tests; changedRanges slice(6) has diffHunks' limit on paths with spaces.
+    Task 2: complete (commits 54bb373..2dff58f, review clean)
+    Ruling: seedCommit's edit argument also carries `edge`, because the plan's `why` list has `edge` but its signature names only file, find, replace — cost if wrong: one renamed field.
+    Task 3: implementer sonnet 98.2k tok / 4.1 min, commit 9613963
+    Task 3: review sonnet 86.5k tok / 1.6 min: spec ok, approved.
+    Task 3: minor (deferred): temp index removal on failure untested; a throw in the seedCommit diff leaves the ref (aborts the caller); a non-UTF-8 byte on the edited line itself decodes lossily and passes the hunks gate; concurrent seedRepo on one repo races (tasks run one at a time).
+    Task 3: complete (commits 2dff58f..9613963, review clean)
+    Ruling: bugs.json `state` drops `valid-spare`: grading stops at the count, so a valid candidate past it cannot exist — the plan lists a state no path reaches — cost if wrong: one more word.
+    Ruling: an ungraded spare's check is written to validation-<end7>.json with verdict `error`, stage `not graded`, so `grade` excludes it when a product is graded — a check never validated must not count in a catch — cost if wrong: none, it reads as excluded.
+    Task 4: implementer opus, commit 6a73ce0, DONE_WITH_CONCERNS (usage not shown in the hand-back)
+    Task 4: implementer opus 241.3k tok / 25.3 min. review opus 208.0k tok / 13.1 min: spec fail: 1 Critical (bare --shared clone of a shallow repo is empty), 3 Important (never-ready bug cached; kills reads no results as 0; ready end with all error is not not-judged), 7 Minor.
+    Controller check: all 29 ext/repos are bare and shallow; the real-estate copy is not. Finding 1 confirmed for all 24 external tasks.
+    Ruling: the sealed repo is `git init --bare` with objects/info/alternates to the source and the source's `shallow` copied on every seedRepo call — bare clone gives an empty repo from a shallow source — amends ruling 5's "clone --bare --shared" wording in the plan and prereg 8.3 — cost if wrong: Task 4's fix re-reviewed; a source fetched deeper later needs one more seedRepo call.
+    Ruling: `kills` does not call grade for the end when the existing end grade is good (same commit, junit ok, same oracleSha, last run ready), because grade rewrites the file on --reuse with today's labels and the step 6 lock hashes step/grades/<end7>.json — cost if wrong: an end grade with stale `excluded` is read; killsOf reads it from the grade, and validations did not change since.
+    Ruling: finding 4: fixers stay, then an end with every check error is not judged; a seeded runner.json with a real mistake then stays not judged after 2 fixer rounds instead of being dropped — reported per task at Task 6 and a rerun is on the controller; ruling 8 says a machine failure is never an out and the tool cannot tell the two apart without reading logs — cost if wrong: one task needs a by-hand decision.
+    Ruling: finding 10: a candidate repeating an earlier candidate's file, find and replace is refused with why `duplicate` — two ids on one sha would count one bug twice — cost if wrong: none.
+    Task 4: fix round 1/5 implementer commit 05b3600 (10 items, re-review pending)
+    Task 4: fix round 1/5 (10 addressed, 0 open; commits 6a73ce0..05b3600); implementer opus 286.8k cumulative / 9.4 min; re-review sonnet 119.6k / 1.5 min.
+    Task 4: minor (deferred): stage text `junit undefined` when a grade exits 0 with no file; a later copy of a refused candidate reads `duplicate`; a not-ready end line removes a good end grade in kills (kills regrades it); fix.md tells a seeded fixer a check came from a project test.
+    Ruling: fix round 2 for two implementer concerns: duplicate compares the commit too (different find, same effect would count one bug twice), and kills removes a ready all-error bug grade so --reuse cannot keep a machine failure — both bear on the count and on 8.4 — cost if wrong: one small round.
+    Task 4: fix round 2/5 (3 addressed, 0 open; commits 05b3600..8f338db); implementer opus 295.7k cumulative / 4.6 min; re-review sonnet 85.5k / 0.6 min.
+    Task 4: minor (deferred): rulings.md scratch copy keeps old wording (not a repo file); kills may remove an all-error end grade a lock hashed (none expected, the Task 8 compare shows it).
+    Task 4: complete (commits 9613963..8f338db, review clean after 2 fix rounds)
+    Task 5: operator sonnet 78.0k tok / 54 min; commit 77e65c5. s1-01, s2-01, s3-01 kept 3 of 5 (3 graded), p8a kept 1 of 2, refused 0, fixer 0, all valid; per bug grades show 1-2 checks fail and the rest pass (no crash-level bug); pgsnap equal; Docker clean.
+    Ruling: the pilot's results stand and no brief or tool changes: nothing in the lines depends on a bug's content and every candidate passed — cost if wrong: none, the batch shows it.
+    Task 5: complete (commit 77e65c5, no code)
+    Task 6: operator sonnet; commit b88de09. 81 of 81 kept (external 72 of 120 candidates, real-estate 9 of 18), refused 0, weak 1 (p1), broken 0, error 0, no rerun; half-width 0.0998; external lane 8.83 h, real-estate 33.5 min; 13 prunes; pgsnap equal; Docker clean.
+    Task 6: complete (commit b88de09, no code)
+    Task 7: operator sonnet; commit f0404eb. external 24/72 killed by the fix oracle, real-estate 1/9 by fix, 2/5 by step, 6/9 by neither; no rerun; 6 h 23 min + 35 min; pgsnap equal; Docker clean.
+    Ruling: the lock also reports, per external task, the kept bugs whose commit fails a `step.json` id in `<task>/grades/<bug7>.json`, by a counts-only script: an external step oracle is a subset of `oracle/`, so `kills` prints step=none though H1's checks were graded — no new run — cost if wrong: one more number.
+    Task 7: complete (commit f0404eb, no code)
+    Task 8: operator sonnet; commit 4947850; step 5 compare 1369 equal, step 6 compare 572 equal, 138 refs match, 417 tests pass. Finding: kills read `excluded` from the kept end grade, stale in 9 external tasks: fix oracle kills 28 of 72 by the validations, 24 recorded. The operator listed $D/seeded/ once (folder name only) and tried one read of an oracle manifest, denied, never ran.
+    Ruling: my earlier ruling's cost line was wrong: validations did change after those end grades. killsOf reads `excluded` from the bug grade, which grade writes from the current validations; results at the end stay from the kept end grade (same oracleSha). kills reruns free on reused grades, and the lock's kills numbers and hashes are redone — cost if wrong: a small rerun.
+    Ruling: drop `valid-spare` from ruling 12 in the plan and prereg 8.3 — it was removed from the tool at Task 4 — cost if wrong: none.
+    Task 8: fix commits 09818c2 (killsOf), fb06a4f (docs, lock); operator sonnet 192.9k tok before the fix. External fix kills 28 of 72, neither 44; real-estate unchanged; external step sensitivity 11 of 60; 86 grades all reused; step 5 1369, step 6 572, step 7 1071 hashes equal; 418 tests pass.
+    Task 6: usage: operator sonnet 112.2k tok / 531 min (mostly waiting on the lanes). Task 7: usage: operator sonnet 93.0k tok / 384 min.
+    Task 8: usage: operator sonnet 241.2k tok cumulative / 21.7 min (lock and fix); review sonnet 127.6k tok / 4.1 min: spec ok, approved; the Important on usage is closed by this ledger copy.
+    Task 8: minor (deferred): docs/log.md says 1070 hashes, lock says 1071; lock's 11 kills.json changes against 9 stale tasks not reconciled; Task 7 wall clock 22962 s vs 22975 s; the first assertion of the new killsOf test is not discriminating; `git status` claim in the lock is point-in-time.
+    Task 8: complete (commits f0404eb..fb06a4f, review clean)
+
+### SDD ledger tail of the seeded bugs plan (after the final review)
+
+    Final review opus 309.7k tok / 21.7 min: ready with fixes; 0 Critical, 3 Important, 8 Minor, 3 deferred minors to fix now.
+    Controller count for I3 (grades, counts only): non-pass seeded checks per graded bug commit: 56 at 1 of 5, 12 at 2 of 5, 4 at 3 of 5, 9 at 1 of 2, 1 at 0 of 2 (p1's weak). No all-fail run. The one with `precondition` beside its own fail is sb-s2-07-4 (commit 295e3ff), 2 precondition and 1 fail of 5, and it kills 7 of 7 fix checks.
+    Ruling: sb-s2-07-4 stays kept: section 8.3 drops only on a failed validation, and it passed; its fix-oracle grade is rerun once without --reuse to tell a broad bug from a machine failure; the lock records it as broader than an edge — cost if wrong: one bug of 81 inflates catch rates a little, and step 14 can leave it out.
+    Ruling: ruling 8's disk-full signature cannot be seen under --sealed, so it becomes "a task with `error` in its seed line, or not judged, is run once more"; gradeBugs removes a ready all-error grade so the rerun regrades — amends ruling 8 in plan and prereg — cost if wrong: a dropped bug's commit is graded twice.
+    Ruling: runOracle passes `quiet: flags.sealed` as replay does, and /tmp/hstack-bench is cleaned now — a real-estate app log at a bug commit sits outside the sealed folders; a failed start then has no log — cost if wrong: a failed start needs a run without --sealed to see why, on a commit that holds no bug.
+    Ruling (M3): per-bug and per-task edge and severity leave the lock and progress log, per-set counts stay — prereg section 12 says the designer sees only scores — cost if wrong: less detail; the earlier commit still holds them until the user merges with a squash.
+    Ruling: finding M4 is met by renaming the two tests to say `unscored`; the path through real `grade` was tried by the final reviewer — cost if wrong: an untested path that a later product grade exercises.
+    Final fix wave: commits 6ad2383, c304c85; 420 tests pass; sb-s2-07-4 rerun deterministic (all 7 live fix checks still fail), kills.json unchanged; compares 1369, 572, 1072 equal. Two more sealing slips by the fixer, both denied or names only, recorded in the lock.
+    Final fix wave: fixer sonnet 197.0k tok / 18.6 min; re-review sonnet 112.1k tok / 2.4 min: 9 of 9 addressed, no Critical or Important.
+    Final review: minor (deferred): under --sealed a real-estate failed start names a log that is deleted; the all-error removal rule is written twice (gradeBugs, kills).
