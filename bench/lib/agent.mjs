@@ -46,10 +46,12 @@ export function usage(streamJson) {
     byId.set(e.message.id ?? i, e.message.usage ?? {})
     if (e.message.model && !models.includes(e.message.model)) models.push(e.message.model)
   })
-  const result = ev.filter((e) => e?.type === 'result').at(-1)
-  for (const m of Object.keys(result?.modelUsage ?? {})) if (!models.includes(m)) models.push(m)
-  // the result event's usage is the run total; assistant snapshots undercount output
-  const parts = result?.usage ? [result.usage] : [...byId.values()]
+  const results = ev.filter((e) => e?.type === 'result')
+  for (const r of results) for (const m of Object.keys(r.modelUsage ?? {})) if (!models.includes(m)) models.push(m)
+  // each result event holds its own segment's usage (a background tool ends one and starts another), so they add up;
+  // assistant snapshots undercount output and serve only a stream with no result usage
+  const withUsage = results.filter((r) => r.usage).map((r) => r.usage)
+  const parts = withUsage.length ? withUsage : [...byId.values()]
   const sum = (k) => parts.reduce((n, u) => n + (u[k] ?? 0), 0)
   return { input: sum('input_tokens'), output: sum('output_tokens'), cacheRead: sum('cache_read_input_tokens'), cacheWrite: sum('cache_creation_input_tokens'), models }
 }

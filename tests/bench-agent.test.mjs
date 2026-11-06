@@ -45,6 +45,23 @@ test('finalText throws on a result marked is_error, even one that carries text',
   expect(finalText(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'ok' }))).toBe('ok')
 })
 
+test('usage sums every result event', () => {
+  // a turn with a background tool ends one segment, then another: each result holds its own segment's usage
+  const res = (u, models) => JSON.stringify({ type: 'result', subtype: 'success', result: 'ok', usage: u, modelUsage: models })
+  const t = [JSON.stringify({ type: 'assistant', message: { id: 'a', model: 'x', usage: { input_tokens: 1, output_tokens: 1 }, content: [] } }),
+    res({ input_tokens: 4, output_tokens: 19785, cache_read_input_tokens: 10, cache_creation_input_tokens: 5 }, { x: {} }),
+    res({ input_tokens: 2, output_tokens: 384, cache_read_input_tokens: 7 }, { x: {}, z: {} })].join('\n')
+  expect(usage(t)).toEqual({ input: 6, output: 20169, cacheRead: 17, cacheWrite: 5, models: ['x', 'z'] })
+  expect(finalText(t)).toBe('ok')
+  // a later result with no usage adds nothing and does not hide the earlier one
+  expect(usage([res({ input_tokens: 4, output_tokens: 9 }, { x: {} }), JSON.stringify({ type: 'result', result: 'ok' })].join('\n'))).toMatchObject({ input: 4, output: 9 })
+})
+
+test('one result is unchanged', () => {
+  const t = JSON.stringify({ type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 4, output_tokens: 168, cache_read_input_tokens: 6396, cache_creation_input_tokens: 3201 }, modelUsage: { x: {} } })
+  expect(usage(t)).toEqual({ input: 4, output: 168, cacheRead: 6396, cacheWrite: 3201, models: ['x'] })
+})
+
 test('usage takes the totals from the result event when it has them, and adds its models', () => {
   const t = [JSON.stringify({ type: 'assistant', message: { id: 'a', model: 'x', usage: { input_tokens: 2, output_tokens: 7 }, content: [] } }),
     JSON.stringify({ type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 4, output_tokens: 168, cache_read_input_tokens: 6396, cache_creation_input_tokens: 3201 }, modelUsage: { x: {}, z: {} } })].join('\n')
