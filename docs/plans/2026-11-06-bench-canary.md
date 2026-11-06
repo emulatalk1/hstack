@@ -55,7 +55,7 @@ The task recipe and serve layer of step 5 are the box's image, so every box is a
     - A grade that throws while `docker version` fails, or with the disk under its floor, is the machine's: no score, the driver stops with exit 3.
     - The report prints `not judged` and no verdict while any of the 24 has no score.
 
-11. **A machine failure is never an arm's weakness.** A run is `machine` (with `machine: <reason>` in its record, kept, never scored) when a turn's result has `is_error` (`api`: a rate limit or an outage), when the arm's model is not among the record's models (`model`: a fallback; a subagent's other model is not a failure), when the host killed the box or the box died or restarted (`killed`), when the kernel killed the CLI for memory before the limit (`memory`), or when no product could be saved (`product`). k counts runs that are not `machine`, the next run takes the next free number, and `api` stops the driver with exit 3. The turn counts of 9.3 are not touched.
+11. **A machine failure is never an arm's weakness.** A run is `machine` (with `machine: <reason>` in its record, kept, never scored) when a turn's result has `is_error` (`api`: a rate limit or an outage), when the arm's model is not among the record's models, or when a turn's transcript holds a model fallback notice (`model`: a fallback; a subagent's other model is not a failure), when the host killed the box or the box died or restarted (`killed`), when the kernel killed the CLI for memory before the limit (`memory`), or when no product could be saved (`product`). k counts runs that are not `machine`, the next run takes the next free number, and `api` stops the driver with exit 3. The turn counts of 9.3 are not touched.
 
 12. **Order (10.1).** Tasks in `sample.tsv` order, one at a time. Within a task the 4 runs go in `queuePick(['<task>:B:1', '<task>:B:2', '<task>:B-:1', '<task>:B-:2'], 4, seed)`, seed from `ext/groups.json`. Each product is graded right after its run, so a box and a grade never overlap and `readiness` shows a failure early; the driver reads no score before the report.
 
@@ -268,6 +268,7 @@ Only when the report says `fail`.
 - **A product's memory kill in a grade** cannot be told from the product's own fault under `--sealed`; it scores 0 after the second run and is reported.
 - **`IS_SANDBOX=1` is a devcontainer flag** and may change other CLI behaviour; it is the same for every arm, and the lock records it.
 - **The box and the controller share the Max 5x quota,** so the controller's own usage paces the runs too.
+- **A task whose text trips the model's classifier** gets a model fallback on the arm's turns, and every such run is `machine` (`model`); the driver stops after 2 machine runs on it, and the user is told.
 - **The box does not cover real-estate or plugin arms.** `H`, `W` and any task with a database are refused until the plan of step 11.
 
 ## Not in this plan

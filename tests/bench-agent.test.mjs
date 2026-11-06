@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { apiError, claudeArgs, finalText, judgeVerdict, usage } from '../bench/lib/agent.mjs'
+import { apiError, claudeArgs, fallbackOf, fellBack, finalText, judgeVerdict, usage } from '../bench/lib/agent.mjs'
 import { clean } from '../bench/env.mjs'
 import { ROOT, releaseRoot } from './bench-root.mjs'
 
@@ -280,6 +280,18 @@ test('refuses a bad layer, a missing brief, missing bug fields and a missing inp
 test('claudeArgs passes the disallowed tools only when given', () => {
   expect(claudeArgs({ prompt: 'x', disallow: ['WebSearch', 'WebFetch'] }).slice(8)).toEqual(['--disallowedTools', 'WebSearch,WebFetch'])
   expect(claudeArgs({ prompt: 'x' })).not.toContain('--disallowedTools')
+})
+
+test('fellBack reads both subtypes and nothing else', () => {
+  const sys = (subtype, o = {}) => JSON.stringify({ type: 'system', subtype, ...o })
+  expect(fellBack(['x', sys('init'), sys('model_fallback')].join('\n'))).toBe(true)
+  expect(fellBack(sys('model_refusal_fallback', { original_model: 'a', fallback_model: 'b', category: 'c', scope: 'session' }))).toBe(true)
+  expect(fallbackOf(sys('model_refusal_fallback', { original_model: 'a', fallback_model: 'b', category: 'c' }))).toEqual({ original: 'a', fallback: 'b', category: 'c' })
+  expect(fellBack(sys('init'))).toBe(false)
+  expect(fellBack(JSON.stringify({ type: 'assistant', subtype: 'model_fallback' }))).toBe(false) // the type matters too
+  expect(fellBack(JSON.stringify({ type: 'result', result: 'model_refusal_fallback' }))).toBe(false)
+  expect(fellBack('not json')).toBe(false)
+  expect(fallbackOf('')).toBeNull()
 })
 
 test('apiError reads the last result', () => {

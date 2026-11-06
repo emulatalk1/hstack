@@ -10,7 +10,7 @@ import { agentEnv } from './agent-replay.mjs'
 import { enterBox, freshRepo } from './box.mjs'
 import { gitWith, ROOT, withExport } from './env.mjs'
 import { resolveCommit } from './grade.mjs'
-import { apiError, finalText, toolUses, usage } from './lib/agent.mjs'
+import { apiError, fallbackOf, fellBack, finalText, toolUses, usage } from './lib/agent.mjs'
 import { armArgs, countInterventions, initInfo, probeOk, RESUMES } from './lib/arm.mjs'
 import { loadTask } from './lib/task.mjs'
 
@@ -117,6 +117,7 @@ export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
         const r = await turn(b, i === 0 ? { prompt: input + '\n\n' + sheet + DONE_LINE, sessionId } : { prompt: CONTINUE, resume: sessionId }, i === 0 ? 'main' : `resume-${i}`)
         outs.push(r.out)
         if (r.code === 'killed' || r.code === 'memory') { machine = r.code; break } // the machine's failure, never the arm's
+        if (fellBack(r.out)) { machine = 'model'; break } // the whole session moved to another model, whatever modelUsage lists
         if (apiError(r.out)) { machine = 'api'; break }
         let text = null
         try { text = finalText(r.out) } catch {}
@@ -133,6 +134,7 @@ export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
       const tools = {}
       for (const o of outs) for (const [k, v] of Object.entries(toolUses(o))) tools[k] = (tools[k] ?? 0) + v
       const { models: probeModels, ...probeUsage } = usage(probe.out)
+      const fallback = [probe.out, ...outs].map(fallbackOf).find((f) => f) ?? null // the probe is on the arm's model too
 
       let branched = false
       if (!machine) {
@@ -154,7 +156,7 @@ export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
         interventions: countInterventions({ hookLines: 0, resumes, abandoned }), // hookLines 0: no hook under -p, see the settings above
         turns,
         usage: { input: sum('input'), output: sum('output'), cacheRead: sum('cacheRead'), cacheWrite: sum('cacheWrite') },
-        models, probeUsage, probeModels, probe: info, transcripts: runDir, toolUses: tools, box: b.box, envCommit: b.envCommit, branch: branched ? branch : null,
+        models, fallback, probeUsage, probeModels, probe: info, transcripts: runDir, toolUses: tools, box: b.box, envCommit: b.envCommit, branch: branched ? branch : null,
       }
       await Bun.write(out, JSON.stringify(rec, null, 2) + '\n')
       console.log(machine ? `${name} machine ${machine}` : `${name} ${rec.status}`)

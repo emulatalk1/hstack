@@ -29,6 +29,15 @@ export function finalText(streamJson) {
 // a rate limit or an outage ends the last result with is_error: the machine's failure, never the arm's
 export const apiError = (streamJson) => events(streamJson).filter((e) => e?.type === 'result').at(-1)?.is_error === true
 
+// the CLI moved the session to another model (a refusal by the classifier, or an overload): the notice names both models
+const FALLBACKS = ['model_fallback', 'model_refusal_fallback']
+const notice = (streamJson) => events(streamJson).find((e) => e?.type === 'system' && FALLBACKS.includes(e.subtype))
+export const fellBack = (streamJson) => notice(streamJson) !== undefined
+export function fallbackOf(streamJson) {
+  const e = notice(streamJson)
+  return e ? { original: e.original_model ?? null, fallback: e.fallback_model ?? null, category: e.category ?? null } : null
+}
+
 export function usage(streamJson) {
   const ev = events(streamJson), byId = new Map(), models = []
   ev.forEach((e, i) => {

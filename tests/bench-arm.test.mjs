@@ -302,6 +302,18 @@ test('a box killed, out of memory or with no product is machine, with its record
   }
 })
 
+test('a turn that fell back is a machine run even when the arm\'s model is among the models', async () => {
+  const r = await cli(run('B-', 34), { STUB_DONE: '0', HOSTBOX_TURN: 'fallback' })
+  expect(r).toMatchObject({ code: 3, stdout: 'p1-B--34 machine model\n' })
+  expect(calls().length).toBe(2) // stops at once
+  expect(result('p1-B--34')).toMatchObject({ machine: 'model', branch: null, models: ['small-m'], fallback: { original: 'small-m', fallback: 'other-m', category: 'cyber' } })
+  // the probe's notice is in the record too; it does not stop a run whose turns held to the model
+  expect(await cli(run('B-', 35), { STUB_DONE: '0', HOSTBOX_PROBE: 'fallback' })).toMatchObject({ code: 0 })
+  expect(result('p1-B--35')).toMatchObject({ machine: null, fallback: { fallback: 'other-m' } })
+  expect(await cli(run('B-', 36), { STUB_DONE: '0' })).toMatchObject({ code: 0 })
+  expect(result('p1-B--36').fallback).toBeNull()
+})
+
 test('a config the agent wrote in .git does not reach the task repo', async () => {
   const marker = join(tmp, 'planted-marker')
   expect(await cli(run('B', 25), { STUB_DONE: '0', STUB_PLANT: marker })).toMatchObject({ code: 0 })
