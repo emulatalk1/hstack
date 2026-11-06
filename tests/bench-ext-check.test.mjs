@@ -791,6 +791,18 @@ dtest('a junit.xml that is a link gives no JUnit and is not followed on the host
   expect(r.stdout).toStartWith(`${c17} junit=missing `)
 }, 900000)
 
+dtest('an /out that is a link gives no JUnit and no file behind it is read (needs BENCH_EXT_DOCKER=1)', async () => {
+  const planted = join(tmp, `planted-${rand()}`)
+  mkdirSync(planted)
+  for (const f of ['.bench-ready', '.bench-timeout']) writeFileSync(join(planted, f), '')
+  writeFileSync(join(planted, 'junit.xml'), '<testsuite><testcase classname="x" name="stolen"/></testsuite>\n')
+  const s = oracleTask({ runner: { layer: [], run: `rm -rf /out; ln -s ${planted} /out` } })
+  const r = await grade(s, ['--at', c1, '--sealed'])
+  expect(r).toMatchObject({ code: 1, stderr: '' })
+  expect(r.stdout).toStartWith(`${c17} junit=missing `)
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(`${c17}\tnot ready\n`)
+}, 900000)
+
 test('oracle-run refuses an absent or malformed runner.json before any Docker call', async () => {
   for (const runner of [null, '{"layer": "RUN true", "run": "sh x"}', JSON.stringify({ layer: ['RUN --network=host true'], run: 'sh x' }), JSON.stringify({ layer: [], run: ' ' })]) {
     const s = oracleTask({ runner })

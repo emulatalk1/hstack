@@ -1072,11 +1072,12 @@ export async function oracleRun(args, inj = {}) {
     if (r.timedOut) { readiness('timeout'); throw new Error(`${name}: not done in 1800 s, killed`) } // runContainer killed it
     await scratch('out', null, async (o) => {
       await must(['docker', 'cp', `${name}:/out`, o], `docker cp out of ${name}`, { quiet: true })
-      if (existsSync(join(o, 'out', '.bench-timeout'))) { readiness('timeout'); throw new Error(`${name}: not done in ${limitSec} s, killed inside`) }
-      readiness(existsSync(join(o, 'out', '.bench-ready')) ? 'ready' : 'not ready')
+      // docker cp keeps a link, and the container's link must not be followed on the host: no read through it, no JUnit, a grade with no result
+      const out = join(o, 'out'), plain = lstatSync(out).isDirectory()
+      if (plain && existsSync(join(out, '.bench-timeout'))) { readiness('timeout'); throw new Error(`${name}: not done in ${limitSec} s, killed inside`) }
+      readiness(plain && existsSync(join(out, '.bench-ready')) ? 'ready' : 'not ready')
       if (r.how === 'oom') throw new Error(`${name} was killed for memory (OOMKilled)`)
-      // docker cp keeps a link, and the container's link must not be followed on the host: no copy, no JUnit, a grade with no result
-      if (lstatSync(join(o, 'out', 'junit.xml')).isFile()) copyFileSync(join(o, 'out', 'junit.xml'), junit)
+      if (plain && lstatSync(join(out, 'junit.xml')).isFile()) copyFileSync(join(out, 'junit.xml'), junit)
     })
   } finally {
     process.off('SIGTERM', stop)

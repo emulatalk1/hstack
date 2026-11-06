@@ -14,6 +14,8 @@ import { loadTask } from './lib/task.mjs'
 
 const USAGE = 'usage: bun bench/box.mjs proof <task>'
 const FW = 'bench-arm/fw:1', MEMORY_GB = 6, CLI = '/arm/claude', SETTINGS = '/arm/settings.json'
+// never from a registry: the helper gets NET_ADMIN, and a tag missing here must fall through to the local build
+export const FW_RUN = ['docker', 'run', '--rm', '--pull', 'never']
 const ENV = ['IS_SANDBOX=1', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1', 'DISABLE_TELEMETRY=1', 'DISABLE_AUTOUPDATER=1']
 const MAX_ARG = 131072 // Linux MAX_ARG_STRLEN: a turn's script is one argument of sh -c
 const NO_PLUGINS = 'the box takes no plugin dir yet: that is the plan of step 11'
@@ -72,12 +74,12 @@ export async function cpOut(box, from, to) {
 }
 
 // root with the box's capabilities in the box's network namespace, from an image that has the tools whatever the box's has
-const twin = (box, argv) => sp(['docker', 'run', '--rm', ...CAP_DROPS, '--network', `container:${box}`, FW, ...argv])
-const helper = (box, script, what, flags = []) => must(['docker', 'run', '--rm', ...flags, '--network', `container:${box}`, FW, 'sh', '-c', script], what, { timeoutSec: 600 })
-const rulesCommand = (box, script) => ['docker', 'run', '--rm', '--cap-add', 'NET_ADMIN', '--network', `container:${box}`, FW, 'sh', '-c', script]
+const twin = (box, argv) => sp([...FW_RUN, ...CAP_DROPS, '--network', `container:${box}`, FW, ...argv])
+const helper = (box, script, what, flags = []) => must([...FW_RUN, ...flags, '--network', `container:${box}`, FW, 'sh', '-c', script], what, { timeoutSec: 600 })
+export const rulesCommand = (box, script) => [...FW_RUN, '--cap-add', 'NET_ADMIN', '--network', `container:${box}`, FW, 'sh', '-c', script]
 
 async function fwImage(scratch) {
-  if ((await sp(['docker', 'run', '--rm', '--network', 'none', FW, 'python3', '-V'])).code === 0) return // an older tag has no python3
+  if ((await sp([...FW_RUN, '--network', 'none', FW, 'python3', '-V'])).code === 0) return // an older tag has no python3
   await scratch('fw', null, async (dir) => {
     writeFileSync(join(dir, 'Dockerfile'), 'FROM alpine:3.22\nRUN apk add --no-cache iptables python3\n')
     await must(['docker', 'build', '--progress=plain', '-t', FW, dir], `the build of ${FW}`, { timeoutSec: 600 })
@@ -224,7 +226,7 @@ async function proofRows(b, { data, repo, token, cfg, print, port, outside }) {
   row('no bench or database env', names.length ? `present: ${names.join(' ')}` : null)
 
   const key = (t) => `${t.host}:${t.port}`, keys = [...targets.map(key), 'dns'], script = answersScript(targets)
-  const before = answers(await must(['docker', 'run', '--rm', FW, 'sh', '-c', script], 'the check with no rules', { timeoutSec: 600 }))
+  const before = answers(await must([...FW_RUN, FW, 'sh', '-c', script], 'the check with no rules', { timeoutSec: 600 }))
   const after = answers(await helper(box, script, 'the check under the rules'))
   const unproved = keys.filter((k) => (before.get(k) ?? 'silent') === 'silent'), through = keys.filter((k) => after.get(k) !== 'silent')
   row('blocked targets', unproved.length || through.length ? `no answer with no rules: [${unproved}]; answer under the rules: [${through}]` : null)

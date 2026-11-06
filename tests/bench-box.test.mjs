@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, main, pinHosts, rootRefused, vsockRefused, withListener } from '../bench/box.mjs'
+import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, FW_RUN, main, pinHosts, rootRefused, rulesCommand, vsockRefused, withListener } from '../bench/box.mjs'
 import { withExport } from '../bench/env.mjs'
 import { API_HOSTS, RESUMES } from '../bench/lib/arm.mjs'
 import { releaseRoot } from './bench-root.mjs'
@@ -124,6 +124,13 @@ test('the blocked targets are the five of ruling 3: the host on the listener\'s 
   const local = [{ host: 'host.docker.internal', port: 40001 }, { host: '172.17.0.1', port: 40001 }, { host: '192.168.65.7', port: 53 }]
   expect(blockedTargets(ROUTES, 40001)).toEqual([{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 }, ...local])
   expect(blockedTargets(ROUTES, 40001, [{ host: '10.0.0.9', port: 443 }])).toEqual([{ host: '10.0.0.9', port: 443 }, ...local]) // a test on a bridge: only the public part is replaced
+})
+
+test('the helper is never pulled: the image that gets NET_ADMIN is the one built here', () => {
+  expect(FW_RUN).toEqual(['docker', 'run', '--rm', '--pull', 'never'])
+  expect(rulesCommand('b', 's').slice(0, 5)).toEqual(FW_RUN)
+  const source = readFileSync(join(import.meta.dir, '../bench/box.mjs'), 'utf8')
+  expect(source.split("'docker', 'run'").length - 1).toBe(1) // the one in FW_RUN: every run of the helper goes through it
 })
 
 test('nothing in the box tool names the port of the host\'s database', () => {
