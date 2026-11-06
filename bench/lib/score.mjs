@@ -120,6 +120,6 @@ export function canaryVerdict(rows) {
   })
   const judged = tasks.length === CANARY_TASKS && tasks.every((t) => t.ok)
   const ds = tasks.map((t) => t.d).filter((d) => d !== null)
-  const favour = tasks.filter((t) => t.favour).length, avg = mean(ds)
+  const favour = tasks.filter((t) => t.favour).length, avg = ds.length ? r9(mean(ds)) : null
   return { tasks: tasks.map(({ ok, ...t }) => t), mean: avg, favour, pass: judged && avg > 0 && favour >= 5, judged }
 }

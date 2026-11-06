@@ -457,6 +457,11 @@ test('the mean must be above 0 as well', () => {
   expect(v).toMatchObject({ judged: true, pass: false })
 })
 
+test('a true zero mean with five winners does not pass, whatever the task order', () => {
+  const ds = [0.1, 0.1, 0.1, 0.1, 0.2, -0.6] // sums to 0; in float it is 1.85e-17 in this order
+  for (const order of [ds, [...ds].reverse()]) expect(canaryVerdict(rows(six(order)))).toMatchObject({ mean: 0, favour: 5, judged: true, pass: false })
+})
+
 test('a task with one scored run is not judged', () => {
   const r = rows(six([0.2, 0.2, 0.2, 0.2, 0.2, 0.2]))
   const v = canaryVerdict(r.slice(1)) // one run of t0/B missing
