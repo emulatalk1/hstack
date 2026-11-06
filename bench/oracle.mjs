@@ -280,7 +280,7 @@ const fence = (text, lang = '') => `\`\`\`\`${lang}\n${text.trimEnd()}\n\`\`\`\`
 
 const firstLine = (e) => String(e?.message ?? e).split('\n')[0].slice(0, 300)
 const fullSha = async (repo, ref) => (await gitOut(repo, 'rev-parse', `${ref}^{commit}`)).trim()
-function seedOf(data) {
+export function seedOf(data) {
   const seed = readJson(join(data, 'ext/groups.json'))?.seed
   if (!seed) throw new Error('no seed in ext/groups.json')
   return seed
@@ -1445,23 +1445,31 @@ async function kills(c, { grade }) {
 // split's validation: this file's validate on the task, with split's options (refs, only, tag)
 const validateCmd = (inj) => async (a, opts = {}) => validate(await (a.length === 2 ? taskCtx(a[1], a[0]) : taskCtx(a[0])), { grade: inj.grade ?? gradeCmd, agent: inj.agent ?? sealedAgent, ...opts })
 
-// the floor-rule score of a task at a commit (ruling 7 of step 6): build over step.json's ids, requirement over the fix grade
-function scoreCmd(task, sha) {
-  if (!/^[a-z0-9][a-z0-9_-]*$/.test(task) || !/^[0-9a-f]{7,40}$/.test(sha)) throw new Error(USAGE)
-  const sha7 = sha.slice(0, 7), read = (rel) => readJson(join(dataDir(), task, rel))
-  const missing = (rel) => { console.log(`${task} score ${sha7}: ${join(task, rel)} is missing`); return 1 }
+// the floor-rule score of a task at a commit (ruling 7 of step 6): build over step.json's ids, requirement over the fix grade.
+// { build, requirement, passed }; a file that is not there, or a step.json that is not one, throws a ScoreMissing with the line the command prints
+export class ScoreMissing extends Error {}
+export function scoreAt(data, task, sha) {
+  const sha7 = sha.slice(0, 7), read = (rel) => readJson(join(data, task, rel))
+  const no = (what) => { throw new ScoreMissing(`${task} score ${sha7}: ${what}`) }
+  const missing = (rel) => no(`${join(task, rel)} is missing`)
   const step = read('step.json')
-  if (!step) return missing('step.json')
+  if (!step) missing('step.json')
   const fix = read(`grades/${sha7}.json`)
-  if (!fix) return missing(`grades/${sha7}.json`)
-  if ((step.oracle !== 'oracle' && step.oracle !== 'step/oracle') || !Array.isArray(step.ids)) { console.log(`${task} score ${sha7}: ${join(task, 'step.json')} is not a step.json`); return 1 }
+  if (!fix) missing(`grades/${sha7}.json`)
+  if ((step.oracle !== 'oracle' && step.oracle !== 'step/oracle') || !Array.isArray(step.ids)) no(`${join(task, 'step.json')} is not a step.json`)
   const useStep = step.oracle === 'step/oracle' && step.ids.length // a task with no step id has no step oracle (p1-p5)
   const sg = useStep ? read(`step/grades/${sha7}.json`) : null
-  if (useStep && !sg) return missing(`step/grades/${sha7}.json`)
+  if (useStep && !sg) missing(`step/grades/${sha7}.json`)
   const absent = step.ids.filter((id) => !(sg ?? fix).checks.some((c) => c.id === id)).length
-  if (absent) { console.log(`${task} score ${sha7}: ${absent} step ids not in the grade`); return 1 }
-  const r = floorScore(fix, sg, step.ids)
-  console.log(`${task} ${sha7} build=${fx(r.build)} requirement=${fx(r.requirement)} passed=${r.passed === null ? 'none' : r.passed ? 'yes' : 'no'}`)
+  if (absent) no(`${absent} step ids not in the grade`)
+  return floorScore(fix, sg, step.ids)
+}
+
+function scoreCmd(task, sha) {
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(task) || !/^[0-9a-f]{7,40}$/.test(sha)) throw new Error(USAGE)
+  let r
+  try { r = scoreAt(dataDir(), task, sha) } catch (e) { if (e instanceof ScoreMissing) { console.log(e.message); return 1 } throw e }
+  console.log(`${task} ${sha.slice(0, 7)} build=${fx(r.build)} requirement=${fx(r.requirement)} passed=${r.passed === null ? 'none' : r.passed ? 'yes' : 'no'}`)
   return 0
 }
 
