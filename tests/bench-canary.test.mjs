@@ -4,6 +4,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readd
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { canary, extendedTasks } from '../bench/canary.mjs'
+import { oracleCommand } from '../bench/ext.mjs'
 import { bootstrapMean, intervalVerdict, tInterval } from '../bench/lib/score.mjs'
 import { loadTask } from '../bench/lib/task.mjs'
 import { queuePick } from '../bench/lib/oracle.mjs'
@@ -419,7 +420,7 @@ test('the canary grades through its own task file, which differs only in oracle'
   const d = world('ownfile'), f = fakes(d)
   await go(d, ['run', 's1-02'], f)
   const own = json(join(d, 'env/canary/s1-02.json')), orig = json(join(d, 'env/s1-02.json'))
-  expect(own).toEqual({ ...orig, oracle: `bun ${join(import.meta.dir, '../bench/ext.mjs')} oracle-run s1-02` })
+  expect(own).toEqual({ ...orig, oracle: `cd '${join(import.meta.dir, '../bench')}' && bun --no-env-file '${join(import.meta.dir, '../bench/ext.mjs')}' oracle-run s1-02` })
   expect(json(join(d, 'env/s1-02.json')).oracle).toBe('bun /main/bench/ext.mjs oracle-run s1-02') // the original is not touched
   expect(existsSync(join(d, 'env/canary/s1-01.json'))).toBe(false) // only a task that is graded gets one
   expect((await withData(d, () => loadTask(join(d, 'env/canary/s1-02.json')))).oracle).toBe(own.oracle)
@@ -517,4 +518,22 @@ test('the original verdict line is unchanged', async () => {
   const i = lines.findIndex((l) => /^canary mean=\S+ favour=\d\/6 verdict=(pass|fail|not judged)$/.test(l))
   expect(lines[i]).toBe('canary mean=1.167 favour=6/6 verdict=pass')
   expect(lines[i + 1]).toMatch(/^extended /) // the extended lines come after it
+})
+
+// the oracle command runs in grade with the product checkout as cwd: Bun would load that checkout's runtime config and env file
+test('a graded commit holding a runtime config and an env file leaves no side effect', async () => {
+  const d = join(tmp, 'sidefx'), prod = join(d, 'product')
+  mkdirSync(prod, { recursive: true })
+  writeFileSync(join(prod, 'bunfig.toml'), 'preload = ["./pre.mjs"]\n')
+  writeFileSync(join(prod, 'pre.mjs'), `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(join(d, 'preload-marker'))}, 'x')\n`)
+  writeFileSync(join(prod, '.env'), 'BENCH_CANARY_MARK=1\n')
+  const probe = join(d, 'probe.mjs') // stands for ext.mjs: it only reports whether the env file reached it
+  writeFileSync(probe, `import { writeFileSync } from 'node:fs'\nif (process.env.BENCH_CANARY_MARK) writeFileSync(${JSON.stringify(join(d, 'env-marker'))}, 'x')\n`)
+  const markers = () => ['preload-marker', 'env-marker'].filter((m) => existsSync(join(d, m)))
+  const sh = async (cmd) => { const p = Bun.spawn(['sh', '-c', cmd], { cwd: prod, stdout: 'ignore', stderr: 'ignore' }); await p.exited }
+  await sh(`bun ${probe}`) // control: run plainly from the product, both files take effect
+  expect(markers()).toEqual(['preload-marker', 'env-marker'])
+  rmSync(join(d, 'preload-marker')); rmSync(join(d, 'env-marker'))
+  await sh(oracleCommand('s1-01', probe)) // the real command shape, grade's cwd
+  expect(markers()).toEqual([])
 })

@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, FW_RUN, main, pinHosts, rootRefused, rulesCommand, vsockRefused, withListener } from '../bench/box.mjs'
+import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, FW_RUN, main, pinHosts, proofCode, rootRefused, rulesCommand, vsockRefused, withListener } from '../bench/box.mjs'
 import { withExport } from '../bench/env.mjs'
 import { API_HOSTS, RESUMES } from '../bench/lib/arm.mjs'
 import { releaseRoot } from './bench-root.mjs'
@@ -414,7 +414,7 @@ dtest('proof with no token skips the real-turn rows and passes on the rest', asy
   arms(s, 's')
   const { code, lines, record } = await prove(s)
   expect(lines).toEqual(ROWS.map((r) => (r === 'the API answers' || r === 'init lists no web tool' ? `${r} skipped: no box.env` : `${r} ok`)))
-  expect(code).toBe(0)
+  expect(code).toBe(1) // a skipped row is not a pass
   expect(record.rows.map((r) => r.row)).toEqual(ROWS)
   expect(JSON.stringify(record)).not.toContain('5432')
   expect(seen('container', s.boxName(`${id}-proof`))).toBe(false)
@@ -431,6 +431,12 @@ dtest('proof with a token runs both models and a web tool at init fails it', asy
   expect(JSON.stringify(record)).not.toContain('from-env-file')
   expect(seen('container', s.boxName(`${id}-proof`))).toBe(false)
 }, 600000)
+
+test('proof exits non-zero when any row is skipped or failed', () => {
+  expect(proofCode([{ result: 'ok' }, { result: 'ok' }])).toBe(0)
+  expect(proofCode([{ result: 'ok' }, { result: 'skipped: no box.env' }])).toBe(1)
+  expect(proofCode([{ result: 'ok' }, { result: 'FAILED' }])).toBe(1)
+})
 
 test('proof takes one task', async () => {
   const errors = [], err = console.error

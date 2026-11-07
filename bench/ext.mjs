@@ -384,6 +384,10 @@ const limit = (promise, sec, what) => {
   let t
   return Promise.race([promise, new Promise((_, no) => { t = setTimeout(() => no(new Error(`${what} timed out after ${sec} s`)), sec * 1000) })]).finally(() => clearTimeout(t))
 }
+// grade runs this command with the product checkout as cwd, and Bun reads a runtime config and an env file from the cwd: so it
+// first leaves the checkout (for this one, which holds neither file) and loads no env file; product content never runs on the host
+const sq = (x) => `'${x.replaceAll("'", `'\\''`)}'`
+export const oracleCommand = (task, script = join(import.meta.dir, 'ext.mjs')) => `cd ${sq(import.meta.dir)} && bun --no-env-file ${sq(script)} oracle-run ${task}`
 export const dataOf = (data) => {
   const d = data ?? (process.env.HSTACK_BENCH_MACHINE && dirname(process.env.HSTACK_BENCH_MACHINE))
   if (!d) throw new Error('set HSTACK_BENCH_MACHINE to the machine file (for example .evidence/bench/machine.json)')
@@ -856,7 +860,7 @@ export async function taskEnv(args, inj = {}) {
   mkdirSync(join(data, 'env'), { recursive: true })
   // no host app: grade runs the oracle command, which builds and serves the commit in Docker; the port is never bound
   writeFileSync(join(data, 'env', `${t.task}.json`), JSON.stringify({ name: t.task, repo: join(ext, 'repos', t.key), db: null, port: 49152 + t.index, start: null, ready: null,
-    setup: [], teardown: [], oracle: `bun ${join(import.meta.dir, 'ext.mjs')} oracle-run ${t.task}`, junit: '.bench-junit.xml', timeoutSec: 7800 }, null, 2) + '\n')
+    setup: [], teardown: [], oracle: oracleCommand(t.task), junit: '.bench-junit.xml', timeoutSec: 7800 }, null, 2) + '\n')
   return `${t.task} input-check hits=${inputCheck(input).length}`
 }
 

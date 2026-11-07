@@ -4,7 +4,7 @@
 // A run stands when its record has machine null and the arm's configured model. Nothing here names a task, a stack or a model.
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { dataOf, DISK_FLOOR_GB, dockerDiskFree, daemon as dockerDaemon, must, parseSize, sp, taskOf } from './ext.mjs'
+import { dataOf, DISK_FLOOR_GB, dockerDiskFree, daemon as dockerDaemon, must, oracleCommand, parseSize, sp, taskOf } from './ext.mjs'
 import { grade as gradeRun, resolveCommit } from './grade.mjs'
 import { armArgs } from './lib/arm.mjs'
 import { queuePick } from './lib/oracle.mjs'
@@ -52,7 +52,7 @@ const readiness = (data, task, sha7) => {
 // task file (hashed in the locks) names. Written when missing or different; runArm keeps env/<task>.json, it never runs the oracle.
 function canaryTaskFile(data, task) {
   const t = JSON.parse(readFileSync(join(data, 'env', `${task}.json`), 'utf8')), file = join(data, 'env/canary', `${task}.json`)
-  const text = JSON.stringify({ ...t, oracle: `bun ${join(import.meta.dir, 'ext.mjs')} oracle-run ${task}` }, null, 2) + '\n'
+  const text = JSON.stringify({ ...t, oracle: oracleCommand(task) }, null, 2) + '\n'
   if (!existsSync(file) || readFileSync(file, 'utf8') !== text) { mkdirSync(join(data, 'env/canary'), { recursive: true }); writeFileSync(file, text) }
   return file
 }

@@ -182,7 +182,8 @@ export async function enterBox({ data, task, id, name, base, repoGit, cli, turnT
 
     const product = async (destFile) => {
       if (!(await alive())) return { code: (await killed()).code }
-      // nothing of the agent's stays to swap the bundle or move HEAD; spares PID 1 and this sh, and fails when there is nothing else
+      // ends what the agent left running (it spares PID 1 and this sh, and fails when there is nothing else), so no process swaps the bundle or moves HEAD
+      // meanwhile; repo-level config the agent wrote still applies to the git calls below, so product-supplied code can run in the box (not on the host: it only fetches objects)
       await inBox(['sh', '-c', 'kill -9 -1; true'], 'kill in the box')
       await inBox(['rm', '-f', '/work/.git/index.lock'], 'rm in the box') // a turn cut in a git command leaves it
       await commit(name)
@@ -260,6 +261,8 @@ async function proofRows(b, { data, repo, token, cfg, print, port, outside }) {
   return rows
 }
 
+// a row that did not run proves nothing: only an all-ok table exits 0
+export const proofCode = (rows) => (rows.every((r) => r.result === 'ok') ? 0 : 1)
 export async function proof(id, inj, print) {
   const data = dataOf(inj.data), t = taskOf(join(data, 'ext'), id), name = `${id}-proof`
   const cfg = JSON.parse(readFileSync(join(data, 'arms.json'), 'utf8')), task = await loadTask(join(data, 'env', `${id}.json`))
@@ -271,7 +274,7 @@ export async function proof(id, inj, print) {
       rows = await withListener((port) => proofRows(b, { data, repo: task.repo, token: existsSync(join(data, 'arm/box.env')), cfg, print, port, outside: inj.blocked }))
     } finally { await b.leave() }
     writeFileSync(join(data, 'arm', `proof-${id}.json`), JSON.stringify({ task: id, rows }, null, 2) + '\n')
-    return rows.some((r) => r.result === 'FAILED') ? 1 : 0
+    return proofCode(rows)
   })
 }
 

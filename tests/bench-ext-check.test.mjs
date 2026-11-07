@@ -498,7 +498,7 @@ test('task-env refuses a reply whose hash differs', async () => {
   expect(good.code).toBe(0)
   expect(json(join(s.ext, 'tasks', s.slug(1), 'task-recipe.json'))).toEqual(recipe)
   expect(json(join(s.data, 'env', 's1-01.json'))).toEqual({ name: 's1-01', repo: join(s.ext, 'repos', s.key), db: null, port: 49152, start: null, ready: null, setup: [], teardown: [],
-    oracle: `bun ${join(import.meta.dir, '../bench/ext.mjs')} oracle-run s1-01`, junit: '.bench-junit.xml', timeoutSec: 7800 })
+    oracle: `cd '${join(import.meta.dir, '../bench')}' && bun --no-env-file '${join(import.meta.dir, '../bench/ext.mjs')}' oracle-run s1-01`, junit: '.bench-junit.xml', timeoutSec: 7800 })
 }, 60000)
 
 test('task-env --from-meta finds the reply by recipeSha', async () => {
