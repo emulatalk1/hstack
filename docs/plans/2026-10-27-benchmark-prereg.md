@@ -315,6 +315,14 @@ Registered before any arm runs; `bench/canary.mjs run` has not run.
 
 Registered before any of these runs; `bench/canary.mjs run` has not run on these 14 tasks.
 
+**Notes at the lock (2026-11-08).** Nothing above is rewritten; these notes are added after the runs, at the final review of step 8, and correct or complete what is registered.
+
+- **A correction.** The extension's reason says "the diagnosis found B- not worse". The accurate statement is: the controller and the advisor judged B- not worse (deviation 2; the user has not read the pairs). On s3-01 the seeded checks are `precondition` for both B- products and B itself scores 0, so "not worse" was not tested there.
+- **Two rulings of Task 5, decided before any arm ran, not registered with ruling 10 until now.** Both were decided at commit 896a0b5 on 2026-11-06, before the pilot's first run (23:36) and so before any arm ran. (1) A grade is good only when at least one of its checks is not `error`; otherwise the product is graded once more, and the second grade stands. (2) A throw from the grade is never an attempt: it stops the driver and scores nothing.
+- **The bootstrap's draw-to-index map,** as the code does it at 87da35d: with `u` the next value of the PRNG in [0, 1) and `n` the number of tasks, the task drawn is the one at index floor(u × n).
+- **Known limits of the boundary,** stated here because step 13 reuses it. (I1) The grade's image build of a product has Docker's default network, so product code can use the network there and declare a new dependency; the box's API-only network covers the arm, not the grade. (I2) The CLI binary and the token are both in the box, and ruling 4's flag binds only the outer session, so a nested CLI started from the agent's shell is not bound by it; the proof's 401 shows one request shape failing, not the route closed. (M3) The product and the oracle share the grade container, so a product can read the oracle and rewrite its JUnit file. Ruling 6's `kill -9 -1` ends what the agent left running, but it does not stop product-supplied code from running in the box (repo-level config the agent wrote applies to the in-box git calls); the host only fetches objects from the bundle.
+- **Checks recorded from the ledger,** by file names and counts only: no runtime config or env file written by an agent reached the host (root `bunfig.toml` and `.env*` of the 92 graded products and the 20 bases are the upstream base's own files, 0 changed); 0 of the 92 products change a dependency file; 0 Bash calls in the 93 runs name the CLI or the API.
+
 ## 8. Per-layer measures
 
 ### 8.1 Replay
