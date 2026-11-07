@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-07
+* **Creation**: Locked step 8 of the [stick canary plan](/plans/2026-11-06-bench-canary.md) in `progress/step8-lock.md`, with both verdicts kept apart: the registered canary failed (B- on Sonnet mean 0.400, on Haiku 0.428, 3 of 6 tasks favour B each time), and the extension registered after that passed (14 tasks, mean 0.310, bootstrap 95% [0.056598, 0.607352], lower bound > 0, while the t interval [-0.006427, 0.627273] crosses 0). It records the deviations (the extension, the 3-pair read by the controller and the advisor, the Sonnet choice), B's cost and spread against section 11, the proof and the 7 escape attempts, 5 `noresult` products and one memory-killed run, and 142 hashes; the step 5, 6 and 7 hashes are unchanged. The token in `arm/box.env` must be revoked.
 * **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 7.3, mirrored in the [stick canary plan](/plans/2026-11-06-bench-canary.md)) an extension of the canary as a deviation, after the 6-task canary failed its rule twice (means 0.40 and 0.43, 3 of 6): the 14 unused kept non-cold tasks, B against B- on `claude-sonnet-5-5`, k = 2, passing when the lower bound of the 95% bootstrap interval of the mean of d is > 0, before any of its runs.
 
 ## 2026-11-06

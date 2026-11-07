@@ -2705,3 +2705,148 @@ Correction (Task 8, after `kills` was fixed to read the bug grade's `excluded`; 
     Final fix wave: commits 6ad2383, c304c85; 420 tests pass; sb-s2-07-4 rerun deterministic (all 7 live fix checks still fail), kills.json unchanged; compares 1369, 572, 1072 equal. Two more sealing slips by the fixer, both denied or names only, recorded in the lock.
     Final fix wave: fixer sonnet 197.0k tok / 18.6 min; re-review sonnet 112.1k tok / 2.4 min: 9 of 9 addressed, no Critical or Important.
     Final review: minor (deferred): under --sealed a real-estate failed start names a log that is deleted; the all-error removal rule is written twice (gradeBugs, kills).
+
+## 2026-11-07 — stick canary plan (`docs/plans/2026-11-06-bench-canary.md`), step 8, draft
+
+The canary of prereg 7.3: B against B- in a box, 6 tasks (original rule: failed with B- on Sonnet, mean 0.400, 3 of 6, and with B- on Haiku, mean 0.428, 3 of 6) and, as a registered deviation, 14 more tasks (extended rule: passed, mean 0.310, bootstrap 95% [0.056598, 0.607352], t interval [-0.006427, 0.627273] crosses 0). The lock is `progress/step8-lock.md`; this section holds usage and the copied ledger.
+
+### Usage by task (implementer and reviewer subagents; tokens and minutes as the SDD ledger gives them)
+
+| Task | Implementer | Reviewer |
+|---|---|---|
+| 1 Register the rulings | 80.9k tokens, 0.9 min | sonnet 77.7k |
+| 2 Box arguments, firewall rules, `d` | 103.1k, 8.6 min; fix round 1 +4.1k | sonnet 96.6k; re-review haiku 65.7k |
+| 3 The box | 256.6k, 45.9 min; fix round 1 +57.9k; fix round 2 +10.5k | opus 201.5k, 16.1 min; re-reviews sonnet 141.9k and haiku 78.8k |
+| 4 Run an arm in its box | not in the ledger (`3676ce8`); the fallback fix (`b136068`) and the usage fix (`735bead`): not in the ledger | sonnet 122.6k; re-reviews haiku 82.0k (fallback fix) and 66.1k (usage fix) |
+| 5 The driver and the report | not in the ledger (`3549aa5`); fix round 1 +21.7k; fix round 2 (`5e94b89`) not in the ledger | opus 184.0k, 12 min; re-reviews sonnet 96.5k and haiku 82.7k |
+| 6 Proof and escape attempts | the controller session; no subagent | none |
+| 7 Pilot (s1-01), 8 Run (6 tasks), 9 Diagnose, Haiku rerun | the controller session; the arms' own usage is below | none |
+| 9b Extended canary (verdict code and registration) | not in the ledger (`41d10fa`, `01e0576`; fix round 1 to `87da35d`) | opus 174.9k; re-review haiku 88.5k |
+| 10 Lock | this session; tokens not shown in the hand-back | none |
+
+Listed implementer tokens: 534.8k. Listed reviewer tokens (14 reviews and re-reviews): 1,559.5k.
+
+### The arms' usage and the run wall clocks (input plus output tokens; cache read in brackets)
+
+- B, 40 standing runs: 415,649 (65.9M); 11.5 minutes per run on average, 461 minutes in all. B- on Sonnet, 40 standing runs: 74,652 (8.0M), 15.1 minutes in all. B- on Haiku, 12 runs: 95,913 (7.9M), 8.5 minutes. The memory-killed run (s3-05 B 2): 480 (1.8M), 10.7 minutes. The proof's agent turn (7 escape attempts): 2,680 (66k). B's cost per run against section 11's 0.4M, and the spread per task, are in the lock.
+- Wall clock (local, +07), from `run.out` and `run-ext.out`: s1-01 pilot 2026-11-06 23:36 to 23:49 (13 min); the other 5 tasks of the first driver 23:49 to 03:42 (3 h 53 min); the diagnosis 03:42 to about 04:39; the Haiku rerun 06:57 to 08:36 (1 h 39 min); the s1-03 pilot 09:05 to 11:48 (2 h 43 min); the other 13 tasks of the extension 11:49 to 23:41 (11 h 52 min).
+- Docker: the build cache was pruned after the first driver (29.61 GB freed, ledger); no removal ran in Task 10.
+
+### Task 10: Lock
+
+`progress/step8-lock.md`: both verdicts apart, the deviations (the extension, the 3-pair read by the controller and the advisor, the Sonnet choice), B's cost and spread, the proof table and the 7 escape attempts, machine runs and `noresult` products, every run's CLI, models, base and branch, 26 rulings of the ledger, the hashes of 142 files (`lock6-compare.mjs` on the lock: hashed 142, equal 142). Checks: `bun test ./tests` 495 pass, 49 skip, 0 fail; the gated box test 38 pass; step 5, 6, 7 compares 1369, 572 and 1072 equal, 0 changed. Open: the token in `<data>/arm/box.env` must be revoked; merge and push wait for the user; `bench-arm/fw:1` and the one recorded test leftover remain in Docker.
+
+### SDD ledger, step 8 (copied before the final review)
+
+    # SDD ledger — plan: docs/plans/2026-11-06-bench-canary.md
+
+    Start: branch bench-canary from main 40d27bf, in the bridge worktree. Spec: docs/plans/2026-10-27-benchmark-prereg.md.
+    Approval: the user replied "try first without touching the Keychain" to the choice "ok / ok, no Keychain"; read as approval of the plan and of decisions 2, 3, 4 as recommended, with decision 1 open.
+    Ruling: scope of this run is Tasks 1–5 only; Task 6 stops for the credential — Task 6 needs a login the user cannot give remotely and Keychain is off limits — if wrong, the user restarts at Task 6 with nothing lost.
+    Ruling: the expired file's refresh token is never used — presenting an old refresh token can end the live login, which cannot be repaired remotely — cost: the file stays unused.
+
+    ## Pre-flight scan
+
+    | pair / task | produces vs consumes | finding |
+    |---|---|---|
+    | T2 → T3 | `boxArgs`, `fwScript`, `netScript`, `netOk`, `API_HOSTS`, `claudeArgs` | match |
+    | T2 → T4 | `apiError`, `armArgs.disallow`, `probeOk` | match |
+    | T2 → T5 | `canaryVerdict`, `canaryScore` | match |
+    | T3 → T4 | `enterBox(...)` -> `{ envCommit, turn, product, leave }`; T4 consumes all | match |
+    | T3 → T5 | ext exports `daemon`, `diskFloor`; `parseSize` already exported | match |
+    | T4 → T5 | `runArm`, record `machine`, `toolUses`, `envCommit` | match |
+    | T3 ↔ T4 | ruling 2's box limit needs `RESUMES`, a const private to run-arm; box importing run-arm is a cycle | conflict, ruled below |
+    | T3 tests ↔ interface | `inj.helper` "does nothing" must leave the net check real, or the refusal test proves nothing | gap, ruled below |
+    | T1 | writes rulings 1–15 and four decisions; decision 1 is open | ruled below |
+    | T2 | tests agree with interface; `armArgs` toEqual tests must change | ok |
+    | T3 | Create box + test, Modify ext, README | ok |
+    | T4 | stand-in box file created, tests moved | ok |
+    | T5 | `scoreAt` export from oracle.mjs | ok |
+
+    Ruling: `RESUMES` moves to `bench/lib/arm.mjs` as an export; run-arm and box import it — no cycle — cost: none.
+    Ruling: `inj.helper` replaces only the step that sets the rules; the net check always runs from the real fw image, so a helper that does nothing fails the check — the test must prove the gate — cost: none.
+    Ruling: Task 1 registers decisions 2–4 as decided and decision 1 as open, naming the two options left — prereg must not claim a decision the user has not made — cost: a later one-line amendment.
+
+    Task 1: implementer done, 805ad22 (80.9k tokens, 0.9 min)
+    Task 1: review sonnet 77.7k tokens: spec ✅, Approved; ⚠️ decision 4 "allowed" rests on the controller's reading of the user's reply, surfaced to the user.
+    Task 1: minor (deferred): the plan's decisions section still reads "Recommended"; align when the plan goes stable.
+    Task 1: complete (commits 40d27bf..805ad22, review clean)
+    Task 2: implementer done, 0e99646 (103.1k tokens, 8.6 min): concerns: fw and net scripts only string-tested; fwScript IPv4 only
+    Task 2: review sonnet 96.6k tokens: spec ✅ but 1 Important (unrounded mean lets a true-zero mean pass); fix round 1 sent.
+    Task 2: minor (deferred): canaryVerdict counts rows, not distinct n; Task 5 must pass only the standing set (ruling 14's rerun adds B- runs).
+    Task 2: minor (deferred): dBuild is 0, not null, on s1-01 and s3-01.
+    Task 2: minor (deferred): v6 count reads 0 if `ip` is missing in the helper; Task 6 proves the helper has it. github.com's blocked line proves only no DNS unless shown to answer first.
+    Task 2: minor (deferred): disallow returns the shared WEB_OFF array; IPv4 regex accepts 999.1.1.1 (fails closed in iptables).
+    Task 2: fix round 1/5 (1 addressed, 0 open; commits 0e99646..87fc9b4), implementer +4.1k tokens, re-review haiku 65.7k tokens
+    Task 2: minor (deferred): r9 can zero a true mean under 1e-9; the mean can print -0 (cosmetic).
+    Task 2: complete (commits 805ad22..87fc9b4, review clean)
+    Decision 1: on 2026-11-06 the user generated a setup-token on their Ubuntu machine and gave it in chat; written to <data>/arm/box.env, mode 600, gitignored. It is in this session's transcript: revoke after step 8. Ruling: Task 6 onward may now run; prereg decision 1 and the plan are updated after Task 5 — cost: none.
+    Task 3: implementer done, 8b74b8e (256.6k tokens, 45.9 min): box, proof, README, ext exports; gated box tests 30 pass, suite 442 pass 43 skip.
+    Ruling: `--cap-drop NET_RAW` stays in boxArgs — Docker's default NET_RAW lets root send AF_PACKET frames past iptables (shown by the implementer: a raw frame got a DNS answer) — it goes into rulings 2–3 and the prereg; cost if wrong: an arm's own ping fails, equally for all arms.
+    Ruling: no probe ever opens a connection to the host's port 5432, in the proof or in the per-run check — "never touch real_estate*" outranks a positive control — a throwaway listener on an ephemeral host port replaces it — cost: a few lines.
+    Ruling: exit 137 before the turn limit is a memory kill, not the arm's timeout: machine 'memory', told to the user — the arm must not be charged a timeout and interventions for a kill by the cap — cost: one more reason word.
+    Task 3: left in Docker by the implementer's mutation run: container bench-ext-fxngq295__app__1-arm-s1-01-B-2, images bench-ext/fxngq295__app__1:bb1762b-arm and :bb1762b-serve. A safety check stopped their removal and left it to a person; not re-issued. Tell the user.
+    Task 3: review opus 201.5k tokens, 16.1 min: spec ❌ (capabilities), 0 Critical, 5 Important, 8 Minor; full text task-3-review.md.
+    Ruling: the box keeps exactly CHOWN, DAC_OVERRIDE, FOWNER, KILL, SETUID, SETGID; drops NET_RAW, MKNOD, SYS_CHROOT, SETFCAP, SETPCAP, AUDIT_WRITE, NET_BIND_SERVICE, FSETID by --cap-drop; proof compares CapEff to that mask — ruling 3's "no capability" could not hold, since a task's service may need to change user; the set still gives no network power — cost if wrong: a task's start path needs one back, seen in the pilot, one flag.
+    Ruling: every Important of Task 3 is fixed in this round, Important 5 too (it must land before any product is graded), plus the same class at oracle-run's copy of junit.xml.
+    Ruling: the VSOCK doubt becomes a proof row; a direct API web-search attempt with the token joins Task 6 step 4 and the known limits.
+    Task 3: minor (deferred): 1 leave's throw hides the reason; 2 unbounded sizes of .out and bundle; 3 gate reads a refusal as blocked; 4 proof exits 0 with rows skipped; 5 comment overclaims about hooks; 6 raw-frame test reads a bit, sends no frame; 7 nc -v silence on a moving alpine tag; 8 no --pids-limit.
+    Task 3: fix round 1 implementer done, 859a6cc 001084f; CapEff 0xeb from a real box, no vsock ok; 37 gated, 446 suite
+    Task 3: fix round 1/5 (5 + rulings addressed, 1 new open — unpinned docker run can pull bench-arm/fw:1 from the Hub; commits 8b74b8e..001084f), implementer 57.9k more, re-review sonnet 141.9k tokens
+    Task 3: minor (deferred): kill -9 -1 leaves zombies under PID 1 and can miss a process forking at that instant.
+    Task 3: fix round 2/5 (3 addressed, 0 open; commits 001084f..bcc48f8), implementer 10.5k more, re-review haiku 78.8k tokens
+    Task 3: minor (deferred): ext.mjs existsSync of .bench-timeout and .bench-ready follows a child link (existence probe only); lstat of an absent /out throws before the readiness row; the FW_RUN test scans one literal form in box.mjs.
+    Task 3: complete (commits 87fc9b4..bcc48f8, review clean)
+    Task 4: implementer done, 3676ce8; 456 pass 49 skip.
+    Ruling: model machine fires only when the record's models is non-empty and lacks the arm's model — a timed-out turn with no output must stay the arm's own timeout — cost if wrong: a run with no model at all is scored as the arm's own; a run with no output has an empty product anyway.
+    Task 4: review sonnet 122.6k tokens: spec ✅, Approved, 1 Important labelled a decision (machine failure on the probe gives exit 2, no record).
+    Task 4: Ruling: a probe failure stays exit 2 with no record, as the brief says — the probe spends almost nothing and scores nothing, and the driver stops on any exit 2 — Task 5's README states it — cost if wrong: one extra stop a person restarts.
+    Task 4: minor (deferred): settings.json in the run folder is read only by the stand-in; a turn that throws leaves no record (exit 2, transcripts survive, driver stops); leave and killed-on-last-resume are not observed by a test.
+    Task 4: complete (commits bcc48f8..3676ce8, review clean)
+    Task 5: implementer done, 3549aa5; 472 pass 49 skip; concerns: no cap on machine reruns; real docker/git defaults never run
+    Task 5: review opus 184.0k tokens, 12 min: spec ❌ ruling 10; 3 Critical, 4 Important, 7 Minor.
+    Ruling: a good grade also needs at least one check that is not `error` — a runner that dies after ready leaves oracle-run's placeholder JUnit, and that must get its second run and its count — cost if wrong: one extra grade.
+    Ruling: machine reruns are capped: 2 machine runs in a row for one slot stop the driver with `machine` — an unattended loop must not spend without limit; it scores nothing, so ruling 11 holds — cost if wrong: a person restarts it.
+    Ruling: a throw from grade is never an attempt: it stops the driver — a harness failure must not be a product's 0 — cost if wrong: a stop a person restarts.
+    Checked by the controller: all 6 canary step.json files name `oracle` (read at orientation), so the driver not grading step/oracle is correct here.
+    Task 5: minor (deferred): unknown disk read as fine in machineDown; machineDown skips diskFloor's prune; run accepts any sample task; seeded read has no commit check; diagnose appends to readiness.tsv; attempts.json not atomic; unused appendFileSync.
+    Task 5: fix round 1/5 (7 addressed, 0 open; commits 3549aa5..896a0b5), implementer 21.7k more, re-review sonnet 96.5k tokens
+    Task 5: minor (deferred): the rerun cap is per invocation, not total; a grade throw prints stopped: machine with no message; I2's test does not prove stderr; memory on attempt 1 and clean on attempt 2 is not reported.
+    Task 5: complete (commits 3676ce8..896a0b5, review clean)
+    Task 5: Ruling (reopened after complete, found by the controller): canary grades go through <data>/env/canary/<task>.json, with only `oracle` changed to this checkout — every env file points at the main checkout, which lacks this branch's ext.mjs fixes, and the env files are hashed in the locks — cost if wrong: one extra env folder; it must be re-pointed if the worktree moves.
+    Task 6: started; Step 1 done (integrity ok, sha256 53a0d7e2…, arms.json written), Step 2 done (box.env from the user).
+    Task 5: fix round 2 done, 5e94b89; env/canary task files; 481 pass 49 skip.
+    Task 6: Step 3 done: proof s1-01, 10 rows ok, both models answered with the real token.
+    Task 6: Step 4 done: one real agent turn tried all 7 ways out; every one failed: host paths absent; github, git ls-remote and host unresolved; WebSearch, WebFetch "no such tool"; direct API call with the token 401 "Invalid bearer token", no search result. Usage 8/2672/66245/7864. Transcript <data>/arm/proof-agent-s1-01.jsonl.
+    Task 6: finding: the escape prompt tripped the `cyber` classifier on the arm's model; the CLI moved the session to claude-opus-4-8 (system:model_refusal_fallback, scope session), and the record's `models` still listed the arm's model, so the check would have passed.
+    Task 4: Ruling (reopened): a fallback event in any main or resume turn is machine 'model', with `fallback` in the record — a run served by another model is not that arm — cost if wrong: a rerun; a task that always trips it stops the driver after 2 and goes to the user.
+    Task 5: fix round 2/5 (1 addressed, 0 open; commits 896a0b5..5e94b89), re-review haiku 82.7k tokens. Task 5: complete again.
+    Task 4: fallback fix done, b136068; 483 pass 49 skip.
+    Ruling: a fallback only in the probe does not stop the run — the probe is its own session, and the main session stays on the arm's model — it stays in the record — cost if wrong: none, a main-turn fallback is still caught.
+    Task 4: fallback fix re-review haiku 82.0k tokens: addressed. Task 4: complete again (b136068).
+    Task 7: started on bench-canary b136068.
+    Task 7: pilot s1-01 ran 23:36–23:49, 4 runs done, all ready, no machine run, no tool change. Runs took 0.2–0.9 min: a 53-word issue. Checked by counts only: B 4 Bash calls, 3 files +39 with a test; B- 2 Bash calls, 1 file +11, no test, so B- obeyed. Pilot results stand.
+    Task 8: driver started 23:49 from b136068. At 01:50: s1-01, s1-02, s2-01 done, s2-02 running. s2-02 B- 1 (0baf9c6) junit missing twice with no readiness line: the product's image did not build; scores 0 by ruling 10, counted noresult. Machine was up.
+    Task 8: finding: usage() reads only the last result event; a run that used Monitor (s2-02 B 1: 47 Bash, out=384) undercounts. The records' cost is wrong for such runs. Ruling: do not edit code while the driver runs, each `canary run` loads it fresh; after the driver ends, fix usage() to sum result events and recompute cost from the kept transcripts — cost if wrong: only the cost table, no score.
+    Task 8: driver done 03:42, 24 scored runs, 0 machine runs, 2 noresult (both s2-02 B-, image did not build). Report: mean 0.400, favour 3/6 (s1-01 0.25, s2-01 0.15, s2-02 2.00; ties s1-02 2.00/2.00, s3-01 0/0, s3-02 2.00/2.00), verdict fail. Build cache pruned, 29.61 GB freed. Report archived in logs/step8/report-first.*.
+    Task 9: diagnose started.
+    Task 9: diagnose done. B- seeded checks, per product: s1-01 1/3 then 0/3 (3 precondition); s1-02 3/3 3/3; s2-01 3/3 3/3; s2-02 error 3 twice (no build); s3-01 precondition 3 twice; s3-02 3/3 3/3. Pairs: s1-02, s3-01, s3-02 (d = 0), diffs in <data>/canary/pairs/.
+    Task 8: usage cause confirmed: a turn with a background tool has several result events; fix sent to the Task 4 implementer. Scores unaffected.
+    Task 4: usage fix done, 735bead; 485 pass 49 skip. Cost recomputed from transcripts into <data>/canary/cost.json.
+    Task 4: usage fix re-review haiku 66.1k tokens: addressed; complete (735bead).
+    Ruling: the user delegated the choice to the advisor on 2026-11-07; the advisor chose A, section 7.3's second branch: seeded checks 3/3 on the ties, identical diffs on s1-02, so B- is not worse — it makes B- weaker, B's runs stand — cost if wrong: 12 B- runs and grades.
+    Ruling: section 7.3's "a human reads 3 pairs" was done by the controller and the advisor under the user's delegation; a deviation with its reason, recorded in the lock with the pairs link — cost if wrong: the user reads them later.
+    Task 9: arms.json changed for the weaker B-: sha256 81af898c6a9868d818c22e55822d0e42633993f131ba79fed4df0cd6fb30de02 (sonnet) -> a5f7068e3bd5addeb993a73a80b972906fd551e93555d39052c66428405d6a34 (haiku); first report archived as report-first.*.
+    Task 9: Haiku rerun 06:57–08:36: 12 B- runs, all on claude-haiku-5-5, 0 machine, 0 fallback; 2 noresult (s2-02). Report logs/step8/report-haiku.*: mean 0.428, favour 3/6, ties s1-02, s3-01, s3-02 as before, verdict fail. Stopped for the user: section 7.3 has no third branch. Task 10 waits for that decision.
+    Task 9b: on 2026-11-07 the user chose A: extend the canary to unused tasks, rule fixed first. Model not named. Ruling: Sonnet, the controller's stated lean — a pass against one tier down says more about sensitivity — cost if wrong: the user asks for Haiku and those B- runs repeat.
+    Task 9b: Ruling: the extended verdict is over the 14 unused tasks, the 20 reported alongside — the user chose 'unused tasks', and the 6 seen results must not decide a rule written after seeing them; the advisor suggested 20 — cost if wrong: a verdict on n 14 not 20. arms.json back to Sonnet, sha256 81af898c6a9868d818c22e55822d0e42633993f131ba79fed4df0cd6fb30de02, same bytes as the first. Dependency files changed per PR in logs/step8/deps-14.txt.
+    Task 9b: implementer done, 41d10fa 01e0576; 494 pass 49 skip. Preamble/step 14 citation accepted.
+    Task 9b: review opus 174.9k tokens: verdict code ✅; 2 Important in the registration text. Ruling: the dependency sentence stays, the controller read deps-20.txt (git exit 0, 0 dependency files in all 20) — cost: none. Fix round 1 sent: wording of 7.3's route, golden bootstrap test, PRNG named, 6 decimals, t_upper.
+    Task 9b: minor (deferred): the six-only diagnose filter has no test with extended runs; an absent cold_setup column gives favour=0/0 not judged; `run` accepts a cold task, so the driver loop must name the 14.
+    Task 9b: fix round 1/5 (5 addressed, 0 open; commits 01e0576..87da35d), re-review haiku 88.5k tokens. Task 9b: complete (commits 735bead..87da35d). Registered before any extended run.
+    Task 9b: minor (deferred): the prereg names the indexes but not the draw-to-index map; the golden test pins the code, not an outside value.
+    Task 9b: pilot s1-03 09:05–11:48: 4 runs, no machine run. B 15/26 pass both; both B- products timed out at 30 min twice (noresult, score 0). Checked by file names and counts only: no build artifact in any product, B 12–13 files with specs, B- 8 source files, so no instrument bias. Pilot stands.
+    Task 9b: remaining 13 tasks started.
+    Task 9b: s3-05 B 2 was a memory machine run (the 6 GB box cap, at 10.7 min); B 3 replaced it and was graded. Told to the user; the lock records it.
+    Task 9b: extended driver done 23:41; report logs/step8/report-extended.*: extended mean 0.310, bootstrap 95% [0.056598, 0.607352], t [-0.006427, 0.627273], favour 5/14, verdict pass; all20 mean 0.337, lower 0.100919, favour 8/20. Original rule still fail (0.400, 3/6). Machine runs in the extension: 1 (s3-05 B 2, memory). noresult: s1-03 2 (B- timeouts), s2-10 1.
+    Task 10: started.
