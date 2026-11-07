@@ -2850,3 +2850,13 @@ Listed implementer tokens: 534.8k. Listed reviewer tokens (14 reviews and re-rev
     Task 9b: s3-05 B 2 was a memory machine run (the 6 GB box cap, at 10.7 min); B 3 replaced it and was graded. Told to the user; the lock records it.
     Task 9b: extended driver done 23:41; report logs/step8/report-extended.*: extended mean 0.310, bootstrap 95% [0.056598, 0.607352], t [-0.006427, 0.627273], favour 5/14, verdict pass; all20 mean 0.337, lower 0.100919, favour 8/20. Original rule still fail (0.400, 3/6). Machine runs in the extension: 1 (s3-05 B 2, memory). noresult: s1-03 2 (B- timeouts), s2-10 1.
     Task 10: started.
+
+### SDD ledger tail, step 8 (after the final review)
+
+Task 10: complete (b954f2d): compares 1369/1369, 572/572, 1072/1072, new lock 142/142; 495 pass 49 skip; box tests 38 pass. Final review dispatched.
+Final review (opus, 504.8k tokens over two passes, the first cut off by a safety classifier mid-write): not merge-ready, 1 Critical, 3 Important, 9 Minor; full text final-review.md.
+Final review checks by the controller, names and counts only: of 92 graded products and 20 bases, root bunfig.toml or .env* exist only as the upstream base's own files, unchanged in every product (diff vs the export's root commit, 0 changed); the two bunfig.toml hold only a [test] preload, which `bun <file>` does not run; the two loaded .env hold app settings and COMPOSE_PROJECT_NAME. So no agent-written file reached the host, and both verdicts stand. 0 of 92 products change a dependency file. 0 Bash calls in 93 runs name the CLI or the API.
+Ruling: registered prereg paragraphs are not rewritten after their runs; corrections go into one dated "Notes at the lock (2026-11-08)" paragraph — a frozen registration must not move — cost: one more paragraph.
+Ruling: M1 and M2, M3 are recorded as known limits, not fixed in step 8 — none changed a score here (report-extended reproduces the six) — they block step 13, which grades untrusted products at scale.
+Final fix wave: bdb4545 a374d58; 497 pass 49 skip; without-s1-03 lower 0.012019. Ruling: existing <data>/env/<task>.json keep the old oracle command (hashed by the locks); a step that grades untrusted products through them must re-point them first, recorded as an open point — cost: the step 11 plan does it.
+Final fix wave re-review sonnet 99.2k tokens: all findings addressed, no new breakage. BENCH_EXT_DOCKER box tests after the wave: see below. Final review: clean after one fix wave.
