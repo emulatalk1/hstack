@@ -171,7 +171,7 @@ async function report(c) {
   const six = runs.filter((r) => tasks.includes(r.task)), noresult = six.filter((r) => r.noresult).length, verdict = v.judged ? (v.pass ? 'pass' : 'fail') : 'not judged'
   mkdirSync(join(c.data, 'canary'), { recursive: true })
   writeFileSync(join(c.data, 'canary/report.json'), JSON.stringify({ at: new Date().toISOString(), tasks: rows, runs, mean: v.mean, favour: v.favour, judged: v.judged, verdict, noresult,
-    extended: { ...ev, tasks: extRows, verdict: extVerdict }, all20: { mean: all.mean, lower: all.lower, upper: all.upper, favour: all.favour } }, null, 2) + '\n')
+    extended: { ...ev, tasks: extRows, verdict: extVerdict }, all20: { mean: all.mean, lower: all.lower, upper: all.upper, favour: all.favour, judged: all.judged } }, null, 2) + '\n')
   const show = (t) => {
     console.log(`${t.task} b=${fx(t.b)} bMinus=${fx(t.bMinus)} d=${fx(t.d)} dBuild=${fx(t.dBuild)} dRequirement=${fx(t.dRequirement)} spread=${fx(t.spread)} spreadTokens=${fx(t.spreadTokens, 0)} spreadMinutes=${fx(t.spreadMinutes, 1)} noresult=${t.noresult}`)
     for (const r of runs.filter((x) => x.task === t.task)) {
@@ -184,8 +184,8 @@ async function report(c) {
   for (const r of runs.filter((x) => x.memory)) console.log(`${r.task} ${r.arm} ${r.run} killed for memory`) // told: --sealed cannot show it
   console.log(`canary mean=${fx(v.mean, 3)} favour=${v.favour}/${tasks.length} verdict=${verdict}`)
   extRows.forEach(show)
-  console.log(`extended mean=${fx(ev.mean, 3)} lower=${fx(ev.lower, 3)} upper=${fx(ev.upper, 3)} t_lower=${fx(ev.tLower, 3)} favour=${ev.favour}/${extended.length} verdict=${extVerdict}`)
-  console.log(`all20 mean=${fx(all.mean, 3)} lower=${fx(all.lower, 3)} favour=${all.favour}/${tasks.length + extended.length}`)
+  console.log(`extended mean=${fx(ev.mean, 3)} lower=${fx(ev.lower, 6)} upper=${fx(ev.upper, 6)} t_lower=${fx(ev.tLower, 6)} t_upper=${fx(ev.tUpper, 6)} favour=${ev.favour}/${extended.length} verdict=${extVerdict}`)
+  console.log(`all20 mean=${fx(all.mean, 3)} lower=${fx(all.lower, 6)} favour=${all.favour}/${tasks.length + extended.length} judged=${all.judged ? 'yes' : 'no'}`)
   return 0
 }
 

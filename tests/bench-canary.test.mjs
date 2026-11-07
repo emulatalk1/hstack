@@ -443,6 +443,11 @@ test('bootstrapMean gives the same interval for the same seed', () => {
   expect(bootstrapMean(ds, 'another seed')).not.toEqual(a)
 })
 
+test('bootstrapMean golden: the PRNG and the quantile index are the record', () => {
+  // mulberry32 from the first 4 bytes (big-endian) of sha256(seed); sorted means at index 250 and 9750 of 10,000
+  expect(bootstrapMean([0.5, 1, -0.25, 0.75, 0, 1.5, 0.25], SEED_X)).toEqual({ mean: 0.535714286, lower: 0.142857143, upper: 0.964285714 })
+})
+
 test('all zeros do not pass', () => {
   const { tasks, rows } = setOf(Array(14).fill(0))
   expect(intervalVerdict(rows, tasks, SEED_X)).toMatchObject({ mean: 0, lower: 0, upper: 0, judged: true, pass: false, favour: 0 })
@@ -489,7 +494,7 @@ test('extendedTasks leaves out the canary and the cold tasks', () => {
 test('the report gives not judged until every extended task has its 2 runs', async () => {
   const d = fullWorld('extrep')
   const extended = () => json(join(d, 'canary/report.json')).extended
-  expect((await go(d, ['report'], fakes(d))).out).toContain('extended mean=none lower=none upper=none t_lower=none favour=0/2 verdict=not judged')
+  expect((await go(d, ['report'], fakes(d))).out).toContain('extended mean=none lower=none upper=none t_lower=none t_upper=none favour=0/2 verdict=not judged')
   for (const [t, arm, n] of [['s1-03', 'B', 1], ['s1-03', 'B', 2], ['s1-03', 'B-', 1], ['s1-03', 'B-', 2], ['s2-03', 'B', 1], ['s2-03', 'B', 2], ['s2-03', 'B-', 1]]) putRun(d, t, arm, n, { grade: { pass: arm === 'B' ? ['a1', 'a2'] : ['a2'] } })
   const part = await go(d, ['report'], fakes(d))
   expect(part.out).toContain('s1-03 b=2.00')
@@ -497,11 +502,12 @@ test('the report gives not judged until every extended task has its 2 runs', asy
   expect(extended()).toMatchObject({ judged: false, pass: false })
   putRun(d, 's2-03', 'B-', 2, { grade: { pass: ['a2'] } })
   const full = await go(d, ['report'], fakes(d))
-  expect(full.out).toMatch(/extended mean=1\.500 lower=1\.500 upper=1\.500 t_lower=1\.500 favour=2\/2 verdict=pass/)
-  expect(full.out).toMatch(/all20 mean=1\.250 lower=0\.\d+ favour=8\/8/)
+  expect(full.out).toMatch(/extended mean=1\.500 lower=1\.500000 upper=1\.500000 t_lower=1\.500000 t_upper=1\.500000 favour=2\/2 verdict=pass/)
+  expect(full.out).toMatch(/all20 mean=1\.250 lower=0\.\d{6} favour=8\/8 judged=yes/)
   const rep = json(join(d, 'canary/report.json'))
   expect(rep.extended).toMatchObject({ judged: true, pass: true, favour: 2 })
-  expect(rep.all20).toMatchObject({ favour: 8 })
+  expect(rep.all20).toMatchObject({ favour: 8, judged: true })
+  expect(rep.extended.tUpper).toBe(1.5)
   expect(rep.verdict).toBe('pass') // the original verdict stands apart
 })
 

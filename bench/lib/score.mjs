@@ -154,5 +154,5 @@ export function intervalVerdict(rows, tasks, seed) {
   const ds = got.map((t) => t.d).filter((d) => d !== null)
   const { mean: avg, lower, upper } = ds.length ? bootstrapMean(ds, seed) : { mean: null, lower: null, upper: null }
   const judged = tasks.length > 0 && got.length === tasks.length && got.every((t) => t.ok)
-  return { tasks: got.map(({ ok, ...t }) => t), mean: avg, lower, upper, tLower: tInterval(ds).lower, favour: got.filter((t) => t.favour).length, judged, pass: judged && lower > 0 }
+  return { tasks: got.map(({ ok, ...t }) => t), mean: avg, lower, upper, tLower: tInterval(ds).lower, tUpper: tInterval(ds).upper, favour: got.filter((t) => t.favour).length, judged, pass: judged && lower > 0 }
 }
