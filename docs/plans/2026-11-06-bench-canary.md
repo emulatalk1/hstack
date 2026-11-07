@@ -65,6 +65,17 @@ The task recipe and serve layer of step 5 are the box's image, so every box is a
 
 15. **In no score.** These runs enter neither H1 nor H2. `results/<task>-<arm>-<n>/` keeps the transcripts; the record adds `box` (image id, memory cap) and `toolUses`, so the report can show whether B- obeyed. An arm product is not sealed, but the grades of it are read only through the tools' counts.
 
+## Extended canary (2026-11-07)
+
+A deviation, written after the 6-task results were seen and registered in section 7.3 of the [prereg](/plans/2026-10-27-benchmark-prereg.md) before any of its runs. The original rule's result stands as a failed canary: B- on `claude-sonnet-5-5` mean 0.40, B- on `claude-haiku-5-5` mean 0.43, both 3 of 6. The two branches of 7.3 are used, 3 tasks tie on 6 (on s1-02 and s3-02 the issue states the fix and the products are equivalent; on s3-01 B itself scores 0), and no task favoured B-. The user chose to extend the canary to unused tasks, with the rule fixed first.
+
+- **Tasks.** The 14 kept tasks of `ext/sample.tsv` with `cold_setup` `no` that are not the 6 canary tasks: s1-03, s1-04, s1-05, s1-06, s1-07, s2-03, s2-05, s2-07, s2-08, s2-10, s3-03, s3-04, s3-05, s3-06. Nobody has seen their results. The cold-setup tasks stay out, so they stay unseen.
+- **Arms.** B unchanged, B- `claude-sonnet-5-5`, k = 2, in the box, rulings 2–13 and 15 unchanged. The Haiku runs are recorded and enter no verdict.
+- **Verdict.** `d` by ruling 9. The stick passes when the lower bound of a 95% bootstrap interval of the mean of `d` over the 14 tasks is > 0 (10,000 resamples of tasks, each keeping its 2 runs; seed `hstack-bench-2026-10-27`; the interval rule of 10.1, not H4). The t interval, the favour count and the same numbers over all 20 tasks are reported and decide nothing.
+- **If it does not pass,** no further branch: the stick is recorded as not validated and the decision goes back to the user. No diagnosis step.
+- **Dependency files.** A task whose PR changes one stays in and is flagged in the lock. None is flagged today (counted 2026-11-07: no PR of the 20 tasks changes a dependency file).
+- **Code.** `bootstrapMean`, `tInterval` and `intervalVerdict` in `bench/lib/score.mjs`; `extendedTasks` in `bench/canary.mjs`, whose `report` prints the extended lines after the original verdict line, which does not change.
+
 ## Decided by the user (asked with this plan)
 
 1. **The credential: decided on 2026-11-06.** A token from `claude setup-token`, made by the user on another machine and written to `<data>/arm/box.env`. It went through the session transcript, so it is revoked after step 8.

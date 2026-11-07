@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-11-07
+* **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 7.3, mirrored in the [stick canary plan](/plans/2026-11-06-bench-canary.md)) an extension of the canary as a deviation, after the 6-task canary failed its rule twice (means 0.40 and 0.43, 3 of 6): the 14 unused kept non-cold tasks, B against B- on `claude-sonnet-5-5`, k = 2, passing when the lower bound of the 95% bootstrap interval of the mean of d is > 0, before any of its runs.
+
 ## 2026-11-06
 * **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 7.3, with a pointer in section 2) the [stick canary plan's](/plans/2026-11-06-bench-canary.md) 15 rulings for step 8 and the user's decisions of 2026-11-06 (B- on `claude-sonnet-5-5` first, then `claude-haiku-5-5`; package registries closed; the `--network container:<box>` helper with `--cap-add NET_ADMIN` and `--memory 6g` on the box allowed; the credential left open), before any arm runs.
 * **Approve**: the built [seeded bugs plan](/plans/2026-11-05-bench-seeded-bugs.md) (status `stable`): 81 of 81 seeded bugs, each a one-hunk commit with a black-box check that passes on the reference and fails on the bug, sealed and locked in `progress/step7-lock.md`.
