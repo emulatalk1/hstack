@@ -8,12 +8,13 @@ import { dataOf, DISK_FLOOR_GB, dockerDiskFree, daemon as dockerDaemon, must, pa
 import { grade as gradeRun, resolveCommit } from './grade.mjs'
 import { armArgs } from './lib/arm.mjs'
 import { queuePick } from './lib/oracle.mjs'
-import { canaryScore, canaryVerdict } from './lib/score.mjs'
+import { canaryScore, canaryVerdict, intervalVerdict } from './lib/score.mjs'
 import { loadTask } from './lib/task.mjs'
 import { scoreAt, seedOf } from './oracle.mjs'
 import { runArm } from './run-arm.mjs'
 
 const USAGE = 'usage: bun bench/canary.mjs run <task> | report | diagnose'
+const SEED = 'hstack-bench-2026-10-27' // the extended verdict's bootstrap seed (prereg 7.3)
 const K = 2, ATTEMPTS = 2, CACHE_LIMIT = 15e9, PAIRS = 3, MACHINE_RUNS = 2, ARMS = ['B', 'B-']
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
 const fx = (x, digits = 2) => (typeof x === 'number' ? x.toFixed(digits) : 'none')
@@ -24,6 +25,13 @@ export function canaryTasks(data) {
   const [head, ...rows] = readFileSync(join(data, 'ext/sample.tsv'), 'utf8').trim().split('\n').map((l) => l.split('\t'))
   const task = head.indexOf('task'), stack = head.indexOf('stack'), seen = {}
   return rows.filter((r) => (seen[r[stack]] = (seen[r[stack]] ?? 0) + 1) <= K).map((r) => r[task])
+}
+
+// the extended canary (7.3, 2026-11-07): the kept tasks that are not cold-setup and not the canary's, in sample.tsv order
+export function extendedTasks(data) {
+  const [head, ...rows] = readFileSync(join(data, 'ext/sample.tsv'), 'utf8').trim().split('\n').map((l) => l.split('\t'))
+  const task = head.indexOf('task'), cold = head.indexOf('cold_setup'), six = canaryTasks(data)
+  return rows.filter((r) => r[cold] === 'no' && !six.includes(r[task])).map((r) => r[task])
 }
 
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -131,8 +139,8 @@ async function runTask(c, task) {
 }
 
 async function report(c) {
-  const cfg = readJson(join(c.data, 'arms.json')), tasks = canaryTasks(c.data), runs = []
-  for (const task of tasks) {
+  const cfg = readJson(join(c.data, 'arms.json')), tasks = canaryTasks(c.data), extended = extendedTasks(c.data), runs = []
+  for (const task of [...tasks, ...extended]) {
     const recs = records(c.data, task), stands = ARMS.flatMap((a) => standing(recs, a, cfg))
     for (const rec of ARMS.flatMap((a) => recs.filter((r) => r.arm === a).sort((x, y) => x.run - y.run))) {
       const row = { task, arm: rec.arm, run: rec.run, status: rec.status, machine: rec.machine ?? null, standing: stands.includes(rec),
@@ -153,23 +161,31 @@ async function report(c) {
       runs.push(row)
     }
   }
-  const v = canaryVerdict(runs.filter((r) => r.score !== null))
+  const scoredRuns = runs.filter((r) => r.score !== null), v = canaryVerdict(scoredRuns.filter((r) => tasks.includes(r.task)))
+  const ev = intervalVerdict(scoredRuns, extended, SEED), all = intervalVerdict(scoredRuns, [...tasks, ...extended], SEED)
+  const extVerdict = ev.judged ? (ev.pass ? 'pass' : 'fail') : 'not judged'
   const spread = (task, k) => { const b = runs.filter((r) => r.task === task && r.arm === 'B' && r.standing && r.score !== null); return b.length === 2 ? Math.abs(b[0][k] - b[1][k]) : null }
-  const rows = tasks.map((task) => ({ b: null, bMinus: null, d: null, dBuild: null, dRequirement: null, spread: null, favour: false, ...v.tasks.find((t) => t.task === task), task,
-    spreadTokens: spread(task, 'tokens'), spreadMinutes: spread(task, 'minutes'), noresult: runs.filter((r) => r.task === task && r.noresult).length }))
-  const noresult = runs.filter((r) => r.noresult).length, verdict = v.judged ? (v.pass ? 'pass' : 'fail') : 'not judged'
+  const rowOf = (vt) => (task) => ({ b: null, bMinus: null, d: null, dBuild: null, dRequirement: null, spread: null, favour: false, ...vt.find((t) => t.task === task), task,
+    spreadTokens: spread(task, 'tokens'), spreadMinutes: spread(task, 'minutes'), noresult: runs.filter((r) => r.task === task && r.noresult).length })
+  const rows = tasks.map(rowOf(v.tasks)), extRows = extended.map(rowOf(ev.tasks)).filter((t) => runs.some((r) => r.task === t.task))
+  const six = runs.filter((r) => tasks.includes(r.task)), noresult = six.filter((r) => r.noresult).length, verdict = v.judged ? (v.pass ? 'pass' : 'fail') : 'not judged'
   mkdirSync(join(c.data, 'canary'), { recursive: true })
-  writeFileSync(join(c.data, 'canary/report.json'), JSON.stringify({ at: new Date().toISOString(), tasks: rows, runs, mean: v.mean, favour: v.favour, judged: v.judged, verdict, noresult }, null, 2) + '\n')
-  for (const t of rows) {
+  writeFileSync(join(c.data, 'canary/report.json'), JSON.stringify({ at: new Date().toISOString(), tasks: rows, runs, mean: v.mean, favour: v.favour, judged: v.judged, verdict, noresult,
+    extended: { ...ev, tasks: extRows, verdict: extVerdict }, all20: { mean: all.mean, lower: all.lower, upper: all.upper, favour: all.favour } }, null, 2) + '\n')
+  const show = (t) => {
     console.log(`${t.task} b=${fx(t.b)} bMinus=${fx(t.bMinus)} d=${fx(t.d)} dBuild=${fx(t.dBuild)} dRequirement=${fx(t.dRequirement)} spread=${fx(t.spread)} spreadTokens=${fx(t.spreadTokens, 0)} spreadMinutes=${fx(t.spreadMinutes, 1)} noresult=${t.noresult}`)
     for (const r of runs.filter((x) => x.task === t.task)) {
       const tools = r.arm === 'B-' ? ` tools=${Object.entries(r.toolUses).map(([k, n]) => `${k}:${n}`).join(',') || 'none'}` : ''
       console.log(`${r.task} ${r.arm} ${r.run} tokens=${r.tokens} cacheRead=${r.cacheRead} minutes=${fx(r.minutes, 1)} status=${r.status} machine=${r.machine ?? (r.standing ? 'none' : 'superseded')} score=${fx(r.score)}${tools}`)
     }
   }
+  rows.forEach(show)
   console.log(`noresult=${noresult}`)
   for (const r of runs.filter((x) => x.memory)) console.log(`${r.task} ${r.arm} ${r.run} killed for memory`) // told: --sealed cannot show it
   console.log(`canary mean=${fx(v.mean, 3)} favour=${v.favour}/${tasks.length} verdict=${verdict}`)
+  extRows.forEach(show)
+  console.log(`extended mean=${fx(ev.mean, 3)} lower=${fx(ev.lower, 3)} upper=${fx(ev.upper, 3)} t_lower=${fx(ev.tLower, 3)} favour=${ev.favour}/${extended.length} verdict=${extVerdict}`)
+  console.log(`all20 mean=${fx(all.mean, 3)} lower=${fx(all.lower, 3)} favour=${all.favour}/${tasks.length + extended.length}`)
   return 0
 }
 
@@ -177,7 +193,7 @@ async function report(c) {
 async function diagnose(c) {
   const rep = readJson(join(c.data, 'canary/report.json'))
   if (rep?.verdict !== 'fail') throw new Error(`diagnose refused: the last report's verdict is ${rep?.verdict ?? 'missing'}, not fail`)
-  const mine = rep.runs.filter((r) => r.standing && r.score !== null)
+  const mine = rep.runs.filter((r) => r.standing && r.score !== null && rep.tasks.some((t) => t.task === r.task)) // the original six only
   for (const r of mine.filter((x) => x.arm === 'B-')) {
     const sha7 = r.sha.slice(0, 7)
     await c.grade([canaryTaskFile(c.data, r.task), join(c.data, r.task, 'seeded/oracle'), '--at', r.sha, '--sealed'])

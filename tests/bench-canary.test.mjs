@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { canary } from '../bench/canary.mjs'
+import { canary, extendedTasks } from '../bench/canary.mjs'
+import { bootstrapMean, intervalVerdict, tInterval } from '../bench/lib/score.mjs'
 import { loadTask } from '../bench/lib/task.mjs'
 import { queuePick } from '../bench/lib/oracle.mjs'
 
@@ -34,8 +35,8 @@ const json = (f) => JSON.parse(readFileSync(f, 'utf8'))
 function world(name, { small = 'S' } = {}) {
   const d = join(tmp, name)
   for (const x of ['ext', 'env', 'results', ...TASKS.flatMap((t) => [`${t}/grades`, `${t}/build`])]) mkdirSync(join(d, x), { recursive: true })
-  const head = 'task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend'
-  writeFileSync(join(d, 'ext/sample.tsv'), [head, ...TASKS.map((t) => `${t}\t${t.slice(0, 2)}\t1\t1\town/${t}#1\tu\t1\t1\tbase-${t}\tend-${t}`), ''].join('\n'))
+  const head = 'task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend\tcold_setup'
+  writeFileSync(join(d, 'ext/sample.tsv'), [head, ...TASKS.map((t) => `${t}\t${t.slice(0, 2)}\t1\t1\town/${t}#1\tu\t1\t1\tbase-${t}\tend-${t}\tno`), ''].join('\n'))
   writeFileSync(join(d, 'ext/groups.json'), JSON.stringify({ seed: SEED, groups: [] }))
   writeFileSync(join(d, 'arms.json'), JSON.stringify({ model: 'M', smallModel: small, cli: 'x', plugins: { H: [], W: [] } }))
   writeFileSync(join(d, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
@@ -425,4 +426,89 @@ test('the canary grades through its own task file, which differs only in oracle'
   writeFileSync(join(d, 'env/canary/s1-02.json'), '{}') // a stale file is written again
   await go(d, ['run', 's1-02'], fakes(d))
   expect(json(join(d, 'env/canary/s1-02.json'))).toEqual(own)
+})
+
+// the extended canary: the 14 unused kept tasks, judged by the lower bound of a bootstrap interval of the mean of d
+const rowsOf = (task, b, m) => ['B', 'B', 'B-', 'B-'].map((arm) => ({ task, arm, build: 0, requirement: arm === 'B' ? b : m }))
+const setOf = (ds) => ({ tasks: ds.map((_, i) => `t${i}`), rows: ds.flatMap((d, i) => rowsOf(`t${i}`, d, 0)) })
+const SEED_X = 'hstack-bench-2026-10-27'
+
+test('bootstrapMean gives the same interval for the same seed', () => {
+  const ds = [0.5, 1, -0.25, 0.75, 0, 1.5, 0.25]
+  const a = bootstrapMean(ds, SEED_X), b = bootstrapMean(ds, SEED_X)
+  expect(a).toEqual(b)
+  expect(a.mean).toBeCloseTo(3.75 / 7, 9)
+  expect(a.lower).toBeLessThanOrEqual(a.mean)
+  expect(a.upper).toBeGreaterThanOrEqual(a.mean)
+  expect(bootstrapMean(ds, 'another seed')).not.toEqual(a)
+})
+
+test('all zeros do not pass', () => {
+  const { tasks, rows } = setOf(Array(14).fill(0))
+  expect(intervalVerdict(rows, tasks, SEED_X)).toMatchObject({ mean: 0, lower: 0, upper: 0, judged: true, pass: false, favour: 0 })
+})
+
+test('a clear positive set passes', () => {
+  const { tasks, rows } = setOf([0.5, 0.6, 0.4, 0.55, 0.45, 0.5, 0.6, 0.4, 0.5, 0.5, 0.55, 0.45, 0.5, 0.5])
+  const v = intervalVerdict(rows, tasks, SEED_X)
+  expect(v).toMatchObject({ judged: true, pass: true, favour: 14 })
+  expect(v.lower).toBeGreaterThan(0)
+  expect(v.tLower).toBeGreaterThan(0)
+})
+
+test('a set with a large negative task can fail where the mean is positive', () => {
+  const { tasks, rows } = setOf([...Array(13).fill(0.5), -5])
+  const v = intervalVerdict(rows, tasks, SEED_X)
+  expect(v.mean).toBeGreaterThan(0)
+  expect(v).toMatchObject({ judged: true, pass: false, favour: 13 })
+  expect(v.lower).toBeLessThan(0)
+})
+
+test('a set is not judged while a task lacks a scored run', () => {
+  const { tasks, rows } = setOf([0.5, 0.5, 0.5])
+  expect(intervalVerdict(rows.slice(1), tasks, SEED_X)).toMatchObject({ judged: false, pass: false })
+  expect(intervalVerdict(rows, [...tasks, 'none'], SEED_X)).toMatchObject({ judged: false, pass: false })
+  expect(intervalVerdict([], [], SEED_X)).toMatchObject({ judged: false, pass: false })
+})
+
+test('tInterval matches a worked example', () => {
+  // mean 2.5, s = sqrt(5/3), n = 4, t(0.975, 3 df) = 3.182: half-width 3.182 * 1.29099 / 2 = 2.0540
+  const { lower, upper } = tInterval([1, 2, 3, 4])
+  expect(lower).toBeCloseTo(0.446, 3)
+  expect(upper).toBeCloseTo(4.554, 3)
+})
+
+test('extendedTasks leaves out the canary and the cold tasks', () => {
+  const d = join(tmp, 'extsample')
+  mkdirSync(join(d, 'ext'), { recursive: true })
+  const head = 'task\tstack\tcold_setup', rows = [['s1-01', 's1', 'no'], ['s1-02', 's1', 'no'], ['s1-03', 's1', 'no'], ['s1-04', 's1', 'yes'], ['s2-01', 's2', 'no'], ['s2-02', 's2', 'no'], ['s2-03', 's2', 'no'], ['s2-04', 's2', 'yes'], ['s2-05', 's2', 'no']]
+  writeFileSync(join(d, 'ext/sample.tsv'), [head, ...rows.map((r) => r.join('\t')), ''].join('\n'))
+  expect(extendedTasks(d)).toEqual(['s1-03', 's2-03', 's2-05'])
+})
+
+test('the report gives not judged until every extended task has its 2 runs', async () => {
+  const d = fullWorld('extrep')
+  const extended = () => json(join(d, 'canary/report.json')).extended
+  expect((await go(d, ['report'], fakes(d))).out).toContain('extended mean=none lower=none upper=none t_lower=none favour=0/2 verdict=not judged')
+  for (const [t, arm, n] of [['s1-03', 'B', 1], ['s1-03', 'B', 2], ['s1-03', 'B-', 1], ['s1-03', 'B-', 2], ['s2-03', 'B', 1], ['s2-03', 'B', 2], ['s2-03', 'B-', 1]]) putRun(d, t, arm, n, { grade: { pass: arm === 'B' ? ['a1', 'a2'] : ['a2'] } })
+  const part = await go(d, ['report'], fakes(d))
+  expect(part.out).toContain('s1-03 b=2.00')
+  expect(part.out).toContain('verdict=not judged')
+  expect(extended()).toMatchObject({ judged: false, pass: false })
+  putRun(d, 's2-03', 'B-', 2, { grade: { pass: ['a2'] } })
+  const full = await go(d, ['report'], fakes(d))
+  expect(full.out).toMatch(/extended mean=1\.500 lower=1\.500 upper=1\.500 t_lower=1\.500 favour=2\/2 verdict=pass/)
+  expect(full.out).toMatch(/all20 mean=1\.250 lower=0\.\d+ favour=8\/8/)
+  const rep = json(join(d, 'canary/report.json'))
+  expect(rep.extended).toMatchObject({ judged: true, pass: true, favour: 2 })
+  expect(rep.all20).toMatchObject({ favour: 8 })
+  expect(rep.verdict).toBe('pass') // the original verdict stands apart
+})
+
+test('the original verdict line is unchanged', async () => {
+  const d = fullWorld('origline')
+  const lines = (await go(d, ['report'], fakes(d))).out.split('\n')
+  const i = lines.findIndex((l) => /^canary mean=\S+ favour=\d\/6 verdict=(pass|fail|not judged)$/.test(l))
+  expect(lines[i]).toBe('canary mean=1.167 favour=6/6 verdict=pass')
+  expect(lines[i + 1]).toMatch(/^extended /) // the extended lines come after it
 })

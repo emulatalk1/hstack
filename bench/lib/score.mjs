@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { checkId } from './junit.mjs'
 
 const WEIGHT = { high: 3, medium: 2, low: 1 }
@@ -107,9 +108,10 @@ export const canaryScore = (build, requirement) => (build ?? 0) + (requirement ?
 const CANARY_TASKS = 6
 const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null
 const r9 = (x) => Math.round(x * 1e9) / 1e9
-export function canaryVerdict(rows) {
+// the per-task numbers of rows (scored runs only): ok when each arm has exactly 2 runs
+function perTask(rows) {
   const scored = rows.filter((r) => typeof r.build === 'number' || typeof r.requirement === 'number')
-  const tasks = [...new Set(scored.map((r) => r.task))].map((task) => {
+  return [...new Set(scored.map((r) => r.task))].map((task) => {
     const of = (arm) => scored.filter((r) => r.task === task && r.arm === arm)
     const [B, M] = [of('B'), of('B-')]
     const m = (rs, k) => mean(rs.map((r) => k ? r[k] ?? 0 : canaryScore(r.build, r.requirement)))
@@ -118,8 +120,39 @@ export function canaryVerdict(rows) {
     return { task, ok: B.length === 2 && M.length === 2, b: m(B), bMinus: m(M), d, dBuild: dOf('build'), dRequirement: dOf('requirement'),
       spread: B.length === 2 ? r9(Math.abs(canaryScore(B[0].build, B[0].requirement) - canaryScore(B[1].build, B[1].requirement))) : null, favour: d > 0 }
   })
+}
+export function canaryVerdict(rows) {
+  const tasks = perTask(rows)
   const judged = tasks.length === CANARY_TASKS && tasks.every((t) => t.ok)
   const ds = tasks.map((t) => t.d).filter((d) => d !== null)
   const favour = tasks.filter((t) => t.favour).length, avg = ds.length ? r9(mean(ds)) : null
   return { tasks: tasks.map(({ ok, ...t }) => t), mean: avg, favour, pass: judged && avg > 0 && favour >= 5, judged }
+}
+
+// the interval rule of 10.1: 95% bootstrap over tasks (each task already holds its runs' mean), a PRNG seeded from sha256(seed)
+const mulberry32 = (a) => () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
+export function bootstrapMean(ds, seed, resamples = 10000) {
+  const rnd = mulberry32(createHash('sha256').update(seed).digest().readUInt32BE(0)), means = []
+  for (let i = 0; i < resamples; i++) {
+    let sum = 0
+    for (let j = 0; j < ds.length; j++) sum += ds[Math.floor(rnd() * ds.length)]
+    means.push(sum / ds.length)
+  }
+  means.sort((a, b) => a - b)
+  return { mean: r9(mean(ds)), lower: r9(means[Math.floor(0.025 * resamples)]), upper: r9(means[Math.floor(0.975 * resamples)]) }
+}
+// Student's t, 0.975 quantile, 1..30 degrees of freedom; shortcut: past 30 the normal 1.96 (under 4% short), when a set that large is judged
+const T975 = [12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042]
+export function tInterval(ds) {
+  if (ds.length < 2) return { lower: null, upper: null }
+  const n = ds.length, m = mean(ds), s = Math.sqrt(ds.reduce((a, x) => a + (x - m) ** 2, 0) / (n - 1)), h = (T975[n - 2] ?? 1.96) * s / Math.sqrt(n)
+  return { lower: r9(m - h), upper: r9(m + h) }
+}
+// rows: scored runs. Judged when each of `tasks` has 2 scored runs in each arm; passes when the bootstrap lower bound of the mean of d is > 0.
+export function intervalVerdict(rows, tasks, seed) {
+  const per = perTask(rows.filter((r) => tasks.includes(r.task))), got = tasks.map((task) => per.find((t) => t.task === task)).filter(Boolean)
+  const ds = got.map((t) => t.d).filter((d) => d !== null)
+  const { mean: avg, lower, upper } = ds.length ? bootstrapMean(ds, seed) : { mean: null, lower: null, upper: null }
+  const judged = tasks.length > 0 && got.length === tasks.length && got.every((t) => t.ok)
+  return { tasks: got.map(({ ok, ...t }) => t), mean: avg, lower, upper, tLower: tInterval(ds).lower, favour: got.filter((t) => t.favour).length, judged, pass: judged && lower > 0 }
 }
