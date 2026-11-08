@@ -101,7 +101,7 @@ p2's `seeded/kills.json` is deliberately absent: it must stay equal. Nothing mor
 | `kills` real-estate | p1 (end and 1 bug), p2 (end and 1 bug) | about 4 runs of 2.3 min |
 | `kills` external | s1-03 (end and 3 bugs) | about 4 runs of 5 min, plus the image build |
 | `hash` and 7 compares | about 21,300 files (counted with ruling 5's exclusions), about 600 MB read | a few minutes |
-| subagents | Tasks 1, 2 and 4 (implementer and reviewer), the final review | about 0.8–1.2M tokens |
+| subagents | Tasks 1 and 2 (implementer and reviewer), the Task 4 reviewer, the final review | about 0.8–1.2M tokens |
 
 No sealed agent runs (a resolver that would run is a stop), no arm runs, no Docker removal other than the tools' recorded names.
 
@@ -157,7 +157,7 @@ No sealed agent runs (a resolver that would run is a stop), no arm runs, no Dock
 
 ### Task 3: The reruns (controller, real data)
 
-Tasks 3, 5 and 6 run on real data, so they are the controller's (step 9 ruling: implementers work on fixtures only); the whole-branch review is their reviewer. Tasks 1, 2 and 4 each get an implementer and a fresh reviewer.
+Tasks 3, 5 and 6 run on real data, so they are the controller's (step 9 ruling: implementers work on fixtures only); the whole-branch review is their reviewer. Task 4's script reads real data too, so the controller writes and runs it, and a fresh reviewer checks it. Tasks 1 and 2 each get an implementer and a fresh reviewer.
 
 **Files:**
 - Create (gitignored): `<data>/logs/step10/kills-due.mjs`, `step.sh`, `run-kills-re.sh`, `run-kills-ext.sh` (copies of the step 7 drivers with `S=$D/logs/step10` and the task list from `kills-due`), `before/`
