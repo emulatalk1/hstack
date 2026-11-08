@@ -5,10 +5,14 @@
 import { appendFileSync, closeSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import { fwImage, rulesCommand } from './box.mjs'
 import { withExport } from './env.mjs'
+import { oracleFiles } from './grade.mjs'
 import { check as inputCheck } from './input-check.mjs'
+import { CAP_DROPS, fwScript } from './lib/arm.mjs'
 import { baseOf, coldSetup, exists, extraProbe, failToPass, keptIds, nextToCheck, repoOut, sampleOf, sortKey, stackOf, staticOut } from './lib/ext.mjs'
 import { readJunit } from './lib/junit.mjs'
+import { oracleSha } from './lib/oracle.mjs'
 import { runGroup } from './lib/proc.mjs'
 
 const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
@@ -17,7 +21,7 @@ const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
        bun bench/ext.mjs sample <groups.json> [--tier <1|2>]
        bun bench/ext.mjs task-env <groups.json> <task> (--reply <reply file> --sha <sha256> | --from-meta)
        bun bench/ext.mjs serve <groups.json> <task>
-       bun bench/ext.mjs oracle-run <task>   (grade's oracle command: BENCH_DIR, BENCH_ORACLE, BENCH_JUNIT)
+       bun bench/ext.mjs oracle-run <task>   (grade's oracle command: BENCH_DIR, BENCH_ORACLE, BENCH_JUNIT, BENCH_TRUSTED)
        bun bench/ext.mjs remove <task>`
 const sha = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
 const flag = (argv, k) => argv.find((a) => a.startsWith(`${k}=`))?.slice(k.length + 1)
@@ -1023,28 +1027,148 @@ export function parseRunner(text) {
   return { layer: r.layer, run: r.run }
 }
 
-// `oracle-run` (step 5): grade's oracle command for an external task. The commit of BENCH_DIR (git archive HEAD) is built
-// with the task recipe plus the serve layer, then FROM it with the oracle's runner layer; one offline container starts the
-// app, waits for ready and runs the checks; its JUnit goes to BENCH_JUNIT. Everything it built is removed when it ends
+// step 11 ruling 4: a product image is made in a container, not built, so its rebuild lines are shell lines. The recipe's
+// Dockerfile instructions (a `\` continuation joined, comments dropped) after its one copy of the repo into /work, then the serve
+// layer's: RUN under `sh -c` (exec form as its words; a cache or tmpfs mount dropped), ENV and ARG exported, WORKDIR made and
+// entered, config-only ones (CMD, EXPOSE, ...) passed over, since the image keeps R's config. Anything that needs the build
+// context or a user switch is refused: rebuild.json's lines then replace them. The script starts as the final stage stood at the
+// copy: `cd /` and its ARG and WORKDIR lines before it
+const COPY_REPO = /^COPY\s+(--\S+\s+)*\.\/?\s+\/work\/?\s*$/i
+const CONFIG_ONLY = ['CMD', 'ENTRYPOINT', 'EXPOSE', 'HEALTHCHECK', 'LABEL', 'MAINTAINER', 'STOPSIGNAL']
+const instructions = (text) => {
+  const out = []
+  let cur = null
+  for (const line of text.split('\n')) {
+    if (/^\s*#/.test(line) || (cur === null && !line.trim())) continue // a comment, inside a continuation too
+    const more = /\\\s*$/.test(line), part = more ? line.replace(/\\\s*$/, '') : line
+    cur = cur === null ? part.trimStart() : cur + part
+    if (!more) { out.push(cur.trimEnd()); cur = null }
+  }
+  return cur === null ? out : [...out, cur.trimEnd()]
+}
+function shellLine(ins) {
+  const [, op, rest] = /^(\S+)\s*([\s\S]*)$/.exec(ins), kw = op.toUpperCase()
+  const no = (why) => new Error(`the rebuild lines cannot ${why} in a make container: write ext/tasks/<slug>/rebuild.json`)
+  if (kw === 'RUN') {
+    let body = rest
+    for (let m; (m = /^--(\S+)\s+/.exec(body)); body = body.slice(m[0].length))
+      if (/^mount=/.test(m[1]) && !/(^|,)type=(cache|tmpfs)(,|$)/.test(m[1].slice(6))) throw no(`run a RUN with a ${m[1].split(',')[0]} other than a cache or tmpfs mount`)
+    if (/<<-?\s*["']?[A-Za-z_]/.test(body)) throw no('run a RUN heredoc')
+    try { const argv = JSON.parse(body); if (Array.isArray(argv)) return argv.map((a) => word(String(a))).join(' ') } catch {} // not JSON: shell form, as Docker reads it
+    return `sh -c ${word(body)}`
+  }
+  if (kw === 'ENV') return /^[^\s=]+=/.test(rest) ? `export ${rest}` : `export ${rest.split(/\s/)[0]}=${word(rest.replace(/^\S+\s+/, ''))}`
+  if (kw === 'ARG') return rest.includes('=') ? `export ${rest}` : null
+  if (kw === 'WORKDIR') return `mkdir -p ${word(rest)} && cd ${word(rest)}`
+  if (CONFIG_ONLY.includes(kw)) return null
+  throw no(`run ${kw} (only RUN, ENV, ARG and WORKDIR)`)
+}
+export function rebuildLines(recipe, serve, rebuild) {
+  const ins = instructions(recipe.dockerfile), at = ins.flatMap((l, i) => (COPY_REPO.test(l) ? [i] : []))
+  if (at.length !== 1) throw new Error('the recipe must copy the repo into /work exactly once')
+  if (rebuild != null) {
+    if (!Array.isArray(rebuild.lines) || !rebuild.lines.every((l) => typeof l === 'string')) throw new Error('rebuild.json is not { lines: [shell lines] }')
+    return rebuild.lines
+  }
+  const stage = ins.slice(0, at[0]), state = stage.slice(stage.findLastIndex((l) => /^FROM\s/i.test(l)) + 1).filter((l) => /^(ARG|WORKDIR)\s/i.test(l))
+  return ['cd /', ...[...state, ...ins.slice(at[0] + 1), ...instructions(serve.layer.join('\n'))].map(shellLine).filter((l) => l !== null)]
+}
+// the make script's head: every path of the base's tree (a NUL-separated list in the container) goes from /work, so a file
+// the product deleted is gone and an untracked build output stays; then the commit's export, copied in at /tmp/bench-product
+export const overlayScript = (list) => ['set -e', 'cd /work', `xargs -0 -r rm -rf -- < ${list}`, 'cp -a /tmp/bench-product/. /work/', 'rm -rf /tmp/bench-product', ''].join('\n')
+
+// step 11 ruling 4: the image of commit, made from baseImage (R) in container `bench-ext-<slug>-make-<sha7>-<n>` with the arm's
+// network: 'none', or { ips, hosts } for Docker's default bridge with the box's capabilities and firewall (443 to ips only),
+// set from outside before any product line runs. The overlay and the rebuild lines run by `docker exec` as the image's user;
+// the container is committed as `bench-ext/<slug>:<sha7>-product-<osha8>` and removed. Both names are recorded first. The id;
+// false when the make exits non-zero or passes timeoutSec (the product's failure: no image); a throw when Docker fails or the
+// disk is full and low
+export async function productImage({ t, commit, baseImage, network, lines, repo, osha8, n, platform, record, scratch, log, diskFree, timeoutSec = 2700 }) {
+  const sha7 = commit.slice(0, 7), tag = `bench-ext/${t.slug}:${sha7}-product-${osha8}`, name = `bench-ext-${t.slug}-make-${sha7}-${n}`
+  const ls = Bun.spawnSync(['git', '-C', repo, 'ls-tree', '-r', '-z', '--name-only', t.base], { stdout: 'pipe', stderr: 'pipe' })
+  if (ls.exitCode !== 0) throw new Error(`git ls-tree of the base ${t.base.slice(0, 7)} failed (exit ${ls.exitCode})`)
+  const net = network === 'none' ? ['--network', 'none'] : [...CAP_DROPS, ...(network.hosts ?? []).flatMap((h) => ['--add-host', `${h.host}:${h.ip}`])]
+  record((d) => { d.images.push({ name: tag, id: null }); d.containers.push(name) })
+  try {
+    await must(['docker', 'create', '--name', name, '--platform', platform, ...net, baseImage, 'sleep', String(timeoutSec + 600)], `docker create ${name}`)
+    await scratch('make', null, async (dir) => {
+      writeFileSync(join(dir, 'base.list'), ls.stdout) // the paths as bytes: a space or a newline stays in its path
+      writeFileSync(join(dir, 'make.sh'), [overlayScript('/tmp/.bench-make/base.list'), ...lines, 'rm -rf /tmp/.bench-make', ''].join('\n'))
+      await must(['docker', 'cp', `${dir}/.`, `${name}:/tmp/.bench-make`], `docker cp into ${name}`, { quiet: true })
+    })
+    await scratch('product', commit, (dir) => must(['docker', 'cp', `${dir}/.`, `${name}:/tmp/bench-product`], `docker cp into ${name}`, { quiet: true }))
+    await must(['docker', 'start', name], `docker start ${name}`)
+    if (network !== 'none') {
+      await fwImage(scratch)
+      await must(rulesCommand(name, fwScript(network.ips)), 'the firewall rules of the make container', { timeoutSec: 600 })
+    }
+    const fd = openSync(log, 'w')
+    let code
+    try { ({ code } = await runGroup(['docker', 'exec', name, 'sh', '/tmp/.bench-make/make.sh'], { timeoutSec, stdout: fd, stderr: fd })) } finally { closeSync(fd) }
+    if (code !== 0) {
+      await daemon()
+      const disk = diskFailure(tail(log))
+      if (disk && diskIsLow(await diskFree())) throw new Error(disk) // the signature only: the log is the product's output
+      return false
+    }
+    const id = (await must(['docker', 'commit', name, tag], `docker commit ${name}`)).trim()
+    record((d) => { d.images.findLast((i) => i.name === tag && i.id === null).id = id })
+    return id
+  } finally {
+    await sp(['docker', 'kill', name]) // this run created it, and rm has no -f
+    await sp(['docker', 'rm', name])
+  }
+}
+
+// step 11 ruling 7: the state of the last readiness line of this commit and oracle, or null; a two-column line names no oracle
+export function readinessOf(file, sha7, osha8) {
+  let last = null
+  for (const l of existsSync(file) ? readFileSync(file, 'utf8').split('\n') : []) { const [s, o, r] = l.split('\t'); if (s === sha7 && o === osha8 && r) last = r }
+  return last
+}
+
+// the trusted path takes only a task's base or end (sample.tsv, tasks.json) or a seeded bug, so never an arm's product
+async function trustedCommit(ext, data, dir, head) {
+  const f = join(data, 'tasks.json'), tasks = existsSync(f) ? Object.values(JSON.parse(readFileSync(f, 'utf8'))) : []
+  if ([...sampleRows(ext), ...tasks].some((r) => [r.base, r.end].some((c) => typeof c === 'string' && c.length >= 7 && head.startsWith(c)))) return true
+  return (await must(['git', '-C', dir, 'for-each-ref', '--points-at', 'HEAD', 'refs/seeded/'], 'git for-each-ref')).trim() !== ''
+}
+
+// `oracle-run` (step 5, step 11 rulings 4 and 7): grade's oracle command for an external task. S, the task's base built with the
+// recipe plus the serve layer (with network), and R, FROM S with the oracle's runner layer, are built from the BuildKit cache;
+// the commit of BENCH_DIR (HEAD) gets its product image from R (productImage, no network), and one offline container from it
+// starts the app, waits for ready and runs the checks; its JUnit goes to BENCH_JUNIT. BENCH_TRUSTED=1 (grade --trusted) builds
+// HEAD itself as step 10 did, recipe and serve layer with network, then the runner layer, for a task's base or end or a seeded
+// bug only. Everything it built is removed when it ends
 export async function oracleRun(args, inj = {}) {
   const { pos: [task] } = parseArgs(args, 1, false)
-  const { BENCH_DIR: dir, BENCH_ORACLE: oracle, BENCH_JUNIT: junit } = process.env
+  const { BENCH_DIR: dir, BENCH_ORACLE: oracle, BENCH_JUNIT: junit } = process.env, trusted = process.env.BENCH_TRUSTED === '1'
   if (!dir || !oracle || !junit) throw new Error('oracle-run is grade\'s oracle command: BENCH_DIR, BENCH_ORACLE and BENCH_JUNIT must be set')
   const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
   const runner = parseRunner(readFileSync(join(oracle, 'runner.json'), 'utf8'))
   const { recipe, serveDockerfile, sv } = serveRecipe(ext, t)
+  const rebuildFile = join(ext, 'tasks', t.slug, 'rebuild.json')
+  let rebuild = null
+  if (existsSync(rebuildFile)) try { rebuild = JSON.parse(readFileSync(rebuildFile, 'utf8')) } catch { rebuild = {} } // refused by rebuildLines
+  const lines = trusted ? null : rebuildLines(recipe, sv, rebuild)
+  const head = (await must(['git', '-C', dir, 'rev-parse', 'HEAD'], 'git rev-parse')).trim(), sha7 = head.slice(0, 7)
+  if (trusted && !(await trustedCommit(ext, data, dir, head))) throw new Error(`oracle-run --trusted: ${sha7} is no task's base or end and no seeded bug`)
   const low = await diskFloor(task, inj)
   if (low) throw new Error(low)
 
   const diskFree = inj.diskFree ?? dockerDiskFree, readySec = inj.readySec ?? 600, limitSec = inj.timeoutSec ?? 1800
-  const head = (await must(['git', '-C', dir, 'rev-parse', 'HEAD'], 'git rev-parse')).trim(), sha7 = head.slice(0, 7)
+  const osha8 = oracleSha(oracleFiles(oracle)).slice(0, 8) // as grade's oracleSha counts the folder
   const build = join(data, task, 'build'), logs = join(ext, 'sealed', t.slug, 'logs')
   for (const d of [build, logs]) mkdirSync(d, { recursive: true })
   const record = (f) => recordDocker(join(data, task, 'docker.json'), f)
-  // n: one more than the recorded serve images of this commit (recorded before each build), so a run that failed in a
-  // build still takes its number and no log is overwritten
-  const serveTag = `bench-ext/${t.slug}:${sha7}-serve`, gradeTag = `bench-ext/${t.slug}:${sha7}-grade`
-  const n = record(() => {}).images.filter((i) => i.name === serveTag).length + 1
+  const pfx = `bench-ext/${t.slug}:`, at7 = trusted ? sha7 : t.base.slice(0, 7)
+  const serveTag = `${pfx}${at7}-serve`, runnerTag = trusted ? `${pfx}${sha7}-grade` : `${pfx}${at7}-runner-${osha8}`
+  // n: one more than the recorded images of this commit (its serve image, its product images; each recorded before it is
+  // made), so a run that failed on the way still takes its number and no log is overwritten. The readable serve build log
+  // counts its own tag, as the box does
+  const recorded = record(() => {}).images.map((i) => i.name)
+  const n = recorded.filter((i) => i === `${pfx}${sha7}-serve` || i.startsWith(`${pfx}${sha7}-product-`)).length + 1
+  const serveLog = join(build, `${at7}-${recorded.filter((i) => i === serveTag).length + 1}.serve.build.log`)
   const name = `bench-ext-${t.slug}-grade-${sha7}-${n}`, sealed = (what) => join(logs, `grade-${sha7}-${n}.${what}`), log = sealed('log')
   let seq = 0
   const scratch = (what, commit, fn) => withExport({ name: t.key, repo: dir }, commit, `${what}-${t.slug}-${process.pid}-${seq++}`, fn)
@@ -1058,10 +1182,12 @@ export async function oracleRun(args, inj = {}) {
   process.on('SIGTERM', stop)
   process.on('SIGINT', stop)
   try {
-    // the base's serve build log is readable; any other commit may hold the PR or an arm's product
-    await image(serveTag, serveDockerfile, 'HEAD', head === t.base ? join(build, `${sha7}-${n}.serve.build.log`) : sealed('serve.build.log'))
-    await image(gradeTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, sealed('grade.build.log'))
-    const r = await runContainer({ scratch, name, image: gradeTag, platform: recipe.platform, cmd: ['sh', '/oracle/.bench-grade.sh'], dest: '/oracle', log, timeoutSec: 1800, diskFree,
+    // a build log of the base is readable; any other commit may hold the PR, a seeded bug or an arm's product
+    await image(serveTag, serveDockerfile, trusted ? 'HEAD' : t.base, !trusted || head === t.base ? serveLog : sealed('serve.build.log'))
+    await image(runnerTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, sealed(trusted ? 'grade.build.log' : 'runner.build.log'))
+    const product = trusted || await productImage({ t, commit: head, baseImage: runnerTag, network: 'none', lines, repo: dir, osha8, n, platform: recipe.platform, record, scratch, log: sealed('make.log'), diskFree })
+    if (!product) throw new Error(`${sha7}: the product image was not made (the make failed: its log is sealed)`)
+    const r = await runContainer({ scratch, name, image: trusted ? runnerTag : product, platform: recipe.platform, cmd: ['sh', '/oracle/.bench-grade.sh'], dest: '/oracle', log, timeoutSec: 1800, diskFree,
       stage: () => {}, created: () => { box = name; record((d) => d.containers.push(name)) },
       files: (into) => {
         // as oracleSha counts it (no node_modules, a symlink by its own text), so --reuse stays sound
@@ -1072,7 +1198,7 @@ export async function oracleRun(args, inj = {}) {
         writeFileSync(join(into, '.bench-ready.sh'), `${sv.ready}\n`)
         writeFileSync(join(into, '.bench-run.sh'), `${runner.run}\n`)
       } })
-    const readiness = (s) => appendFileSync(join(build, 'readiness.tsv'), `${sha7}\t${s}\n`)
+    const readiness = (s) => appendFileSync(join(build, 'readiness.tsv'), `${sha7}\t${osha8}\t${s}\n`)
     if (r.timedOut) { readiness('timeout'); throw new Error(`${name}: not done in 1800 s, killed`) } // runContainer killed it
     await scratch('out', null, async (o) => {
       await must(['docker', 'cp', `${name}:/out`, o], `docker cp out of ${name}`, { quiet: true })

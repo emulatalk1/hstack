@@ -48,11 +48,13 @@ function world(name, { small = 'S' } = {}) {
 }
 
 // a grade file as grade.mjs writes it: a1 is the step check (build), a2 the other one
+// the readiness line is the grade's oracle's (step 11 ruling 7): another oracle's line at the same commit does not count
+const OSHA = 'abcdef12'.padEnd(64, '0')
 function putGrade(d, task, sha, { pass = ['a1', 'a2'], junit = 'ok', ready = 'ready' } = {}) {
   const sha7 = sha.slice(0, 7), ok = junit === 'ok'
-  writeFileSync(join(d, task, 'grades', `${sha7}.json`), JSON.stringify({ commit: sha, task, junit, excluded: [],
+  writeFileSync(join(d, task, 'grades', `${sha7}.json`), JSON.stringify({ commit: sha, task, junit, excluded: [], oracleSha: OSHA,
     checks: ['a1', 'a2'].map((id) => ({ id, bucket: 'requirement', severity: 'high', result: ok && pass.includes(id) ? 'pass' : ok ? 'fail' : 'error' })) }))
-  appendFileSync(join(d, task, 'build', 'readiness.tsv'), `${sha7}\t${ready}\n`)
+  appendFileSync(join(d, task, 'build', 'readiness.tsv'), `${sha7}\t${OSHA.slice(0, 8)}\t${ready}\n${sha7}\t99999999\t${ready === 'ready' ? 'not ready' : 'ready'}\n`)
 }
 const record = (task, arm, n, o = {}) => ({ task, arm, run: n, base: 'b', model: arm === 'B' ? 'M' : 'S', status: 'done', reason: null, machine: null,
   start: '2026-11-06T10:00:00.000Z', end: '2026-11-06T10:30:00.000Z', usage: { input: 100, output: 50, cacheRead: 1000, cacheWrite: 7 }, models: [],

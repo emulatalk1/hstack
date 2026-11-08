@@ -4,7 +4,7 @@
 // A run stands when its record has machine null and the arm's configured model. Nothing here names a task, a stack or a model.
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { dataOf, DISK_FLOOR_GB, dockerDiskFree, daemon as dockerDaemon, must, oracleCommand, parseSize, sp, taskOf } from './ext.mjs'
+import { dataOf, DISK_FLOOR_GB, dockerDiskFree, daemon as dockerDaemon, must, oracleCommand, parseSize, readinessOf, sp, taskOf } from './ext.mjs'
 import { grade as gradeRun, resolveCommit } from './grade.mjs'
 import { armArgs } from './lib/arm.mjs'
 import { queuePick } from './lib/oracle.mjs'
@@ -43,12 +43,8 @@ const records = (data, task) => {
 // the k lowest-numbered runs of an arm that are not the machine's and ran on the arm's model now configured
 const standing = (recs, arm, cfg) => recs.filter((r) => r.arm === arm && r.machine === null && r.model === (armArgs(arm, cfg).model ?? null)).sort((a, b) => a.run - b.run).slice(0, K)
 
-const readiness = (data, task, sha7) => {
-  const f = join(data, task, 'build/readiness.tsv')
-  let last = null
-  for (const l of existsSync(f) ? readFileSync(f, 'utf8').split('\n') : []) { const [s, r] = l.split('\t'); if (s === sha7 && r) last = r }
-  return last
-}
+// the readiness of the run that wrote this grade: its commit and its oracle (step 11 ruling 7)
+const readiness = (data, task, g) => readinessOf(join(data, task, 'build/readiness.tsv'), g?.commit?.slice(0, 7), g?.oracleSha?.slice(0, 8))
 // the task file the grades use: the task's own with only `oracle` changed, so the oracle-run is this checkout's, not the one the
 // task file (hashed in the locks) names. Written when missing or different; runArm keeps env/<task>.json, it never runs the oracle.
 function canaryTaskFile(data, task) {
@@ -62,7 +58,7 @@ const gradeFile = (data, task, sha) => join(data, task, 'grades', `${sha.slice(0
 // after ready leaves a placeholder JUnit, every check `error`)
 const good = (data, task, sha) => {
   const g = readJson(gradeFile(data, task, sha))
-  return g?.commit === sha && g.junit === 'ok' && readiness(data, task, sha.slice(0, 7)) === 'ready' && g.checks?.some((c) => c.result !== 'error') === true
+  return g?.commit === sha && g.junit === 'ok' && readiness(data, task, g) === 'ready' && g.checks?.some((c) => c.result !== 'error') === true
 }
 const attemptsFile = (data) => join(data, 'canary/attempts.json')
 const attemptsOf = (data) => readJson(attemptsFile(data)) ?? {}
@@ -151,7 +147,7 @@ async function report(c) {
         try {
           row.sha = await c.sha(task, rec.branch)
           const g = readJson(gradeFile(c.data, task, row.sha)), ok = good(c.data, task, row.sha)
-          row.memory = readiness(c.data, task, row.sha.slice(0, 7)) === 'memory'
+          row.memory = g?.commit === row.sha && readiness(c.data, task, g) === 'memory'
           // only a final grade scores: a good one, or the second attempt's whatever it gave; anything else is not judged
           if (g?.commit === row.sha && (ok || (attemptsOf(c.data)[row.sha] ?? 0) >= ATTEMPTS)) {
             const s = scoreAt(c.data, task, row.sha)

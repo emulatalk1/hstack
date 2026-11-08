@@ -1,4 +1,8 @@
 import { test, expect } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { readinessOf, rebuildLines } from '../bench/ext.mjs'
 import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup, extraProbe, sampleOf, keptIds } from '../bench/lib/ext.mjs'
 
 const SEED = 'hstack-bench-2026-10-27'
@@ -205,4 +209,45 @@ test('keptIds keeps a row\'s id and numbers a new row after the highest id its s
   // a task folder retires an id too, even after the sample that held it was rewritten
   expect(keptIds([{ id: 'a#1' }, { id: 'd#9' }], 's1', prev.slice(0, 2), ['s1-03', 's1-07', 's10-09', 'p1', 's1-x'])).toEqual(['s1-01', 's1-08'])
   expect(keptIds([{ id: 'e#1' }, { id: 'f#2' }], 's3', prev)).toEqual(['s3-01', 's3-02'])
+})
+
+// step 11 ruling 4: the rebuild lines of a product image, as shell lines for its make container
+const dockerfile = ['FROM alpine:3.22 AS deps', 'RUN echo deps', 'WORKDIR /deps', 'FROM alpine:3.22', '# a comment', 'ARG V=1', 'ARG BARE', 'WORKDIR /src', 'RUN apk add x',
+  'COPY . /work', 'WORKDIR /work', 'ENV A=1 B="two words"', 'ENV LEGACY some value', 'RUN npm ci && \\', '    npm run build', 'EXPOSE 3000', 'CMD ["sh"]',
+  'RUN ["sh", "-c", "echo it\'s"]', 'RUN --mount=type=cache,target=/root/.npm npm run x', ''].join('\n')
+const recipe = { platform: 'linux/arm64', dockerfile, test: 'true', probe: ['t'] }
+
+test('rebuildLines takes the lines after the copy and the serve layer', () => {
+  expect(rebuildLines(recipe, { layer: ['RUN echo serve > /tmp/s', 'WORKDIR app'] })).toEqual([
+    'cd /', 'export V=1', "mkdir -p '/src' && cd '/src'", // the final stage's state at the copy
+    "mkdir -p '/work' && cd '/work'", 'export A=1 B="two words"', "export LEGACY='some value'", "sh -c 'npm ci &&     npm run build'",
+    `'sh' '-c' 'echo it'\\''s'`, "sh -c 'npm run x'", "sh -c 'echo serve > /tmp/s'", "mkdir -p 'app' && cd 'app'"])
+  expect(rebuildLines({ ...recipe, dockerfile: 'FROM a\nCOPY . /work\n' }, { layer: [] })).toEqual(['cd /'])
+})
+
+test('a recipe that copies the repo twice is refused', () => {
+  for (const d of ['FROM a\nCOPY . /work\nCOPY --chown=1:1 ./ /work/\n', 'FROM a\nCOPY src /work\n'])
+    expect(() => rebuildLines({ ...recipe, dockerfile: d }, { layer: [] })).toThrow('the recipe must copy the repo into /work exactly once')
+  expect(() => rebuildLines({ ...recipe, dockerfile: 'FROM a\nCOPY . /work\nCOPY . /work\n' }, { layer: [] }, { lines: [] })).toThrow('the recipe must copy the repo into /work exactly once')
+  // what a make container cannot do as a build would: a file from the context, a user switch, a heredoc, a bind mount
+  for (const [line, what] of [['ADD x.tgz /opt', 'ADD'], ['COPY package.json /work/', 'COPY'], ['USER node', 'USER'], ['RUN <<EOF', 'heredoc'], ['RUN --mount=type=bind,source=x,target=/x true', 'mount']])
+    expect(() => rebuildLines(recipe, { layer: [line] })).toThrow(what)
+})
+
+test('rebuild.json replaces the recipe lines', () => {
+  expect(rebuildLines(recipe, { layer: ['USER node'] }, { lines: ['npm ci --offline', 'cd web && npm run build'] })).toEqual(['npm ci --offline', 'cd web && npm run build'])
+  for (const bad of [{}, { lines: 'npm ci' }, { lines: [1] }]) expect(() => rebuildLines(recipe, { layer: [] }, bad)).toThrow('rebuild.json is not { lines: [shell lines] }')
+})
+
+test('readiness is read per oracle', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bench-ready-')), f = join(dir, 'readiness.tsv')
+  try {
+    expect(readinessOf(f, 'abc1234', 'aaaaaaaa')).toBeNull()
+    writeFileSync(f, ['abc1234\tready', 'abc1234\taaaaaaaa\tnot ready', 'abc1234\tbbbbbbbb\tready', 'abc1234\taaaaaaaa\tready', 'def5678\taaaaaaaa\tmemory', 'abc1234\tbbbbbbbb\ttimeout', ''].join('\n'))
+    expect(readinessOf(f, 'abc1234', 'aaaaaaaa')).toBe('ready')
+    expect(readinessOf(f, 'abc1234', 'bbbbbbbb')).toBe('timeout')
+    expect(readinessOf(f, 'def5678', 'aaaaaaaa')).toBe('memory')
+    expect(readinessOf(f, 'abc1234', 'cccccccc')).toBeNull() // the old two-column row is no oracle's
+    expect(readinessOf(f, 'abc1234', undefined)).toBeNull()
+  } finally { rmSync(dir, { recursive: true, force: true }) }
 })

@@ -5,7 +5,7 @@
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, normalize, resolve } from 'node:path'
 import { gitOut, readRows } from './bugs.mjs'
-import { appendWalk, parseRunner, removeRecorded, taskOf } from './ext.mjs'
+import { appendWalk, parseRunner, readinessOf, removeRecorded, taskOf } from './ext.mjs'
 import { grade as gradeCmd, oracleFiles } from './grade.mjs'
 import { okBashCommands, okToolInputs } from './lib/agent.mjs'
 import { check } from './input-check.mjs'
@@ -551,11 +551,10 @@ async function groupsOf(c, refs) {
   return out
 }
 
-// the sha7s of these commits whose last run in build/readiness.tsv (oracle-run appends one line a run) did not get ready
-function notReadyOf(evDir, commits) {
-  const f = join(evDir, 'build', 'readiness.tsv'), last = new Map()
-  for (const l of existsSync(f) ? readFileSync(f, 'utf8').split('\n') : []) { const [s, r] = l.split('\t'); if (r) last.set(s, r) }
-  return [...new Set(commits.map((x) => x.slice(0, 7)))].filter((s) => ['not ready', 'timeout'].includes(last.get(s)))
+// the sha7s of these commits whose last run of this oracle in build/readiness.tsv (oracle-run appends one line a run) did not get ready
+function notReadyOf(evDir, oracleDir, commits) {
+  const f = join(evDir, 'build', 'readiness.tsv'), osha8 = oracleSha(oracleFiles(oracleDir)).slice(0, 8)
+  return [...new Set(commits.map((x) => x.slice(0, 7)))].filter((s) => ['not ready', 'timeout'].includes(readinessOf(f, s, osha8)))
 }
 
 // a grade that throws or exits non-zero gives `error` for that ref's checks, with the stage, and the task goes on
@@ -571,7 +570,7 @@ async function gradePass(c, groups, grade) {
       console.log(`validation-${g.ref.slice(0, 7)} (${why}): ${checks.map((x) => `${x.id}=${x.verdict}`).join(' ')}`)
     }
     if (stage === null && c.ext) { // ruling 37: a run that never got ready (its JUnit is empty) is not judged, so its checks are `error`
-      const notReady = notReadyOf(c.evDir, [g.ref, ...g.bad])
+      const notReady = notReadyOf(c.evDir, c.oracleDir, [g.ref, ...g.bad])
       if (notReady.length) {
         const f = join(c.evDir, `validation-${g.ref.slice(0, 7)}.json`), v = JSON.parse(readFileSync(f, 'utf8')), why = `not ready at ${notReady[0]}`
         writeFileSync(f, JSON.stringify({ ...v, stage: why, checks: v.checks.map((x) => ({ ...x, verdict: 'error', stage: why })) }, null, 2) + '\n')
@@ -1382,12 +1381,12 @@ async function stepRe(c0, { agent, grade }) {
 const cleaned = async (c, fn) => { try { return await fn() } finally { if (c.ext) await removeRecorded(c.data, c.task, c.t.slug) } }
 
 // { g }: the grade of an oracle at a commit; { stage }: why there is none: it threw, exited non-zero, has no JUnit or never got ready.
-// oracle-run's readiness line sits in the task's folder, whatever the oracle. A never-ready run's empty JUnit reads `ok`, so --reuse would keep it
+// oracle-run's readiness line sits in the task's folder and names its oracle. A never-ready run's empty JUnit reads `ok`, so --reuse would keep it
 async function gradeAt(grade, env, oracleDir, sha, taskDir) {
   const sha7 = sha.slice(0, 7), f = gradeFile(oracleDir, sha)
   let stage = null
   try { const code = await grade([env, oracleDir, '--at', sha, '--sealed', '--reuse']); if (code !== 0) stage = `grade exit ${code}` } catch (e) { stage = firstLine(e) }
-  if (notReadyOf(taskDir, [sha]).length) { rmSync(f, { force: true }); return { stage: `not ready at ${sha7}` } }
+  if (notReadyOf(taskDir, oracleDir, [sha]).length) { rmSync(f, { force: true }); return { stage: `not ready at ${sha7}` } }
   const g = stage === null ? readJson(f) : null
   return g?.junit === 'ok' ? { g } : { stage: stage ?? `junit ${g?.junit}` }
 }
@@ -1505,7 +1504,7 @@ async function gradeBugs(c, cands, { end, base, keep, seed, agent, grade }) {
 // the end's grade when it still stands: grade rewrites its file even on --reuse, and the step 6 lock hashes it
 function goodEnd(c, oracleDir, end) {
   const g = readJson(gradeFile(oracleDir, end))
-  return g?.commit === end && g.junit === 'ok' && g.oracleSha === oracleSha(oracleFiles(oracleDir)) && !notReadyOf(c.evDir, [end]).length ? g : null
+  return g?.commit === end && g.junit === 'ok' && g.oracleSha === oracleSha(oracleFiles(oracleDir)) && !notReadyOf(c.evDir, oracleDir, [end]).length ? g : null
 }
 
 // ruling 10: the task's existing oracles at the end and at each kept bug. A run with no results is not judged, never a zero kill

@@ -78,7 +78,7 @@ const twin = (box, argv) => sp([...FW_RUN, ...CAP_DROPS, '--network', `container
 const helper = (box, script, what, flags = []) => must([...FW_RUN, ...flags, '--network', `container:${box}`, FW, 'sh', '-c', script], what, { timeoutSec: 600 })
 export const rulesCommand = (box, script) => [...FW_RUN, '--cap-add', 'NET_ADMIN', '--network', `container:${box}`, FW, 'sh', '-c', script]
 
-async function fwImage(scratch) {
+export async function fwImage(scratch) {
   if ((await sp([...FW_RUN, '--network', 'none', FW, 'python3', '-V'])).code === 0) return // an older tag has no python3
   await scratch('fw', null, async (dir) => {
     writeFileSync(join(dir, 'Dockerfile'), 'FROM alpine:3.22\nRUN apk add --no-cache iptables python3\n')

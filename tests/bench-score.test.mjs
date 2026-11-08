@@ -378,6 +378,43 @@ test('reuse runs again when the grade file does not parse', async () => {
   expect((await gradeFile()).junit).toBe('ok')
 })
 
+// step 11: --out, --trusted and the arm refusal
+test('grade writes to --out and leaves grades/ alone', async () => {
+  rmSync(join(tmp, 'ev', 'grades'), { recursive: true, force: true })
+  const out = join(tmp, `out-${rand()}`, 'g.json'), task = mkTask('cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"')
+  const r = await quiet(() => grade([task, oracleDir, '--at', c1, '--out', out], { root: sub }))
+  expect(r.code).toBe(0)
+  expect(JSON.parse(readFileSync(out, 'utf8'))).toMatchObject({ commit: c1, junit: 'ok' })
+  expect(existsSync(join(tmp, 'ev', 'grades'))).toBe(false)
+  // --reuse reads the --out file; --out names one grade, so --validate and a missing value are refused
+  expect(await quiet(() => grade([task, oracleDir, '--at', c1, '--out', out, '--reuse'], { root: sub }))).toEqual([`${r[0]} reused`])
+  for (const args of [['--validate', c1, '--bad', c2, '--out', out], ['--at', c1, '--out']])
+    await expect(grade([task, oracleDir, ...args], { root: sub })).rejects.toThrow('usage')
+})
+
+test('--trusted passes BENCH_TRUSTED=1 to the oracle command, and only then', async () => {
+  const seen = join(tmp, `trusted-${rand()}`), task = mkTask(`echo "[$BENCH_TRUSTED]" >> ${seen}; cp "$BENCH_ORACLE/xml.txt" "$BENCH_JUNIT"`)
+  process.env.BENCH_TRUSTED = '1' // the caller's env never makes a grade trusted
+  try {
+    await quiet(() => grade([task, oracleDir, '--at', c1], { root: sub }))
+    await quiet(() => grade([task, oracleDir, '--at', c1, '--trusted'], { root: sub }))
+  } finally { delete process.env.BENCH_TRUSTED }
+  expect(readFileSync(seen, 'utf8')).toBe('[]\n[1]\n')
+})
+
+test('an arm product is not graded on a host task file', async () => {
+  const runs = counter(), served = mkTask(`echo x >> ${runs.f}; ${byPage}`), f = join(tmp, `task-${rand()}.json`)
+  writeFileSync(f, JSON.stringify({ ...JSON.parse(readFileSync(served, 'utf8')), start: null, ready: null }))
+  git('update-ref', 'refs/heads/bench/t-B-1', c2)
+  try {
+    for (const args of [['--at', c2], ['--validate', c1, '--bad', c2]])
+      await expect(grade([served, oracleDir, ...args], { root: sub })).rejects.toThrow('an arm product is not graded on the host')
+    expect(runs.n()).toBe(0) // refused before any run
+    expect((await quiet(() => grade([f, oracleDir, '--at', c2], { root: sub }))).code).toBe(0) // start null: the oracle command runs it in Docker
+    expect((await quiet(() => grade([served, oracleDir, '--at', c1], { root: sub }))).code).toBe(0) // no arm ref at c1
+  } finally { git('update-ref', '-d', 'refs/heads/bench/t-B-1'); noValidations() }
+})
+
 // --- floor rule (ruling 7 of step 6) ---
 const g = (checks, excluded = []) => ({ checks: checks.map(([id, result, severity = 'high', bucket = 'build']) => ({ id, bucket, severity, result })), excluded })
 

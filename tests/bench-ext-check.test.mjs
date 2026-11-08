@@ -1,8 +1,11 @@
 import { test, expect, afterAll } from 'bun:test'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, removeOut, runEnd, word } from '../bench/ext.mjs'
+import { withExport } from '../bench/env.mjs'
+import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, productImage, recordDocker, removeOut, removeRecorded, runEnd, word } from '../bench/ext.mjs'
+import { oracleFiles } from '../bench/grade.mjs'
+import { oracleSha } from '../bench/lib/oracle.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // A local fixture repo stands in for GitHub, a fake gh answers the PR and issue queries, and a fixed recipe (or a fake
@@ -24,6 +27,7 @@ afterAll(async () => {
     writeFileSync(f, JSON.stringify({ ...meta, imageIds: meta.imageIds.filter((id) => !idsBefore.has(id)) }))
     await removeOut(s.ext, s.slug(n))
   }
+  if (ovOnce) { const { data, slug } = await ovOnce; await removeRecorded(data, 'ov', slug) } // productImage's fixture, by its records
   rmSync(tmp, { recursive: true, force: true })
   dropRoot()
 }, 600000)
@@ -649,9 +653,11 @@ const c17 = c1.slice(0, 7), c07 = c0.slice(0, 7)
 const oracleRunner = join(tmp, 'oracle-runner.mjs') // oracle-run with injections (a short ready limit)
 writeFileSync(oracleRunner, `import { main } from ${JSON.stringify(join(import.meta.dir, '../bench/ext.mjs'))}\nprocess.exit(await main(['oracle-run', process.argv[2]], JSON.parse(process.argv[3])))\n`)
 const RUNNER = { layer: ['RUN mkdir -p /opt/oracle-tools'], run: 'sh /oracle/run.sh' }
-function oracleTask({ inj, runner = RUNNER, serve = serveRecipe } = {}) {
+function oracleTask({ inj, runner = RUNNER, serve = serveRecipe, rebuild = { lines: ['ls /sys/class/net'] } } = {}) {
   const s = step5()
   withRecipe(s)
+  // the serve layer installs with network, which only S's build has: the product's rebuild lines need none
+  if (rebuild) writeFileSync(join(s.ext, 'tasks', s.slug(1), 'rebuild.json'), JSON.stringify(rebuild))
   mkdirSync(join(s.ext, 'serve', s.key), { recursive: true })
   writeFileSync(join(s.ext, 'serve', s.key, 'serve.json'), JSON.stringify({ ...serve, briefSha: SERVE_BRIEF_SHA }))
   const oracle = join(s.data, 's1-01', 'oracle')
@@ -674,7 +680,11 @@ async function grade(s, args) {
   return { stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text(), code: await p.exited }
 }
 const box = (s, c, n = 1) => `bench-ext-${s.slug(1)}-grade-${c.slice(0, 7)}-${n}`
-const tags = (s, c) => [`bench-ext/${s.slug(1)}:${c.slice(0, 7)}-serve`, `bench-ext/${s.slug(1)}:${c.slice(0, 7)}-grade`]
+const make = (s, c, n = 1) => `bench-ext-${s.slug(1)}-make-${c.slice(0, 7)}-${n}`
+const O8 = (s, o = 'oracle') => oracleSha(oracleFiles(join(s.data, 's1-01', o))).slice(0, 8)
+// ruling 4: S and R from the base, then the commit's product image
+const tags = (s, c) => [`bench-ext/${s.slug(1)}:${c07}-serve`, `bench-ext/${s.slug(1)}:${c07}-runner-${O8(s)}`, `bench-ext/${s.slug(1)}:${c.slice(0, 7)}-product-${O8(s)}`]
+const ready = (s, ...rows) => rows.map(([c, r]) => `${c}\t${O8(s)}\t${r}\n`).join('')
 
 // one validation, shared by the tests that read it; oracle-run removes what it built, so they read the records and the logs
 let validatedOnce
@@ -690,28 +700,32 @@ dtest('grade validates a fixture check valid with end against base (needs BENCH_
   expect(r.stdout).toContain(`validation-${c17}: ${c17}-T1=weak ${c17}-T2=valid\n`)
   const v = json(join(s.data, 's1-01', `validation-${c17}.json`))
   expect(v.checks.map((c) => [c.id, c.ref, c.bad, c.verdict])).toEqual([[`${c17}-T1`, 'pass', ['pass'], 'weak'], [`${c17}-T2`, 'pass', ['fail'], 'valid']])
-  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(`${c17}\tready\n${c07}\tready\n`)
-  // the base's serve build log is readable; the end's, every grade build log and the container output are sealed
-  expect(existsSync(join(s.data, 's1-01', 'build', `${c07}-1.serve.build.log`))).toBe(true)
-  expect(existsSync(join(s.data, 's1-01', 'build', `${c17}-1.serve.build.log`))).toBe(false)
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(ready(s, [c17, 'ready'], [c07, 'ready']))
+  // S is the base's, so its build log is readable at every commit; the runner layer, the make container and the grade run are sealed
+  expect(readdirSync(join(s.data, 's1-01', 'build')).filter((f) => f.endsWith('.build.log')).sort()).toEqual([`${c07}-1.serve.build.log`, `${c07}-2.serve.build.log`])
   const sealed = join(s.ext, 'sealed', s.slug(1), 'logs')
-  for (const f of [`grade-${c17}-1.serve.build.log`, `grade-${c17}-1.grade.build.log`, `grade-${c07}-1.grade.build.log`, `grade-${c17}-1.log`]) expect(existsSync(join(sealed, f))).toBe(true)
+  for (const f of [`grade-${c17}-1.runner.build.log`, `grade-${c17}-1.make.log`, `grade-${c07}-2.runner.build.log`, `grade-${c07}-2.make.log`, `grade-${c17}-1.log`]) expect(existsSync(join(sealed, f))).toBe(true)
+  expect(readdirSync(sealed).filter((f) => f.includes('serve'))).toEqual([])
   // the container's output reached oracle-run's stderr, which the sealed grade logged
   expect(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8')).toContain('bench: ready')
 }, 900000)
 
 dtest('the grade container uses no network and is recorded in docker.json (needs BENCH_EXT_DOCKER=1)', async () => {
   const { s } = await validated()
-  const lines = readFileSync(join(s.data, 's1-01', 'logs', `${c07}-1.log`), 'utf8').split('\n') // start lists the interfaces
-  expect(lines).toContain('lo')
-  expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
+  // start lists the grade container's interfaces, the rebuild line the make container's (into the sealed make log)
+  for (const f of [join(s.data, 's1-01', 'logs', `${c07}-1.log`), join(s.ext, 'sealed', s.slug(1), 'logs', `grade-${c07}-2.make.log`)]) {
+    const lines = readFileSync(f, 'utf8').split('\n')
+    expect(lines).toContain('lo')
+    expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
+  }
   const d = json(join(s.data, 's1-01', 'docker.json'))
-  expect(d.containers).toEqual([box(s, c1), box(s, c0)])
+  expect(d.containers).toEqual([make(s, c1), box(s, c1), make(s, c0, 2), box(s, c0, 2)])
   expect(d.images.map((i) => i.name)).toEqual([...tags(s, c1), ...tags(s, c0)])
-  for (const i of d.images) expect(d.digests[i.name]).toBe(i.id)
+  for (const i of d.images.slice(3)) expect(d.digests[i.name]).toBe(i.id) // S and R again, from the cache
+  expect(d.digests[tags(s, c1)[2]]).toBe(d.images[2].id)
   for (const i of d.images) expect(i.id).toMatch(/^sha256:[0-9a-f]{64}$/)
-  // removed by exact name as each run ends, digests kept
-  expect(readFileSync(join(s.ext, 'removed.txt'), 'utf8')).toBe([box(s, c1), ...tags(s, c1), box(s, c0), ...tags(s, c0), ''].join('\n'))
+  // the make container goes as soon as its image is committed; the rest by exact name as each run ends, digests kept
+  expect(readFileSync(join(s.ext, 'removed.txt'), 'utf8')).toBe([box(s, c1), ...tags(s, c1), box(s, c0, 2), ...tags(s, c0), ''].join('\n'))
   for (const c of d.containers) expect(exists('container', c)).toBe(false)
   for (const i of d.images) expect(exists('image', i.name)).toBe(false)
   expect(exists('container', 'bench-ext-other')).toBe(true)
@@ -723,7 +737,7 @@ dtest('a run that never gets ready gives every check error and the validation is
   expect(r).toMatchObject({ code: 0, stderr: '' })
   const v = json(join(s.data, 's1-01', `validation-${c17}.json`))
   expect(v.checks.map((c) => [c.ref, c.bad])).toEqual([['error', ['error']], ['error', ['error']]])
-  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(`${c17}\tnot ready\n${c07}\tnot ready\n`)
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(ready(s, [c17, 'not ready'], [c07, 'not ready']))
   expect(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8')).toContain('bench: ready did not exit 0 within 4 s')
   for (const c of json(join(s.data, 's1-01', 'docker.json')).containers) expect(exists('container', c)).toBe(false)
   // grade alone reads the empty JUnit as broken; oracle validate reuses both runs and reads them as not judged
@@ -760,10 +774,10 @@ dtest('a run past the container limit ends inside the container: timeout, no JUn
   expect(Date.now() - started).toBeLessThan(300000) // the 600 s run did not finish
   expect(r).toMatchObject({ code: 1, stderr: '' })
   expect(r.stdout).toStartWith(`${c17} junit=missing `)
-  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(`${c17}\ttimeout\n`)
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(ready(s, [c17, 'timeout']))
   expect(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8')).toContain('bench: not done in 8 s, killed')
   const d = json(join(s.data, 's1-01', 'docker.json'))
-  expect(d.containers).toEqual([box(s, c1)])
+  expect(d.containers).toEqual([make(s, c1), box(s, c1)])
   for (const c of d.containers) expect(exists('container', c)).toBe(false)
   for (const i of d.images) expect(exists('image', i.name)).toBe(false)
 }, 900000)
@@ -800,7 +814,7 @@ dtest('an /out that is a link gives no JUnit and no file behind it is read (need
   const r = await grade(s, ['--at', c1, '--sealed'])
   expect(r).toMatchObject({ code: 1, stderr: '' })
   expect(r.stdout).toStartWith(`${c17} junit=missing `)
-  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(`${c17}\tnot ready\n`)
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(ready(s, [c17, 'not ready']))
 }, 900000)
 
 test('oracle-run refuses an absent or malformed runner.json before any Docker call', async () => {
@@ -813,3 +827,69 @@ test('oracle-run refuses an absent or malformed runner.json before any Docker ca
     expect(existsSync(join(s.data, 'junit.xml'))).toBe(false)
   }
 }, 60000)
+
+test('the trusted path refuses a commit that is no base, end or seeded bug', async () => {
+  const s = oracleTask() // the fixture's HEAD is c2, after the task's end
+  const r = await run(s, ['oracle-run', 's1-01'], { env: { BENCH_DIR: fx, BENCH_ORACLE: join(s.data, 's1-01', 'oracle'), BENCH_JUNIT: join(s.data, 'junit.xml'), BENCH_TRUSTED: '1' }, disk: 40 })
+  expect(r).toMatchObject({ code: 2, stdout: '', stderr: `oracle-run --trusted: ${c2.slice(0, 7)} is no task's base or end and no seeded bug\n` })
+  expect(existsSync(join(s.data, 's1-01', 'docker.json'))).toBe(false)
+}, 60000)
+
+dtest('the trusted path builds the commit as step 10 did (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = oracleTask({ rebuild: null })
+  const r = await grade(s, ['--at', c1, '--sealed', '--trusted'])
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  expect(r.stdout).toStartWith(`${c17} junit=ok pass=2 `)
+  const d = json(join(s.data, 's1-01', 'docker.json'))
+  expect([d.images.map((i) => i.name), d.containers]).toEqual([[`bench-ext/${s.slug(1)}:${c17}-serve`, `bench-ext/${s.slug(1)}:${c17}-grade`], [box(s, c1)]])
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(ready(s, [c17, 'ready']))
+  for (const i of d.images) expect(exists('image', i.name)).toBe(false)
+}, 900000)
+
+// productImage alone, on a fixture image whose /work holds the base's tracked files and an untracked build output
+const ov = join(tmp, 'overlay')
+mkdirSync(join(ov, 'dir with space'), { recursive: true })
+const ovGit = (...a) => Bun.spawnSync(['git', '-C', ov, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
+ovGit('init', '-q')
+writeFileSync(join(ov, 'a'), 'old\n'); writeFileSync(join(ov, 'b'), 'b\n'); writeFileSync(join(ov, 'dir with space', 'c d'), 'c\n')
+ovGit('add', '.'); ovGit('commit', '-qm', 'base')
+const ovBase = ovGit('rev-parse', 'HEAD')
+writeFileSync(join(ov, 'a'), 'new\n'); writeFileSync(join(ov, 'e'), 'e\n'); rmSync(join(ov, 'b')); rmSync(join(ov, 'dir with space'), { recursive: true })
+ovGit('add', '-A'); ovGit('commit', '-qm', 'product')
+const ovProduct = ovGit('rev-parse', 'HEAD')
+let ovOnce
+const overlayFixture = () => (ovOnce ??= (async () => {
+  const slug = `fx${rand()}__ov__1`, data = join(tmp, slug), log = (n) => join(data, `make-${n}.log`)
+  for (const d of ['ov', 'ext']) mkdirSync(join(data, d), { recursive: true }) // ext: removed.txt
+  const record = (f) => recordDocker(join(data, 'ov', 'docker.json'), f)
+  let seq = 0
+  const scratch = (what, commit, fn) => withExport({ name: slug, repo: ov }, commit, `${what}-${process.pid}-${seq++}`, fn)
+  const baseImage = `bench-ext/${slug}:base`
+  record((d) => d.images.push({ name: baseImage, id: null }))
+  const id = await buildImage({ scratch, dockerfile: 'FROM alpine:3.22\nCOPY . /work\nRUN mkdir -p /work/node_modules && echo kept > /work/node_modules/x\n', test: 'true\n', platform, commit: ovBase, tag: baseImage, log: join(data, 'base.log'), diskFree: async () => 100 })
+  expect(id).toMatch(/^sha256:/)
+  const make = (n, lines, osha8) => productImage({ t: { slug, base: ovBase }, commit: ovProduct, baseImage, network: 'none', lines, repo: ov, osha8, n, platform, record, scratch, log: log(n), diskFree: async () => 100 })
+  return { slug, data, record, make, log }
+})())
+
+dtest('the overlay removes deleted base files and keeps build outputs (needs BENCH_EXT_DOCKER=1)', async () => {
+  const { slug, record, make } = await overlayFixture(), look = `bench-ext-${slug}-look-1`
+  const id = await make(1, ['cat a > a.copy'], 'abcdef12') // the rebuild lines run in /work, after the overlay
+  expect(id).toMatch(/^sha256:[0-9a-f]{64}$/)
+  expect(exists('container', `bench-ext-${slug}-make-${ovProduct.slice(0, 7)}-1`)).toBe(false) // committed, then removed
+  record((d) => d.containers.push(look))
+  expect(docker('create', '--name', look, '--network', 'none', `bench-ext/${slug}:${ovProduct.slice(0, 7)}-product-abcdef12`, 'sh', '-c',
+    'cd /work && find . -type f | sort && cat a && ls -A /tmp').exitCode).toBe(0)
+  const out = docker('start', '-a', look).stdout.toString().split('\n')
+  expect(out).toEqual(['./.bench-test.sh', './.bench.Dockerfile', './.bench.Dockerfile.dockerignore', './a', './a.copy', './e', './node_modules/x', 'new', ''])
+}, 600000)
+
+dtest('the product is made with no network (needs BENCH_EXT_DOCKER=1)', async () => {
+  const { slug, make, log } = await overlayFixture()
+  expect(await make(2, ['ls /sys/class/net', 'nc -zw3 1.1.1.1 443', 'touch /work/reached'], '00000000')).toBe(false)
+  expect(exists('image', `bench-ext/${slug}:${ovProduct.slice(0, 7)}-product-00000000`)).toBe(false) // no image: noresult
+  expect(exists('container', `bench-ext-${slug}-make-${ovProduct.slice(0, 7)}-2`)).toBe(false)
+  const lines = readFileSync(log(2), 'utf8').split('\n')
+  expect(lines).toContain('lo')
+  expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
+}, 600000)

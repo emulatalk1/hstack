@@ -9,7 +9,7 @@ import { checksFrom, fixMatches, results, score, unscored, verdict } from './lib
 import { oracleSha } from './lib/oracle.mjs'
 import { loadTask } from './lib/task.mjs'
 
-const USAGE = 'usage: bun bench/grade.mjs <task.json> <oracle dir> (--at <commit> | --validate <ref> --bad <commit> [--bad <commit> ...] [--base <commit>]) [--sealed] [--reuse]'
+const USAGE = 'usage: bun bench/grade.mjs <task.json> <oracle dir> (--at <commit> [--out <file>] | --validate <ref> --bad <commit> [--bad <commit> ...] [--base <commit>]) [--sealed] [--reuse] [--trusted]'
 
 export async function resolveCommit(repo, commit) {
   const p = Bun.spawn(['git', '-C', repo, 'rev-parse', '--verify', `${commit}^{commit}`], { stdout: 'pipe', stderr: 'pipe' })
@@ -32,8 +32,20 @@ export function checkJunitPath(task) {
   if (isAbsolute(task.junit) || relative('/w', resolve('/w', task.junit)).startsWith('..')) throw new Error(`task junit ${task.junit} must be a relative path inside the worktree`)
 }
 
-const runOracle = (task, oracleDir, commit, root, stdio, quiet) =>
-  withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir }, stdio), { root, start: task.start !== null, quiet })
+// BENCH_TRUSTED is set either way, so the caller's env never makes a grade trusted
+const runOracle = (task, oracleDir, commit, root, stdio, quiet, trusted) =>
+  withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir, BENCH_TRUSTED: trusted ? '1' : '' }, stdio), { root, start: task.start !== null, quiet })
+
+// step 11 ruling 8: a commit an arm's branch points at is its product, and a task file that starts an app would run it on the host
+async function refuseArmProducts(task, commits) {
+  if (task.start === null) return
+  for (const c of commits) {
+    const p = Bun.spawn(['git', '-C', task.repo, 'for-each-ref', '--points-at', c, 'refs/heads/bench/'], { stdout: 'pipe', stderr: 'pipe' })
+    const [out, code] = [await new Response(p.stdout).text(), await p.exited]
+    if (code !== 0) throw new Error(`git for-each-ref --points-at ${c.slice(0, 7)} failed in ${task.repo}`)
+    if (out.trim()) throw new Error('an arm product is not graded on the host')
+  }
+}
 
 // every file of the oracle folder but node_modules (a symlink by that name too), paths relative to it; latin1 keeps every byte.
 // Any other symlink counts by its target, never followed: it may point at a folder or nowhere.
@@ -48,16 +60,16 @@ export async function grade(args, { root = ROOT } = {}) {
   const pos = [], flags = { bad: [] }
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
-    if (a === '--sealed' || a === '--reuse') flags[a.slice(2)] = true
-    else if (a === '--at' || a === '--base' || a === '--validate') flags[a.slice(2)] = args[++i] ?? ''
+    if (a === '--sealed' || a === '--reuse' || a === '--trusted') flags[a.slice(2)] = true
+    else if (a === '--at' || a === '--base' || a === '--validate' || a === '--out') flags[a.slice(2)] = args[++i] ?? ''
     else if (a === '--bad') flags.bad.push(args[++i] ?? '')
     else pos.push(a)
   }
   if (flags.validate !== undefined && !flags.bad.length && pos.length === 3) flags.bad.push(pos.pop()) // the old form --validate <ref> <bad>
   const [taskPath, oracleArg] = pos
   const v = flags.validate !== undefined
-  if (!taskPath || !oracleArg || pos.length !== 2 || (flags.at === undefined) === !v || [flags.at, flags.validate, flags.base, ...flags.bad].includes('')
-    || (v && !flags.bad.length) || (!v && (flags.base !== undefined || flags.bad.length))) throw new Error(USAGE)
+  if (!taskPath || !oracleArg || pos.length !== 2 || (flags.at === undefined) === !v || [flags.at, flags.validate, flags.base, flags.out, ...flags.bad].includes('')
+    || (v && (!flags.bad.length || flags.out !== undefined)) || (!v && (flags.base !== undefined || flags.bad.length))) throw new Error(USAGE)
   const task = await loadTask(taskPath)
   checkJunitPath(task)
   const oracleDir = resolve(oracleArg), evDir = dirname(oracleDir)
@@ -73,7 +85,8 @@ export async function grade(args, { root = ROOT } = {}) {
   const sha = oracleSha(oracleFiles(oracleDir))
 
   const run = async (full) => {
-    const sha7 = full.slice(0, 7), file = join(evDir, 'grades', `${sha7}.json`)
+    // --out (one --at grade): the file named, so a regrade rewrites no grade file of grades/
+    const sha7 = full.slice(0, 7), file = flags.out !== undefined ? resolve(flags.out) : join(evDir, 'grades', `${sha7}.json`)
     // ruling 10: a run is reused when its commit and oracle are the same and it gave results
     const old = flags.reuse && existsSync(file) ? await Bun.file(file).json().catch(() => null) : null // unreadable: run again
     const reused = old?.commit === full && old.oracleSha === sha && old.junit === 'ok'
@@ -88,12 +101,12 @@ export async function grade(args, { root = ROOT } = {}) {
         stdio = openSync(join(evDir, 'logs', `${sha7}-${n}.log`), 'wx')
       }
       let cases
-      try { ({ cases, junit } = await runOracle(task, oracleDir, full, root, stdio, flags.sealed)) } finally { if (flags.sealed) closeSync(stdio) }
+      try { ({ cases, junit } = await runOracle(task, oracleDir, full, root, stdio, flags.sealed, flags.trusted)) } finally { if (flags.sealed) closeSync(stdio) }
       res = results(cases, ids)
     }
     const g = { commit: full, task: task.name, at: reused ? old.at : new Date().toISOString(), oracleSha: sha, junit,
       checks: checks.map((c) => ({ ...c, result: res.get(c.id) })), excluded, unlabelled, score: score(scoredChecks, res) }
-    mkdirSync(join(evDir, 'grades'), { recursive: true })
+    mkdirSync(dirname(file), { recursive: true })
     await Bun.write(file, JSON.stringify(g, null, 2) + '\n')
     const n = (r) => g.checks.filter((c) => c.result === r).length
     console.log(`${sha7} junit=${junit} pass=${n('pass')} fail=${n('fail')} precondition=${n('precondition')} error=${n('error')} excluded=${excluded.length} build=${g.score.build} requirement=${g.score.requirement} featureMissing=${g.score.featureMissing}${reused ? ' reused' : ''}`)
@@ -103,8 +116,13 @@ export async function grade(args, { root = ROOT } = {}) {
   // resolve every commit before the first env run, so a typo costs nothing
   const resolveAll = (list) => Promise.all(list.map((c) => resolveCommit(task.repo, c)))
   // the grade file is written either way; a run with no readable JUnit is not a grade
-  if (flags.at !== undefined) return (await run((await resolveAll([flags.at]))[0])).junit === 'ok' ? 0 : 1
+  if (flags.at !== undefined) {
+    const [full] = await resolveAll([flags.at])
+    await refuseArmProducts(task, [full])
+    return (await run(full)).junit === 'ok' ? 0 : 1
+  }
   const [refFull, ...rest] = await resolveAll([flags.validate, ...flags.bad, ...(flags.base ? [flags.base] : [])])
+  await refuseArmProducts(task, [refFull, ...rest])
   const badFull = rest.slice(0, flags.bad.length), baseFull = rest[flags.bad.length]
   const ref = await run(refFull), bads = []
   for (const b of badFull) bads.push(await run(b))

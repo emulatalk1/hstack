@@ -7,6 +7,7 @@ import { diffHunks, oracle, seedRepo, seedCommit, highestOf } from '../bench/ora
 import { loadTask } from '../bench/lib/task.mjs'
 import { unscored } from '../bench/lib/score.mjs'
 import { oracleFiles } from '../bench/grade.mjs'
+const O8 = (dir) => oracleSha(oracleFiles(dir)).slice(0, 8) // the oracle a readiness line names (step 11 ruling 7)
 import { check } from '../bench/input-check.mjs'
 import { taskOf } from '../bench/ext.mjs'
 
@@ -676,8 +677,9 @@ test('an external run that never got ready gives error, is not judged, and its g
   const ext = extSample(), s = k3Full.slice(0, 7), b = k1Full.slice(0, 7), ev = join(data, 's9-01'), agents = []
   extOracle(s)
   mkdirSync(join(ev, 'build'), { recursive: true })
-  // oracle-run appends a line a run: the base's last run got ready, the end's did not
-  writeFileSync(join(ev, 'build/readiness.tsv'), `${b}\tnot ready\n${s}\tready\n${s}\tnot ready\n${b}\tready\n`)
+  // oracle-run appends a line a run: the base's last run got ready, the end's did not; another oracle's lines do not count
+  const o8 = O8(join(ev, 'oracle'))
+  writeFileSync(join(ev, 'build/readiness.tsv'), `${b}\t${o8}\tnot ready\n${s}\t${o8}\tready\n${s}\t${o8}\tnot ready\n${b}\t${o8}\tready\n${s}\t99999999\tready\n${b}\t99999999\tnot ready\n`)
   // as grade would: an empty JUnit gives broken; each run leaves its grade file
   const inner = fakeGrade(() => 'broken', [])
   const grade = async (args) => { mkdirSync(join(ev, 'grades'), { recursive: true }); for (const x of [s, b]) writeFileSync(join(ev, 'grades', `${x}.json`), '{}'); return inner(args) }
@@ -1988,7 +1990,7 @@ const seedGrade = (table, calls = [], over = () => null, events = []) => async (
   if (how === 'not ready') {
     const build = join(args[1].replace(/(\/seeded|\/step)?\/oracle$/, ''), 'build')
     mkdirSync(build, { recursive: true })
-    appendFileSync(join(build, 'readiness.tsv'), `${c.slice(0, 7)}\tnot ready\n`)
+    appendFileSync(join(build, 'readiness.tsv'), `${c.slice(0, 7)}\t${O8(args[1])}\tnot ready\n`)
     return fakeGrade(() => 'error', calls, events)(args)
   }
   await fakeGrade(table, calls, events)(args)
@@ -2096,7 +2098,7 @@ test('a bug run that never gets ready is error, its grade is not reused, and the
   const sha = first().slice(0, 7), bug1 = bugsOf(d, 'x1-01').find((b) => b.id === order[0])
   expect(existsSync(join(d, 'x1-01/seeded/grades', `${sha}.json`))).toBe(false)
   expect(validationIn(d, 'x1-01').checks.find((c) => c.id === bug1.check)).toEqual({ id: bug1.check, ref: 'pass', bad: ['error'], verdict: 'error', stage: `not ready at ${sha}` })
-  appendFileSync(join(d, 'x1-01/build/readiness.tsv'), `${sha}\tready\n`)
+  appendFileSync(join(d, 'x1-01/build/readiness.tsv'), `${sha}\t${O8(join(d, 'x1-01/seeded/oracle'))}\tready\n`)
   await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d)))
   expect(bugsOf(d, 'x1-01').find((b) => b.id === order[0]).state).toBe('kept')
 })
@@ -2251,14 +2253,14 @@ test('an end run that never gets ready is not judged', async () => {
   const d = seedData('sb15'), docker = join(d, 'x1-01/docker.json'), grades = [], g = join(d, 'x1-01/seeded/grades', `${S7}.json`)
   mkdirSync(join(d, 'x1-01/build'), { recursive: true })
   writeFileSync(docker, JSON.stringify({ images: [], containers: [] }))
-  writeFileSync(join(d, 'x1-01/build/readiness.tsv'), `${S7}\tnot ready\n`)
-  const r = await seedRun(d, EXT_ARGS(), [], {}, seedGrade(() => 'error', grades))
+  // the end's run writes its not-ready line, naming the seeded oracle as it stands then
+  const r = await seedRun(d, EXT_ARGS(), [], {}, seedGrade(() => 'error', grades, (c) => (c === sdEnd ? 'not ready' : null)))
   expect([r.code, r.out]).toEqual([1, 'x1-01 seed not judged'])
   expect(existsSync(g)).toBe(false) // so --reuse runs it again
   for (const f of ['bugs.json', `validation-${S7}.json`]) expect(existsSync(join(d, 'x1-01/seeded', f))).toBe(false)
   expect(jsonAt(docker).digests).toEqual({}) // removeRecorded ran
   // the task is run again: its end now ready, nothing was dropped
-  writeFileSync(join(d, 'x1-01/build/readiness.tsv'), `${S7}\tnot ready\n${S7}\tready\n`)
+  appendFileSync(join(d, 'x1-01/build/readiness.tsv'), `${S7}\t${O8(join(d, 'x1-01/seeded/oracle'))}\tready\n`)
   const again = await seedRun(d, EXT_ARGS(), [], {}, seedGrade(ownFails(d), grades))
   expect([again.code, again.out]).toEqual([0, 'x1-01 seed candidates=5 refused=0 pass-at-end=5 fixer=0 graded=3 valid=3 weak=0 broken=0 error=0 kept=3'])
 })
@@ -2392,7 +2394,7 @@ test('kills leaves a good end grade byte for byte', async () => {
   expect(files.map((f) => readFileSync(f, 'utf8'))).toEqual(bytes)
   expect(atCalls(grades)).toEqual([bug7, bug7])
   // another commit, a JUnit that was not ok, a changed folder or a not-ready line: it grades
-  for (const [over, ready] of [[{ commit: sdBase }], [{ junit: 'missing' }], [{ oracleSha: 'old' }], [{}, `${S7}\tnot ready\n`]]) {
+  for (const [over, ready] of [[{ commit: sdBase }], [{ junit: 'missing' }], [{ oracleSha: 'old' }], [{}, `${S7}\t${O8(join(d, 'r1/oracle'))}\tnot ready\n`]]) {
     put('r1/oracle', over)
     rmSync(join(d, 'r1/build'), { recursive: true, force: true })
     if (ready) { mkdirSync(join(d, 'r1/build')); writeFileSync(join(d, 'r1/build/readiness.tsv'), ready) }
