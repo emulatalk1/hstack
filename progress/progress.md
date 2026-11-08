@@ -2968,3 +2968,12 @@ Step 9, human steps plan (`docs/plans/2026-11-08-bench-human-steps.md`), draft; 
 
     Stick check (user decision "chưa kết luận"; logs/step9/stick-s3-02.out): `grade env/canary/s3-02.json s3-02/seeded/oracle --at <B product> --sealed` on bench/s3-02-B-1 (3157600) and B-2 (9b50306): both junit ok, pass 5, fail 0, precondition 0, error 0, excluded 2. Step 8 ruling 14 graded the B- products of s3-02 at 3 of 3. So on s3-02 the seeded checks pass for both arms: the instrument does not separate B from B- there. No grade container or image left (0 and 0).
     Token: still with the user (revoke, then `rm <data>/arm/box.env`).
+
+## Step 9 SDD ledger tail (copied after the final review)
+
+Task 10: lock writer opus 207.1k 12.4 min, commit 0b22799 (67 changed files in the step 5–8 compares, 0 unexplained; 330 new files hashed; ledger copied into progress/progress.md). Ruling: kills rerun at step 10 for p1 and s1-03 at least; whether p2 and p6c (manifests changed only by interface-none b2 entries) rerun is step 10's ruling.
+
+Final review: opus 237.5k 10.7 min. No Critical. Important (lock documents only): 1 the history tool's reject+interrupt+message merge and the swallowing of later messages in a turn depart from registered ruling 8 and belong in the Deviations; 2 "Amended" (step 14 says "validated by agents only") vs "Decided" (stick not validated) — say Decided supersedes; 3 usage may double count resumed agents. Minor: 4 `validate --ids` shares `work/ids/` across calls; 5 `build` and `history` rewrite outputs after apply; 6 lock ruling 11 says `--drop p8b` (was `p8b,p8b1`); 7 reply aliases id/label not in the registered rule.
+Ruling: Important 3 — the task-notification figures are per run (tool_uses reset each run: Task 3's fix run 9 tool uses vs 45 first), and a resumed agent re-reads its context, so its tokens are real; the totals stand, with a note in the lock that a resumed run's tokens include re-reading its earlier context — cost if wrong: the step 9 usage total is overstated by up to ~0.4M.
+Final fix wave: sonnet 114.7k 4.8 min, commit a28a955 (lock A1–A5, guards B6, ids-<tag> B7); 553 pass.
+Final fix wave re-review: sonnet 82.8k 0.7 min, all 7 addressed, no new breakage. Final review clean.
