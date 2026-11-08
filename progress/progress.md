@@ -2860,3 +2860,111 @@ Ruling: registered prereg paragraphs are not rewritten after their runs; correct
 Ruling: M1 and M2, M3 are recorded as known limits, not fixed in step 8 — none changed a score here (report-extended reproduces the six) — they block step 13, which grades untrusted products at scale.
 Final fix wave: bdb4545 a374d58; 497 pass 49 skip; without-s1-03 lower 0.012019. Ruling: existing <data>/env/<task>.json keep the old oracle command (hashed by the locks); a step that grades untrusted products through them must re-point them first, recorded as an open point — cost: the step 11 plan does it.
 Final fix wave re-review sonnet 99.2k tokens: all findings addressed, no new breakage. BENCH_EXT_DOCKER box tests after the wave: see below. Final review: clean after one fix wave.
+
+## Step 9 SDD ledger (copied before the final review)
+
+Step 9, human steps plan (`docs/plans/2026-11-08-bench-human-steps.md`), draft; the lock is `progress/step9-lock.md`. Usage: implementer subagents 1,810.3k tokens and reviewers 1,105.5k (per task in the lock); the agent reader (`claude-fable-5-1`) 25 runs, 1,523,873 tokens, 18.9 min; the second batch agents (`claude-opus-5-5`) 15 runs, 704,727 tokens, 5.6 min; runs on 2026-11-08 from 10:20 (env fix) to 13:06 (s3-02 stick check), +07. The ledger, verbatim:
+
+    # SDD ledger — plan: docs/plans/2026-11-08-bench-human-steps.md
+
+    Spec: docs/plans/2026-10-27-benchmark-prereg.md. Branch bench-step9 from main 5c67583. Decisions recorded at b00baa2.
+
+    ## Pre-flight scan
+
+    | tasks | shared | produces / consumes | found |
+    |---|---|---|---|
+    | 2 → 3 | `bench/lib/human.mjs` | `coldSwap`, `BATCHES`, `answersFor`, `answerOk`, `parseAnswers` → `swap`, `serve` | coldSwap needs the pools `oracle queue` drew; the plan does not say how they are rebuilt |
+    | 2 → 4 | `bench/lib/human.mjs` | `planWindows`, `events`, `segments`, `toolLabel`, `historyKappa` → `history`, `kappa history` | consistent; ac1 must be printed (agreement already returns it) |
+    | 2 → 5 | `bench/lib/human.mjs` | `BATCHES`, `parseAnswers` → `apply` | consistent |
+    | 3 → 4 → 5 | `bench/human.mjs`, `tests/bench-human-cli.test.mjs` | sequential edits of one CLI | no conflict (never parallel) |
+    | 3 ↔ 5 | `build classify-2` | Task 3 builds it, Task 5 makes the b2 rounds it reads | plan says tested in Task 5; Task 3 implements the builder over `agreement.json` `splitRounds` b2 names |
+    | 5 → 7, 8 | `apply`, `oracle write --batch 2`, `validate --ids`, `classify --round b2`, `recount` | controller runs them on real data | consistent |
+    | 6 | `<data>/env/*` | `oracleCommand` (exists) | data only; no code change |
+    | 1 | prereg, index, log | — | self-consistent |
+    | 2 | own | tests ↔ signatures | consistent |
+    | 3 | own | 'build writes one row per queue row' vs swap's -v2 files | build must read the -v2 file when present (option A) |
+    | 4 | own | consistent | — |
+    | 5 | own | 'a 7.1 drop of a step check leaves step.json ids' matches ruling 6 | — |
+    | 10 | lock | the lock's check list matches the hash table | — |
+
+    Ruling: `swap` rebuilds each pool with the code `oracle queue` uses (exported from oracle.mjs, not copied) and first checks that `queuePick` over the rebuilt pool reproduces the locked file exactly (prints `swap <file>: reproduced yes|no`; `no` refuses to write) — the plan's "same pool" is only verifiable this way — cost if wrong: a refactor of queue's pool code in Task 3.
+    Ruling: `build` reads `sample-7.1-v2.tsv`, `sample-7.2-v2.tsv` and `inputs-v2.tsv` when present, else the locked files — option A was chosen, and the -v2 files are what the user must read — cost: none.
+    Ruling: real-data runs (`swap`, `build`, `serve`, `history`, `apply`, the second batch, Task 6's script) are made by the controller in Tasks 6–9; implementers of Tasks 2–5 work on fixtures only and never open `<data>` — the sealing constraint — cost: none.
+
+    Task 1: implementer sonnet 105.2k tokens 4.2 min; reviewer sonnet 91.0k 0.9 min. ⚠️ swap wording = the controller's pre-flight ruling above (confirmed).
+    Task 1: minor (deferred): prereg Deviations list labels the 7.1/7.2 gates and partly→requirement as a deviation; they are open rulings, not deviations.
+    Task 1: minor (deferred): registered decision 4 lacks "106 session files" that ruling 8 cross-references; the "hash again" paragraph is extra but faithful; ruling 10 says "the controller's session".
+    Task 1: complete (commits b00baa2..252652c, review clean)
+
+    Task 2: implementer sonnet 86.0k 13.9 min; reviewer sonnet 84.8k 1.6 min (Needs fixes: 3 Important).
+    Controller shape check on the real transcripts, counts only (scratchpad shape.mjs): isCompactSummary entries 1 (not isMeta); user entries with >1 human text part 0; reject results all start "The user doesn't want to proceed" (3), none "take this action"; a reject followed by an interrupt in the next user entry 3; interrupts 29 (2 "for tool use"); an interrupt followed by an assistant entry before the next human text 1.
+    Ruling: a rejected tool use and an interrupt in the next user entry, with no assistant entry between, are one event (and the human message after them in the same turn joins it) — one human act should be one intervention, and ruling 8's "an interrupt and the message after it ... are one" extends to the reject that caused the interrupt — cost if wrong: 3 fewer rule 1 events in the baseline.
+    Ruling: `segments` returns each task's segments sorted by first event time, so "the plan's first event" is the earliest segment's first event, not file order — ruling 8 is by time — cost: none.
+    Ruling: a second reject or interrupt in the same turn (no assistant entry between) joins the first event — one human stop is one intervention — cost if wrong: parallel rejects undercount by their extra rejects (3 rejects in the corpus).
+    Task 2: fix round 1/5 (7 addressed, 0 open — compact summary, one message per entry, anchored reject, reject+interrupt merge, segments by time, coldSwap short pool, answer edges; commits aefbf5f..2fabc48). Implementer 94.0k 3.5 min; re-review sonnet 73.4k 0.8 min.
+    Task 2: minor (deferred): answersFor reads inherited keys of LABELS (Object.hasOwn would close it); parseAnswers 3-field row reads X as note; every later human message in the same turn after a reject/interrupt is swallowed.
+    Task 2: complete (commits 252652c..2fabc48, review clean)
+
+    Task 3: implementer opus 212.4k 24.6 min (DONE_WITH_CONCERNS).
+    Ruling: `swap` takes `--drop <task,...>` and the controller runs it with `--drop p8b` — the queue was drawn before p8b had an agreement.json (step 6 ruling 9: "oracle queue is not run again ... a rerun would reshuffle the locked step 9 samples"), so "the pool as `oracle queue` drew it" excludes p8b; bench/ names no task — cost if wrong: none, the reproduction check still guards.
+    Ruling: a `pairs` row is a task (key = task) with B then B- as its parts, not one row per diff file — `canary diagnose` wrote one diff per arm (6 files for 3 pairs) and the answers compare the two — cost: none.
+    Task 3: reviewer opus 146.8k 6.1 min (Needs fixes: 1 Important — swap --drop missing; Minor: coldSwap error prints a key, note lost on reload, no test for missing origin test, title marker overmatch, no lang field).
+    Task 3: minor (deferred): the 7.1 title marker falls back to the title's last segment (can mark extra lines, none for parametrised names); `lang` part field never emitted.
+    Note for Task 7: the labels view shows progress-log and attribution lines naming the sha7 verbatim, as 6.1 gives labellers; they may hold the original "fix" wording — that is the source material, not an agent label.
+    Task 3: fix round 1/5 (4 addressed, 0 open — swap --drop, coldSwap error, notes across reload, missing-test-file test; commits cb2da5c..10f97eb). Implementer opus 224.1k total 4.7 min this round; re-review sonnet 81.3k 0.7 min.
+    Task 3: minor (deferred): an earlier note cannot be cleared from the page (empty note carries it forward); each POST re-parses the answers file.
+    Task 3: complete (commits 2fabc48..10f97eb, review clean)
+    Task 4: implementer sonnet 136.6k 6.3 min. Ruling: 'Agent, before' is the last assistant entry with non-empty text — a tool-use-only entry would leave the part empty before every reject — cost: none.
+    Task 4: reviewer sonnet 113.4k 1.9 min, Approved.
+    Task 4: minor (deferred): the `#n` key path's humanText shows every bash/clear part of the entry; no test that the page's keys equal kappa's sample keys; event order inside a session is file order; `history` overwrites its outputs with no guard (controller: run it once, before serving).
+    Task 4: complete (commits 10f97eb..930af0c, review clean)
+    Ruling: `build classify` (and `classify-2`) leaves out rows of cold-setup tasks and prints the count — decision 1 A and ruling 5 keep cold-task disputes unread and disputed; Task 3 built them in; the fix goes to Task 5's implementer since it touches the same CLI — cost: none.
+
+    Task 5: implementer opus 361.8k 25.5 min.
+    Ruling: `recount` takes `--drop` and is run with `--drop p8b` — no data file records which real-estate tasks are kept (p8b is trial-only, p8b1 dropped by its own record) — cost: none.
+    Ruling: `swap` must run before the second batch (Task 7 before Task 8) — queuePools sees b2 rounds — cost: none in the plan's order.
+    Task 5: reviewer opus 183.3k 8.9 min, Approved (7 Minor, 5 ⚠️).
+    Task 5: ⚠️ resolved: recount's CL_SCORED (valid + absent-at-base) is step 5 ruling 13's scored set — confirmed. Sweep revalidates receivers over whole fix commits and owner tasks need agreement.json — checked at Task 8 before running.
+    Task 5: minor (deferred): apply reads the answers file twice (parse, then hash) — controller stops the server before every apply; inputs gate has no set; untested: b2 write into an oracle without manifest, b2 -2 rerun, 18/20 and 17/20 gate sizes, apply history; merge throws on a validation file without checks; validate --ids does not dedupe ids; unused `owners`; non-b2 split round numbering counts b2 rounds.
+    Task 5: complete (commits 930af0c..b781a8b, review clean)
+
+    Task 6: done by the controller (data only). `<data>/logs/step9/env-fix.mjs` replaces only the `oracle` value of each external task file (`env/s*.json`, 27) and seeded external task file (`env/seeded/s*.json`, 24) with `oracleCommand(<task>)` imported from the main checkout's `bench/ext.mjs` (so the `cd` is the main checkout's bench folder, not this worktree's): `env-fix: files 51, changed 51` over two runs (the first run stopped at `env/seeded/real-estate.json`, which has no oracle-run command, after writing some files; the second run, filtered to `s<n>-<nn>.json`, changed the rest; a third run changed 0). `grep -L no-env-file` over the 51: 0. New hashes in `<data>/logs/step9/env-after.sha256` (51 lines); every file has an earlier hash in the step 5 or step 7 lock. `env-before.sha256` holds only the 27 `env/s*.json` (a find mistake left the seeded ones out; their before hashes are the step 7 lock's).
+    Ruling: the plan's "25 env/seeded" was 24 external seeded files plus `env/seeded/real-estate.json`, which runs the host `oracle.sh` like `env/real-estate.json` and is left for step 11 — cost: none.
+    Task 6: complete (data, no commit)
+
+    Task 7 step 1: probe stopped (no Save row had arrived; the user said they see the preview). `swap --drop p8b`: sample-7.1 reproduced yes, rows 40, replaced 7; sample-7.2 reproduced yes, rows 40, replaced 5; inputs reproduced yes, rows 4, replaced 1. The 7 locked step9 files keep their step 5/6 lock hashes. Builds: inputs rows 4; rerate-7.2 rows 40; classify rows 19 (cold left out 2); pairs rows 3; oracle-7.1 rows 50; labels rows 12 (logs: outsourcing-hstack/progress/, attribution: .evidence/attribution.md). history: sessions 106, unparsable 0, segments 87, events 556 in windows, outside 258, sample 20 segments, 103 events; per task (segments/rule1/rule2/notcounted): p1 23/165/26/1, p2 3/9/2/1, p3 3/13/2/1, p4 3/12/2/1, p5 4/20/3/1, p6a 7/65/6/1, p6b 3/9/2/1, p6c 4/7/3/1, p7b 3/13/2/1, p7c 7/25/6/1, p8a 7/73/6/1, p8b 5/22/4/1, p8b1 4/4/3/1, p8c 4/9/3/1, p8d 3/10/2/1, p8e 4/9/3/1.
+    Ruling: `serve` gets a `--root` flag that redirects `/` to `/<token>/`, and the controller serves with it while the user reads — the preview pane opens a port at `/`, and a 48-character token path cannot be typed on a phone; the token stays for every other path, and no subagent runs while the pages are up — cost if wrong: during the read any local process could fetch a page.
+    Ruling: all 7 batches are served at once, each on its own port and preview name — the user reads remotely at their own pace; no batch is applied before every batch is answered (Task 7 step 2's real guard) — cost: none.
+    Task 7a (serve --root): implementer sonnet 83.0k 3.4 min (ce93f04); reviewer sonnet 83.7k 0.6 min, Approved.
+    Task 7a: minor (deferred): --root hands the token to any local GET of / (README note); `--port --root 5` accepted; no test for a repeated --root or `/?x`.
+    Task 7 step 2: 7 batches served with --root (ports: inputs 49909, oracle-7.1 49915, rerate-7.2 49910, classify 49911, labels 49912, pairs 49913, history 49914; each GET / gives 302), reported as preview names 1-inputs … 7-history. Waiting on the user's answers.
+    Task 9 (Docker part, approved by the user's decision 6): `docker rm bench-ext-fxngq295__app__1-arm-s1-01-B-2`, `docker rmi bench-ext/fxngq295__app__1:bb1762b-arm bench-ext/fxngq295__app__1:bb1762b-serve bench-arm/fw:1`; 0 of the four names left. Token: waiting on the user.
+
+    User decision 2026-11-08 (asked after the pages went up, every batch at 0 answers): automate every read with agents ("Tự động hoàn toàn bằng agent"), reversing decision 1's option A for the reader (option C). Servers stopped before the change (0 up).
+    Ruling: the reader is a sealed agent on `claude-fable-5-1` (checked: the CLI serves it, `Reply OK.`), a model no step 5–8 agent used (raters, labellers and writers ran on claude-opus-5-5), so the 7.2 re-rating and the dispute settling are not the same model agreeing with itself — cost if wrong: one more model in the record.
+    Ruling: the reader sees exactly the built pages (same rows, same blindness, cold swap kept), in chunks of at most 10 rows (history: by segment), with no tools (everything in the prompt); a reply must answer every key of its chunk once with an allowed answer, else one rerun, which stands; a row still unanswered gets the batch's conservative default (oracle-7.1 `unclear`, rerate-7.2 `partly`, classify `partly`, inputs `leak`, labels the not-fix answer of its kind, pairs `same`, history `not counted`) and is counted — a defaulted row errs toward stopping a gate or leaving a check out, never toward passing — cost: a defaulted 7.1/7.2 row can stop a gate.
+    Ruling: registered before any proxy answer as "Amended at step 9" in prereg section 12 and in the plan's decisions — cost: none.
+    Task 7b: implementer opus 209.6k 15.1 min (4e40b9c registration, 560022f code, 5098583 fallback registration).
+    Task 7b: reviewer opus 151.5k 6.5 min (Needs fixes: 1 Important — amendment omits 6.1 and 7.3). ⚠️ (a) confirmed: `step9/proxy/` did not exist at review time, so the fallback registration (5098583) came before any reader run.
+    Task 7b: minor (deferred): --model can override the ruled model (now printed in the count line); a history segment over 900000 bytes cannot be split; id/label aliases accepted in replies; prompt rides in argv (pre-existing).
+    Task 7b: fix round 1/5 (4 addressed, 0 open — amendment 6.1/7.3, fallback test, failed-runs count line, bracket-tolerant parser; commits 5098583..5513d93). Implementer opus 224.6k 4.1 min; re-review sonnet 96.3k 0.9 min.
+    Task 7b: complete (commits ce93f04..5513d93, review clean)
+
+    Task 7 (agent reader): pairs probe then 6 batches on claude-fable-5-1: 24 runs, 0 failed, 0 defaulted, every row answered; about 1.51M tokens (sum of input, output and cache tokens of the 24 records). Every answers file applied (frozen).
+    Apply lines (logs/step9/apply.out): gate inputs 3/4 stop; oracle-7.1 rows 50, same 49, different 1, unclear 0, gates task-repo 10/10, s1 9/10, s2 10/10, s3 10/10, task-repo-step 10/10 pass; gate rerate-7.2 task-repo 16/20 stop, external 14/20 stop; classify rows 19 → build 3, requirement 16; labels rows 12 → fix 5, not fix 7; pairs B- worse 2, same 1, B- better 0; history kappa=0.18 raw=0.57 ac1=0.49 n=103 gate stop.
+    Counts behind the stops (scratchpad gates.mjs, counts only): inputs: the leak is the external set's (task-repo 2 clean, external 1 clean 1 leak). rerate-7.2 task-repo: agreed requirement → not traceable 16, build → not traceable 2, requirement → traceable 1, requirement → partly 1; external: requirement → not traceable 8, build → traceable 6, requirement → traceable 3, requirement → partly 2, build → not traceable 1. history (tool → reader): rule 1 → rule 1 57, rule 1 → not counted 18, rule 2 → not counted 16, rule 1 → rule 2 7, others 5.
+    Three gates stop: the plan stops for the user (rulings 6 and 8). Task 8 (second batch) not started.
+    Ruling: the `inputs` stop is a plan defect: the leak is on the external set, whose input is the issue verbatim by the user's decision of 2026-11-02 ("issue text with code stays eligible; input-check is not an eligibility rule") and step 5 ruling 3; section 5's human read checks the real-estate filter, and the task-repo set is 2/2 clean, so the gate passes on task-repo and the external leak is recorded as the known property it is — cost if wrong: one external issue that states more than the requirement stays in the input, as the step 8 extension already recorded for s1-02 and s3-02.
+    Pairs by task (arm products, not sealed): s1-02 same, s3-01 B- worse, s3-02 B- worse. Step 8 deviation 2 (controller and advisor) judged B- not worse on all three; the reader agrees on s1-02 (identical diffs) and disagrees on s3-01 and s3-02.
+    Stopped for the user: rerate-7.2 (16/20, 14/20), history (κ 0.18), and the step 8 stick decision now with the pairs read.
+
+    User decisions 2026-11-08 (after the agent reads): 7.2 → "agent không đo được": 16/20 and 14/20 are recorded as one model against two raters of another, 7.2 usability rests on the step 5 κ/AC1 branch (task-repo κ 0.73, external 0.91, both usable), labels unchanged. History → no gate: the lock reports the tool's and the reader's counts per task with κ 0.18, raw 0.57, AC1 0.49. Stick of step 8 → "chưa kết luận" (the user chose the advisor's recommendation after being asked explicitly): not validated; the reader's pairs read (B- worse on s3-01, s3-02) is a §7.3 trigger candidate disagreeing with step 8 deviation 2; before step 10 the seeded checks of s3-02 are graded on B's two products (counts only); the fix-the-stick decision is taken before step 10.
+    Ruling: a second-batch check whose validation reads `pre-existing` is recorded `pre-existing, moved to none` (step 5 ruling 12's wording) and `oracle sweep` is not run — sweep revalidates receivers over whole fix commits and would rewrite hashed entries — cost if wrong: such a check scores in no task.
+    Docs (decided-after-reads): sonnet 73.0k 3.4 min, commit 55a7100. Minor (deferred): its line 'Three gates stopped (rerate-7.2, history, and the step 8 stick)' — the stick is not a gate and the inputs gate also stopped (ruled a plan defect).
+
+    Task 8 (second batch, logs/step9/batch2.out, split-p1.out, round2.out): batch2.tsv 5 pairs (p1 3, p2 1, p6c 1, all `later`), 5 commits. write --batch 2: 0120e47 2 entries (both interface none, after the -2 rerun), 0870afc 0 (after the rerun), 58e8819 1 (interface none, after the rerun), d67e5b7 3, dfefaff 5; 0 refused. Per owner: p1 8 (3 none), p2 1 (none), p6c 2 (both none). validate --ids p1 (5 ids): absent-at-base 5, no fixer round. p2 and p6c had no id to validate. pgsnap equal around the batch and around the split. classify --round b2 p1: classified 5, build 0, requirement 2, partly 2, disputed 1, κ 0.62 raw 0.80 AC1 0.73. split p1: partly 2 → 4 halves (weak 2, absent-at-base 2), classified 2 → requirement 2, disputed 0. classify-2: rows 1 (cold left out 0) → reader 1/1 → requirement 1. No b2 check was pre-existing, so the sweep ruling did not apply.
+    Recount (rule (b), --drop p8b,p8b1): meets 9 of 14 — p1 15 (was 10), p2 39, p3 13, p4 20, p6a 11, p8a 5, p8c 7, p8d 5, p8e 6 meet; p5 0, p6b 2, p6c 2, p7b 0, p7c 0 do not. The set is unchanged; p6c stays below, so decision 5 (a seeded bug for p6c) does not apply. The one 7.1 drop is external (every real-estate count equals step 5's).
+    Task 8: complete
+
+    Stick check (user decision "chưa kết luận"; logs/step9/stick-s3-02.out): `grade env/canary/s3-02.json s3-02/seeded/oracle --at <B product> --sealed` on bench/s3-02-B-1 (3157600) and B-2 (9b50306): both junit ok, pass 5, fail 0, precondition 0, error 0, excluded 2. Step 8 ruling 14 graded the B- products of s3-02 at 3 of 3. So on s3-02 the seeded checks pass for both arms: the instrument does not separate B from B- there. No grade container or image left (0 and 0).
+    Token: still with the user (revoke, then `rm <data>/arm/box.env`).
