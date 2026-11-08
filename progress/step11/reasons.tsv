@@ -1,0 +1,7 @@
+ext/walk.tsv	step 11 ruling 10, the walk appends the candidates it checks for s1 and s3
+ext/sample.tsv	step 11 ruling 10, the walk adds its accepted tasks (s1 +2, s3 +2) to the sample
+ext/repos/*/packed-refs	step 11 ruling 10, the walk fetches walked PRs into existing stores
+ext/repos/*/refs/**	step 11 ruling 10, the walk fetches walked PRs into existing stores
+ext/repos/*/shallow	step 11 ruling 10, the walk fetches walked PRs into existing stores
+seeded/repos/*/shallow	step 11 ruling 10, seedRepo copies the shallow file of the store it seeds from
+arms.json	step 11 ruling 8, the turn limit per set (real-estate 28800 s); ruling 2, plugin entries later
