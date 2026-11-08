@@ -33,8 +33,8 @@ export function checkJunitPath(task) {
 }
 
 // BENCH_TRUSTED is set either way, so the caller's env never makes a grade trusted
-const runOracle = (task, oracleDir, commit, root, stdio, quiet, trusted) =>
-  withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir, BENCH_TRUSTED: trusted ? '1' : '' }, stdio), { root, start: task.start !== null, quiet })
+const runOracle = (task, oracleDir, commit, root, stdio, quiet, trusted, taskFile) =>
+  withEnv(task, commit, `grade-${commit.slice(0, 7)}`, (e) => runForJunit(task, e, task.oracle, { BENCH_ORACLE: oracleDir, BENCH_TRUSTED: trusted ? '1' : '', BENCH_TASK_FILE: resolve(taskFile) }, stdio), { root, start: task.start !== null, quiet })
 
 // step 11 ruling 8: a commit an arm's branch points at is its product, and a task file that starts an app would run it on the host
 async function refuseArmProducts(task, commits) {
@@ -101,7 +101,7 @@ export async function grade(args, { root = ROOT } = {}) {
         stdio = openSync(join(evDir, 'logs', `${sha7}-${n}.log`), 'wx')
       }
       let cases
-      try { ({ cases, junit } = await runOracle(task, oracleDir, full, root, stdio, flags.sealed, flags.trusted)) } finally { if (flags.sealed) closeSync(stdio) }
+      try { ({ cases, junit } = await runOracle(task, oracleDir, full, root, stdio, flags.sealed, flags.trusted, taskPath)) } finally { if (flags.sealed) closeSync(stdio) }
       res = results(cases, ids)
     }
     const g = { commit: full, task: task.name, at: reused ? old.at : new Date().toISOString(), oracleSha: sha, junit,

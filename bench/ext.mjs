@@ -20,6 +20,7 @@ const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
        bun bench/ext.mjs walk <groups.json> <stack> [--tier <1|2>] [--remove-out]
        bun bench/ext.mjs sample <groups.json> [--tier <1|2>]
        bun bench/ext.mjs task-env <groups.json> <task> (--reply <reply file> --sha <sha256> | --from-meta)
+       bun bench/ext.mjs box-env <task>
        bun bench/ext.mjs serve <groups.json> <task>
        bun bench/ext.mjs oracle-run <task>   (grade's oracle command: BENCH_DIR, BENCH_ORACLE, BENCH_JUNIT, BENCH_TRUSTED)
        bun bench/ext.mjs remove <task>`
@@ -806,8 +807,23 @@ const keyOf = (id) => {
 // a task id's sample row with its key, slug and 0-based row index
 export function taskOf(ext, task) {
   const rows = sampleRows(ext), index = rows.findIndex((r) => r.task === task)
-  if (index < 0) throw new Error(`no task ${task} in sample.tsv`)
+  if (index < 0) return privateTask(ext, task)
   return { ...rows[index], ...keyOf(rows[index].id), index }
+}
+// step 11 ruling 8: the private task set (<data>/tasks.json) has the shape of an external task. Its store key and stack name are
+// these constants (README); the index starts past any external one, so a port or a name never collides
+export const PRIVATE_SET = { key: 'real-estate', stack: 're', indexFrom: 1000 }
+function privateTask(ext, task) {
+  const f = join(dirname(ext), 'tasks.json'), tasks = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : {}, pos = Object.keys(tasks).indexOf(task)
+  if (pos < 0) throw new Error(`no task ${task} in sample.tsv`)
+  const store = join(ext, 'repos', PRIVATE_SET.key)
+  const full = (s) => { // 7-hex as tasks.json holds them, full when the store exists
+    if (!existsSync(store)) return s
+    const r = Bun.spawnSync(['git', '-C', store, 'rev-parse', '--verify', `${s}^{commit}`], { stdout: 'pipe', stderr: 'pipe' })
+    if (r.exitCode !== 0) throw new Error(`${task}: ${s} is not a commit of ${store}`)
+    return r.stdout.toString().trim()
+  }
+  return { task, slug: PRIVATE_SET.key, key: PRIVATE_SET.key, stack: PRIVATE_SET.stack, base: full(tasks[task].base), end: full(tasks[task].end), index: PRIVATE_SET.indexFrom + pos }
 }
 
 // sample.tsv: per stack (in id order) its sampleOf rows with the meta.json fields of step 5; a row keeps the id the previous
@@ -863,9 +879,20 @@ export async function taskEnv(args, inj = {}) {
   writeFileSync(join(data, t.task, 'input.md'), input)
   mkdirSync(join(data, 'env'), { recursive: true })
   // no host app: grade runs the oracle command, which builds and serves the commit in Docker; the port is never bound
-  writeFileSync(join(data, 'env', `${t.task}.json`), JSON.stringify({ name: t.task, repo: join(ext, 'repos', t.key), db: null, port: 49152 + t.index, start: null, ready: null,
-    setup: [], teardown: [], oracle: oracleCommand(t.task), junit: '.bench-junit.xml', timeoutSec: 7800 }, null, 2) + '\n')
+  writeFileSync(join(data, 'env', `${t.task}.json`), taskFileText(ext, t))
   return `${t.task} input-check hits=${inputCheck(input).length}`
+}
+const taskFileText = (ext, t, extra = {}) => JSON.stringify({ name: t.task, repo: join(ext, 'repos', t.key), db: null, port: 49152 + t.index, start: null, ready: null,
+  setup: [], teardown: [], oracle: oracleCommand(t.task), junit: '.bench-junit.xml', timeoutSec: 7800, ...extra }, null, 2) + '\n'
+
+// `box-env <task>` (step 11 ruling 9): the task file every step 11 grade uses, written from this checkout (its oracle command is this
+// checkout's) to env/box/<task>.json and nowhere else. A private-set task also names its runner, held outside the hashed oracle folders
+export function boxEnv(args, inj = {}) {
+  const { pos: [task] } = parseArgs(args, 1, false)
+  const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
+  mkdirSync(join(data, 'env/box'), { recursive: true })
+  writeFileSync(join(data, 'env/box', `${task}.json`), taskFileText(ext, t, t.key === PRIVATE_SET.key ? { runner: join(data, 'env', PRIVATE_SET.key, 'runner.json') } : {}))
+  return `${task} box-env written`
 }
 
 export const SERVE_EMPTY = { layer: [], start: '', ready: 'true', notes: '' }
@@ -875,7 +902,8 @@ export function parseServe(text) {
   if (!Array.isArray(r?.layer) || !r.layer.every((l) => typeof l === 'string') || typeof r.start !== 'string' || typeof r.ready !== 'string' || !r.ready.trim() || typeof r.notes !== 'string') throw new Error('the serve recipe is not { layer: [Dockerfile lines], start, ready, notes }')
   if (r.layer.some((l) => UNSAFE.test(l))) throw new Error('the layer may not use --network=host, --security=insecure or an ssh or secret mount')
   if (!r.start.trim()) throw new Error('start is empty: it must start the app') // an empty recipe would pass with nothing served
-  return { layer: r.layer, start: r.start, ready: r.ready, notes: r.notes }
+  if (r.services !== undefined && typeof r.services !== 'string') throw new Error('services must be a string') // the part of start the box also needs
+  return { layer: r.layer, start: r.start, ready: r.ready, notes: r.notes, ...(r.services === undefined ? {} : { services: r.services }) }
 }
 // a task's recipe and serve layer, the two Dockerfile halves of its serve image
 export function serveRecipe(ext, t) {
@@ -1164,12 +1192,21 @@ export async function trustedCommit(ext, data, dir, head) {
 // BENCH_JUNIT. BENCH_TRUSTED=1 (grade --trusted) builds
 // HEAD itself as step 10 did, recipe and serve layer with network, then the runner layer, for a task's base or end or a seeded
 // bug only. Everything it built is removed when it ends
+// the runner: the oracle folder's runner.json, else the file the task file's `runner` names (a private-set runner is held outside the
+// oracle folders, which are hashed). grade passes the task file as BENCH_TASK_FILE
+export function runnerFor(oracle, taskFile) {
+  const own = join(oracle, 'runner.json')
+  if (existsSync(own)) return parseRunner(readFileSync(own, 'utf8'))
+  const named = taskFile && existsSync(taskFile) ? JSON.parse(readFileSync(taskFile, 'utf8')).runner : undefined
+  if (typeof named !== 'string' || !existsSync(named)) throw new Error(`oracle-run: no runner.json in ${oracle}, and the task file has no readable runner field`)
+  return parseRunner(readFileSync(named, 'utf8'))
+}
 export async function oracleRun(args, inj = {}) {
   const { pos: [task] } = parseArgs(args, 1, false)
   const { BENCH_DIR: dir, BENCH_ORACLE: oracle, BENCH_JUNIT: junit } = process.env, trusted = process.env.BENCH_TRUSTED === '1'
   if (!dir || !oracle || !junit) throw new Error('oracle-run is grade\'s oracle command: BENCH_DIR, BENCH_ORACLE and BENCH_JUNIT must be set')
   const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
-  const runner = parseRunner(readFileSync(join(oracle, 'runner.json'), 'utf8'))
+  const runner = runnerFor(oracle, process.env.BENCH_TASK_FILE)
   const { recipe, serveDockerfile, sv } = serveRecipe(ext, t)
   const rebuildFile = join(ext, 'tasks', t.slug, 'rebuild.json')
   let rebuild = null
@@ -1302,6 +1339,7 @@ export async function main(argv, inj = {}) {
     } else if (cmd === 'walk') return await walk(rest, inj)
     else if (cmd === 'sample') console.log(`sample.tsv: ${await sample(rest, inj)} rows`)
     else if (cmd === 'task-env') console.log(await taskEnv(rest, inj))
+    else if (cmd === 'box-env') console.log(boxEnv(rest, inj))
     else if (cmd === 'serve') {
       const r = await serve(rest, inj)
       console.log(r.line)

@@ -1,8 +1,8 @@
 import { test, expect } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readinessOf, rebuildLines } from '../bench/ext.mjs'
+import { boxEnv, oracleCommand, oracleRun, parseServe, readinessOf, rebuildLines, taskOf } from '../bench/ext.mjs'
 import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup, extraProbe, sampleOf, keptIds } from '../bench/lib/ext.mjs'
 
 const SEED = 'hstack-bench-2026-10-27'
@@ -262,4 +262,87 @@ test('readiness is read per oracle', () => {
     expect(readinessOf(f, 'abc1234', 'cccccccc')).toBeNull() // the old two-column row is no oracle's
     expect(readinessOf(f, 'abc1234', undefined)).toBeNull()
   } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+// step 11 task 7: the private task set has the shape of an external task
+const git = (dir, ...a) => Bun.spawnSync(['git', '-C', dir, ...a], { stdout: 'pipe', stderr: 'pipe', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).stdout.toString().trim()
+const sampleHead = 'task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend\tmethod\tf2p\tedit_history\tplatform\tcold_setup\n'
+function dataFolder() {
+  const data = mkdtempSync(join(tmpdir(), 'bench-priv-')), ext = join(data, 'ext')
+  mkdirSync(ext, { recursive: true })
+  writeFileSync(join(ext, 'sample.tsv'), sampleHead + 's1-01\ts1\t1\t1\to/r#7\tu\t7\t3\taaa\tbbb\tmerge\t1\t\tlinux/amd64\tno\n')
+  writeFileSync(join(data, 'tasks.json'), JSON.stringify({ p1: { plan: 'p1.md', no: 'P1', base: 'aaaaaaa', end: 'bbbbbbb', n: 3, harness: 'h' }, p2: { plan: 'p2.md', no: 'P2', base: 'ccccccc', end: 'ddddddd', n: 4, harness: 'h' } }))
+  return { data, ext }
+}
+
+test('taskOf reads a real-estate task from tasks.json', () => {
+  const { data, ext } = dataFolder()
+  try {
+    // no store yet: the shas stay as given
+    expect(taskOf(ext, 'p2')).toEqual({ task: 'p2', slug: 'real-estate', key: 'real-estate', stack: 're', base: 'ccccccc', end: 'ddddddd', index: 1001 })
+    expect(taskOf(ext, 'p1').index).toBe(1000)
+    // an external task is unchanged, and a task in neither file is refused
+    expect(taskOf(ext, 's1-01')).toMatchObject({ task: 's1-01', stack: 's1', key: 'o__r', slug: 'o__r__7', index: 0, base: 'aaa' })
+    expect(() => taskOf(ext, 'zz')).toThrow('no task zz in sample.tsv')
+    // a store: the 7-hex shas resolve to full ones
+    const work = join(data, 'work'), store = join(ext, 'repos', 'real-estate')
+    mkdirSync(work)
+    git(work, 'init', '-q'); git(work, 'commit', '-q', '--allow-empty', '-m', 'a'); const a = git(work, 'rev-parse', 'HEAD')
+    git(work, 'commit', '-q', '--allow-empty', '-m', 'b'); const b = git(work, 'rev-parse', 'HEAD')
+    mkdirSync(join(ext, 'repos'), { recursive: true })
+    git(data, 'clone', '-q', '--bare', work, store)
+    writeFileSync(join(data, 'tasks.json'), JSON.stringify({ p1: { base: a.slice(0, 7), end: b.slice(0, 7) } }))
+    expect(taskOf(ext, 'p1')).toMatchObject({ base: a, end: b })
+    writeFileSync(join(data, 'tasks.json'), JSON.stringify({ p1: { base: a.slice(0, 7), end: 'deadbee' } }))
+    expect(() => taskOf(ext, 'p1')).toThrow('deadbee')
+  } finally { rmSync(data, { recursive: true, force: true }) }
+})
+
+test('a serve recipe may name services', () => {
+  const r = { layer: [], start: 'run', ready: 'true', notes: '' }
+  expect(parseServe(JSON.stringify(r))).toEqual(r) // absent: no field
+  expect(parseServe(JSON.stringify({ ...r, services: 'pg_ctl start' }))).toEqual({ ...r, services: 'pg_ctl start' })
+  expect(() => parseServe(JSON.stringify({ ...r, services: ['x'] }))).toThrow('services')
+})
+
+test('box-env writes a task file with no host start and this checkout\'s oracle command', () => {
+  const { data, ext } = dataFolder()
+  try {
+    const out = join(data, 'env/box')
+    boxEnv(['p2'], { data })
+    expect(JSON.parse(readFileSync(join(out, 'p2.json'), 'utf8'))).toEqual({ name: 'p2', repo: join(ext, 'repos/real-estate'), db: null, port: 49152 + 1001, start: null, ready: null,
+      setup: [], teardown: [], oracle: oracleCommand('p2'), junit: '.bench-junit.xml', timeoutSec: 7800, runner: join(data, 'env/real-estate/runner.json') })
+    boxEnv(['s1-01'], { data })
+    const e = JSON.parse(readFileSync(join(out, 's1-01.json'), 'utf8'))
+    expect(e).toMatchObject({ repo: join(ext, 'repos/o__r'), port: 49152, start: null, db: null, oracle: oracleCommand('s1-01') })
+    expect('runner' in e).toBe(false)
+    // only that file: no env/<task>.json
+    expect(existsSync(join(data, 'env/p2.json')) || existsSync(join(data, 'env/s1-01.json')) || existsSync(join(data, 'env/canary'))).toBe(false)
+  } finally { rmSync(data, { recursive: true, force: true }) }
+})
+
+test('oracle-run takes the runner from the task file when the oracle folder has none', async () => {
+  const { data } = dataFolder(), oracle = join(data, 'oracle'), run = { layer: ['RUN true'], run: 'echo ok' }
+  const keep = { ...process.env }
+  try {
+    mkdirSync(oracle)
+    const taskFile = join(data, 'box.json'), runnerFile = join(data, 'runner.json')
+    writeFileSync(taskFile, JSON.stringify({ name: 'p1', runner: runnerFile }))
+    Object.assign(process.env, { BENCH_DIR: data, BENCH_ORACLE: oracle, BENCH_JUNIT: join(data, 'j.xml'), BENCH_TASK_FILE: taskFile })
+    // a runner nowhere: a clear error that names both places
+    await expect(oracleRun(['p1'], { data })).rejects.toThrow(/runner\.json.*(task file|runner field)/)
+    // the task file's: oracleRun goes on past it (and stops later, on the recipe a fixture does not have)
+    writeFileSync(runnerFile, JSON.stringify(run))
+    await expect(oracleRun(['p1'], { data })).rejects.toThrow(/task-recipe\.json/)
+    // a bad runner in the task file is refused as the folder's would be
+    writeFileSync(runnerFile, '{}')
+    await expect(oracleRun(['p1'], { data })).rejects.toThrow('runner.json is not')
+    // the oracle folder's wins
+    writeFileSync(join(oracle, 'runner.json'), JSON.stringify(run))
+    rmSync(runnerFile)
+    await expect(oracleRun(['p1'], { data })).rejects.toThrow(/task-recipe\.json/)
+  } finally {
+    for (const k of ['BENCH_DIR', 'BENCH_ORACLE', 'BENCH_JUNIT', 'BENCH_TASK_FILE']) { if (k in keep) process.env[k] = keep[k]; else delete process.env[k] }
+    rmSync(data, { recursive: true, force: true })
+  }
 })
