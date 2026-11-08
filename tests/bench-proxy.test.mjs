@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from 'bun:test'
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { refusal, serveProxy } from '../bench/proxy.mjs'
@@ -11,8 +11,14 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }))
 const seen = []
 const upstream = Bun.serve({
   port: 0,
-  fetch(req) {
-    seen.push({ method: req.method, url: new URL(req.url).pathname + new URL(req.url).search, headers: Object.fromEntries(req.headers) })
+  async fetch(req) {
+    seen.push({ method: req.method, url: new URL(req.url).pathname + new URL(req.url).search, headers: Object.fromEntries(req.headers), body: await req.text() })
+    const mode = req.headers.get('x-fake')
+    if (mode === 'late') { await Bun.sleep(6000); return Response.json({ ok: 'late' }) }
+    if (mode === 'pause') {
+      const enc = new TextEncoder()
+      return new Response(new ReadableStream({ async start(c) { c.enqueue(enc.encode('a')); await Bun.sleep(6000); c.enqueue(enc.encode('b')); c.close() } }))
+    }
     if (new URL(req.url).pathname === '/stream') {
       const enc = new TextEncoder()
       const body = new ReadableStream({
@@ -125,4 +131,78 @@ test('no log line holds a header or a body', async () => {
   expect(text).toMatch(/^allowed \d+ refused \d+( [a-z]+=\d+)*\n$/)
   expect(text).not.toContain('SECRET')
   expect(text).not.toContain('real-token')
+})
+
+test('a response silent for longer than the idle timeout still arrives', async () => {
+  const { url } = start({ idleTimeout: 1 })
+  const late = post(url, '/v1/messages', { messages: [] }, { 'x-fake': 'late' }).then((r) => r.json())
+  const pause = post(url, '/v1/messages', { messages: [] }, { 'x-fake': 'pause' }).then((r) => r.text())
+  expect(await late).toEqual({ ok: 'late' })
+  expect(await pause).toBe('ab')
+}, 20000) // Bun checks idleness in ~4 s steps, so a 1 s timeout cuts a 6 s silence
+
+test('the proxy forwards exactly the object it judged', async () => {
+  seen.length = 0
+  const { url } = start()
+  // JSON.parse keeps the last duplicate key; the bytes must not differ from what was judged
+  const hidden = '{"model":"m","tools":[{"type":"web_search_20250305","name":"w"}],"tools":[]}'
+  expect((await post(url, '/v1/messages', hidden)).status).toBe(200)
+  expect(seen.at(-1).body).not.toContain('web_search')
+  const shown = '{"model":"m","tools":[],"tools":[{"type":"web_search_20250305","name":"w"}]}'
+  expect((await post(url, '/v1/messages', shown)).status).toBe(403)
+})
+
+test('the proxy refuses a url source anywhere in the body', async () => {
+  const { url, countsFile } = start()
+  const doc = { type: 'document', source: { type: 'url', url: 'http://example.test/a.pdf' } }
+  const img = { type: 'image', source: { type: 'url', url: 'http://example.test/a.png' } }
+  const msg = (c) => ({ model: 'm', messages: [{ role: 'user', content: c }] })
+  const bad = [
+    msg([doc]),
+    msg([img]),
+    msg([{ type: 'tool_result', tool_use_id: 't', content: [doc] }]),
+    msg([{ type: 'tool_result', tool_use_id: 't', content: [{ type: 'text', text: 'x' }, img] }]),
+    { model: 'm', system: [doc], messages: [] },
+    { model: 'm', messages: [], source: { type: 'url', url: 'http://example.test' } },
+  ]
+  for (const b of bad) {
+    const r = await post(url, '/v1/messages', b)
+    expect(r.status).toBe(403)
+    expect((await r.json()).error.message).toBe('bench proxy: refused source')
+  }
+  expect(counts(countsFile)).toBe(`allowed 0 refused ${bad.length} source=${bad.length}\n`)
+  const ok = msg([{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'AAAA' } }, { type: 'text', text: 'source' }])
+  expect((await post(url, '/v1/messages', ok)).status).toBe(200)
+})
+
+test('the proxy fails closed', async () => {
+  const { url } = start()
+  for (const tools of ['x', null, {}, ['x'], [null]]) {
+    const r = await post(url, '/v1/messages', { model: 'm', tools })
+    expect([tools, r.status]).toEqual([tools, 403])
+    expect((await r.json()).error.message).toBe('bench proxy: refused tool')
+  }
+  expect(refusal({ method: 'POST', path: '/v1/messages', body: '{"tools":[]}' })).toBeNull()
+
+  for (const authHeader of ['Authorization', 'x-other', '']) expect(() => start({ authHeader })).toThrow()
+
+  // a handler that throws answers a fixed 500 and says nothing of the cause
+  const broken = start()
+  rmSync(broken.countsFile)
+  mkdirSync(broken.countsFile)
+  const r = await post(broken.url, '/v1/messages', { model: 'm', messages: [] })
+  expect(r.status).toBe(500)
+  const text = await r.text()
+  expect(JSON.parse(text)).toEqual({ type: 'error', error: { type: 'api_error', message: 'bench proxy: internal error' } })
+})
+
+test('serve exits 2 on a missing token or a bad auth name, naming no value', () => {
+  const run = (env) => Bun.spawnSync(['bun', join(import.meta.dir, '../bench/proxy.mjs'), 'serve'], { env: { PATH: process.env.PATH, ...env }, stdout: 'pipe', stderr: 'pipe' })
+  for (const env of [{}, { BENCH_PROXY_TOKEN: 'tok-xyz', BENCH_PROXY_AUTH: 'bogus-name' }]) {
+    const r = run(env)
+    expect(r.exitCode).toBe(2)
+    const out = r.stdout.toString() + r.stderr.toString()
+    expect(out).not.toContain('tok-xyz')
+    expect(out).not.toContain('bogus-name')
+  }
 })
