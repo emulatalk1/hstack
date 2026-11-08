@@ -2863,7 +2863,7 @@ Final fix wave re-review sonnet 99.2k tokens: all findings addressed, no new bre
 
 ## Step 9 SDD ledger (copied before the final review)
 
-Step 9, human steps plan (`docs/plans/2026-11-08-bench-human-steps.md`), draft; the lock is `progress/step9-lock.md`. Usage: implementer subagents 1,810.3k tokens and reviewers 1,105.5k (per task in the lock); the agent reader (`claude-fable-5-1`) 25 runs, 1,523,873 tokens, 18.9 min; the second batch agents (`claude-opus-5-5`) 15 runs, 704,727 tokens, 5.6 min; runs on 2026-11-08 from 10:20 (env fix) to 13:06 (s3-02 stick check), +07. The ledger, verbatim:
+Step 9, human steps plan (`docs/plans/2026-11-08-bench-human-steps.md`), draft; the lock is `progress/step9-lock.md`. Usage: implementer subagents 1.30M–1.81M tokens (a range: the resumed-run figures are of unknown meaning, see the lock) and reviewers 1,105.5k (per task in the lock); the agent reader (`claude-fable-5-1`) 25 runs, 1,523,873 tokens, 18.9 min; the second batch agents (`claude-opus-5-5`) 15 runs, 704,727 tokens, 5.6 min; runs on 2026-11-08 from 10:20 (env fix) to 13:06 (s3-02 stick check), +07. The ledger, verbatim:
 
     # SDD ledger — plan: docs/plans/2026-11-08-bench-human-steps.md
 
@@ -2977,3 +2977,5 @@ Final review: opus 237.5k 10.7 min. No Critical. Important (lock documents only)
 Ruling: Important 3 — the task-notification figures are per run (tool_uses reset each run: Task 3's fix run 9 tool uses vs 45 first), and a resumed agent re-reads its context, so its tokens are real; the totals stand, with a note in the lock that a resumed run's tokens include re-reading its earlier context — cost if wrong: the step 9 usage total is overstated by up to ~0.4M.
 Final fix wave: sonnet 114.7k 4.8 min, commit a28a955 (lock A1–A5, guards B6, ids-<tag> B7); 553 pass.
 Final fix wave re-review: sonnet 82.8k 0.7 min, all 7 addressed, no new breakage. Final review clean.
+
+Ruling revised after the advisor's done-check: the resumed-run figures (Task 2, 3 and 7b fix rounds) are of unknown meaning (run usage or end-of-run context size); implementer usage is stated as a range, 1.30M–1.81M (lock "Usage and wall clock"), superseding the ruling that the totals stand.
