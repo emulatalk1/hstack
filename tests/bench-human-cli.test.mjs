@@ -269,3 +269,48 @@ test('build refuses a row whose check file is missing', async () => {
   rmSync(f)
   try { await expect(run(['build', 'classify'])).rejects.toThrow('a row of r1 has no check file') } finally { writeFileSync(f, text) }
 })
+
+test('an answer with an empty note keeps the earlier note', async () => {
+  await built
+  const s = await serveOn('rerate-7.2'), file = join(d, 'step9/answers/rerate-7.2.tsv'), note = () => readFileSync(file, 'utf8').trim().split('\n').at(-1).split('\t')[2]
+  expect((await post(s, { key: id, answer: 'partly', note: 'SENTINEL-KEEP' })).status).toBe(200)
+  expect((await post(s, { key: id, answer: 'traceable', note: '' })).status).toBe(200)
+  expect(note()).toBe('SENTINEL-KEEP')
+  const data = await (await fetch(url(s, `/${s.token}/data`))).json()
+  expect([data.answers, data.hasNote]).toEqual([{ [id]: 'traceable' }, { [id]: true }])
+  expect(JSON.stringify(data)).not.toContain('SENTINEL-KEEP')
+  expect((await post(s, { key: id, answer: 'traceable', note: 'other' })).status).toBe(200)
+  expect(note()).toBe('other')
+})
+
+test('a 7.1 page says when the test file is not at the commit', async () => {
+  await built
+  const m = join(d, 'x1-01/oracle/manifest.json'), text = readFileSync(m, 'utf8')
+  writeFileSync(m, text.replace('tests/a.test.ts::', 'tests/gone.test.ts::'))
+  try {
+    expect((await run(['build', 'oracle-7.1', taskFile])).code).toBe(0)
+    expect(page('oracle-7.1')[1].parts.at(-1).text).toBe('the test file is not at this commit')
+  } finally { writeFileSync(m, text); await run(['build', 'oracle-7.1', taskFile]) }
+})
+
+test('swap --drop leaves out a task the queue did not draw from', async () => {
+  const s = swapData('sw3')
+  expect((await withData(s, () => quiet(() => oracle(['queue'])))).code).toBe(0)
+  // a task-repo task that got its classification after the queue: its checks sort into the picks
+  const ids = Array.from({ length: 30 }, (_, i) => `eeeeeee-T${i + 1}`)
+  put(s, {
+    'tasks.json': { r1: { base: 'b', end: 'e' }, r9: { base: 'b', end: 'e' } },
+    'r9/oracle/manifest.json': ids.map((x) => ({ id: x, fix_commit: 'eeeeeee'.padEnd(40, '0'), interface: 'browser' })),
+    'r9/validation-eeeeeee.json': { checks: ids.map((x) => ({ id: x, verdict: 'valid' })) },
+    'r9/classify-1.json': ids.map((x) => ({ id: x, label: 'traceable' })),
+    'r9/classify-2.json': ids.map((x) => ({ id: x, label: 'traceable' })),
+    'r9/agreement.json': { disputed: [] },
+  })
+  const plain = await withData(s, () => quiet(() => human(['swap'])))
+  expect(plain.code).toBe(1)
+  expect(plain.out.split('\n')).toEqual(['sample-7.1', 'sample-7.2', 'inputs'].map((f) => `swap ${f}.tsv: reproduced no`))
+  expect(['sample-7.1', 'sample-7.2', 'inputs'].some((f) => existsSync(join(s, 'step9', `${f}-v2.tsv`)))).toBe(false)
+  const dropped = await withData(s, () => quiet(() => human(['swap', '--drop', 'r9'])))
+  expect(dropped.code).toBe(0)
+  expect(dropped.out.split('\n')).toEqual(['swap sample-7.1.tsv: reproduced yes, rows 13, replaced 0', 'swap sample-7.2.tsv: reproduced yes, rows 23, replaced 0', 'swap inputs.tsv: reproduced yes, rows 3, replaced 0'])
+})

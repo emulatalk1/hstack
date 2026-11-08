@@ -1075,12 +1075,13 @@ async function split(c, agent, validate) {
 const tsvOut = (f, head, rows) => writeFileSync(f, [head.join('\t'), ...rows.map((r) => r.join('\t'))].join('\n') + '\n')
 
 // ruling 16: the step 9 queue over the classified tasks of each set; exit 3 when a set's pooled agreement is not usable
-// the pools ruling 16 draws from (step 9's cold swap rebuilds them): per file, [set, [[task, id], ...]] and the count per set
-export function queuePools(data) {
+// the pools ruling 16 draws from (step 9's cold swap rebuilds them): per file, [set, [[task, id], ...]] and the count per set.
+// `drop`: tasks the locked queue did not draw from (step 9's swap)
+export function queuePools(data, drop = []) {
   const ext = join(data, 'ext')
   const sampleFile = join(ext, 'sample.tsv'), [head, ...rows] = existsSync(sampleFile) ? readFileSync(sampleFile, 'utf8').trim().split('\n').map((l) => l.split('\t')) : [[]]
   const stackOf = new Map(rows.map((r) => [r[head.indexOf('task')], r[head.indexOf('stack')]]))
-  const done = (t) => existsSync(join(data, t, 'agreement.json'))
+  const done = (t) => existsSync(join(data, t, 'agreement.json')) && !drop.includes(t)
   const sets = [['task-repo', Object.keys(readJson(join(data, 'tasks.json')) ?? {}).filter(done)], ['external', [...stackOf.keys()].filter(done)]]
   const ctx = (t) => ({ data, task: t, dir: join(data, t) })
   const groups = [['task-repo', sets[0][1]], ...[...new Set(sets[1][1].map((t) => stackOf.get(t)))].sort().map((s) => [s, sets[1][1].filter((t) => stackOf.get(t) === s)])]

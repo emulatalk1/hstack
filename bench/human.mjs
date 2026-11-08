@@ -12,7 +12,7 @@ import { answerOk, answersFor, BATCHES, coldSwap, parseAnswers } from './lib/hum
 import { loadTask } from './lib/task.mjs'
 import { dataDir, labelLines, poolKeys, queueDraw, queuePools, readPairs, seedOf } from './oracle.mjs'
 
-const USAGE = 'usage: bun bench/human.mjs swap | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] | status'
+const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] | status'
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
 const read = (f) => readFileSync(f, 'utf8')
 // a tsv with a header as objects; a file that is not there has no rows
@@ -28,8 +28,8 @@ const part = (title, text) => ({ title, text })
 
 // --- swap (ruling 3) ---
 const SWAPPED = ['sample-7.1', 'sample-7.2', 'inputs']
-function swap(data) {
-  const q = join(data, 'step9'), seed = seedOf(data), { pools } = queuePools(data)
+function swap(data, drop) {
+  const q = join(data, 'step9'), seed = seedOf(data), { pools } = queuePools(data, drop)
   const cold = new Set(tsvRows(join(data, 'ext/sample.tsv')).filter((r) => r.cold_setup === 'yes').map((r) => r.task))
   let code = 0
   for (const stem of SWAPPED) {
@@ -196,6 +196,7 @@ textarea { width: 100%; min-height: 56px; font: inherit; padding: 8px; border-ra
 <div id="where"></div>
 <div id="parts"></div>
 <div class="bar">
+<div id="given"></div>
 <div class="answers" id="answers" role="group" aria-label="Answer"></div>
 <label for="note">Note (optional)</label><textarea id="note" maxlength="2000"></textarea>
 <div class="nav"><button id="prev">Previous</button><button id="next">Next</button></div>
@@ -205,7 +206,6 @@ textarea { width: 100%; min-height: 56px; font: inherit; padding: 8px; border-ra
 <script>
 const $ = (id) => document.getElementById(id)
 let d = null, i = 0
-const notes = {}
 const el = (tag, text) => { const x = document.createElement(tag); x.textContent = text; return x }
 function show() {
   const r = d.rows[i]
@@ -222,7 +222,10 @@ function show() {
     b.onclick = () => save(r, a)
     box.append(b)
   }
-  $('note').value = notes[r.key] ?? ''
+  const was = d.answers[r.key]
+  $('given').textContent = was === undefined ? '' : 'answered: ' + was + (d.hasNote[r.key] ? ' (with a note)' : '')
+  $('note').value = ''
+  $('note').placeholder = was === undefined ? '' : 'leave empty to keep the earlier note'
   $('note').disabled = d.applied
   $('prev').disabled = i === 0
   $('next').disabled = i === d.rows.length - 1
@@ -230,18 +233,19 @@ function show() {
   window.scrollTo(0, 0)
 }
 async function save(r, a) {
-  notes[r.key] = $('note').value
+  const note = $('note').value
   $('msg').textContent = 'saving'
-  const res = await fetch('answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: r.key, answer: a, note: notes[r.key] }) })
+  const res = await fetch('answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: r.key, answer: a, note }) })
   if (!res.ok) { $('msg').textContent = 'not saved (' + res.status + ')'; return }
   d.answers[r.key] = a
+  d.hasNote[r.key] = d.hasNote[r.key] || note.trim() !== ''
   const next = d.rows.findIndex((x, k) => k > i && d.answers[x.key] === undefined)
   if (next >= 0) i = next
   show()
   $('msg').textContent = 'saved'
 }
-$('prev').onclick = () => { notes[d.rows[i].key] = $('note').value; i--; show() }
-$('next').onclick = () => { notes[d.rows[i].key] = $('note').value; i++; show() }
+$('prev').onclick = () => { i--; show() }
+$('next').onclick = () => { i++; show() }
 fetch('data').then((x) => x.json()).then((x) => {
   d = x
   if (!d.rows.length) { $('batch').textContent = d.batch; $('count').textContent = 'no rows'; return }
@@ -273,13 +277,16 @@ export function serve(data, batch, port = 0) {
       if (req.method === 'GET' && path === `${base}/data`) {
         const given = existsSync(file) ? parseAnswers(read(file)) : new Map()
         return Response.json({ batch, applied: existsSync(applied), rows: rows.map((r) => ({ ...r, answers: answersFor(batch, r) })),
-          answers: Object.fromEntries([...given].filter(([k]) => byKey.has(k)).map(([k, v]) => [k, v.answer])) }, { headers: { 'cache-control': 'no-store' } })
+          answers: Object.fromEntries([...given].filter(([k]) => byKey.has(k)).map(([k, v]) => [k, v.answer])),
+          hasNote: Object.fromEntries([...given].filter(([k]) => byKey.has(k)).map(([k, v]) => [k, v.note.trim() !== ''])) }, { headers: { 'cache-control': 'no-store' } })
       }
       if (req.method === 'POST' && path === `${base}/answer`) {
         const b = await req.json().catch(() => null)
         if (!b || typeof b.key !== 'string' || !byKey.has(b.key) || typeof b.answer !== 'string' || !answerOk(batch, byKey.get(b.key), b.answer)) return status(400)
         if (existsSync(applied)) return status(409)
-        const note = String(b.note ?? '').replace(/[\t\r\n]/g, ' ').slice(0, 2000)
+        let note = String(b.note ?? '').replace(/[\t\r\n]/g, ' ').slice(0, 2000)
+        // an empty note keeps the key's earlier note: the page never gets a note back to resend it
+        if (!note.trim() && existsSync(file)) note = parseAnswers(read(file)).get(b.key)?.note ?? ''
         mkdirSync(answers, { recursive: true })
         appendFileSync(file, `${b.key}\t${b.answer}\t${note}\t${new Date().toISOString()}\n`)
         return status(200)
@@ -305,7 +312,7 @@ function statusCmd(data) {
 export async function human(args) {
   if (!process.env.HSTACK_BENCH_MACHINE) throw new Error('set HSTACK_BENCH_MACHINE to the machine file (for example .evidence/bench/machine.json)')
   const data = dataDir(), [cmd, batch, ...rest] = args
-  if (cmd === 'swap' && args.length === 1) return swap(data)
+  if (cmd === 'swap' && (args.length === 1 || (args.length === 3 && batch === '--drop'))) return swap(data, args.length === 3 ? rest[0].split(',') : [])
   if (cmd === 'build' && batch) return build(data, batch, rest)
   if (cmd === 'serve' && batch && (rest.length === 0 || (rest.length === 2 && rest[0] === '--port' && /^\d+$/.test(rest[1])))) return serve(data, batch, rest.length ? Number(rest[1]) : 0)
   if (cmd === 'status' && args.length === 1) return statusCmd(data)

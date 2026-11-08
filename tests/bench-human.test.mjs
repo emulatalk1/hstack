@@ -102,6 +102,8 @@ test('segments of a task come sorted by their first event', () => {
 test('the cold swap refuses a pool too small for its count', () => {
   const pool = new Map([['s1', ['a1', 'b1']]])
   expect(() => coldSwap([], pool, new Map([['s1', 2]]), (k) => k.startsWith('a'), 'seed')).toThrow(/fewer than 2/)
+  // an old row the pool cannot give: the message names the set and a count, never the key
+  expect(() => coldSwap([{ set: 's1', key: 'zz-T9' }], pool, new Map([['s1', 1]]), (k) => k.startsWith('a'), 'seed')).toThrow(/^the pool of s1 cannot give 1 rows of the old pick$/)
 })
 
 test('answer parsing and lookup edges', () => {

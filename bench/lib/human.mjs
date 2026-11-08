@@ -40,7 +40,9 @@ export function coldSwap(rows, pool, n, isCold, seed) {
     if (keep.length < want) throw new Error(`the pool of ${set} has ${keep.length} non-cold keys, fewer than ${want}`)
     return queuePick(keep, want, seed).map((key) => ({ set, key }))
   })
-  for (const r of rows) if (!isCold(r.key) && !out.some((o) => o.set === r.set && o.key === r.key)) throw new Error(`the old pick holds ${r.key}, which the pool of ${r.set} cannot give`)
+  // ruling 10: the message names the set and a count, never a key
+  const lost = rows.filter((r) => !isCold(r.key) && !out.some((o) => o.set === r.set && o.key === r.key))
+  if (lost.length) throw new Error(`the pool of ${lost[0].set} cannot give ${lost.filter((r) => r.set === lost[0].set).length} rows of the old pick`)
   return out
 }
 
