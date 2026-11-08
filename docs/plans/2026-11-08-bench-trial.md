@@ -149,11 +149,11 @@ Each has a recommended default; the prereg is silent on all six.
 
 **Interfaces:**
 - Produces:
-  - `refusal({ method, path, body, models }) -> null | 'path' | 'tool' | 'mcp' | 'container' | 'model' | 'body'` (pure).
-  - `serveProxy({ port, upstream, token, authHeader, models, countsFile }) -> server`: forwards an allowed request to `upstream` with the token in `authHeader`, streams the answer back, writes `allowed <a> refused <r> <reason>=<n>…` to `countsFile` on every request; never logs a header or a body.
-  - `bun bench/proxy.mjs serve` reads `BENCH_PROXY_TOKEN`, `BENCH_PROXY_MODELS`, `BENCH_PROXY_AUTH` from its env.
+  - `refusal({ method, path, body }) -> null | 'path' | 'tool' | 'mcp' | 'container' | 'body'` (pure; no model filter, ruling 6).
+  - `serveProxy({ port, upstream, token, authHeader, betas, countsFile }) -> server`: forwards an allowed request to `upstream` with the token in `authHeader` (`authorization` as `Bearer <token>`, or `x-api-key` as the token; the incoming `authorization` and `x-api-key` are always dropped) and `betas` appended to `anthropic-beta`, streams the answer back, writes `allowed <a> refused <r> <reason>=<n>…` to `countsFile` on every request; never logs a header or a body.
+  - `bun bench/proxy.mjs serve` reads `BENCH_PROXY_TOKEN`, `BENCH_PROXY_AUTH`, `BENCH_PROXY_BETAS`, `BENCH_PROXY_PORT`, `BENCH_PROXY_UPSTREAM` from its env (Task 4's probe sets `AUTH` and `BETAS`).
 
-- [ ] **Step 1: Write the failing tests:** 'the proxy refuses server tools and other paths' (a `web_search_*` tool, a `web_fetch_*` tool, `mcp_servers`, `GET /v1/models`, `POST /v1/files`, a model not listed: each 403 and counted; a body with only custom tools and a listed model passes); 'the proxy puts the token in the configured header and drops the incoming one' (a local fake upstream records headers: the box's placeholder is gone, the token is there); 'the proxy streams the answer' (an event stream of three chunks arrives in order); 'no log line holds a header or a body' (the counts file after the tests holds only count words).
+- [ ] **Step 1: Write the failing tests:** 'the proxy refuses server tools and other paths' (a `web_search_*` tool, a `web_fetch_*` tool, `mcp_servers`, `GET /v1/models`, `POST /v1/files`, a body that is not JSON: each 403 and counted; a body with only custom tools passes, whatever its model); 'the proxy puts the token in the configured header and drops the incoming one' (a local fake upstream records headers: the box's placeholder is gone, the token is there); 'the proxy streams the answer' (an event stream of three chunks arrives in order); 'no log line holds a header or a body' (the counts file after the tests holds only count words).
 - [ ] **Step 2: Run** — FAIL. **Step 3: Implement** with `Bun.serve` and `fetch`. **Step 4: Run** the suite with `tee` — pass. Commit `git commit -m "Add the API proxy that holds the token and refuses server tools"`.
 
 ### Task 4: The proxy probe (controller, real token)
