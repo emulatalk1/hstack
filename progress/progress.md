@@ -3057,3 +3057,12 @@ Ruling: the first stick hash run wrote its own output into logs/step10/hash.out 
 Ruling: kills-due.mjs first imported oracleSha from bench/grade.mjs (not exported); corrected to bench/lib/oracle.mjs before its only run — cost: none
 Task 6: tests at the lock: first run 563 pass, 49 skip, 1 fail (output not kept, name unknown); two reruns 564 pass, 49 skip, 0 fail, pristine — a flaky test, for the final review
 ```
+
+## Step 10 SDD ledger tail (copied after the final review)
+
+```text
+Final review: opus 203.4k, 8.5 min: with fixes — 0 Critical, 1 Important (lock logs 546 → 545, from the discarded first hash run), 4 Minor (21-task sentence, p1 kills.json reason, two step 9 stick sentences, test env restore to "undefined"); deferred minors: none must be fixed before merge; sockets/FIFOs uncounted → known limit
+Final fix wave: sonnet 67.4k, 0.5 min, commit 4134ccc; re-review sonnet 70.3k, 0.4 min: all 6 addressed, no new breakage
+Final review: minor (deferred): tests/bench-human-cli.test.mjs:26 restores HSTACK_BENCH_MACHINE as "undefined" when it was unset (same pattern, out of scope)
+After the fix wave: bun test ./tests 564 pass, 49 skip, 0 fail, output kept (7 lines, pristine); stick compare of the manifest: equal 20789, changed 0
+```
