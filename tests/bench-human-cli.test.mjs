@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { human } from '../bench/human.mjs'
+import { eventKey } from '../bench/lib/human.mjs'
 import { oracle } from '../bench/oracle.mjs'
 import { queuePick } from '../bench/lib/oracle.mjs'
 
@@ -313,4 +314,130 @@ test('swap --drop leaves out a task the queue did not draw from', async () => {
   const dropped = await withData(s, () => quiet(() => human(['swap', '--drop', 'r9'])))
   expect(dropped.code).toBe(0)
   expect(dropped.out.split('\n')).toEqual(['swap sample-7.1.tsv: reproduced yes, rows 13, replaced 0', 'swap sample-7.2.tsv: reproduced yes, rows 23, replaced 0', 'swap inputs.tsv: reproduced yes, rows 3, replaced 0'])
+})
+
+// --- history (ruling 8): a fixture transcripts folder against a fixture plan table with controlled commit times ---
+const hRepo = join(tmp, 'hrepo'), hd = join(tmp, 'hdata'), tr = join(tmp, 'transcripts'), hTask = join(tmp, 'htask.json')
+const hgit = (...a) => Bun.spawnSync(['git', '-C', hRepo, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
+const hcommit = (at, msg) => {
+  writeFileSync(join(hRepo, 'f.txt'), msg)
+  hgit('add', '-A')
+  Bun.spawnSync(['git', '-C', hRepo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', msg], { env: { ...process.env, GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at } })
+  return hgit('rev-parse', 'HEAD')
+}
+mkdirSync(hRepo, { recursive: true }); hgit('init', '-q')
+const [h0, h1, h2] = [hcommit('2026-01-01T00:00:00Z', 'a'), hcommit('2026-01-02T00:00:00Z', 'b'), hcommit('2026-01-03T00:00:00Z', 'c')]
+writeFileSync(hTask, JSON.stringify({ ...envOf('ht'), repo: hRepo }))
+const ent = (type, sid, at, content, extra = {}) => JSON.stringify({ type, sessionId: sid, timestamp: at, message: { content }, ...extra })
+const usr = (sid, at, c) => ent('user', sid, at, c)
+const ast = (sid, at, c) => ent('assistant', sid, at, c)
+const REJ = [{ type: 'tool_result', content: [{ type: 'text', text: "The user doesn't want to proceed with this tool use. SENTINEL-REJ" }] }]
+const FILLERS = Array.from({ length: 22 }, (_, i) => `f${String(i).padStart(2, '0')}`)
+const KEYS = ['p1:sA', 'p1:sB', ...FILLERS.map((f) => `p1:${f}`), 'p2:sA', 'p2:sC']
+// a seed whose 20 of 26 segments include the rich sessions, so the page tests have rows to read
+const HSEED = Array.from({ length: 200 }, (_, i) => `hseed-${i}`).find((s) => { const p = queuePick(KEYS, 20, s); return ['p1:sA', 'p1:sB', 'p2:sA'].every((k) => p.includes(k)) })
+put(tr, {
+  'sA.jsonl': [
+    usr('sA', '2026-01-01T01:00:00Z', 'SENTINEL-H0 start'), ast('sA', '2026-01-01T01:01:00Z', [{ type: 'text', text: 'SENTINEL-A1 plan' }]),
+    usr('sA', '2026-01-01T02:00:00Z', [{ type: 'text', text: '<bash-input>SENTINEL-BASH ls</bash-input>' }]),
+    ast('sA', '2026-01-01T02:30:00Z', [{ type: 'text', text: 'SENTINEL-A3 ok' }]), ast('sA', '2026-01-01T02:31:00Z', [{ type: 'tool_use', name: 'x', input: {} }]),
+    usr('sA', '2026-01-01T03:00:00Z', REJ), usr('sA', '2026-01-01T03:00:01Z', [{ type: 'text', text: '[Request interrupted by user for tool use]' }]),
+    usr('sA', '2026-01-01T03:00:05Z', 'SENTINEL-H7 do it differently'), 'not json', ast('sA', '2026-01-01T04:00:00Z', [{ type: 'text', text: 'SENTINEL-A9' }]),
+    usr('sA', '2025-12-31T05:00:00Z', 'SENTINEL-OUT'), usr('sA', '2026-01-02T05:00:00Z', 'SENTINEL-P2'),
+  ].join('\n') + '\n',
+  'sB.jsonl': [usr('sB', '2026-01-01T10:00:00Z', 'SENTINEL-B0'), ast('sB', '2026-01-01T10:01:00Z', [{ type: 'text', text: 'SENTINEL-B1' }]), usr('sB', '2026-01-01T11:00:00Z', 'SENTINEL-B2')].join('\n') + '\n',
+  'sC.jsonl': usr('sC', '2026-01-02T06:00:00Z', 'SENTINEL-C0') + '\n',
+  'notes.txt': 'not a session',
+  'sub/deep.jsonl': usr('deep', '2026-01-01T05:00:00Z', 'SENTINEL-DEEP') + '\n', // a subfolder is not read
+  ...Object.fromEntries(FILLERS.map((f, i) => [`${f}.jsonl`, usr(f, `2026-01-01T12:${String(i).padStart(2, '0')}:00Z`, `SENTINEL-${f}`) + '\n'])),
+})
+put(hd, {
+  'machine.json': { forbid: { paths: [] } },
+  'tasks.json': { p1: { base: h0, end: h1 }, p2: { base: h1, end: h2 } },
+  'ext/groups.json': { seed: HSEED, groups: [] },
+})
+const runH = (args) => withData(hd, () => quiet(() => human(args)))
+let histRun // lazy, once: the console spy is shared, so it must not overlap another test's run
+const hist = () => (histRun ??= runH(['history', tr, hTask]))
+const segsOf = () => jsonAt(join(hd, 'history/segments.json'))
+const hpage = () => jsonAt(join(hd, 'step9/pages/history.json'))
+
+test('history reads a fixture folder and writes no text into segments.json', async () => {
+  const r = await hist(), segs = segsOf(), inSample = segs.filter((s) => queuePick(KEYS, 20, HSEED).includes(s.key)).reduce((n, s) => n + s.events.length, 0)
+  expect(r.code).toBe(0)
+  expect(r.out.split('\n')).toEqual([
+    `history: sessions 25, unparsable lines 1, segments 26, events 29, outside 1, sample 20, events in sample ${inSample}`,
+    'history p1 segments=24 rule1=2 rule2=24 rule3=0 notcounted=1',
+    'history p2 segments=2 rule1=0 rule2=1 rule3=0 notcounted=1',
+  ])
+  expect(r.out).not.toContain('SENTINEL')
+  expect(segs.map((s) => s.key).sort()).toEqual([...KEYS].sort())
+  const a = segs.find((s) => s.key === 'p1:sA')
+  expect(a.events.map((e) => [e.kind, e.line, e.tool])).toEqual([['message', 0, 'not counted'], ['bash', 2, 'rule 2'], ['reject', 5, 'rule 1']])
+  expect(segs.find((s) => s.key === 'p2:sC').events[0].tool).toBe('rule 2')
+  expect(segs.flatMap((s) => s.events).every((e) => Object.keys(e).sort().join() === 'at,kind,line,tool,turn')).toBe(true)
+  expect(JSON.stringify(segs)).not.toContain('SENTINEL')
+})
+
+test('the sample is queuePick of segment keys', async () => {
+  await hist()
+  const want = queuePick(segsOf().map((s) => s.key), 20, HSEED)
+  expect(want).toHaveLength(20)
+  expect([...new Set(hpage().map((r) => r.key.split(':').slice(0, 2).join(':')))].sort()).toEqual([...want].sort())
+})
+
+test('the history page holds the human text and the agent text before it, and no tool label', async () => {
+  await hist()
+  const rows = new Map(hpage().map((r) => [r.key, r.parts])), text = (k, i) => rows.get(k)[i].text
+  expect(rows.get('p1:sA:5').map((p) => p.title)).toEqual(['Agent, before', 'Human', 'Where'])
+  expect(text('p1:sA:0', 0)).toBe('')
+  expect(text('p1:sA:0', 1)).toBe('SENTINEL-H0 start')
+  expect(text('p1:sA:2', 0)).toBe('SENTINEL-A1 plan')
+  expect(text('p1:sA:2', 1)).toBe('SENTINEL-BASH ls')
+  expect(text('p1:sA:5', 0)).toBe('SENTINEL-A3 ok') // the last assistant entry with text; the tool use after it has none
+  for (const s of ['SENTINEL-REJ', 'Request interrupted', 'SENTINEL-H7']) expect(text('p1:sA:5', 1)).toContain(s)
+  expect(text('p1:sA:5', 2)).toBe('task p1, session 1 of 24, event 3 of 3')
+  expect(text('p2:sA:11', 2)).toBe('task p2, session 1 of 2, event 1 of 1')
+  expect(rows.has('p1:sA:10')).toBe(false) // the outside event
+  const all = JSON.stringify(hpage())
+  expect(all).not.toMatch(/rule [123]|not counted|SENTINEL-DEEP|SENTINEL-OUT/)
+  expect(all).not.toContain(tmp)
+  const seen = readFileSync(join(hd, 'step9/seen.tsv'), 'utf8').split('\n')
+  expect(seen).toContain('history\tp1\tp1:sA:5')
+  expect(seen.filter((l) => l.startsWith('history\t'))).toHaveLength(hpage().length)
+  // serve works unchanged on it: the history answer set per row
+  const sv = await runH(['serve', 'history']), s = { server: sv.code, token: readFileSync(join(hd, 'step9/pages/history.token'), 'utf8').trim() }
+  started.push(sv.code)
+  const data = await (await fetch(url(s, `/${s.token}/data`))).json()
+  expect(data.rows[0].answers).toEqual(['rule 1', 'rule 2', 'rule 3', 'not counted'])
+  expect((await post(s, { key: 'p1:sA:5', answer: 'rule 1' })).status).toBe(200)
+  expect((await post(s, { key: 'p1:sA:5', answer: 'same' })).status).toBe(400)
+})
+
+const answerFile = join(hd, 'step9/answers/history.tsv')
+const answers = (pairs) => { mkdirSync(join(hd, 'step9/answers'), { recursive: true }); writeFileSync(answerFile, pairs.map(([k, a]) => `${k}\t${a}\t\t2026-11-08T00:00:00Z\n`).join('')) }
+const sampled = () => { const pick = queuePick(segsOf().map((s) => s.key), 20, HSEED); return segsOf().filter((s) => pick.includes(s.key)).flatMap((s) => s.events.map((e, i) => [eventKey(s, i), e.tool])) }
+
+test('kappa history stops below 0.7', async () => {
+  await hist()
+  answers(sampled().map(([k]) => [k, 'rule 1']))
+  const r = await runH(['kappa', 'history'])
+  expect(r.code).toBe(3)
+  expect(r.out).toMatch(/^history kappa=-?\d\.\d\d raw=0\.\d\d ac1=-?\d\.\d\d n=\d+ answered=\d+\/\d+ gate stop$/)
+  expect(Number(r.out.match(/kappa=(\S+)/)[1])).toBeLessThan(0.7)
+})
+
+test('kappa history counts only answered sample events', async () => {
+  await hist()
+  const all = sampled(), total = all.length, half = all.slice(0, total - 1)
+  answers([...half, ['p1:nosuch:0', 'rule 1']]) // an answer outside the sample counts for nothing
+  const part = await runH(['kappa', 'history'])
+  expect(part.out).toMatch(new RegExp(`^history kappa=1\\.00 raw=1\\.00 ac1=1\\.00 n=${total - 1} answered=${total - 1}/${total} gate stop$`))
+  expect(part.code).toBe(3)
+  answers(all)
+  const full = await runH(['kappa', 'history'])
+  expect(full.out).toBe(`history kappa=1.00 raw=1.00 ac1=1.00 n=${total} answered=${total}/${total} gate pass`)
+  expect(full.code).toBe(0)
+  rmSync(answerFile)
+  expect((await runH(['kappa', 'history'])).out).toBe(`history kappa=none raw=none ac1=none n=0 answered=0/${total} gate stop`)
 })

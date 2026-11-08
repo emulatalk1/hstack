@@ -73,7 +73,7 @@ test('tool results, meta, commands and reminders are not events, an interrupt is
     { type: 'summary' },
   ]
   expect(events(lines).map((e) => e.kind)).toEqual(['message', 'bash', 'clear', 'clear', 'reject', 'interrupt'])
-  expect(events(lines).every((e) => Object.keys(e).sort().join() === 'at,kind,turn')).toBe(true)
+  expect(events(lines).every((e) => Object.keys(e).sort().join() === 'at,kind,line,turn')).toBe(true)
 })
 
 const w2 = [
@@ -90,7 +90,7 @@ test('a quoted refusal is not a reject, one entry gives one message, a reject it
   const rej = user([{ type: 'tool_result', content: "The user doesn't want to proceed with this tool use." }], '2026-01-01T00:00:01Z')
   const itr = user([{ type: 'text', text: '[Request interrupted by user for tool use]' }], '2026-01-01T00:00:02Z')
   const msg = user('instead do this', '2026-01-01T00:00:03Z')
-  expect(events([asst(), rej, itr, msg])).toEqual([{ at: '2026-01-01T00:00:01Z', kind: 'reject', turn: 1 }])
+  expect(events([asst(), rej, itr, msg])).toEqual([{ at: '2026-01-01T00:00:01Z', kind: 'reject', turn: 1, line: 1 }])
   expect(events([asst(), rej, itr, asst(), msg]).map((e) => e.kind)).toEqual(['reject', 'message'])
 })
 

@@ -8,11 +8,12 @@ import { gitOut } from './bugs.mjs'
 import { ARMS } from './canary.mjs'
 import { taskOf } from './ext.mjs'
 import { check } from './input-check.mjs'
-import { answerOk, answersFor, BATCHES, coldSwap, parseAnswers } from './lib/human.mjs'
+import { answerOk, answersFor, BATCHES, coldSwap, eventKey, events, historyKappa, humanText, lastAgentText, parseAnswers, planWindows, segments, toolLabel } from './lib/human.mjs'
+import { queuePick } from './lib/oracle.mjs'
 import { loadTask } from './lib/task.mjs'
 import { dataDir, labelLines, poolKeys, queueDraw, queuePools, readPairs, seedOf } from './oracle.mjs'
 
-const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] | status'
+const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] | status | history <transcripts dir> <task.json> | kappa history'
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
 const read = (f) => readFileSync(f, 'utf8')
 // a tsv with a header as objects; a file that is not there has no rows
@@ -157,17 +158,90 @@ async function build(data, batch, rest) {
   }
   if (pos.length > 1 || (batch !== 'labels' && (logs.length || attribution))) throw new Error(USAGE)
   const rows = await VIEWS[batch](data, pos[0], logs, attribution)
+  writePage(data, batch, rows)
+  console.log(`build ${batch}: rows ${rows.length}, parts ${rows.reduce((s, r) => s + r.parts.length, 0)}`)
+  return 0
+}
+
+// the batch's page file, and the sealed record of what the user was shown (ruling 2): batch, task, key, once each
+function writePage(data, batch, rows) {
   if (new Set(rows.map((r) => r.key)).size !== rows.length) throw new Error(`build ${batch}: a key is there twice`)
   const pages = join(data, 'step9/pages')
   mkdirSync(pages, { recursive: true })
   writeFileSync(join(pages, `${batch}.json`), JSON.stringify(rows.map(({ key, kind, parts }) => ({ key, ...(kind ? { kind } : {}), parts })), null, 2) + '\n')
-  // the sealed record of what the user was shown (ruling 2): batch, task, key, once each
   const seen = join(data, 'step9/seen.tsv'), had = new Set(tsvRows(seen).map((r) => `${r.batch}\t${r.key}`))
   if (!existsSync(seen)) writeFileSync(seen, 'batch\ttask\tkey\n')
   const add = rows.filter((r) => !had.has(`${batch}\t${r.key}`)).map((r) => `${batch}\t${r.task}\t${r.key}\n`).join('')
   if (add) appendFileSync(seen, add)
-  console.log(`build ${batch}: rows ${rows.length}, parts ${rows.reduce((s, r) => s + r.parts.length, 0)}`)
+}
+
+// --- history (ruling 8): the user's past sessions mapped to the plans by time ---
+// the entries of a session file, one per line (an unparsable line is `{}` so indexes stay the file's), and how many lines did not parse
+function readSession(file) {
+  let bad = 0
+  const entries = read(file).split('\n').map((t) => {
+    if (!t.trim()) return {}
+    try { const x = JSON.parse(t); if (x && typeof x === 'object' && !Array.isArray(x)) return x } catch {}
+    bad++
+    return {}
+  })
+  return { entries, bad }
+}
+const HISTORY_N = 20
+
+async function history(data, dir, taskFile) {
+  if (!dir || !taskFile) throw new Error(USAGE)
+  const repo = (await loadTask(taskFile)).repo
+  const tasks = Object.entries(readJson(join(data, 'tasks.json')) ?? {}).map(([task, t]) => ({ task, base: t.base, end: t.end }))
+  if (!tasks.length) throw new Error('no tasks in tasks.json')
+  const when = new Map()
+  for (const sha of new Set(tasks.flatMap((t) => [t.base, t.end]))) {
+    const at = new Date((await gitOut(repo, 'log', '-1', '--format=%cI', sha)).trim())
+    if (Number.isNaN(at.getTime())) throw new Error('a commit of tasks.json has no commit time')
+    when.set(sha, at)
+  }
+  // the folder's own *.jsonl only, read-only
+  const files = readdirSync(dir).filter((f) => f.endsWith('.jsonl') && statSync(join(dir, f)).isFile()).sort()
+  let bad = 0
+  const sessions = files.map((f) => { const s = readSession(join(dir, f)); bad += s.bad; return { id: f.slice(0, -'.jsonl'.length), events: events(s.entries) } })
+  const { segments: segs, outside } = segments(sessions, planWindows(tasks, (sha) => when.get(sha)))
+  const byTask = new Map(tasks.map((t) => [t.task, segs.filter((s) => s.task === t.task)])) // each task's segments, by time
+  for (const list of byTask.values()) list.forEach((s, k) => toolLabel(s, k === 0).forEach((tool, i) => { s.events[i].tool = tool }))
+  mkdirSync(join(data, 'history'), { recursive: true })
+  writeFileSync(join(data, 'history/segments.json'), JSON.stringify(segs.map(({ key, task, events: es }) => ({ key, task, events: es })), null, 2) + '\n')
+
+  const picked = queuePick(segs.map((s) => s.key), HISTORY_N, seedOf(data)), bySeg = new Map(segs.map((s) => [s.key, s]))
+  const rows = []
+  for (const key of picked) {
+    const seg = bySeg.get(key), list = byTask.get(seg.task), { entries } = readSession(join(dir, `${key.slice(seg.task.length + 1)}.jsonl`))
+    seg.events.forEach((e, i) => rows.push({ key: eventKey(seg, i), task: seg.task, parts: [
+      part('Agent, before', lastAgentText(entries, e.line)), part('Human', humanText(entries, e)),
+      part('Where', `task ${seg.task}, session ${list.indexOf(seg) + 1} of ${list.length}, event ${i + 1} of ${seg.events.length}`)] }))
+  }
+  writePage(data, 'history', rows)
+
+  const total = segs.reduce((n, s) => n + s.events.length, 0)
+  console.log(`history: sessions ${sessions.length}, unparsable lines ${bad}, segments ${segs.length}, events ${total}, outside ${outside}, sample ${picked.length}, events in sample ${rows.length}`)
+  for (const [task, list] of byTask) {
+    const n = (label) => list.flatMap((s) => s.events).filter((e) => e.tool === label).length
+    console.log(`history ${task} segments=${list.length} rule1=${n('rule 1')} rule2=${n('rule 2')} rule3=0 notcounted=${n('not counted')}`)
+  }
   return 0
+}
+
+const fx = (x) => (typeof x === 'number' && !Number.isNaN(x) ? x.toFixed(2) : 'none')
+// the tool's labels against the human's, over the sampled events that have a human answer; the gate is every sampled event answered and kappa >= 0.7
+function kappaHistory(data) {
+  const segs = readJson(join(data, 'history/segments.json'))
+  if (!Array.isArray(segs)) throw new Error('no history/segments.json: run history first')
+  const pick = new Set(queuePick(segs.map((s) => s.key), HISTORY_N, seedOf(data)))
+  const tool = new Map(segs.filter((s) => pick.has(s.key)).flatMap((s) => s.events.map((e, i) => [eventKey(s, i), e.tool])))
+  const file = join(data, 'step9/answers/history.tsv'), given = existsSync(file) ? parseAnswers(read(file)) : new Map()
+  const keys = [...tool.keys()].filter((k) => BATCHES.history.answers.includes(given.get(k)?.answer))
+  const s = keys.length ? historyKappa(keys.map((k) => given.get(k).answer), keys.map((k) => tool.get(k))) : {}
+  const pass = keys.length === tool.size && s.kappa >= 0.7
+  console.log(`history kappa=${fx(s.kappa)} raw=${fx(s.raw)} ac1=${fx(s.ac1)} n=${keys.length} answered=${keys.length}/${tool.size} gate ${pass ? 'pass' : 'stop'}`)
+  return pass ? 0 : 3
 }
 
 // --- serve (ruling 11) ---
@@ -316,6 +390,8 @@ export async function human(args) {
   if (cmd === 'build' && batch) return build(data, batch, rest)
   if (cmd === 'serve' && batch && (rest.length === 0 || (rest.length === 2 && rest[0] === '--port' && /^\d+$/.test(rest[1])))) return serve(data, batch, rest.length ? Number(rest[1]) : 0)
   if (cmd === 'status' && args.length === 1) return statusCmd(data)
+  if (cmd === 'history' && args.length === 3) return history(data, batch, rest[0])
+  if (cmd === 'kappa' && batch === 'history' && args.length === 2) return kappaHistory(data)
   throw new Error(USAGE)
 }
 
