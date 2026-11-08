@@ -1,5 +1,5 @@
 import { test, expect, afterAll, spyOn } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { stick } from '../bench/stick.mjs'
@@ -46,9 +46,30 @@ test('hash does not follow a link and counts it', async () => {
   const r = await hash(d)
   expect(r.code).toBe(0)
   expect(r.paths).toEqual(['machine.json', 'x/a.txt', 'x/y/b.txt'])
-  expect(r.out).toContain('stick hash: files 3, link 1, node_modules 0, store 0, secret 0, transcript 0, rewritten 0')
+  expect(r.out).toContain('stick hash: files 3, link 1, node_modules 0, store 0, secret 0, transcript 0, rewritten 0, special 0')
   expect(r.out).toContain('stick hash x 2')
   expect(r.text).toContain(`${sha('a')}  x/a.txt\n`)
+})
+
+test('hash refuses an --out inside the data folder', async () => {
+  const d = fixture({ 'x/a.txt': 'a' })
+  mkdirSync(join(d, 'sub'))
+  symlinkSync(join(d, 'sub'), join(tmp, `alias${n}`))
+  for (const out of [join(d, 'm.sha256'), join(d, 'sub', 'm.sha256'), join(tmp, `alias${n}`, 'm.sha256'), join(d, 'x', '..', 'm.sha256')]) {
+    const r = await run(d, ['hash', '--out', out])
+    expect(r.code).toBe(2)
+    expect(r.out).toContain('stick hash: --out is inside the data folder')
+    expect(existsSync(out)).toBe(false)
+  }
+})
+
+test('hash counts a FIFO as special', async () => {
+  const d = fixture({ 'x/a.txt': 'a' })
+  expect(Bun.spawnSync(['mkfifo', join(d, 'x', 'q')]).exitCode).toBe(0)
+  const r = await hash(d)
+  expect(r.code).toBe(0)
+  expect(r.paths).toEqual(['machine.json', 'x/a.txt'])
+  expect(r.out).toContain('rewritten 0, special 1')
 })
 
 test('hash leaves out secrets and run transcripts', async () => {

@@ -23,7 +23,7 @@ const quiet = async (fn) => {
 const withData = async (d, fn) => {
   const prev = process.env.HSTACK_BENCH_MACHINE
   process.env.HSTACK_BENCH_MACHINE = join(d, 'machine.json')
-  try { return await fn() } finally { process.env.HSTACK_BENCH_MACHINE = prev }
+  try { return await fn() } finally { if (prev === undefined) delete process.env.HSTACK_BENCH_MACHINE; else process.env.HSTACK_BENCH_MACHINE = prev }
 }
 const put = (root, files) => { for (const [f, text] of Object.entries(files)) { mkdirSync(join(root, f, '..'), { recursive: true }); writeFileSync(join(root, f), typeof text === 'string' ? text : JSON.stringify(text)) } }
 const jsonAt = (f) => JSON.parse(readFileSync(f, 'utf8'))

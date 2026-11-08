@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 // Stick v1 (prereg step 10, rulings 5 and 6): hash every file of the measuring stick under <data>, and compare a lock
 // or a manifest with the files as they are now. Prints counts and paths only, never a file's content.
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import { dataDir } from './oracle.mjs'
 
 const USAGE = 'usage: bun bench/stick.mjs hash --out <file> | compare <file> [--reasons <tsv>]'
@@ -20,7 +20,7 @@ const STORE_PARENTS = new Set(['ext/repos', 'seeded/repos'])
 const STORE_KEEP = /^(HEAD|config|shallow|packed-refs|refs|refs\/.+|objects|objects\/info|objects\/info\/alternates)$/
 
 export function hashTree(root) {
-  const left = { link: 0, node_modules: 0, store: 0, secret: 0, transcript: 0, rewritten: 0 }
+  const left = { link: 0, node_modules: 0, store: 0, secret: 0, transcript: 0, rewritten: 0, special: 0 }
   const files = []
   // the Dirent's own type, never a stat: a link is counted and not followed; a folder left out counts once
   const walk = (dir, rel, store) => {
@@ -35,7 +35,7 @@ export function hashTree(root) {
         const kind = Object.keys(LEFT_FILES).find((k) => LEFT_FILES[k].match(p))
         if (kind) left[kind]++
         else files.push(p)
-      }
+      } else left.special++ // socket, FIFO, device: never opened (a FIFO would block the read)
     }
   }
   walk(root, '', null)
@@ -51,7 +51,12 @@ export const parseReasons = (tsv) => tsv.split('\n').filter((l) => l.trim()).map
 export const reasonOf = (path, reasons) => reasons.find((r) => new Bun.Glob(r.glob).match(path))?.reason ?? null
 
 function hash(out) {
-  const { lines, left } = hashTree(dataDir())
+  const data = realpathSync(dataDir())
+  // a manifest written inside <data> would be hashed by the next run; resolve links of the file or of its parent folder
+  let target
+  try { target = realpathSync(out) } catch { target = join(realpathSync(dirname(resolve(out))), basename(out)) }
+  if (target.startsWith(data + sep)) { console.error('stick hash: --out is inside the data folder'); return 2 }
+  const { lines, left } = hashTree(data)
   writeFileSync(out, lines.join('\n') + '\n')
   console.log(`stick hash: files ${lines.length}, ${Object.entries(left).map(([k, v]) => `${k} ${v}`).join(', ')}`)
   // root-level files count under `.`
