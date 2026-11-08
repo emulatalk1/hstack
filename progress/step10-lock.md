@@ -25,13 +25,13 @@ Stick v1 is locked: its content is hashed and its task lists are committed. **It
 - The canary of section 7.3 failed as registered: mean `d` 0.400 with B- on `claude-sonnet-5-5` and 0.428 with B- on `claude-haiku-5-5`, 3 of 6 tasks favouring B in both (step 8 lock).
 - The extension, registered after that failure was seen, passed on a bootstrap lower bound of 0.057, while its t interval, [-0.006, 0.627], crosses 0 (step 8 lock).
 - The agent reader (`claude-fable-5-1`) read B- as visibly worse on s3-01 and s3-02; the controller and the advisor had found it not worse on all three (step 8 deviation 2, step 9 lock). On s3-02 the seeded checks pass for both arms (step 9 lock).
-- No human read the pairs (decision 1, option (b)). The section 7.3 trigger candidate stays open, and step 14 lists it.
+- No human read the pairs (decision 1, option (b)). The section 7.3 trigger candidate stays open, and step 14 lists it. From the step 9 lock ("The stick decision, 2026-11-08"): "No 'fix the stick' plan is written now, because the only evidence for §7.3's trigger is the reader the user rated not measurable on the other two gates." And: "Cost if wrong: Part 2 runs on a stick whose sensitivity the canary did not establish, and H4 is then the only guard."
 - Part 2's guard is H4: H against W, k = 3, 24 tasks; if it is not met, H1–H3 are not reported.
 
 ## The external `step` rerun (ruling 2; `step.lines`, `step-cmp.out`)
 
 - 24 runs at 16:19:54 (+07), all exit 0. Resolver `reused` 6 (s2-02, s2-10, s3-01, s3-05, s3-06, s3-07, the 6 tasks with resolver records at step 6), `none` 18, **`ran` 0**, no refusal.
-- `cmp` against the copies in `logs/step10/before/`: changed **`s1-03/step.json`, `s1-03/step-f2p.json`, `s1-04/step.json`**, nothing else. The other 21 tasks' two files, and s3-05's and s3-06's `step.json`, are byte-equal.
+- `cmp` against the copies in `logs/step10/before/`: changed **`s1-03/step.json`, `s1-03/step-f2p.json`, `s1-04/step.json`**, nothing else. The other 45 of the 48 files are byte-equal: both files of the 22 other tasks (s3-05 and s3-06 included) and `s1-04/step-f2p.json`.
 - **Ids that moved:** s1-03 9 → 10, s1-04 4 → 5; joined 2, left 0 (the dropped s1-03 check was not an id). Both are settled `build` checks whose origin was already `f2p`. External ids in all: 51 → 53.
 - `step-f2p.json` of s1-03: the dropped check left the scored set (f2p 26 → 25).
 - **H1's N is 20** (tasks with ids); the 4 without are s1-01, s1-06, s3-01, s3-07.
@@ -41,6 +41,7 @@ Stick v1 is locked: its content is hashed and its task lists are committed. **It
 
 - `kills-due.out`: `kills due s1-03 oracle`, `kills due p1 oracle`, `kills due p2 oracle`, `kills due: 3`. p6c has no `seeded/` folder.
 - Real-estate lane (`run-kills-re.lines`), 16:20:17 to 16:35:36: `p1 kills bugs=1 fix=0/1 step=none`, `p2 kills bugs=1 fix=0/1 step=none`, exit 0, **`PGSNAP equal`**. Both `kills.json` byte-equal to the copies.
+- p1's `kills.json` is byte-equal although its oracle gained 5 scored checks in the second batch: its `fix.of` (checks that pass at the end and are not excluded) is 1 before and after, so none of the new checks passes at p1's end; `kills` counts a kill only among those.
 - External lane (`run-kills-ext.lines`), 16:35:54 to 17:19:27: `docker builder prune -f` first (the 15 GB cache rule; 19.33 GB reclaimed), then `s1-03 kills bugs=3 fix=2/3 step=none`, exit 0. Its `kills.json` changed: per bug the killed counts are unchanged (1, 0, 2), and `of` went from 26 to 25, the 7.1 drop. Section 8.3's numbers stand: external fix kills 28 of 72.
 - **External H1 sensitivity** (`step-sens.out`, `logs/step7/lock-step-sens.mjs`): tasks with a step id 20, bugs 60, **caught by a step id 12** (step 7 lock: 11), tasks with a catch 9 (8); s1-04's new id catches one bug. Missing grades 0, catches that are not fix kills 0.
 - No lock hashed the rewritten grades of p1, p2 or s1-03, so their equality is shown through `kills.json` only.
@@ -78,7 +79,7 @@ All 74 changed paths are rows of the table registered before any rerun; `p2/seed
 
 - `stick hash: files 20789, link 47, node_modules 1, store 1071, secret 7, transcript 203, rewritten 53`.
 - **Left out:** 47 links, never followed: `p8b → 8b` (p8b's 141 files are hashed under `8b/`; the earlier locks name them `p8b/…` and their compares resolve through the link) and 46 `oracle/node_modules` links of the real-estate oracle folders (to the scaffold's or the copy's `node_modules`); 1 `node_modules` folder (`oracle-scaffold/`); 1071 entries inside the git stores of `ext/repos/` and `seeded/repos/` outside the allowlist (`HEAD`, `config`, `shallow`, `packed-refs`, `refs/**`, `objects/info/alternates` are hashed, so the `refs/seeded/*` of the 81 bugs and the step 8 product branches are in); 7 secrets (the page tokens; `box.env` was already removed); 203 run transcripts `results/*/*.jsonl`; 53 files every grade rewrites (`*/docker.json`, `*/build/readiness.tsv`, `ext/removed.txt`). `transcripts/` (87 files) is hashed.
-- Files per top folder are in `hash.out` (`ext` 9143, `heldout` 627, `seeded` 221, `step9` 111, `logs` 546, …).
+- Files per top folder are in `hash.out` (`ext` 9143, `heldout` 627, `seeded` 221, `step9` 111, `logs` 545, …).
 - `stick compare progress/stick-v1.sha256`: hashed 20789, equal 20789, changed 0, missing 0. Three paths checked against `shasum -a 256`, equal: `8b/agreement.json`, `ext/sealed/apache__datafusion__24211/logs/base-1.log`, `seeded/repos/chakra-ui__panda.git/HEAD`.
 - Written to `logs/step10/` after the hash, so not in the manifest: `hash.out`, `self-compare.out`, `links.out` (and this lock's later outputs).
 - Recheck: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/stick.mjs compare progress/stick-v1.sha256`.
@@ -113,7 +114,7 @@ Each is listed in step 14's report.
 
 ## Findings
 
-- **One test failed once, unidentified.** The first `bun test ./tests` at the lock gave 563 pass, 49 skip, **1 fail**; its output was not kept, so the test's name is not known. Two reruns on the same code gave 564 pass, 49 skip, 0 fail, output pristine. A flaky test; the final review should look for a timing-dependent test.
+- **One test failed once, unidentified.** The first `bun test ./tests` at the lock gave 563 pass, 49 skip, **1 fail**; its output was not kept, so the test's name is not known. Two reruns on the same code gave 564 pass, 49 skip, 0 fail, output pristine. A flaky test; the final review should look for a timing-dependent test. Candidates named by the final review: `tests/bench-env.test.mjs:140-148` (a 5000 ms bound around a worktree add and a spawn), `:201-221`, `tests/bench-proc.test.mjs:8-20`, and the free-port reuse of `tests/bench-env.test.mjs:25`, `tests/bench-agent.test.mjs:137`, `tests/bench-score.test.mjs:119`. The next full run keeps its output.
 
 ## Checks at the lock
 
@@ -140,6 +141,7 @@ Each is listed in step 14's report.
 ## Known limits
 
 - The stick's sensitivity is not validated; H4 is Part 2's only guard.
+- Sockets and FIFOs under `<data>` are skipped by `stick hash` without a count (ruling 5 says each left-out entry is counted); none is expected in the data folder. Step 11's amendment may add a count, and `hash` could refuse an `--out` inside the data folder (the slip of ruling 4).
 - No human read step 9 content or the 3 pairs.
 - The manifest pins git content through refs, as far as git's SHA-1 does.
 - Run transcripts are not hashed.

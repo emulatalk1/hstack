@@ -29,7 +29,7 @@ const fixture = (files) => {
 const run = (d, args) => {
   const prev = process.env.HSTACK_BENCH_MACHINE
   process.env.HSTACK_BENCH_MACHINE = join(d, 'machine.json')
-  return quiet(() => stick(args)).finally(() => { process.env.HSTACK_BENCH_MACHINE = prev })
+  return quiet(() => stick(args)).finally(() => { if (prev === undefined) delete process.env.HSTACK_BENCH_MACHINE; else process.env.HSTACK_BENCH_MACHINE = prev })
 }
 const hash = async (d) => {
   const out = join(tmp, `m${n}.sha256`)
