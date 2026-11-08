@@ -253,6 +253,8 @@ None. Every changed file of the step 5–8 hashes is one the plan's table names.
 
 ## Known limits
 
+- **No human saw step 9 content.** After the switch to the agent reader, the plan's limit "the user will know 80 hidden checks" (decision 1, option A) no longer applies: the pages, answers and notes were seen only by the reader and are sealed, so the user can direct the plugin-design sessions without that caveat. `step9/seen.tsv` records what the reader was shown.
+
 - **One model read everything.** Every settlement and read of step 9 is `claude-fable-5-1`'s judgement; no human checked any, and nothing measures that model against a second reader.
 - **The reader had the raters' brief.** For `classify`, `classify-2` and `rerate-7.2` it read `briefs/classify.md`, the rule the raters had; a disagreement between the reader and the raters is between two models under one brief.
 - **Blind settling.** The `classify` pages show no rater label or quote, so a disagreement the raters argued well was not shown.
@@ -284,7 +286,7 @@ Subagents of the build, as the ledger gives them (implementer; reviewer):
 
 Listed implementer tokens 1,810.3k; reviewer tokens 1,105.5k.
 
-A resumed agent's run figure (Task 3 and Task 7b fix rounds) includes re-reading its earlier context. The figures are real per-run usage, not double counts (ledger ruling; a run's tool uses reset each run, e.g. Task 3's fix run 9 tool uses against 45 for the first). If wrong, the total is overstated by up to about 0.4M.
+The meaning of a resumed agent's figure (the Task 2, Task 3 and Task 7b fix rounds) is not known: the harness's `subagent_tokens` may be the run's own usage or the size of the agent's context at its end (Task 7b: 209.6k, then 224.6k after a 4-minute fix run, which fits a context size better than a fresh 224k of work). So the listed implementer total is stated as a range: about 1.30M (each resumed agent counted once, at its last figure: 1,810.3k less 86.0k, 212.4k and 209.6k) to 1.81M (every figure added). The reader's 1,523,873 tokens come from the run records and are exact.
 
 Agents of the runs (`lock-usage.out`, from the run records; input + output + cache write + cache read):
 
