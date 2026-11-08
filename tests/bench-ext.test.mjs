@@ -251,6 +251,16 @@ test('rebuild.json replaces the recipe lines', () => {
   for (const bad of [{}, { lines: 'npm ci' }, { lines: [1] }]) expect(() => rebuildLines(recipe, { layer: [] }, bad)).toThrow('rebuild.json is not { lines: [shell lines] }')
 })
 
+test('a USER naming the image\'s final user is a no-op in the make, any other USER is refused', () => {
+  const at = (line, user) => rebuildLines({ ...recipe, dockerfile: 'FROM a\nCOPY . /work\n' }, { layer: [line, 'RUN true'] }, undefined, user)
+  expect(at('USER root', '')).toEqual(['cd /', "sh -c 'true'"])
+  for (const [line, user] of [['USER 0', 'root'], ['USER 0:0', ''], ['USER root', '0'], ['USER app', 'app']]) expect(at(line, user)).toEqual(['cd /', "sh -c 'true'"])
+  expect(() => at('USER app', '')).toThrow('cannot run USER')
+  expect(() => at('USER root', 'app')).toThrow('cannot run USER')
+  expect(() => at('USER root')).toThrow('cannot run USER') // no user given: every USER refused, as before
+  expect(at('USER app', null)).toEqual(['cd /', "sh -c 'true'"]) // null: the check before any Docker call lets a USER wait for R's user
+})
+
 test('rebuild.json with briefSha and round still feeds rebuildLines', () => {
   expect(rebuildLines(recipe, { layer: [] }, { lines: ['pip install --no-index -e .'], briefSha: 'a'.repeat(64), round: 2 })).toEqual(['pip install --no-index -e .'])
 })

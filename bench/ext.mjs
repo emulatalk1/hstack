@@ -1088,8 +1088,13 @@ function stageShell(stage) {
   if (!Array.isArray(argv) || !argv.length || !argv.every((a) => typeof a === 'string')) throw no('take a SHELL that is not a JSON array of strings')
   return argv.map(word).join(' ')
 }
-function shellLine(ins, shell = 'sh -c') {
+// '', root, 0 and 0:0 all name root, as Docker reads an image's Config.User
+const asUser = (u) => (['', 'root', '0', '0:0'].includes(u.trim()) ? 'root' : u.trim())
+// user: R's final user (Config.User), as the make runs; a USER naming it is a no-op. undefined refuses every USER; null passes
+// every USER, for a check before any Docker call (the user is known only once R is built)
+function shellLine(ins, shell = 'sh -c', user) {
   const [, op, rest] = /^(\S+)\s*([\s\S]*)$/.exec(ins), kw = op.toUpperCase()
+  if (kw === 'USER' && user !== undefined && (user === null || asUser(rest) === asUser(user))) return null
   if (kw === 'RUN') {
     let body = rest
     for (let m; (m = /^--(\S+)\s+/.exec(body)); body = body.slice(m[0].length))
@@ -1110,7 +1115,7 @@ const savedRebuild = (ext, t) => {
   if (!existsSync(f)) return null
   try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return {} }
 }
-export function rebuildLines(recipe, serve, rebuild) {
+export function rebuildLines(recipe, serve, rebuild, user) {
   const ins = instructions(recipe.dockerfile), at = ins.flatMap((l, i) => (COPY_REPO.test(l) ? [i] : []))
   if (at.length !== 1) throw new Error('the recipe must copy the repo into /work exactly once')
   if (rebuild != null) {
@@ -1119,7 +1124,7 @@ export function rebuildLines(recipe, serve, rebuild) {
   }
   const before = ins.slice(0, at[0]), stage = before.slice(before.findLastIndex((l) => /^FROM\s/i.test(l)) + 1), shell = stageShell(stage)
   const state = stage.filter((l) => /^(ARG|WORKDIR)\s/i.test(l))
-  return ['cd /', ...[...state, ...ins.slice(at[0] + 1), ...instructions(serve.layer.join('\n'))].map((l) => shellLine(l, shell)).filter((l) => l !== null)]
+  return ['cd /', ...[...state, ...ins.slice(at[0] + 1), ...instructions(serve.layer.join('\n'))].map((l) => shellLine(l, shell, user)).filter((l) => l !== null)]
 }
 // the make script's head: every path of the base's tree (a NUL-separated list in the container) goes from /work, so a file
 // the product deleted is gone and an untracked build output stays; then the commit's export, copied in at /tmp/bench-product
@@ -1169,6 +1174,9 @@ export async function productImage({ t, commit, baseImage, network, lines, repo,
     await sp(['docker', 'rm', name])
   }
 }
+
+// an image's final user (Config.User; empty is root), the user a make container's docker exec runs as
+export const imageUser = async (image) => (await must(['docker', 'image', 'inspect', '-f', '{{.Config.User}}', image], `docker image inspect ${image}`)).trim()
 
 // decision 6 (a): a private-set product is made with the registry its arm's box had, pinned now; any other with no network
 export async function productNetwork(t, pin) {
@@ -1226,7 +1234,9 @@ export async function oracleRun(args, inj = {}) {
   const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
   const runner = runnerFor(oracle, process.env.BENCH_TASK_FILE)
   const { recipe, serveDockerfile, sv } = serveRecipe(ext, t)
-  const lines = trusted ? null : rebuildLines(recipe, sv, savedRebuild(ext, t)), split = !trusted && gradeMode(ext, t, sv) === 'split'
+  const saved = savedRebuild(ext, t)
+  if (!trusted) rebuildLines(recipe, sv, saved, null) // refused before any Docker call; a USER waits for R's user
+  const split = !trusted && gradeMode(ext, t, sv) === 'split'
   const head = (await must(['git', '-C', dir, 'rev-parse', 'HEAD'], 'git rev-parse')).trim(), sha7 = head.slice(0, 7)
   if (trusted && !(await trustedCommit(ext, data, dir, head))) throw new Error(`oracle-run --trusted: ${sha7} is no task's base or end and no seeded bug`)
   const low = await diskFloor(task, inj)
@@ -1262,6 +1272,7 @@ export async function oracleRun(args, inj = {}) {
     await image(serveTag, serveDockerfile, trusted ? 'HEAD' : t.base, !trusted || head === t.base ? serveLog : sealed('serve.build.log'))
     await image(runnerTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, sealed(trusted ? 'grade.build.log' : 'runner.build.log'))
     const network = trusted ? null : await productNetwork(t, inj.registryHosts && (async () => inj.registryHosts))
+    const lines = trusted ? null : rebuildLines(recipe, sv, saved, await imageUser(runnerTag))
     const product = trusted || await productImage({ t, commit: head, baseImage: runnerTag, network, lines, repo: dir, osha8, n, platform: recipe.platform, record, scratch, log: sealed('make.log'), diskFree })
     if (!product) throw new Error(`${sha7}: the product image was not made (the make failed: its log is sealed)`)
     if (split) {
@@ -1330,9 +1341,12 @@ export async function rebuild(args, inj = {}, print = (s) => console.log(s)) {
   const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
   const oracle = join(data, task, 'oracle'), runner = runnerFor(oracle, join(data, 'env/box', `${task}.json`))
   const { recipe, serveDockerfile, sv } = serveRecipe(ext, t), current = savedRebuild(ext, t)
-  let lines = null, refused = null
-  // a default line a make container cannot replay (USER, COPY, ...) is a failed base make with no log: the agent gets the refusal
-  try { lines = rebuildLines(recipe, sv, current) } catch (e) { if (current || !e.message.includes('rebuild.json')) throw e; refused = e.message }
+  // a default line a make container cannot replay (COPY, a USER other than R's, ...) is a failed base make with no log: the agent
+  // gets the refusal. Anything else (a malformed rebuild.json, no single copy) is an error, known here before any Docker call
+  const linesFor = (user) => {
+    try { return { lines: rebuildLines(recipe, sv, current, user) } } catch (e) { if (current || !e.message.includes('rebuild.json')) throw e; return { refused: e.message } }
+  }
+  linesFor(null)
   const brief = readFileSync(join(ext, 'briefs', 'rebuild.md'), 'utf8'), briefSha = sha(brief)
   const saved = join(ext, 'tasks', t.slug, 'rebuild.json'), rounds = join(ext, 'tasks', t.slug, 'rebuild-rounds'), tsv = join(rounds, 'rounds.tsv')
   const build = join(data, task, 'build'), logs = join(ext, 'sealed', t.slug, 'logs'), base7 = t.base.slice(0, 7), end7 = t.end.slice(0, 7)
@@ -1345,7 +1359,7 @@ export async function rebuild(args, inj = {}, print = (s) => console.log(s)) {
   process.on('SIGTERM', stop)
   process.on('SIGINT', stop)
   try {
-    let make = inj.maker
+    let make = inj.maker, user = inj.user // inj.user: R's user with a stand-in maker (undefined refuses every USER)
     if (!make) { // S and R as oracle-run builds them, from the BuildKit cache; then each make from R with the product's network
       const diskFree = inj.diskFree ?? dockerDiskFree, repo = join(ext, 'repos', t.key), pfx = `bench-ext/${t.slug}:`
       const osha8 = oracleSha(oracleFiles(oracle)).slice(0, 8), serveTag = `${pfx}${base7}-serve`, runnerTag = `${pfx}${base7}-runner-${osha8}`
@@ -1356,6 +1370,7 @@ export async function rebuild(args, inj = {}, print = (s) => console.log(s)) {
       await image(serveTag, serveDockerfile, t.base, join(build, `${base7}-${m}.serve.build.log`))
       await image(runnerTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, join(logs, `rebuild-${base7}-${m}.runner.build.log`))
       print(`${task} rebuild images=2`)
+      user = await imageUser(runnerTag)
       const network = await productNetwork(t, inj.registryHosts && (async () => inj.registryHosts))
       make = async (commit, ls, log) => {
         const sha7 = commit.slice(0, 7), n = names().filter((i) => i === `${pfx}${sha7}-serve` || i.startsWith(`${pfx}${sha7}-product-`)).length + 1
@@ -1369,6 +1384,7 @@ export async function rebuild(args, inj = {}, print = (s) => console.log(s)) {
       print(`${task} rebuild make=${label} lines=${ls.length} base=${base ? 'ok' : 'failed'} end=${!base ? 'skipped' : end ? 'ok' : 'failed'}`)
       return { lines: ls, base, end, log }
     }
+    const { lines, refused } = linesFor(user)
     let last, why = null
     if (refused) { last = { base: false, end: false, refused }; print(`${task} rebuild make=none base=refused`) }
     else last = await attempt(lines, `current-${readdirSync(build).filter((f) => f.startsWith(`${base7}-rebuild-current-`)).length + 1}`) // a rerun overwrites no log

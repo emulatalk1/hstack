@@ -1105,6 +1105,13 @@ test('default lines a make container cannot replay are a failed base make with n
   await expect(rebuildIn(t, async () => true)).rejects.toThrow('the recipe must copy the repo into /work exactly once')
 })
 
+test('a USER naming R\'s final user is no refusal: the default lines are made without it', async () => {
+  const s = rebuildTask({ serve: { ...serveRecipe, layer: ['USER root', ...serveRecipe.layer] } }), out = []
+  const code = await rebuild(['s1-01'], { data: s.data, diskFree: async () => 100, user: '', maker: async () => true, rebuildAgent: async () => null }, (l) => out.push(l))
+  expect(code).toBe(0)
+  expect(out).toEqual(['s1-01 rebuild make=current-1 lines=3 base=ok end=ok', 's1-01 rebuild base=ok end=ok rounds=0 result=ok'])
+})
+
 dtest('rebuild writes rebuild.json for a fixture whose default lines fail offline, and removes what it built (needs BENCH_EXT_DOCKER=1)', async () => {
   // apk fetch needs the package index: it passes in S's build (with network) and fails in the make container (none), as an
   // install line that fetches its build dependencies does
