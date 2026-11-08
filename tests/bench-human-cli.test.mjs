@@ -1,5 +1,5 @@
 import { test, expect, afterAll, spyOn } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { human } from '../bench/human.mjs'
@@ -143,7 +143,7 @@ const post = (s, body, token = s.token) => fetch(url(s, `/${token}/answer`), { m
 
 test('build and serve print counts only', async () => {
   const outs = await built
-  expect(outs.map((r) => r.out)).toEqual(['build inputs: rows 1, parts 3', 'build oracle-7.1: rows 3, parts 9', 'build rerate-7.2: rows 1, parts 4', 'build classify: rows 1, parts 4', 'build labels: rows 1, parts 5', 'build pairs: rows 1, parts 2'])
+  expect(outs.map((r) => r.out)).toEqual(['build inputs: rows 1, parts 3', 'build oracle-7.1: rows 3, parts 9', 'build rerate-7.2: rows 1, parts 4', 'build classify: rows 1, parts 4, cold left out 0', 'build labels: rows 1, parts 5', 'build pairs: rows 1, parts 2'])
   const s = await serveOn('classify')
   expect(s.out).toBe(`serve classify port ${s.server.port}`)
   expect(s.out).not.toContain('SENTINEL')
@@ -440,4 +440,140 @@ test('kappa history counts only answered sample events', async () => {
   expect(full.code).toBe(0)
   rmSync(answerFile)
   expect((await runH(['kappa', 'history'])).out).toBe(`history kappa=none raw=none ac1=none n=0 answered=0/${total} gate stop`)
+})
+
+// --- apply (rulings 2, 4-6), the cold rule of the classification batches, classify-2 and recount (ruling 9) ---
+// a copy of the built fixture with no answers yet
+const copyOf = async (name) => {
+  await built
+  const c = join(tmp, name)
+  cpSync(d, c, { recursive: true })
+  rmSync(join(c, 'step9/answers'), { recursive: true, force: true })
+  return c
+}
+const answer = (c, batch, rows) => { mkdirSync(join(c, 'step9/answers'), { recursive: true }); writeFileSync(join(c, 'step9/answers', `${batch}.tsv`), rows.map(([k, a]) => `${k}\t${a}\tSENTINEL-NOTE\t2026-11-08T00:00:00Z\n`).join('')) }
+const runIn = (c, args) => withData(c, () => quiet(() => human(args)))
+const sha = (f) => new Bun.CryptoHasher('sha256').update(readFileSync(f)).digest('hex')
+
+test('apply refuses a batch with an unanswered row', async () => {
+  const c = await copyOf('ap1'), m = readFileSync(join(c, 'r1/oracle/manifest.json'), 'utf8')
+  answer(c, 'oracle-7.1', [[id, 'different'], [xid, 'same']])
+  expect(await runIn(c, ['apply', 'oracle-7.1'])).toEqual({ code: 1, out: 'apply oracle-7.1: refused, unanswered 1 of 3' })
+  expect(readFileSync(join(c, 'r1/oracle/manifest.json'), 'utf8')).toBe(m)
+  expect(existsSync(join(c, 'step9/answers/oracle-7.1.applied'))).toBe(false)
+  answer(c, 'classify', [[id, 'same']]) // an answer the batch does not take is no answer
+  expect(await runIn(c, ['apply', 'classify'])).toEqual({ code: 1, out: 'apply classify: refused, unanswered 1 of 1' })
+  expect(jsonAt(join(c, 'r1/labels.json'))).toEqual({ other: 'build' })
+})
+
+test('partly applies as requirement', async () => {
+  const c = await copyOf('ap2'), agr = readFileSync(join(c, 'r1/agreement.json'), 'utf8'), file = join(c, 'step9/answers/classify.tsv')
+  answer(c, 'classify', [[id, 'traceable'], [id, 'partly']]) // the last row of a key wins
+  const r = await runIn(c, ['apply', 'classify'])
+  expect(r).toEqual({ code: 0, out: 'apply classify: rows 1, build 0, requirement 1' })
+  expect(jsonAt(join(c, 'r1/labels.json'))).toEqual({ other: 'build', [id]: 'requirement' })
+  expect(readFileSync(join(c, 'r1/agreement.json'), 'utf8')).toBe(agr)
+  expect(readFileSync(join(c, 'step9/answers/classify.applied'), 'utf8')).toBe(`${sha(file)}\n`)
+  expect(await runIn(c, ['apply', 'classify'])).toEqual(r) // the same answers apply again the same way
+  writeFileSync(file, readFileSync(file, 'utf8') + `${id}\ttraceable\t\t2026-11-09T00:00:00Z\n`)
+  expect(await runIn(c, ['apply', 'classify'])).toEqual({ code: 1, out: 'apply classify: refused, the answers changed after apply' })
+  expect(jsonAt(join(c, 'r1/labels.json'))[id]).toBe('requirement')
+})
+
+test('a 7.1 different drops the check and is counted against the gate', async () => {
+  const c = await copyOf('ap3'), xm = readFileSync(join(c, 'x1-01/oracle/manifest.json'), 'utf8'), sm = readFileSync(join(c, 'r1/step/oracle/manifest.json'), 'utf8')
+  answer(c, 'oracle-7.1', [[id, 'different'], [xid, 'unclear'], [sid, 'same']])
+  const r = await runIn(c, ['apply', 'oracle-7.1'])
+  expect(r.code).toBe(3)
+  expect(r.out.split('\n')).toEqual(['apply oracle-7.1: rows 3, same 1, different 1, unclear 1', 'gate oracle-7.1 task-repo 0/1 stop', 'gate oracle-7.1 x1 0/1 stop', 'gate oracle-7.1 task-repo-step 1/1 pass'])
+  expect(jsonAt(join(c, 'r1/oracle/manifest.json'))).toEqual([{ ...entry(id), dropped: true, drop_reason: 'human 7.1' }])
+  expect(readFileSync(join(c, 'x1-01/oracle/manifest.json'), 'utf8')).toBe(xm) // unclear drops nothing
+  expect(readFileSync(join(c, 'r1/step/oracle/manifest.json'), 'utf8')).toBe(sm)
+  expect(existsSync(join(c, 'step9/answers/oracle-7.1.applied'))).toBe(true) // written, then the stop
+})
+
+test('a 7.1 drop of a step check leaves step.json ids and score still reads the task', async () => {
+  const c = await copyOf('ap4'), sid2 = `${e7}-T3`, step = (x) => entry(x, { fix_commit: end, origin: 'tests/s.test.ts::SENTINEL-STEP-TITLE', step: '1' })
+  const g = (ids) => ({ checks: ids.map((x) => ({ id: x, bucket: 'build', severity: 'high', result: 'pass' })), excluded: [] })
+  // a step grade made after the drop holds no dropped check
+  put(c, { 'r1/step/oracle/manifest.json': [step(sid), step(sid2)], 'r1/step.json': { oracle: 'step/oracle', ids: [sid, sid2], candidates: 2, seed: SEED },
+    [`r1/grades/${e7}.json`]: g([id]), [`r1/step/grades/${e7}.json`]: g([sid2]) })
+  const score = () => withData(c, () => quiet(() => oracle(['score', 'r1', end])))
+  expect(await score()).toEqual({ code: 1, out: `r1 score ${e7}: 1 step ids not in the grade` })
+  answer(c, 'oracle-7.1', [[id, 'same'], [xid, 'same'], [sid, 'different']])
+  const r = await runIn(c, ['apply', 'oracle-7.1'])
+  expect(r.out.split('\n').slice(1)).toEqual(['gate oracle-7.1 task-repo 1/1 pass', 'gate oracle-7.1 x1 1/1 pass', 'gate oracle-7.1 task-repo-step 0/1 stop'])
+  expect(jsonAt(join(c, 'r1/step.json'))).toEqual({ oracle: 'step/oracle', ids: [sid2], candidates: 2, seed: SEED })
+  expect(jsonAt(join(c, 'r1/step/oracle/manifest.json')).map((m) => [m.id, m.dropped, m.drop_reason])).toEqual([[sid, true, 'human 7.1'], [sid2, undefined, undefined]])
+  expect(jsonAt(join(c, 'r1/oracle/manifest.json'))).toEqual([entry(id)])
+  expect(await score()).toEqual({ code: 0, out: `r1 ${e7} build=1.00 requirement=1.00 passed=yes` })
+})
+
+test('apply prints the 7.2 and input gates, writes batch2.tsv and counts the pairs', async () => {
+  const c = await copyOf('ap5')
+  put(c, { 'r1/labels.json': { [id]: 'requirement' } })
+  answer(c, 'rerate-7.2', [[id, 'not traceable']])
+  answer(c, 'inputs', [['r1', 'leak']])
+  answer(c, 'labels', [[`r1:${fix}`, 'fix']])
+  answer(c, 'pairs', [['x1-01', 'same']])
+  expect(await runIn(c, ['apply', 'rerate-7.2'])).toEqual({ code: 0, out: 'gate rerate-7.2 task-repo 1/1 pass' })
+  expect(await runIn(c, ['apply', 'inputs'])).toEqual({ code: 3, out: 'gate inputs 0/1 stop' })
+  expect(await runIn(c, ['apply', 'labels'])).toEqual({ code: 0, out: 'apply labels: rows 1, fix 1, not fix 0' })
+  expect(readFileSync(join(c, 'step9/batch2.tsv'), 'utf8')).toBe(`commit\ttask\tkind\n${fix}\tr1\tin-task\n`)
+  expect(await runIn(c, ['apply', 'pairs'])).toEqual({ code: 0, out: 'apply pairs: rows 1, B- worse 0, same 1, B- better 0' })
+  expect(jsonAt(join(c, 'r1/labels.json'))).toEqual({ [id]: 'requirement' }) // a re-rating changes no label
+  put(c, { 'r1/labels.json': { [id]: 'build' } })
+  answer(c, 'rerate-7.2', [[id, 'partly']]) // partly agrees with nothing
+  rmSync(join(c, 'step9/answers/rerate-7.2.applied'))
+  expect(await runIn(c, ['apply', 'rerate-7.2'])).toEqual({ code: 3, out: 'gate rerate-7.2 task-repo 0/1 stop' })
+  for (const b of ['rerate-7.2', 'inputs', 'labels', 'pairs']) expect(existsSync(join(c, 'step9/answers', `${b}.applied`))).toBe(true)
+  await expect(runIn(c, ['apply', 'nope'])).rejects.toThrow('usage: ')
+})
+
+test('build classify leaves out cold-task rows', async () => {
+  const c = await copyOf('cold')
+  put(c, {
+    'ext/sample.tsv': `${SAMPLE_HEAD}\nx1-01\tx1\t1\t1\town/rp#7\tu\t7\t6\t${c0}\t${end}\tyes\n`,
+    'step9/classify.tsv': `task\tid\nr1\t${id}\nx1-01\t${xid}\n`,
+    'x1-01/agreement.json': { disputed: [xid], splitRounds: [{ name: 'classify-b2', ids: [xid], disputed: [xid] }] },
+    'x1-01/work/classify/input.md': 'SENTINEL-COLD\n', 'x1-01/work/classify/interface.md': 'SENTINEL-COLD\n',
+    'x1-01/work/classify/manifest.json': [{ id: xid, behaviour: 'SENTINEL-COLD', interface: 'browser', severity: 'high' }], [`x1-01/work/classify/${xid}.spec.ts`]: 'SENTINEL-COLD\n',
+  })
+  expect(await runIn(c, ['build', 'classify'])).toEqual({ code: 0, out: 'build classify: rows 1, parts 4, cold left out 1' })
+  expect(await runIn(c, ['build', 'classify-2'])).toEqual({ code: 0, out: 'build classify-2: rows 0, parts 0, cold left out 1' })
+  expect(JSON.stringify(jsonAt(join(c, 'step9/pages/classify.json')))).not.toContain('SENTINEL-COLD')
+  expect(readFileSync(join(c, 'step9/seen.tsv'), 'utf8')).not.toMatch(/^classify(-2)?\tx1-01\t/m)
+})
+
+test('build classify-2 takes the b2 rounds\' disputes', async () => {
+  const c = await copyOf('c2'), [b1, b2, b3] = [5, 7, 9].map((n) => `${f7}-T${n}`)
+  const folder = (n, x) => ({ [`r1/work/${n}/input.md`]: 'SENTINEL-INPUT\n', [`r1/work/${n}/interface.md`]: 'SENTINEL-SHEET\n',
+    [`r1/work/${n}/manifest.json`]: [{ id: x, behaviour: 'SENTINEL-B', interface: 'browser', severity: 'high' }], [`r1/work/${n}/${x}.spec.ts`]: `SENTINEL-CHECK ${x}\n` })
+  const agr = { disputed: [id], splitRounds: [{ name: 'classify-split', ids: [b3], disputed: [b3] }, { name: 'classify-b2', ids: [b1], disputed: [b1] }, { name: 'classify-split-b2', ids: [b2], disputed: [b2] }] }
+  put(c, { 'r1/agreement.json': agr, ...folder('classify-b2', b1), ...folder('classify-split-b2', b2), ...folder('classify-split', b3) })
+  expect(await runIn(c, ['build', 'classify-2'])).toEqual({ code: 0, out: 'build classify-2: rows 2, parts 8, cold left out 0' })
+  const rows = jsonAt(join(c, 'step9/pages/classify-2.json'))
+  expect(rows.map((r) => r.key)).toEqual([b1, b2])
+  expect(rows[1].parts.at(-1).text).toBe(`SENTINEL-CHECK ${b2}\n`)
+  answer(c, 'classify-2', [[b1, 'traceable'], [b2, 'not traceable']])
+  expect(await runIn(c, ['apply', 'classify-2'])).toEqual({ code: 0, out: 'apply classify-2: rows 2, build 1, requirement 1' })
+  expect(jsonAt(join(c, 'r1/labels.json'))).toEqual({ other: 'build', [b1]: 'build', [b2]: 'requirement' })
+  expect(jsonAt(join(c, 'r1/agreement.json'))).toEqual(agr)
+})
+
+test('recount counts human fix sources and leaves 7.1 drops out', async () => {
+  const s = join(tmp, 'rc'), e = (x, o) => ({ id: x, fix_commit: x.slice(0, 7).padEnd(40, '0'), interface: 'browser', severity: 'high', ...o })
+  const v = (k, list) => ({ [`validation-${k}.json`]: { checks: list.map(([x, verdict]) => ({ id: `${k}-T${x}`, verdict })) } })
+  const at = (t, files) => Object.fromEntries(Object.entries(files).map(([f, x]) => [`${t}/${f}`, x]))
+  put(s, {
+    'machine.json': { forbid: { paths: [] } },
+    'tasks.json': { r1: {}, r2: {}, r3: {}, r4: {} },
+    ...at('r1', { 'oracle/manifest.json': [e('aaaaaaa-T1'), e('aaaaaaa-T2', { batch: 2 }), e('aaaaaaa-T3', { batch: 2 }), e('aaaaaaa-T4', { dropped: true, drop_reason: 'human 7.1' }), e('aaaaaaa-T5', { interface: 'none' }), e('aaaaaaa-T6')],
+      ...v('aaaaaaa', [[1, 'valid'], [2, 'absent-at-base'], [3, 'valid'], [4, 'valid'], [5, 'valid'], [6, 'weak']]) }),
+    ...at('r2', { 'oracle/manifest.json': [e('bbbbbbb-T1'), e('bbbbbbb-T2'), e('bbbbbbb-T3', { dropped: true, drop_reason: 'human 7.1' })], ...v('bbbbbbb', [[1, 'valid'], [2, 'valid'], [3, 'valid']]) }),
+    ...at('r4', { 'oracle/manifest.json': [1, 2, 3].map((n) => e(`ccccccc-T${n}`)), ...v('ccccccc', [[1, 'valid'], [2, 'valid'], [3, 'valid']]) }),
+  })
+  expect(await runIn(s, ['recount', '--drop', 'r4'])).toEqual({ code: 0, out: ['recount r1 scored=3 meets yes', 'recount r2 scored=2 meets no', 'recount r3 scored=0 meets no', 'recount: meets 1 of 3'].join('\n') })
+  expect((await runIn(s, ['recount'])).out.split('\n').slice(-2)).toEqual(['recount r4 scored=3 meets yes', 'recount: meets 2 of 4'])
+  await expect(runIn(s, ['recount', '--drop', 'r9'])).rejects.toThrow('--drop r9 is not a task of tasks.json')
 })

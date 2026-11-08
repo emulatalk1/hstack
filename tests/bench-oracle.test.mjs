@@ -1,5 +1,5 @@
 import { test, expect, afterAll, spyOn } from 'bun:test'
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick, f2pOf, nextNumber, caseId, changedRanges, inChanged, applyEdit, EDGES } from '../bench/lib/oracle.mjs'
@@ -892,7 +892,7 @@ const fake = (calls, { rate = () => 'traceable', split = () => null, stream, rea
     writeFileSync(out, files ? 'split' : 'cannot split')
     return 0
   }
-  const r = Number(args[1].match(/^classify(?:-split\d*)?-(\d)/)[1])
+  const r = Number(args[1].match(/^classify(?:-split\d*)?(?:-b2(?:-n\d+)?)?-(\d)-/)[1])
   writeFileSync(out, `SENTINEL-REPLY\n${JSON.stringify(ids.map((id) => ({ id, label: rate(r, id), quotes: ['SENTINEL-QUOTE'], steps: [] })).filter((x) => x.label))}`)
   return 0
 }
@@ -2455,4 +2455,164 @@ test('seed and kills take the task forms step takes', async () => {
   await expect(withData(d, () => oracle(['seed', 'x1-01', 'r1', 'more']))).rejects.toThrow('usage: ')
   await expect(withData(d, () => oracle(['kills']))).rejects.toThrow('usage: ')
   await expect(withData(d, () => oracle(['seed', 'r1']))).rejects.toThrow('give its task file')
+})
+
+// --- step 9 ruling 7: the second batch (write --batch 2, validate --ids, classify --round b2, split of b2 halves) ---
+// every file of a folder but node_modules, with its text
+const textsOf = (dir) => readdirSync(dir, { recursive: true }).filter((f) => !f.split('/').includes('node_modules') && !lstatSync(join(dir, f)).isDirectory()).sort().map((f) => [f, readFileSync(join(dir, f), 'utf8')])
+
+test('a batch 2 write keeps the commit\'s earlier checks and numbers after them', async () => {
+  useSources()
+  const s = k3.slice(0, 7), t1 = join(data, 't1/oracle'), t3 = join(data, 't3/oracle')
+  for (const t of ['t1', 't2', 't3']) rmSync(join(data, t), { recursive: true, force: true })
+  // earlier checks of this commit: T1 in t1, T2 in t3 (the scaffold as an earlier write left it), and T5 in a step oracle
+  const earlier = (t, id, hunk) => ({ ...entry(id, hunk), fix_commit: k3Full, task: t })
+  for (const [o, t, id, hunk] of [[t1, 't1', `${s}-T1`, 'src/a.txt:8'], [t3, 't3', `${s}-T2`, 'src/c.txt:1']]) {
+    mkdirSync(o, { recursive: true })
+    writeFileSync(join(o, 'manifest.json'), JSON.stringify([earlier(t, id, hunk)], null, 2) + '\n')
+    writeFileSync(join(o, `${id}.spec.ts`), 'EARLIER\n')
+    writeFileSync(join(o, 'run.config.ts'), 'OLD-CONFIG\n')
+  }
+  mkdirSync(join(data, 't2/step/oracle'), { recursive: true })
+  writeFileSync(join(data, 't2/step/oracle/manifest.json'), JSON.stringify([{ id: `${s}-T5` }]))
+  mkdirSync(join(data, 'step9'), { recursive: true })
+  writeFileSync(join(data, 'step9/batch2.tsv'), `commit\ttask\tkind\n${s}\tt3\tlater\n`)
+  const before1 = textsOf(t1), before3 = readFileSync(join(t3, 'manifest.json'), 'utf8')
+  const calls = []
+  const agent = writer(() => ({
+    'manifest.json': JSON.stringify([entry(`${s}-T6`, 'src/c.txt:1'), entry(`${s}-T5`, 'src/c.txt:1'), entry(`${s}-T7`, 'src/a.txt:8')]),
+    [`${s}-T6.spec.ts`]: 'NEW\n', [`${s}-T5.spec.ts`]: 'x\n', [`${s}-T7.spec.ts`]: 'x\n',
+  }), calls)
+  const r = await quiet(() => oracle(['write', task, k3Full, '--batch', '2'], { agent }))
+  expect(r.code).toBe(0)
+  const a = calls[0], arg = (k) => a[a.indexOf(k) + 1], work = join(data, 're-work', `${s}-b2`)
+  expect(a[1]).toBe(`write-${s}-b2`)
+  expect(arg('--prompt')).toBe(join(data, 're-work/prompts', `${s}-b2.md`))
+  expect(arg('--out')).toBe(join(data, 're-work', `${s}-b2.reply.md`))
+  expect(arg('--settings')).toBe(join(data, 're-work/settings', `${s}-b2.json`))
+  expect(JSON.parse(readFileSync(arg('--settings'), 'utf8')).permissions.additionalDirectories).toEqual([work])
+  const prompt = readFileSync(arg('--prompt'), 'utf8')
+  for (const x of ['RE-BRIEF', `\`${s}-T6\``, 'src/c.txt:1', work]) expect(prompt).toContain(x)
+  for (const x of ['src/a.txt:8', 'src/b.txt:5']) expect(prompt).not.toContain(x) // only the hunks of the pairs answered fix
+  // the earlier checks stay byte for byte; the new one is appended after them, numbered after every manifest's highest
+  expect(textsOf(t1)).toEqual(before1)
+  expect(readFileSync(join(t3, `${s}-T2.spec.ts`), 'utf8')).toBe('EARLIER\n')
+  expect(readFileSync(join(t3, 'run.config.ts'), 'utf8')).toBe('OLD-CONFIG\n')
+  expect(readFileSync(join(t3, `${s}-T6.spec.ts`), 'utf8')).toBe('NEW\n')
+  const m3 = manifestOf('t3')
+  expect(JSON.stringify(m3[0])).toBe(JSON.stringify(JSON.parse(before3)[0]))
+  expect(m3.slice(1)).toEqual([{ ...entry(`${s}-T6`, 'src/c.txt:1'), fix_commit: k3Full, task: 't3', batch: 2 }])
+  expect(existsSync(join(data, 't2/oracle'))).toBe(false)
+  expect(r.out).toContain(`write ${s}-b2: writer ran code 0, entries 3, written 1, refused 2`)
+  expect(r.out).toContain('refused: id 1, hunk 1')
+  expect(r.out).not.toContain('SENTINEL')
+  // a rerun reuses the writer with the ids it was given (T6 now exists), and appends nothing twice
+  const again = await quiet(() => oracle(['write', task, k3, '--batch', '2'], { agent }))
+  expect(calls).toHaveLength(1)
+  expect(again.out).toContain(`write ${s}-b2: writer reused code 0, entries 3, written 1, refused 2`)
+  expect(manifestOf('t3')).toEqual(m3)
+})
+
+test('a batch 2 write refuses a commit no fix answer names', async () => {
+  useSources()
+  const calls = [], agent = writer(() => ({}), calls)
+  mkdirSync(join(data, 'step9'), { recursive: true })
+  writeFileSync(join(data, 'step9/batch2.tsv'), `commit\ttask\tkind\n${k3}\tt3\tlater\n`)
+  expect(await quiet(() => oracle(['write', task, k1, '--batch', '2'], { agent }))).toEqual({ code: 1, out: `write ${k1}-b2 refused: no pair of step9/batch2.tsv names it` })
+  rmSync(join(data, 'step9/batch2.tsv'))
+  expect(await quiet(() => oracle(['write', task, k3, '--batch', '2'], { agent }))).toEqual({ code: 1, out: `write ${k3}-b2 refused: no pair of step9/batch2.tsv names it` })
+  expect(calls).toHaveLength(0)
+  await expect(quiet(() => oracle(['write', task, k3, '--batch', '3'], { agent }))).rejects.toThrow('usage: ')
+})
+
+test('validate --ids leaves every other entry unchanged', async () => {
+  const [a, b, x, y] = [1, 2, 3, 4].map((n) => `${k1}-T${n}`), z = `${m1}-T1`
+  const o = freshTask('t1', [entryAt(a, k1Full), entryAt(b, k1Full), entryAt(x, k1Full, { batch: 2 }), entryAt(y, k1Full, { batch: 2 }), entryAt(z, m1Full)],
+    Object.fromEntries([a, b, x, y, z].map((id) => [`${id}.spec.ts`, `OLD ${id}\n`])))
+  const old = { ref: k1Full, bad: ['p'], base: c0, at: 'old', checks: [{ id: a, ref: 'pass', verdict: 'valid' }, { id: b, verdict: 'weak' }, { id: x, verdict: 'error', stage: 's' }] }
+  const vFile = join(data, 't1', `validation-${k1}.json`), oldText = JSON.stringify(old, null, 2) + '\n', manifest = readFileSync(join(o, 'manifest.json'), 'utf8')
+  writeFileSync(vFile, oldText)
+  writeFileSync(join(data, 't1', `validation-${m1}.json`), 'M1-UNTOUCHED\n')
+  const calls = [], agents = [], graded = []
+  // x is valid once its file says FIXED, y from the start
+  const table = (ref, id, dir) => (id === y || readFileSync(join(dir, `${id}.spec.ts`), 'utf8') === 'FIXED\n' ? 'valid' : 'broken')
+  const grade = async (args) => { graded.push(JSON.parse(readFileSync(join(args[1], 'manifest.json'), 'utf8')).map((m) => m.id)); return fakeGrade(table, calls)(args) }
+  const r = await quiet(() => oracle(['validate', task, 't1', '--ids', `${x},${y}`], { grade, agent: fakeAgents({}, agents) }))
+  expect(r.code).toBe(0)
+  const tmpO = join(data, 't1/work/ids/oracle')
+  expect(calls).toEqual([1, 2].map(() => [task, tmpO, '--validate', k1Full, '--bad', parentOf(k1Full), '--base', c0, '--sealed', '--reuse']))
+  expect(graded).toEqual([[x, y], [x, y]]) // a pass, and one after the kept fix: only the ids
+  expect(ls(tmpO)).toEqual([`${x}.spec.ts`, `${y}.spec.ts`, 'manifest.json', 'node_modules', 'package.json', 'run.config.ts'])
+  expect(agents.map((g) => g[1])).toEqual([`fix-b2-1-t1-${k1}`, `compare-b2-1-t1-${k1}`])
+  expect(JSON.parse(readFileSync(flagOf(agents[0], '--settings'), 'utf8')).permissions.additionalDirectories[0]).toBe(join(data, 't1/work/fix-b2-1', k1))
+  // the ids' entries replaced or added; every other entry and field as it was
+  const text = readFileSync(vFile, 'utf8'), v = JSON.parse(text), cut = (t) => t.slice(0, t.indexOf(`"id": "${x}"`))
+  expect(cut(text)).toBe(cut(oldText))
+  expect({ ...v, checks: null }).toEqual({ ...old, checks: null })
+  expect(v.checks).toEqual([...old.checks.slice(0, 2), { id: x, verdict: 'valid' }, { id: y, verdict: 'valid' }])
+  expect(readFileSync(join(data, 't1', `validation-${m1}.json`), 'utf8')).toBe('M1-UNTOUCHED\n')
+  // the kept fix is in the oracle; every other file and the manifest as they were
+  expect(readFileSync(join(o, `${x}.spec.ts`), 'utf8')).toBe('FIXED\n')
+  for (const id of [a, b, y, z]) expect(readFileSync(join(o, `${id}.spec.ts`), 'utf8')).toBe(`OLD ${id}\n`)
+  expect(readFileSync(join(o, 'manifest.json'), 'utf8')).toBe(manifest)
+  expect(r.out).toContain('t1: checks 2, valid 2, weak 0, broken 0, error 0, pre-existing 0, absent-at-base 0, interface none 0, fixer rounds 1,')
+  expect(r.out).not.toContain('SENTINEL')
+  await expect(quiet(() => oracle(['validate', task, 't1', '--ids', `${x},nope-T1`], { grade, agent: fakeAgents() }))).rejects.toThrow('not a check of its oracle')
+  await expect(quiet(() => oracle(['validate', 's9-01', '--ids', x], { grade, agent: fakeAgents() }))).rejects.toThrow('usage: ')
+})
+
+test('the split pass of a b2 round regrades no entry outside its ids', async () => {
+  const [a, b] = [`${k1}-T1`, `${k1}-T2`], spec = "import { test } from 'runner-lib'\n"
+  for (const t of ['t2', 't3']) rmSync(join(data, t), { recursive: true, force: true })
+  freshTask('t1', [entryAt(a, k1Full), entryAt(b, k1Full, { batch: 2 })], { [`${a}.spec.ts`]: spec, [`${b}.spec.ts`]: spec })
+  for (const f of ['input.md', 'interface.md']) writeFileSync(join(data, 't1', f), 'SENTINEL-INPUT\n')
+  for (const f of ['classify.md', 'split.md']) writeFileSync(join(data, 'briefs', f), 'BRIEF\n')
+  const old = [{ id: a, ref: 'pass', verdict: 'valid' }, { id: b, verdict: 'valid' }]
+  writeFileSync(join(data, 't1', `validation-${k1}.json`), JSON.stringify({ ref: k1Full, checks: old }, null, 2) + '\n')
+  writeFileSync(join(data, 't1/labels.json'), JSON.stringify({ [a]: 'build' }))
+  writeFileSync(join(data, 't1/agreement.json'), JSON.stringify({ checks: 1, partly: [], disputed: [], splitRounds: [{ name: 'classify-b2', ids: [b], partly: [b], disputed: [] }] }))
+  const [h1, h2] = [3, 4].map((n) => `${k1}-T${n}`), calls = [], graded = []
+  const split = (ids) => ({ 'manifest.json': JSON.stringify(ids.map((id) => ({ id, behaviour: 'b', severity: 'low' }))), ...Object.fromEntries(ids.map((id) => [`${id}.spec.ts`, spec])) })
+  const agent = fake(calls, { rate: (r, id) => (id === h2 && r === 2 ? 'not traceable' : 'traceable'), split })
+  const grade = async (args) => { graded.push([args[1], JSON.parse(readFileSync(join(args[1], 'manifest.json'), 'utf8')).map((m) => m.id)]); return fakeGrade(() => 'valid', [])(args) }
+  const r = await quiet(() => oracle(['split', task, 't1'], { agent, grade }))
+  expect(r.code).toBe(0)
+  expect(r.out.split('\n').at(-1)).toBe('t1 split partly=1 split=1 failed=0 restored=0 settled=0 stale=0 new=2 classified=2 build=1 requirement=0 disputed=1')
+  expect(graded).toEqual([[join(data, 't1/work/ids/oracle'), [h1, h2]]]) // the halves only, never the fix commit's other checks
+  expect(jsonAt(join(data, 't1', `validation-${k1}.json`)).checks).toEqual([...old, { id: h1, verdict: 'valid' }, { id: h2, verdict: 'valid' }])
+  expect(jsonAt(join(data, 't1/oracle/manifest.json')).find((m) => m.id === b)).toMatchObject({ dropped: true, split_into: [h1, h2] })
+  // the halves are classified in a round of their own whose name holds b2, so classify-2 takes its disputes
+  expect(calls.filter((c) => c[1].startsWith('classify')).map((c) => c[1]).sort()).toEqual(['classify-split-b2-1-t1', 'classify-split-b2-2-t1'])
+  expect(jsonAt(join(data, 't1/agreement.json')).splitRounds.map((x) => [x.name, x.ids, x.disputed])).toEqual([['classify-b2', [b], []], ['classify-split-b2', [h1, h2], [h2]]])
+  expect(jsonAt(join(data, 't1/labels.json'))).toEqual({ [a]: 'build', [h1]: 'build' })
+  expect(r.out).not.toContain('SENTINEL')
+})
+
+test('classify round b2 rates only the new checks', async () => {
+  const d = clData('cb1'), f = FIX.slice(0, 7), id = (n) => `${f}-T${n}`, calls = [], task = join(d, 'env/r.json')
+  // T1 rated by the main round; T5 scored but not of the second batch; T3 not scored; T4 interface none
+  clTask(d, 'r1', FIX, [[id(1), 'valid'], [id(2), 'valid', { batch: 2 }], [id(3), 'broken', { batch: 2 }], [id(4), 'valid', { batch: 2, interface: 'none' }], [id(5), 'valid'], [id(6), 'absent-at-base', { batch: 2 }]],
+    Object.fromEntries([1, 2, 3, 5, 6].map((n) => [`${id(n)}.spec.ts`, 'x\n'])))
+  const agr = { n: 1, checks: 1, partly: [], disputed: [], usable: true }
+  writeFileSync(join(d, 'r1/agreement.json'), JSON.stringify(agr))
+  writeFileSync(join(d, 'r1/labels.json'), JSON.stringify({ [id(1)]: 'build' }))
+  const rate = (r, x) => (x === id(6) && r === 2 ? 'not traceable' : 'traceable')
+  const run = () => withData(d, () => quiet(() => oracle(['classify', task, 'r1', '--round', 'b2'], { agent: fake(calls, { rate }) })))
+  expect(await run()).toEqual({ code: 0, out: 'r1 classify-b2 classified=2 build=1 requirement=0 partly=0 disputed=1 kappa=0.00 raw=0.50 ac1=0.38' })
+  expect(jsonAt(join(d, 'r1/work/classify-b2/manifest.json')).map((x) => x.id)).toEqual([id(2), id(6)])
+  expect(calls.map((c) => c[1]).sort()).toEqual(['classify-b2-1-r1', 'classify-b2-2-r1'])
+  expect(jsonAt(join(d, 'r1/labels.json'))).toEqual({ [id(1)]: 'build', [id(2)]: 'build' })
+  const a = jsonAt(join(d, 'r1/agreement.json'))
+  expect({ ...a, splitRounds: null }).toEqual({ ...agr, splitRounds: null })
+  expect(a.splitRounds).toHaveLength(1)
+  expect(a.splitRounds[0]).toMatchObject({ name: 'classify-b2', ids: [id(2), id(6)], checks: 2, partly: [], disputed: [id(6)] })
+  // nothing new: refused; a later write's new check gets a round of its own
+  expect(await run()).toEqual({ code: 1, out: 'r1 classify-b2 refused: no new scored check' })
+  const m = jsonAt(join(d, 'r1/oracle/manifest.json')), v = jsonAt(join(d, 'r1', `validation-${f}.json`))
+  writeFileSync(join(d, 'r1/oracle/manifest.json'), JSON.stringify([...m, { ...m[1], id: id(7) }]))
+  writeFileSync(join(d, 'r1/oracle', `${id(7)}.spec.ts`), 'x\n')
+  writeFileSync(join(d, 'r1', `validation-${f}.json`), JSON.stringify({ ...v, checks: [...v.checks, { id: id(7), verdict: 'valid' }] }))
+  expect((await run()).out).toBe('r1 classify-b2-n2 classified=1 build=1 requirement=0 partly=0 disputed=0 kappa=1.00 raw=1.00 ac1=1.00')
+  expect(jsonAt(join(d, 'r1/agreement.json')).splitRounds.map((x) => [x.name, x.ids])).toEqual([['classify-b2', [id(2), id(6)]], ['classify-b2-n2', [id(7)]]])
+  await expect(withData(d, () => oracle(['classify', task, 'r1', '--round', 'b3'], { agent: fake(calls) }))).rejects.toThrow('usage: ')
 })

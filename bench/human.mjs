@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Step 9's human reads (rulings 2, 3, 10 and 11): each batch is built as a page file and served on 127.0.0.1 behind a
 // token; the answers are appended to data files. Prints counts only: a row, a page, an answer and a note are sealed.
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { gitOut } from './bugs.mjs'
@@ -11,9 +11,9 @@ import { check } from './input-check.mjs'
 import { answerOk, answersFor, BATCHES, coldSwap, eventKey, events, historyKappa, humanText, lastAgentText, parseAnswers, planWindows, segments, toolLabel } from './lib/human.mjs'
 import { queuePick } from './lib/oracle.mjs'
 import { loadTask } from './lib/task.mjs'
-import { dataDir, labelLines, poolKeys, queueDraw, queuePools, readPairs, seedOf } from './oracle.mjs'
+import { clScored, dataDir, labelLines, poolKeys, queueDraw, queuePools, readPairs, seedOf } from './oracle.mjs'
 
-const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] | status | history <transcripts dir> <task.json> | kappa history'
+const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] | status | history <transcripts dir> <task.json> | kappa history | apply <batch> | recount [--drop <task,...>]'
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
 const read = (f) => readFileSync(f, 'utf8')
 // a tsv with a header as objects; a file that is not there has no rows
@@ -26,12 +26,13 @@ const tsvRows = (f) => {
 const sampleOf = (q, stem) => join(q, existsSync(join(q, `${stem}-v2.tsv`)) ? `${stem}-v2.tsv` : `${stem}.tsv`)
 const filesUnder = (p) => (statSync(p).isDirectory() ? readdirSync(p).sort().flatMap((f) => filesUnder(join(p, f))) : statSync(p).isFile() ? [p] : [])
 const part = (title, text) => ({ title, text })
+const coldOf = (data) => new Set(tsvRows(join(data, 'ext/sample.tsv')).filter((r) => r.cold_setup === 'yes').map((r) => r.task))
 
 // --- swap (ruling 3) ---
 const SWAPPED = ['sample-7.1', 'sample-7.2', 'inputs']
 function swap(data, drop) {
   const q = join(data, 'step9'), seed = seedOf(data), { pools } = queuePools(data, drop)
-  const cold = new Set(tsvRows(join(data, 'ext/sample.tsv')).filter((r) => r.cold_setup === 'yes').map((r) => r.task))
+  const cold = coldOf(data)
   let code = 0
   for (const stem of SWAPPED) {
     const f = join(q, `${stem}.tsv`), name = `${stem}.tsv`
@@ -111,11 +112,16 @@ function classView(data, task, id) {
   throw new Error(`a row of ${task} is in no classify folder`)
 }
 const rerate = (data) => tsvRows(sampleOf(join(data, 'step9'), 'sample-7.2')).map((r) => classView(data, r.task, r.id))
-// classify.tsv and the step 6 addition `<task>-classify.tsv`
-const classify = (data) => readdirSync(join(data, 'step9')).filter((f) => /^(.+-)?classify\.tsv$/.test(f)).sort().flatMap((f) => tsvRows(join(data, 'step9', f))).map((r) => classView(data, r.task, r.id))
-// the second batch's disputes: the disputed ids of each task's b2 rounds
-const classify2 = (data) => queuePools(data).sets.flatMap(([, ts]) => ts).flatMap((t) =>
-  (readJson(join(data, t, 'agreement.json'))?.splitRounds ?? []).filter((x) => x.name.includes('b2')).flatMap((x) => x.disputed ?? []).map((id) => classView(data, t, id)))
+// a classification batch's { task, id } rows: classify.tsv and the step 6 addition `<task>-classify.tsv`; classify-2, the
+// second batch's disputes: the disputed ids of each task's b2 rounds
+const classRows = (data, batch) => batch === 'classify'
+  ? readdirSync(join(data, 'step9')).filter((f) => /^(.+-)?classify\.tsv$/.test(f)).sort().flatMap((f) => tsvRows(join(data, 'step9', f)))
+  : queuePools(data).sets.flatMap(([, ts]) => ts).flatMap((t) => (readJson(join(data, t, 'agreement.json'))?.splitRounds ?? []).filter((x) => x.name.includes('b2')).flatMap((x) => x.disputed ?? []).map((id) => ({ task: t, id })))
+// a cold-setup task's disputes stay disputed and unread (decision 1 A, ruling 5); `cold` counts them for the count line
+const classBatch = (batch) => (data) => {
+  const all = classRows(data, batch), cold = coldOf(data), rows = all.filter((r) => !cold.has(r.task))
+  return Object.assign(rows.map((r) => classView(data, r.task, r.id)), { cold: all.length - rows.length })
+}
 
 async function labels(data, taskFile, logs, attribution) {
   if (!taskFile || !logs.length || !attribution) throw new Error(USAGE)
@@ -145,7 +151,7 @@ function pairsView(data) {
   return [...byTask].map(([task, fs]) => ({ key: task, task, parts: fs.sort((a, b) => ARMS.indexOf(a[0]) - ARMS.indexOf(b[0])).map(([arm, f]) => part(`arm ${arm}`, read(join(dir, f)))) }))
 }
 
-const VIEWS = { inputs, 'oracle-7.1': oracle71, 'rerate-7.2': rerate, classify, 'classify-2': classify2, labels, pairs: pairsView }
+const VIEWS = { inputs, 'oracle-7.1': oracle71, 'rerate-7.2': rerate, classify: classBatch('classify'), 'classify-2': classBatch('classify-2'), labels, pairs: pairsView }
 
 async function build(data, batch, rest) {
   if (!Object.hasOwn(VIEWS, batch)) throw new Error(USAGE)
@@ -159,7 +165,7 @@ async function build(data, batch, rest) {
   if (pos.length > 1 || (batch !== 'labels' && (logs.length || attribution))) throw new Error(USAGE)
   const rows = await VIEWS[batch](data, pos[0], logs, attribution)
   writePage(data, batch, rows)
-  console.log(`build ${batch}: rows ${rows.length}, parts ${rows.reduce((s, r) => s + r.parts.length, 0)}`)
+  console.log(`build ${batch}: rows ${rows.length}, parts ${rows.reduce((s, r) => s + r.parts.length, 0)}${rows.cold === undefined ? '' : `, cold left out ${rows.cold}`}`)
   return 0
 }
 
@@ -173,6 +179,99 @@ function writePage(data, batch, rows) {
   if (!existsSync(seen)) writeFileSync(seen, 'batch\ttask\tkey\n')
   const add = rows.filter((r) => !had.has(`${batch}\t${r.key}`)).map((r) => `${batch}\t${r.task}\t${r.key}\n`).join('')
   if (add) appendFileSync(seen, add)
+}
+
+// --- apply (rulings 2 and 4-6): every row answered, then the answers go into the files the tools read and the batch is frozen ---
+const writeJson = (f, x) => writeFileSync(f, JSON.stringify(x, null, 2) + '\n')
+const AGREES = { build: 'traceable', requirement: 'not traceable' } // an agreed label and the answer that agrees with it
+// one gate line per set, in the order the sets first come; a set passes at 90% (ruling 6: 9 of 10, 18 of 20)
+function gates(batch, list) {
+  const pass = [...new Set(list.map((x) => x.set))].map((set) => {
+    const xs = list.filter((x) => x.set === set), ok = xs.filter((x) => x.ok).length, p = ok * 10 >= xs.length * 9
+    console.log(`gate ${batch} ${set} ${ok}/${xs.length} ${p ? 'pass' : 'stop'}`)
+    return p
+  })
+  return pass.every(Boolean) ? 0 : 3
+}
+const counts = (batch, rows, ans) => BATCHES[batch].answers.map((a) => `${a} ${rows.filter((r) => ans.get(r.key) === a).length}`).join(', ')
+
+// ruling 5: traceable -> build, not traceable and partly -> requirement, into labels.json only
+const applyClass = (batch) => (data, rows, ans) => {
+  const task = new Map(classRows(data, batch).map((r) => [r.id, r.task]))
+  if (rows.some((r) => !task.has(r.key))) throw new Error(`apply ${batch}: a row is in no queue file`)
+  const label = (r) => (ans.get(r.key) === 'traceable' ? 'build' : 'requirement')
+  for (const t of new Set(rows.map((r) => task.get(r.key)))) {
+    const f = join(data, t, 'labels.json')
+    writeJson(f, { ...(readJson(f) ?? {}), ...Object.fromEntries(rows.filter((r) => task.get(r.key) === t).map((r) => [r.key, label(r)])) })
+  }
+  console.log(`apply ${batch}: rows ${rows.length}, build ${rows.filter((r) => label(r) === 'build').length}, requirement ${rows.filter((r) => label(r) === 'requirement').length}`)
+  return 0
+}
+
+// ruling 6: `different` drops the check (a task-repo step check leaves step.json ids too); `unclear` counts against the gate only
+function apply71(data, rows, ans) {
+  const q = join(data, 'step9')
+  const where = new Map([...tsvRows(sampleOf(q, 'sample-7.1')).map((r) => [r.id, { ...r, step: false }]), ...tsvRows(join(q, 'sample-7.1-step.tsv')).map((r) => [r.id, { ...r, set: 'task-repo-step', step: true }])])
+  const list = rows.map((r) => ({ ...where.get(r.key), id: r.key, ok: ans.get(r.key) === 'same', drop: ans.get(r.key) === 'different' }))
+  const fileOf = (x) => join(data, x.task, x.step ? 'step/oracle' : 'oracle', 'manifest.json')
+  if (list.some((x) => !x.task || !readJson(fileOf(x))?.some((e) => e.id === x.id))) throw new Error('apply oracle-7.1: a row has no sample row or no manifest entry')
+  for (const x of list.filter((y) => y.drop)) {
+    writeJson(fileOf(x), readJson(fileOf(x)).map((e) => (e.id === x.id ? { ...e, dropped: true, drop_reason: 'human 7.1' } : e)))
+    const sf = join(data, x.task, 'step.json'), st = readJson(sf) // score refuses an id its grade lacks; no replacement
+    if (x.step && Array.isArray(st?.ids)) writeJson(sf, { ...st, ids: st.ids.filter((id) => id !== x.id) })
+  }
+  console.log(`apply oracle-7.1: rows ${rows.length}, ${counts('oracle-7.1', rows, ans)}`)
+  return gates('oracle-7.1', list)
+}
+
+// ruling 6: the user's label against the agreed one; partly agrees with neither; no label changes
+function apply72(data, rows, ans) {
+  const where = new Map(tsvRows(sampleOf(join(data, 'step9'), 'sample-7.2')).map((r) => [r.id, r]))
+  if (rows.some((r) => !where.has(r.key))) throw new Error('apply rerate-7.2: a row has no sample row')
+  return gates('rerate-7.2', rows.map((r) => { const w = where.get(r.key); return { set: w.set, ok: AGREES[readJson(join(data, w.task, 'labels.json'))?.[r.key]] === ans.get(r.key) } }))
+}
+
+const APPLY = {
+  classify: applyClass('classify'), 'classify-2': applyClass('classify-2'), 'oracle-7.1': apply71, 'rerate-7.2': apply72,
+  inputs: (data, rows, ans) => { // a leak stops the plan
+    const clean = rows.filter((r) => ans.get(r.key) === 'clean').length
+    console.log(`gate inputs ${clean}/${rows.length} ${clean === rows.length ? 'pass' : 'stop'}`)
+    return clean === rows.length ? 0 : 3
+  },
+  labels: (data, rows, ans) => { // ruling 4: the pairs called fix are the second batch
+    const fix = rows.filter((r) => ans.get(r.key) === 'fix')
+    writeFileSync(join(data, 'step9/batch2.tsv'), ['commit\ttask\tkind', ...fix.map((r) => { const i = r.key.indexOf(':'); return [r.key.slice(i + 1), r.key.slice(0, i), r.kind].join('\t') })].join('\n') + '\n')
+    console.log(`apply labels: rows ${rows.length}, fix ${fix.length}, not fix ${rows.length - fix.length}`)
+    return 0
+  },
+  pairs: (data, rows, ans) => { console.log(`apply pairs: rows ${rows.length}, ${counts('pairs', rows, ans)}`); return 0 },
+  history: (data, rows) => { console.log(`apply history: rows ${rows.length}`); return 0 }, // kappa history reads the answers
+}
+
+function apply(data, batch) {
+  if (!Object.hasOwn(APPLY, batch)) throw new Error(USAGE)
+  const rows = readJson(join(data, 'step9/pages', `${batch}.json`))
+  if (!Array.isArray(rows)) throw new Error(`no page for ${batch}: build it first`)
+  const dir = join(data, 'step9/answers'), file = join(dir, `${batch}.tsv`), applied = join(dir, `${batch}.applied`)
+  const given = existsSync(file) ? parseAnswers(read(file)) : new Map(), ans = new Map()
+  for (const r of rows) if (answerOk(batch, r, given.get(r.key)?.answer)) ans.set(r.key, given.get(r.key).answer)
+  if (ans.size < rows.length) { console.log(`apply ${batch}: refused, unanswered ${rows.length - ans.size} of ${rows.length}`); return 1 }
+  const sha = createHash('sha256').update(existsSync(file) ? readFileSync(file) : '').digest('hex')
+  if (existsSync(applied) && read(applied).trim() !== sha) { console.log(`apply ${batch}: refused, the answers changed after apply`); return 1 }
+  const code = APPLY[batch](data, rows, ans)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(applied, `${sha}\n`) // the server refuses every write from now on
+  return code
+}
+
+// ruling 9: rule (b) per kept task of tasks.json (`--drop` leaves tasks out, as for `oracle pairs`): its scored checks, at least 3
+function recount(data, drop) {
+  const tasks = Object.keys(readJson(join(data, 'tasks.json')) ?? {})
+  for (const t of drop) if (!tasks.includes(t)) throw new Error(`--drop ${t} is not a task of tasks.json`)
+  const kept = tasks.filter((t) => !drop.includes(t)), n = new Map(kept.map((t) => [t, clScored({ dir: join(data, t) }).length]))
+  for (const t of kept) console.log(`recount ${t} scored=${n.get(t)} meets ${n.get(t) >= 3 ? 'yes' : 'no'}`)
+  console.log(`recount: meets ${kept.filter((t) => n.get(t) >= 3).length} of ${kept.length}`)
+  return 0
 }
 
 // --- history (ruling 8): the user's past sessions mapped to the plans by time ---
@@ -392,6 +491,8 @@ export async function human(args) {
   if (cmd === 'status' && args.length === 1) return statusCmd(data)
   if (cmd === 'history' && args.length === 3) return history(data, batch, rest[0])
   if (cmd === 'kappa' && batch === 'history' && args.length === 2) return kappaHistory(data)
+  if (cmd === 'apply' && args.length === 2) return apply(data, batch)
+  if (cmd === 'recount' && (args.length === 1 || (args.length === 3 && batch === '--drop'))) return recount(data, args.length === 3 ? rest[0].split(',') : [])
   throw new Error(USAGE)
 }
 

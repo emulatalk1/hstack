@@ -15,7 +15,7 @@ import { fixMatches, floorScore, killsOf, ownVerdict, verdict } from './lib/scor
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> | write <external task> | validate <task.json> <task> | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | split [<task.json>] <task> | queue | score <task> <sha> | step <external task> | step <task.json> <task> | seed <external task> | seed <task.json> <task> | kills <external task> | kills <task.json> <task>'
+const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> [--batch 2] | write <external task> | validate <task.json> <task> [--ids <id,...>] | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | classify <task.json> <task> --round b2 | split [<task.json>] <task> | queue | score <task> <sha> | step <external task> | step <task.json> <task> | seed <external task> | seed <task.json> <task> | kills <external task> | kills <task.json> <task>'
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
@@ -329,13 +329,18 @@ function scaffoldInto(scaffold, o) {
   if (!lstatSync(join(o, 'node_modules'), { throwIfNoEntry: false })) symlinkSync(join(scaffold, 'node_modules'), join(o, 'node_modules'))
 }
 
-// a source commit of the task repo: its agreed pairs give the hunks in scope and their owners (ruling 6)
-async function writeSource(taskPath, commit, agent) {
+// a source commit of the task repo: its agreed pairs give the hunks in scope and their owners (ruling 6). b2 (step 9 ruling 7):
+// the pairs the human answered fix (step9/batch2.tsv) instead, ids after every manifest's highest, folders `<sha7>-b2`, and the
+// move only appends: every earlier entry and file stays
+async function writeSource(taskPath, commit, agent, b2 = false) {
   if (!/^[0-9a-f]{7,40}$/.test(commit)) throw new Error(`${commit} is not a commit hash`)
   const { repo } = await loadTask(taskPath)
-  const data = dataDir(), src = join(data, 'sources'), sha7 = commit.slice(0, 7), scaffold = join(data, 'oracle-scaffold')
-  const yes = readFileSync(join(src, 'labels.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')).filter((r) => r[5] === 'yes')
-  const agreed = new Set(yes.map((r) => `${r[0]}\t${r[1]}`)), pairs = readPairs(src).filter((p) => p.commit === sha7 && agreed.has(`${p.commit}\t${p.task}`))
+  const data = dataDir(), src = join(data, 'sources'), sha7 = commit.slice(0, 7), scaffold = join(data, 'oracle-scaffold'), name = b2 ? `${sha7}-b2` : sha7
+  const rows = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')) : [])
+  const yes = rows(join(src, 'labels.tsv')).filter((r) => r[5] === 'yes')
+  const agreed = new Set((b2 ? rows(join(data, 'step9/batch2.tsv')) : yes).map((r) => `${b2 ? r[0].slice(0, 7) : r[0]}\t${r[1]}`))
+  const pairs = readPairs(src).filter((p) => p.commit === sha7 && agreed.has(`${p.commit}\t${p.task}`))
+  if (!pairs.length && b2) { console.log(`write ${name} refused: no pair of step9/batch2.tsv names it`); return 1 }
   if (!pairs.length) throw new Error(`${sha7} is not an agreed source commit of sources/labels.tsv`)
   const full = (await gitOut(repo, 'rev-parse', `${sha7}^{commit}`)).trim()
   // an in-range commit belongs to its task; a later pair's hunk keeps its own owner (it is listed after, so it wins)
@@ -344,24 +349,38 @@ async function writeSource(taskPath, commit, agent) {
     for (const h of p.hunks.length ? p.hunks : p.kind === 'in-task' ? ['none'] : []) scope.set(h, p.task)
   const files = (await gitOut(repo, 'diff', '--name-only', '--no-renames', `${full}^`, full)).split('\n').filter(Boolean)
   const tests = files.filter(isTestPath), scoped = [...new Set([...scope.keys()].filter((h) => h !== 'none').map((h) => h.slice(0, h.lastIndexOf(':'))))]
-  const work = join(data, 're-work'), dir = join(work, sha7), prompt = join(work, 'prompts', `${sha7}.md`)
+  const work = join(data, 're-work'), dir = join(work, name), prompt = join(work, 'prompts', `${name}.md`), out = join(work, `${name}.reply.md`)
+  // b2: k is the highest number of the prefix when the writer first ran (its record keeps the first id it was given)
+  const given = readJson(`${out}.run.json`)?.ids?.[0], k = !b2 ? 0 : given ? Number(given.split('-T').at(-1)) - 1 : highestOf(data, sha7)
   const scaffoldFiles = readdirSync(scaffold, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name)
   const rules = JSON.parse(readFileSync(join(data, 'briefs/oracle-re.json'), 'utf8'))
   const text = [
     readFileSync(join(data, 'briefs/oracle-re.md'), 'utf8').trimEnd() + '\n',
-    `## The check ids\n\nPrefix \`${sha7}\`: the ids are \`${sha7}-T1\`, \`${sha7}-T2\`, ...\n`,
+    `## The check ids\n\nPrefix \`${sha7}\`: the ids are \`${sha7}-T1\`, \`${sha7}-T2\`, ...\n${b2 ? `\nThe ids start at \`${sha7}-T${k + 1}\`.\n` : ''}`,
     `## The in-scope hunks and their owner tasks\n\n${[...scope].map(([h, t]) => h === 'none' ? `- \`none\` (task ${t}): the commit changes no source file of this task` : `- \`${h}\` (task ${t})`).join('\n')}\n`,
     `## The source changes of these hunks\n\n${scoped.length ? fence(await gitOut(repo, 'show', '--format=', '-U0', '--no-renames', full, '--', ...scoped), 'diff') : 'none\n'}`,
     `## The commit's test changes\n\n${tests.length ? fence(await gitOut(repo, 'show', '--format=', '--no-renames', full, '--', ...tests), 'diff') : 'none\n'}`,
     `## The scaffold\n\nEach check runs from an oracle folder that holds these files beside it, with their packages installed.\n\n${scaffoldFiles.map((f) => `### ${f}\n\n${fence(readFileSync(join(scaffold, f), 'utf8'))}`).join('\n')}`,
     `## Your output folder\n\n\`${dir}\`\n`,
   ].join('\n')
-  const w = await writer(agent, { taskFile: taskPath, label: `write-${sha7}`, at: full, prompt, text, out: join(work, `${sha7}.reply.md`), dir, settings: join(work, 'settings', `${sha7}.json`) })
-  if (w.stale) { console.log(staleLine(sha7)); return 1 }
+  const w = await writer(agent, { taskFile: taskPath, label: `write-${name}`, at: full, prompt, text, out, dir, settings: join(work, 'settings', `${name}.json`) })
+  if (w.stale) { console.log(staleLine(name)); return 1 }
+  if (b2) stampIds(out, [`${sha7}-T${k + 1}`])
   const res = judge(w.dir, full, (h) => scope.get(h), false, rules)
-  if (!res) { console.log(`write ${sha7}: writer ${w.how} code ${w.code}, no manifest`); return 1 }
-  const ok = res.entries.filter((x) => !x.why), owners = [...new Set([...yes.map((r) => r[1]), ...ok.map((x) => x.task)])]
-  await locked(join(work, '.lock'), () => {
+  if (!res) { console.log(`write ${name}: writer ${w.how} code ${w.code}, no manifest`); return 1 }
+  const entries = res.entries.map((x) => ({ ...x, why: x.why ?? (b2 && Number(x.e.id.split('-T').at(-1)) <= k ? 'id' : null) }))
+  const ok = entries.filter((x) => !x.why), owners = [...new Set([...yes.map((r) => r[1]), ...ok.map((x) => x.task)])]
+  if (b2) await locked(join(work, '.lock'), () => { // an id a manifest already holds (a rerun) is not added again
+    for (const t of new Set(ok.map((x) => x.task))) {
+      const o = join(data, t, 'oracle'), m = join(o, 'manifest.json'), had = readJson(m), add = ok.filter((x) => x.task === t && !(had ?? []).some((e) => e.id === x.e.id))
+      if (!add.length) continue
+      mkdirSync(o, { recursive: true })
+      if (!had) scaffoldInto(scaffold, o)
+      for (const x of add) if (x.file) copyFileSync(join(w.dir, x.file), join(o, basename(x.file)))
+      writeFileSync(m, JSON.stringify([...(had ?? []), ...add.map((x) => ({ ...entryOut(x, full, false), batch: 2 }))], null, 2) + '\n')
+    }
+  })
+  else await locked(join(work, '.lock'), () => {
     for (const t of owners) { // this commit's earlier checks leave every oracle first, so a rerun replaces them
       const o = join(data, t, 'oracle'), mine = (id) => String(id).startsWith(`${sha7}-T`)
       const receives = ok.some((x) => x.task === t)
@@ -374,7 +393,7 @@ async function writeSource(taskPath, commit, agent) {
       writeFileSync(join(o, 'manifest.json'), JSON.stringify([...kept, ...ok.filter((x) => x.task === t).map((x) => entryOut(x, full, false))], null, 2) + '\n')
     }
   })
-  report(sha7, w, res.entries)
+  report(name, w, entries)
   return 0
 }
 
@@ -581,7 +600,7 @@ function compareReply(text) {
 // ruling 11: one sealed fixer for a ref's broken checks, on a copy of the oracle; one comparer over every check file it
 // changed (external: runner.json too); only a file whose every check the comparer calls `same` goes into the oracle
 async function fixRound(c, round, g, broken, agent, tag = '') {
-  const sha7 = g.ref.slice(0, 7), work = join(c.evDir, 'work', `fix-${tag}${round}`), dir = join(work, sha7), logs = join(c.evDir, 'logs')
+  const sha7 = g.ref.slice(0, 7), work = join(c.work ?? join(c.evDir, 'work'), `fix-${tag}${round}`), dir = join(work, sha7), logs = join(c.evDir, 'logs')
   const manifest = manifestIn(c.oracleDir), fileOf = new Map(manifest.map((m) => [m.id, checkFile(c.oracleDir, m)]))
   const runs = [g.ref, ...g.bad, ...(g.base ? [g.base] : [])].map((x) => lastLog(logs, x.slice(0, 7))).filter(Boolean)
   const text = [
@@ -614,7 +633,7 @@ async function fixRound(c, round, g, broken, agent, tag = '') {
   const cr = await once(agent, { prompt: join(work, `${sha7}.compare.prompt.md`), text: ctext, out }, [c.taskFile, `compare-${tag}${round}-${c.task}-${sha7}`, '--tools', 'Read'])
   const said = cr.stale ? new Map() : compareReply(existsSync(out) ? readFileSync(out, 'utf8') : '')
   const same = items.filter((f) => scope.get(f).every((id) => said.get(id) === 'same'))
-  const keep = same.filter((f) => !gateFails(c, f, readFileSync(join(dir, f), 'utf8'), g.ref, manifest))
+  const keep = same.filter((f) => !gateFails(c, f, readFileSync(join(dir, f), 'utf8'), g.ref, c.gateManifest ?? manifest))
   for (const f of keep) copyFileSync(join(dir, f), join(c.oracleDir, f))
   return { changed: changed.length, kept: keep.length, comparer: items.length - same.length, gate: same.length - keep.length, scope: scoped }
 }
@@ -665,6 +684,30 @@ async function validate(c, { grade, agent, refs, only, tag = '' }) {
     if (n('error')) console.log(`${c.task} not judged: ${n('error')} checks error`)
     else { console.log(`${c.task} dropped no valid check`); appendWalk(join(c.data, 'ext'), c.t, 'dropped') }
   }
+  return 0
+}
+
+// step 9 ruling 7: only these checks of a task of tasks.json, graded from a temporary oracle of their files and the scaffold
+// (sweep's pattern) with validate's bad and base versions and fixer rounds (`work/fix-<tag><round>/`); their verdicts are merged
+// into each validation-<fix7>.json, every other entry and field as it was, and a kept fix goes into the oracle
+async function validateIds(c, ids, { grade, agent, tag = 'b2-' }) {
+  if (c.ext) throw new Error(USAGE)
+  const all = manifestIn(c.oracleDir), mine = ids.map((id) => all.find((m) => m.id === id)), missing = mine.filter((m) => !m).length
+  if (missing) throw new Error(`${c.task} validate --ids: ${missing} of ${ids.length} is not a check of its oracle`)
+  const ev = join(c.evDir, 'work', 'ids'), o = join(ev, 'oracle')
+  rmSync(o, { recursive: true, force: true })
+  mkdirSync(o, { recursive: true })
+  scaffoldInto(join(c.data, 'oracle-scaffold'), o)
+  for (const f of mine.map((m) => checkFile(c.oracleDir, m)).filter(Boolean)) copyFileSync(join(c.oracleDir, f), join(o, f))
+  writeFileSync(join(o, 'manifest.json'), JSON.stringify(mine, null, 2) + '\n')
+  await validate({ ...c, evDir: ev, oracleDir: o, work: join(c.evDir, 'work'), gateManifest: all }, { grade, agent, tag })
+  for (const fix of new Set(mine.map((m) => m.fix_commit))) {
+    const name = `validation-${fix.slice(0, 7)}.json`, got = (readJson(join(ev, name))?.checks ?? []).filter((x) => ids.includes(x.id)), old = readJson(join(c.evDir, name))
+    const by = new Map(got.map((x) => [x.id, x])), had = new Set((old?.checks ?? []).map((x) => x.id))
+    const merged = old ? { ...old, checks: [...old.checks.map((x) => by.get(x.id) ?? x), ...got.filter((x) => !had.has(x.id))] } : readJson(join(ev, name))
+    if (merged) writeFileSync(join(c.evDir, name), JSON.stringify(merged, null, 2) + '\n')
+  }
+  for (const f of mine.map((m) => checkFile(o, m)).filter(Boolean)) if (!readFileSync(join(o, f)).equals(readFileSync(join(c.oracleDir, f)))) copyFileSync(join(o, f), join(c.oracleDir, f))
   return 0
 }
 
@@ -743,7 +786,7 @@ function clCtx(task, taskFile) {
 
 const clManifest = (c) => readJson(join(c.dir, 'oracle', 'manifest.json'))
 const clVerdict = (c, e) => readJson(join(c.dir, `validation-${String(e.fix_commit).slice(0, 7)}.json`))?.checks?.find((x) => x.id === e.id)?.verdict
-const clScored = (c) => (clManifest(c) ?? []).filter((e) => e.dropped !== true && e.interface !== 'none' && CL_SCORED.includes(clVerdict(c, e)))
+export const clScored = (c) => (clManifest(c) ?? []).filter((e) => e.dropped !== true && e.interface !== 'none' && CL_SCORED.includes(clVerdict(c, e)))
 const clFile = (c, e) => e.file ?? readdirSync(join(c.dir, 'oracle')).find((f) => f.startsWith(`${e.id}.`)) ?? null
 
 // the valid labels of a classifier's reply; ok when every id is labelled exactly once and nothing else is
@@ -837,6 +880,24 @@ async function classify(c, agent) {
   writeFileSync(join(c.dir, 'agreement.json'), JSON.stringify({ ...r.stats, usable: r.stats ? usable(r.stats) : false, checks: r.ids.length, partly: r.partly, disputed: r.disputed, ...(old?.split ? { split: old.split } : {}) }, null, 2) + '\n')
   const v = Object.values(r.labels), s = r.stats ?? {}
   console.log(`${c.task} classified=${r.ids.length} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length} partly=${r.partly.length} disputed=${r.disputed.length} kappa=${fx(s.kappa)} raw=${fx(s.raw)} ac1=${fx(s.ac1)}`)
+  return 0
+}
+
+// step 9 ruling 7: two raters over the second batch's scored checks that no round took yet, in a round of its own (`classify-b2`,
+// then `classify-b2-n<k>`) recorded in splitRounds; agreed labels go into labels.json, agreed partly waits for split
+async function classifyB2(c, agent) {
+  const agr = readJson(join(c.dir, 'agreement.json'))
+  if (!agr) { console.log(`${c.task} classify-b2 refused: not classified`); return 1 }
+  const rounds = splitRounds(c, agr), seen = new Set(rounds.flatMap((x) => x.ids ?? [])), k = rounds.filter((x) => x.name.startsWith('classify-b2')).length
+  const entries = clScored(c).filter((e) => e.batch === 2 && !seen.has(e.id)), name = k ? `classify-b2-n${k + 1}` : 'classify-b2'
+  if (!entries.length) { console.log(`${c.task} classify-b2 refused: no new scored check`); return 1 }
+  if (entries.some((e) => { const f = clFile(c, e); return !f || !existsSync(join(c.dir, 'oracle', f)) })) { console.log(`${c.task} classify-b2 refused: a scored check has no file`); return 1 }
+  const r = await classRound(agent, c, name, entries)
+  if (r.stale || r.failed) { console.log(r.stale ? staleClass(c) : failedClass(c, r.failed)); return 1 }
+  writeLabels(c, r.labels, r.ids)
+  writeFileSync(join(c.dir, 'agreement.json'), JSON.stringify({ ...agr, splitRounds: [...rounds, { name, ids: r.ids, ...r.stats, checks: r.ids.length, partly: r.partly, disputed: r.disputed }] }, null, 2) + '\n')
+  const v = Object.values(r.labels), s = r.stats ?? {}
+  console.log(`${c.task} ${name} classified=${r.ids.length} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length} partly=${r.partly.length} disputed=${r.disputed.length} kappa=${fx(s.kappa)} raw=${fx(s.raw)} ac1=${fx(s.ac1)}`)
   return 0
 }
 
@@ -951,7 +1012,9 @@ async function split(c, agent, validate) {
   const agr = readJson(join(c.dir, 'agreement.json'))
   if (!agr) { console.log(`${c.task} split refused: not classified`); return 1 }
   const o = join(c.dir, 'oracle'), tally = { split: 0, failed: 0, stale: 0 }
-  for (const id of agr.partly) {
+  // the main round's partly and the b2 rounds' (step 9 ruling 7); a split round's partly is requirement
+  const b2 = new Set(splitRounds(c, agr).filter((x) => x.name.startsWith('classify-b2')).flatMap((x) => x.partly ?? [])), partly = [...agr.partly, ...b2]
+  for (const id of partly) {
     const manifest = clManifest(c), e = manifest.find((x) => x.id === id)
     if (!e || e.dropped === true || e.restored_from_split) continue // split already (and maybe restored below)
     const s = await splitOne(agent, c, e, manifest)
@@ -970,11 +1033,16 @@ async function split(c, agent, validate) {
   const writeManifest = (m) => writeFileSync(join(o, 'manifest.json'), JSON.stringify(m, null, 2) + '\n')
   const args = c.ext ? [c.task] : [c.taskFile, c.task]
   const run = async (opts) => { try { await validate(args, opts); return null } catch (err) { return String(err?.message ?? err).split('\n')[0] } } // validate returns 0 or throws
+  // a b2 original's checks go through validate's --ids path, so no other check of its fix commit is graded again
+  const runOn = async (xs, ids, opts) => {
+    const old = xs.filter((x) => !b2.has(x.id)), mine = xs.filter((x) => b2.has(x.id))
+    return (old.length ? await run({ refs: [...new Set(old.map((x) => x.fix_commit))], ...opts(old) }) : null) ?? (mine.length ? await run({ ids: mine.flatMap(ids), tag: 'split-b2-' }) : null)
+  }
   const failed = (why) => { console.log(`${c.task} split validate failed (${why}); the new checks are not classified`); return 1 }
   const done = new Set(agr.splitDone ?? [])
   // the oracle files a split changed: a grouped original's shared file (the splitter rewrote it; `in/` holds it as it was
   // before), else the new checks' own files (`out/` holds them)
-  const isSplit = (x) => agr.partly.includes(x.id) && (x.split_into || x.restored_from_split)
+  const isSplit = (x) => partly.includes(x.id) && (x.split_into || x.restored_from_split)
   const grouped = (x, m) => x.file !== undefined && m.some((y) => y.id !== x.id && y.file === x.file)
   const work = (x) => join(c.dir, 'work', `split-${x.id}`)
   const num = (x) => Math.min(...halvesOf(x).map((id) => Number(id.split('-T').at(-1))))
@@ -1014,7 +1082,7 @@ async function split(c, agent, validate) {
       writeManifest(man)
       writeLabels(c, {}, [...undoIds])
     }
-    const why = await run({ refs: [...new Set(todo.map((x) => x.fix_commit))], only: todo.flatMap(halvesOf), tag: 'split-' })
+    const why = await runOn(todo, halvesOf, (xs) => ({ only: xs.flatMap(halvesOf), tag: 'split-' }))
     if (why) return failed(why)
     man = clManifest(c)
     const v = (x, id) => clVerdict(c, { ...x, id })
@@ -1043,7 +1111,7 @@ async function split(c, agent, validate) {
   const settle = man.filter((x) => x.restored_from_split && !reverted(x, man))
   if (settle.length) {
     revert(settle, man)
-    const again = await run({ refs: [...new Set(settle.map((x) => x.fix_commit))] })
+    const again = await runOn(settle, (x) => [x.id], () => ({}))
     if (again) return failed(again)
     tally.settled = settle.length
   }
@@ -1054,21 +1122,24 @@ async function split(c, agent, validate) {
     writeFileSync(join(c.dir, 'agreement.json'), JSON.stringify(agr, null, 2) + '\n')
   }
   // the scored new checks of the splits that stand, classified in rounds of their own: each round takes the ones no
-  // earlier round had (`classify-split`, then `classify-split2`, ...); partly again -> requirement
-  const made = (clManifest(c) ?? []).filter((x) => x.dropped === true && agr.partly.includes(x.id)).flatMap((x) => x.split_into ?? [])
-  const rounds = splitRounds(c, agr), seen = new Set(rounds.flatMap((x) => x.ids))
-  const fresh = clScored(c).filter((x) => made.includes(x.id) && !seen.has(x.id))
-  let r = null
-  if (fresh.length) {
-    const name = rounds.length ? `classify-split${rounds.length + 1}` : 'classify-split'
-    r = await classRound(agent, c, name, fresh)
+  // earlier round had (`classify-split`, then `classify-split2`, ...); a b2 original's in `classify-split-b2`, then
+  // `classify-split-b2-n<k>` (their disputes go to classify-2); partly again -> requirement
+  const madeBy = (keep) => (clManifest(c) ?? []).filter((x) => x.dropped === true && partly.includes(x.id) && keep(x)).flatMap((x) => x.split_into ?? [])
+  const made = madeBy(() => true), rounds = [...splitRounds(c, agr)], seen = new Set(rounds.flatMap((x) => x.ids)), done2 = { ids: 0, labels: [], partly: 0, disputed: 0 }
+  for (const inB2 of [false, true]) {
+    const mine = madeBy((x) => b2.has(x.id) === inB2), fresh = clScored(c).filter((x) => mine.includes(x.id) && !seen.has(x.id))
+    if (!fresh.length) continue
+    const k = rounds.filter((x) => x.name.startsWith('classify-split-b2')).length
+    const name = inB2 ? (k ? `classify-split-b2-n${k + 1}` : 'classify-split-b2') : rounds.length ? `classify-split${rounds.length + 1}` : 'classify-split'
+    const r = await classRound(agent, c, name, fresh)
     if (r.stale || r.failed) { console.log(r.stale ? staleClass(c) : failedClass(c, r.failed)); return 1 }
     writeLabels(c, { ...r.labels, ...Object.fromEntries(r.partly.map((id) => [id, 'requirement'])) }, r.ids)
-    const all = [...rounds, { name, ids: r.ids, ...r.stats, checks: r.ids.length, partly: r.partly, disputed: r.disputed }]
-    writeFileSync(join(c.dir, 'agreement.json'), JSON.stringify({ ...agr, split: all[0], splitRounds: all }, null, 2) + '\n')
+    rounds.push({ name, ids: r.ids, ...r.stats, checks: r.ids.length, partly: r.partly, disputed: r.disputed })
+    writeFileSync(join(c.dir, 'agreement.json'), JSON.stringify({ ...agr, split: rounds.find((x) => !x.name.includes('b2')), splitRounds: rounds }, null, 2) + '\n')
+    Object.assign(done2, { ids: done2.ids + r.ids.length, labels: [...done2.labels, ...Object.values(r.labels)], partly: done2.partly + r.partly.length, disputed: done2.disputed + r.disputed.length })
   }
-  const v = Object.values(r?.labels ?? {})
-  console.log(`${c.task} split partly=${agr.partly.length} split=${tally.split} failed=${tally.failed} restored=${tally.restored ?? 0} settled=${tally.settled ?? 0} stale=${tally.stale} new=${made.length} classified=${r?.ids.length ?? 0} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length + (r?.partly.length ?? 0)} disputed=${r?.disputed.length ?? 0}`)
+  const v = done2.labels
+  console.log(`${c.task} split partly=${partly.length} split=${tally.split} failed=${tally.failed} restored=${tally.restored ?? 0} settled=${tally.settled ?? 0} stale=${tally.stale} new=${made.length} classified=${done2.ids} build=${v.filter((x) => x === 'build').length} requirement=${v.filter((x) => x === 'requirement').length + done2.partly} disputed=${done2.disputed}`)
   return tally.stale ? 1 : 0
 }
 
@@ -1460,8 +1531,11 @@ async function kills(c, { grade }) {
   return 0
 }
 
-// split's validation: this file's validate on the task, with split's options (refs, only, tag)
-const validateCmd = (inj) => async (a, opts = {}) => validate(await (a.length === 2 ? taskCtx(a[1], a[0]) : taskCtx(a[0])), { grade: inj.grade ?? gradeCmd, agent: inj.agent ?? sealedAgent, ...opts })
+// split's validation: this file's validate on the task, with split's options (refs, only, tag), or its --ids path (ids, tag)
+const validateCmd = (inj) => async (a, { ids, ...opts } = {}) => {
+  const c = await (a.length === 2 ? taskCtx(a[1], a[0]) : taskCtx(a[0])), run = { grade: inj.grade ?? gradeCmd, agent: inj.agent ?? sealedAgent, ...opts }
+  return ids ? validateIds(c, ids, run) : validate(c, run)
+}
 
 // the floor-rule score of a task at a commit (ruling 7 of step 6): build over step.json's ids, requirement over the fix grade.
 // { build, requirement, passed }; a file that is not there, or a step.json that is not one, throws a ScoreMissing with the line the command prints
@@ -1499,10 +1573,13 @@ export async function oracle(args, inj = {}) {
   if (cmd === 'pairs' && taskPath && (rest.length === 0 || (rest.length === 2 && rest[0] === '--drop'))) return pairs(taskPath, rest.length ? rest[1].split(',') : [])
   if (cmd === 'label' && taskPath && rest.length === 2) return label(taskPath, rest[0], rest[1], agent)
   if (cmd === 'labels' && args.length === 1) return labels()
+  if (cmd === 'write' && taskPath && rest.length === 3 && rest[1] === '--batch' && rest[2] === '2') return writeSource(taskPath, rest[0], agent, true)
   if (cmd === 'write' && taskPath && rest.length <= 1) return rest.length ? writeSource(taskPath, rest[0], agent) : writeTask(taskPath, agent)
+  if (cmd === 'validate' && taskPath && rest.length === 3 && rest[1] === '--ids' && rest[2]) return validateIds(await taskCtx(rest[0], taskPath), rest[2].split(','), { grade, agent })
   if (cmd === 'validate' && taskPath && rest.length <= 1) return validate(await (rest.length ? taskCtx(rest[0], taskPath) : taskCtx(taskPath)), { grade, agent })
   if (cmd === 'sweep' && taskPath && (rest.length === 0 || (rest.length === 2 && rest[0] === '--drop'))) return sweep(taskPath, rest.length ? rest[1].split(',') : [], { grade, agent })
   if (cmd === 'sheet' && taskPath && rest.length === 0) return sheet(taskPath, agent)
+  if (cmd === 'classify' && taskPath && rest.length === 3 && rest[1] === '--round' && rest[2] === 'b2') return classifyB2(clCtx(rest[0], taskPath), agent)
   if ((cmd === 'classify' || cmd === 'split') && taskPath && rest.length <= 1) {
     const c = rest.length ? clCtx(rest[0], taskPath) : clCtx(taskPath)
     return cmd === 'classify' ? classify(c, agent) : split(c, agent, validateRun)
