@@ -2,10 +2,11 @@
 type: plan
 title: "Human steps plan"
 description: "Prereg step 9: the human reads of sections 5, 6.3, 7.1, 7.2 and 9.3 through a local page that writes the answers to data files, the second batch of source pairs the human calls fix, the rule (b) recount, and the step 8 carry-overs, locked with the list of what step 10 must hash again."
-status: draft
-generated: { by: claude-code/2.1.318, at: "2026-11-08T16:00:00+07:00" }
+status: stable
+generated: { by: claude-code/2.1.318, at: "2026-11-08T07:48:04+07:00" }
 verified:
-  - { by: claude-code-advisor/2.1.318, at: "2026-11-08T16:40:00+07:00" }
+  - { by: claude-code-advisor/2.1.318, at: "2026-11-08T08:00:21+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-08T15:14:44+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
@@ -33,7 +34,7 @@ The queue of step 5 ruling 16 and the two step 6 additions are the reads, row fo
 
 ## Decisions for the user (asked with this plan)
 
-**Decided by the user on 2026-11-08, with the choice of subagent-driven execution:** decision 1 option A (the user reads, the cold rows are swapped); decision 2 option (a) (the user against the registered mechanical rule); decision 3 option (a) (the local page; the user sees the probe in the preview, Save still to be confirmed before Task 7); decisions 4, 5 and 6 as recommended ("theo advisor"): every outsourcing session counts and the window decides, p6c gets one seeded bug at step 10 if it meets rule (b), and the four Docker names are removed. The token is revoked by the user. **Amended by the user on 2026-11-08, after the pages went up and before any answer:** every read is made by a sealed reader agent on `claude-fable-5-1` in place of the user (decision 1 option C; decision 2's κ is then reader against tool), with no tools, in chunks of at most 10 rows (`history` by segment), one rerun and a conservative default per batch, registered in prereg section 12 as "Amended at step 9" with its deviations.
+**Decided by the user on 2026-11-08, with the choice of subagent-driven execution:** decision 1 option A (the user reads, the cold rows are swapped); decision 2 option (a) (the user against the registered mechanical rule); decision 3 option (a) (the local page; the user sees the probe in the preview, Save still to be confirmed before Task 7); decisions 4, 5 and 6 as recommended ("theo advisor"): every outsourcing session counts and the window decides, p6c gets one seeded bug at step 10 if it meets rule (b), and the four Docker names are removed. The token is revoked by the user. **Amended by the user on 2026-11-08, after the pages went up and before any answer:** every read is made by a sealed reader agent on `claude-fable-5-1` in place of the user (decision 1 option C; decision 2's κ is then reader against tool), with no tools, in chunks of at most 10 rows (`history` by segment), one rerun and a conservative default per batch, registered in prereg section 12 as "Amended at step 9" with its deviations. Option A therefore did not run: the user read nothing. After the reads, the user decided the stopped gates (prereg section 12, "Decided at step 9 after the reads"), and approved the build on 2026-11-08.
 
 1. **Sealing against the human read.** What the user sees, batch by batch:
 
@@ -254,7 +255,7 @@ No external grade and no arm run. Docker: only the 4 removals of decision 6.
 
 ## Known limits
 
-- **The user knows 80 hidden checks.** Option A relies on the user giving the design sessions no content-specific instruction; the kept prompts make it checkable, not impossible.
+- **No human read step 9 content.** Under option A the user would have known 80 hidden checks; after the amendment every read was made by the agent reader, so no human saw a page and the limit no longer applies (see the lock). In its place: one model read everything.
 - **One reader.** Every settlement and every read is one person's judgement; nothing measures that person against another (decision 2 measures the rule against the person).
 - **Blind settling.** The `classify` page does not show the raters' labels or quotes, so the human labels from the check and the input alone, as the raters did; a disagreement the raters argued well is not shown.
 - **The 7.1 sample is 10 per set.** A gate of 9 of 10 has a wide interval; the read finds a gross rewrite problem, not a small rate.

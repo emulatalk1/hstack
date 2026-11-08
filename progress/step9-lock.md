@@ -658,3 +658,7 @@ fd03d9e4e96224eb8434a3770d024b45a0d8817bf763937a6c4e15bf56b784b4  step9/proxy/re
 3a328e091661d8faddcf720bd5c2067faf6820d623255febed0b23833b480966  step9/sample-7.2-v2.tsv
 f524b3e5fe9e5defea3ffc63f265e21e231a876c54359fca0183b34fb17f6edd  step9/seen.tsv
 ```
+
+## Approval, 2026-11-08
+
+The user approved the build on 2026-11-08 ("1" to "Duyệt bản build"). The plan `docs/plans/2026-11-08-bench-human-steps.md` is `stable`, with its decisions paragraph and its first known limit aligned with the amendment (option A did not run; no human read step 9 content). Still open: the stick decision before step 10 (recommended: the user reads the 3 B/B- pairs of step 8, https://claude.ai/artifact/58Q9rw5UuEPw4gPd6zpXxf, which are arm products and not sealed), and the token (revoke, then remove `<data>/arm/box.env`).
