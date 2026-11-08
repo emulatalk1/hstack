@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { withExport } from '../bench/env.mjs'
-import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, gradeMode, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, productImage, recordDocker, removeOut, removeRecorded, runEnd, SERVE_EMPTY, trustedCommit, word } from '../bench/ext.mjs'
+import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, gradeMode, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, productImage, rebuild, recordDocker, removeOut, removeRecorded, runEnd, SERVE_EMPTY, trustedCommit, word } from '../bench/ext.mjs'
 import { oracleFiles } from '../bench/grade.mjs'
 import { oracleSha } from '../bench/lib/oracle.mjs'
 import { releaseRoot } from './bench-root.mjs'
@@ -100,10 +100,11 @@ const gh = async (argv) => {
   const n = +argv.find((a) => a.startsWith('n=')).slice(2), q = argv.find((a) => a.startsWith('query='))
   return JSON.stringify(q.includes('pullRequest(') ? c.pr[n] : c.issue)
 }
-let i = 0, j = 0
+let i = 0, j = 0, k = 0
 const recipeAgent = async () => (Array.isArray(c.reply) ? c.reply[i++] ?? null : c.reply)
 const serveAgent = async () => (Array.isArray(c.serveReply) ? c.serveReply[j++] ?? null : c.serveReply ?? null)
-process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent, serveAgent, ...(c.readySec ? { readySec: c.readySec } : {}),
+const rebuildAgent = async () => (Array.isArray(c.rebuildReply) ? c.rebuildReply[k++] ?? null : c.rebuildReply ?? null)
+process.exit(await main(c.args, { gh, remote: () => c.remote, recipeAgent, serveAgent, rebuildAgent, ...(c.readySec ? { readySec: c.readySec } : {}),
   ...(c.prune ? { prune: async () => console.error('bench-test: builder prune') } : {}),
   ...('diskFree' in c ? { diskFree: async () => (Array.isArray(c.diskFree) ? (c.diskFree.length > 1 ? c.diskFree.shift() : c.diskFree[0]) : c.diskFree) } : {}) }))
 `)
@@ -128,7 +129,7 @@ function setup({ withRecipe = true, use = recipe, briefSha = BRIEF_SHA } = {}) {
   return s
 }
 async function run(s, args, { reply = null, env = {}, disk, more = {} } = {}) {
-  const c = { args: ['oracle-run', 'remove'].includes(args[0]) ? args : [args[0], join(s.ext, 'groups.json'), ...args.slice(1)], pr: { 1: prAnswer(prs[1]), 2: prAnswer(prs[2]) }, issue: issueAnswer, remote: fx, reply, ...more, ...(disk === undefined ? {} : { diskFree: disk }) }
+  const c = { args: ['oracle-run', 'remove', 'rebuild'].includes(args[0]) ? args : [args[0], join(s.ext, 'groups.json'), ...args.slice(1)], pr: { 1: prAnswer(prs[1]), 2: prAnswer(prs[2]) }, issue: issueAnswer, remote: fx, reply, ...more, ...(disk === undefined ? {} : { diskFree: disk }) }
   const p = Bun.spawn(['bun', runner, JSON.stringify(c)], { env: { ...process.env, HSTACK_BENCH_MACHINE: join(s.data, 'machine.json'), ...env }, stdout: 'pipe', stderr: 'pipe' })
   return { stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text(), code: await p.exited }
 }
@@ -985,3 +986,147 @@ test('the trusted gate compares the task shas whole, never by prefix', async () 
   expect(await trustedCommit(ext, data, fx, c0)).toBe(true)
   expect(await trustedCommit(ext, data, fx, c2)).toBe(false)
 })
+
+// step 11 ruling 4, the rebuild rounds: the served fixture task with a rebuild brief. In process, a stand-in maker (commit, lines,
+// log) -> boolean replaces S, R and the make, and a stand-in agent the sealed one
+const REBUILD_BRIEF_SHA = sha256('REBUILD BRIEF\n')
+function rebuildTask(o = {}) {
+  const s = oracleTask({ rebuild: null, ...o })
+  writeFileSync(join(s.ext, 'briefs/rebuild.md'), 'REBUILD BRIEF\n')
+  s.rounds = join(s.ext, 'tasks', s.slug(1), 'rebuild-rounds')
+  s.rebuildJson = join(s.ext, 'tasks', s.slug(1), 'rebuild.json')
+  return s
+}
+async function rebuildIn(s, maker, replies = []) {
+  const out = [], calls = [], makes = []
+  let i = 0
+  const code = await rebuild(['s1-01'], { data: s.data, diskFree: async () => 100,
+    maker: async (commit, lines, log) => { makes.push([commit, lines]); return maker(commit, lines, log) },
+    rebuildAgent: async (a) => { calls.push({ ...a, text: readFileSync(a.prompt, 'utf8') }); return replies[i++] ?? null } }, (l) => out.push(l))
+  return { code, out, calls, makes }
+}
+const DEFAULT_LINES = ['cd /', "mkdir -p '/work' && cd '/work'", "sh -c 'apk add --no-cache busybox-extras'"] // the fixture's default lines
+
+test('rebuild stops at once when both makes pass', async () => {
+  const s = rebuildTask({ rebuild: { lines: ['true'] } }), before = readFileSync(s.rebuildJson, 'utf8')
+  const r = await rebuildIn(s, async () => true)
+  expect(r.code).toBe(0)
+  expect(r.out).toEqual(['s1-01 rebuild make=current-1 lines=1 base=ok end=ok', 's1-01 rebuild base=ok end=ok rounds=0 result=ok'])
+  expect(r.makes).toEqual([[c0, ['true']], [c1, ['true']]])
+  expect(r.calls).toEqual([])
+  expect(readFileSync(s.rebuildJson, 'utf8')).toBe(before)
+  expect(existsSync(join(s.rounds, 'rounds.tsv'))).toBe(false)
+})
+
+test('a failing base make sends its log tail to the agent and a passing candidate writes rebuild.json', async () => {
+  const s = rebuildTask()
+  const maker = async (commit, lines, log) => { writeFileSync(log, `make of ${commit.slice(0, 7)}\n${'filler\n'.repeat(300)}pip: no route to the index\n`); return lines[0] === 'offline ok' }
+  const r = await rebuildIn(s, maker, ['The lines:\n```json\n{ "lines": ["offline ok"] }\n```'])
+  expect(r.code).toBe(0)
+  expect(r.out).toEqual([`s1-01 rebuild make=current-1 lines=3 base=failed end=skipped`, 's1-01 rebuild make=1 lines=1 base=ok end=ok', 's1-01 rebuild base=ok end=ok rounds=1 result=ok'])
+  expect(r.makes).toEqual([[c0, DEFAULT_LINES], [c0, ['offline ok']], [c1, ['offline ok']]]) // the end is made only once the base passed
+  expect(r.calls.map(({ text, ...a }) => a)).toEqual([{ env: join(s.ext, 'env', `${s.key}.json`), label: `rebuild-${s.slug(1)}-1`, at: c0, prompt: join(s.rounds, '1.prompt.md'), out: join(s.rounds, '1.reply.md') }])
+  const p = r.calls[0].text
+  expect(p).toStartWith('REBUILD BRIEF\n')
+  for (const part of [recipe.dockerfile.trimEnd(), serveRecipe.layer[0], DEFAULT_LINES.join('\n'), 'The last 200 lines of the base make log', 'pip: no route to the index']) expect(p).toContain(part)
+  expect(p).not.toContain(`make of ${c07}`) // the tail only
+  expect(p).not.toContain('end:')
+  expect(json(s.rebuildJson)).toEqual({ lines: ['offline ok'], briefSha: REBUILD_BRIEF_SHA, round: 1 })
+  expect(readFileSync(join(s.rounds, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tpass\n`)
+  expect(readFileSync(join(s.rounds, '1.reply.md'), 'utf8')).toContain('offline ok')
+  // the base's make logs are readable, the end's sealed
+  expect(readdirSync(join(s.data, 's1-01', 'build')).sort()).toEqual([`${c07}-rebuild-1.make.log`, `${c07}-rebuild-current-1.make.log`])
+  expect(readdirSync(join(s.ext, 'sealed', s.slug(1), 'logs'))).toEqual([`rebuild-${c17}-1.make.log`])
+  // a rerun makes with the saved lines and spends nothing; its logs take the next number
+  const again = await rebuildIn(s, maker)
+  expect(again.out.at(-1)).toBe('s1-01 rebuild base=ok end=ok rounds=1 result=ok')
+  expect(again.makes).toEqual([[c0, ['offline ok']], [c1, ['offline ok']]])
+  expect(existsSync(join(s.data, 's1-01', 'build', `${c07}-rebuild-current-2.make.log`))).toBe(true)
+  expect(again.calls).toEqual([])
+})
+
+test('the end\'s failure reaches the agent as one stage word only', async () => {
+  const s = rebuildTask(), SENTINEL = `end-only-${rand()}`
+  const maker = async (commit, lines, log) => { writeFileSync(log, commit === c1 ? `${SENTINEL}\n` : 'base fine\n'); return commit === c0 }
+  const r = await rebuildIn(s, maker, [JSON.stringify({ lines: ['try one'] }), JSON.stringify({ lines: ['try two'] })])
+  expect(r.code).toBe(1)
+  expect(r.calls.length).toBe(2)
+  for (const { text } of r.calls) {
+    expect(text).toContain('the make passed at the base\nend: failed\n')
+    expect(text).not.toContain(SENTINEL)
+    expect(text).not.toContain('base fine') // a passing base sends no log
+  }
+  expect(r.calls[1].text).toContain('try one') // the lines last made
+  expect(readFileSync(join(s.rounds, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tend failed\n2\t${s.slug(1)}\tend failed\n`)
+  expect(r.out.at(-1)).toBe('s1-01 rebuild base=ok end=failed rounds=2 result=failed')
+  expect(r.out.join('\n')).not.toContain(SENTINEL)
+})
+
+test('the budget is two rounds per task, then result=failed exit 1', async () => {
+  const s = rebuildTask(), reply = JSON.stringify({ lines: ['still online'] })
+  const r = await rebuildIn(s, async (commit, lines, log) => { writeFileSync(log, 'no index\n'); return false }, [reply, reply, reply])
+  expect(r).toMatchObject({ code: 1, calls: [{}, {}] })
+  expect(r.out.at(-1)).toBe('s1-01 rebuild base=failed end=skipped rounds=2 result=failed')
+  expect(readFileSync(join(s.rounds, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tbase failed\n2\t${s.slug(1)}\tbase failed\n`)
+  expect(existsSync(s.rebuildJson)).toBe(false)
+  // spent: a rerun makes once and asks no agent
+  const again = await rebuildIn(s, async () => false, [reply])
+  expect(again).toMatchObject({ code: 1, calls: [] })
+  expect(again.out.at(-1)).toBe('s1-01 rebuild base=failed end=skipped rounds=2 result=failed')
+})
+
+test('a bad reply spends a round and the next prompt says why', async () => {
+  const s = rebuildTask()
+  const r = await rebuildIn(s, async (commit, lines, log) => { writeFileSync(log, 'offline\n'); return lines[0] === 'ok' }, [JSON.stringify({ lines: 'ok' }), JSON.stringify({ lines: ['ok'] })])
+  expect(r.code).toBe(0)
+  expect(readFileSync(join(s.rounds, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tbad reply\n2\t${s.slug(1)}\tpass\n`)
+  expect(r.out).toContain('s1-01 rebuild round=1 reply=bad')
+  expect(r.calls[0].text).not.toContain('The previous reply')
+  expect(r.calls[1].text).toEndWith('\nThe previous reply was not valid: the reply is not { lines: [at most 60 non-empty shell lines] }\n')
+  expect(r.calls[1].text).toContain('The last 200 lines of the base make log') // still the last make's state
+  expect(json(s.rebuildJson)).toEqual({ lines: ['ok'], briefSha: REBUILD_BRIEF_SHA, round: 2 })
+})
+
+test('default lines a make container cannot replay are a failed base make with no log: the agent gets the refusal', async () => {
+  const s = rebuildTask({ serve: { ...serveRecipe, layer: [...serveRecipe.layer, 'USER nobody'] } })
+  const r = await rebuildIn(s, async () => true, [JSON.stringify({ lines: ['true'] })])
+  expect(r.code).toBe(0)
+  expect(r.makes).toEqual([[c0, ['true']], [c1, ['true']]]) // no make of the refused lines
+  expect(r.out).toEqual(['s1-01 rebuild make=none base=refused', 's1-01 rebuild make=1 lines=1 base=ok end=ok', 's1-01 rebuild base=ok end=ok rounds=1 result=ok'])
+  const p = r.calls[0].text
+  expect(p).toContain('The default rebuild lines cannot be made: the rebuild lines cannot run USER (only RUN, ENV, ARG and WORKDIR) in a make container')
+  expect(p).toContain('USER nobody') // the serve layer, so the agent sees which line
+  expect(p).not.toContain('The last 200 lines')
+  expect(p).not.toContain('end:')
+  expect(json(s.rebuildJson)).toEqual({ lines: ['true'], briefSha: REBUILD_BRIEF_SHA, round: 1 })
+  // the recipe's own refusal (no single copy) is no round's: an error before anything
+  const t = rebuildTask()
+  writeFileSync(join(t.ext, 'tasks', t.slug(1), 'task-recipe.json'), JSON.stringify({ ...recipe, dockerfile: 'FROM alpine:3.22\nCOPY . /work\nCOPY . /work\nWORKDIR /work\n' }))
+  await expect(rebuildIn(t, async () => true)).rejects.toThrow('the recipe must copy the repo into /work exactly once')
+})
+
+dtest('rebuild writes rebuild.json for a fixture whose default lines fail offline, and removes what it built (needs BENCH_EXT_DOCKER=1)', async () => {
+  // apk fetch needs the package index: it passes in S's build (with network) and fails in the make container (none), as an
+  // install line that fetches its build dependencies does
+  const s = rebuildTask({ serve: { ...serveRecipe, layer: [...serveRecipe.layer, 'RUN apk fetch --no-cache -o /tmp busybox-extras'] } }), candidate = { lines: ['cd /work', 'test -f src/base.txt'] }
+  const r = await run(s, ['rebuild', 's1-01'], { more: { rebuildReply: ['```json\n' + JSON.stringify(candidate) + '\n```'] } })
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  expect(r.stdout).toBe(['s1-01 rebuild images=2', 's1-01 rebuild make=current-1 lines=4 base=failed end=skipped', 's1-01 rebuild make=1 lines=2 base=ok end=ok', 's1-01 rebuild base=ok end=ok rounds=1 result=ok', ''].join('\n'))
+  expect(json(s.rebuildJson)).toEqual({ ...candidate, briefSha: REBUILD_BRIEF_SHA, round: 1 })
+  expect(readFileSync(join(s.rounds, '1.prompt.md'), 'utf8')).toContain(readFileSync(join(s.data, 's1-01', 'build', `${c07}-rebuild-current-1.make.log`), 'utf8').trimEnd().split('\n').slice(-3).join('\n'))
+  // every name recorded first, then removed by that name: S, R, the failed base make (no id), the base and end products
+  const tag = (w) => `bench-ext/${s.slug(1)}:${w}`, mk = (c, n) => `bench-ext-${s.slug(1)}-make-${c.slice(0, 7)}-${n}`
+  const d = json(join(s.data, 's1-01', 'docker.json'))
+  expect(d.images.map((i) => i.name)).toEqual([tag(`${c07}-serve`), tag(`${c07}-runner-${O8(s)}`), tag(`${c07}-product-${O8(s)}`), tag(`${c07}-product-${O8(s)}`), tag(`${c17}-product-${O8(s)}`)])
+  expect(d.images[2].id).toBeNull()
+  expect(d.containers).toEqual([mk(c0, 2), mk(c0, 3), mk(c1, 1)])
+  for (const c of d.containers) expect(exists('container', c)).toBe(false)
+  for (const i of d.images) expect(exists('image', i.name)).toBe(false)
+  // the saved lines pass on a rerun: no round, rebuild.json untouched
+  const before = readFileSync(s.rebuildJson, 'utf8'), again = await run(s, ['rebuild', 's1-01'])
+  expect(again).toMatchObject({ code: 0, stderr: '' })
+  expect(again.stdout).toEndWith('s1-01 rebuild base=ok end=ok rounds=1 result=ok\n')
+  expect(readFileSync(s.rebuildJson, 'utf8')).toBe(before)
+  for (const c of json(join(s.data, 's1-01', 'docker.json')).containers) expect(exists('container', c)).toBe(false)
+  for (const i of json(join(s.data, 's1-01', 'docker.json')).images) expect(exists('image', i.name)).toBe(false)
+}, 900000)

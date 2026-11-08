@@ -2,7 +2,7 @@ import { test, expect } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { boxEnv, oracleCommand, oracleRun, parseServe, PRIVATE_SET, productNetwork, readinessOf, rebuildLines, taskOf } from '../bench/ext.mjs'
+import { boxEnv, oracleCommand, oracleRun, parseRebuild, parseServe, PRIVATE_SET, productNetwork, readinessOf, rebuildLines, taskOf } from '../bench/ext.mjs'
 import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup, extraProbe, sampleOf, keptIds } from '../bench/lib/ext.mjs'
 
 const SEED = 'hstack-bench-2026-10-27'
@@ -249,6 +249,21 @@ test('a blank or comment line inside a continuation is skipped, as Docker does',
 test('rebuild.json replaces the recipe lines', () => {
   expect(rebuildLines(recipe, { layer: ['USER node'] }, { lines: ['npm ci --offline', 'cd web && npm run build'] })).toEqual(['npm ci --offline', 'cd web && npm run build'])
   for (const bad of [{}, { lines: 'npm ci' }, { lines: [1] }]) expect(() => rebuildLines(recipe, { layer: [] }, bad)).toThrow('rebuild.json is not { lines: [shell lines] }')
+})
+
+test('rebuild.json with briefSha and round still feeds rebuildLines', () => {
+  expect(rebuildLines(recipe, { layer: [] }, { lines: ['pip install --no-index -e .'], briefSha: 'a'.repeat(64), round: 2 })).toEqual(['pip install --no-index -e .'])
+})
+
+test('parseRebuild takes a wrapped JSON object of lines and refuses bad shapes', () => {
+  expect(parseRebuild('Here are the lines:\n```json\n{ "lines": ["cd /work", "pip install --no-index -e ."] }\n```\n')).toEqual({ lines: ['cd /work', 'pip install --no-index -e .'] })
+  expect(parseRebuild(JSON.stringify({ lines: [], notes: 'dropped' }))).toEqual({ lines: [] }) // nothing to replay: the overlay alone
+  expect(parseRebuild(JSON.stringify({ lines: Array(60).fill('true') })).lines.length).toBe(60)
+  for (const bad of [{}, { lines: 'true' }, { lines: [1] }, { lines: [''] }, { lines: ['  '] }, { lines: Array(61).fill('true') }])
+    expect(() => parseRebuild(JSON.stringify(bad))).toThrow('the reply is not { lines: [at most 60 non-empty shell lines] }')
+  for (const line of ['docker build --network=host .', 'buildctl --security=insecure', 'RUN --mount=type=secret,id=t cat /run/secrets/t'])
+    expect(() => parseRebuild(JSON.stringify({ lines: ['true', line] }))).toThrow('--network=host, --security=insecure or an ssh or secret mount')
+  expect(() => parseRebuild('no object here')).toThrow()
 })
 
 test('readiness is read per oracle', () => {

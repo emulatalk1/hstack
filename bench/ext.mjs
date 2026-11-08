@@ -23,6 +23,7 @@ const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
        bun bench/ext.mjs box-env <task>
        bun bench/ext.mjs serve <groups.json> <task>
        bun bench/ext.mjs oracle-run <task>   (grade's oracle command: BENCH_DIR, BENCH_ORACLE, BENCH_JUNIT, BENCH_TRUSTED)
+       bun bench/ext.mjs rebuild <task>   (sealed rounds that write tasks/<slug>/rebuild.json when the product make fails offline)
        bun bench/ext.mjs remove <task>`
 const sha = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
 const flag = (argv, k) => argv.find((a) => a.startsWith(`${k}=`))?.slice(k.length + 1)
@@ -1103,6 +1104,12 @@ function shellLine(ins, shell = 'sh -c') {
   if (CONFIG_ONLY.includes(kw)) return null
   throw no(`run ${kw} (only RUN, ENV, ARG and WORKDIR)`)
 }
+// ext/tasks/<slug>/rebuild.json as rebuildLines takes it: null when absent, {} (refused there) when it does not parse
+const savedRebuild = (ext, t) => {
+  const f = join(ext, 'tasks', t.slug, 'rebuild.json')
+  if (!existsSync(f)) return null
+  try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return {} }
+}
 export function rebuildLines(recipe, serve, rebuild) {
   const ins = instructions(recipe.dockerfile), at = ins.flatMap((l, i) => (COPY_REPO.test(l) ? [i] : []))
   if (at.length !== 1) throw new Error('the recipe must copy the repo into /work exactly once')
@@ -1219,10 +1226,7 @@ export async function oracleRun(args, inj = {}) {
   const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
   const runner = runnerFor(oracle, process.env.BENCH_TASK_FILE)
   const { recipe, serveDockerfile, sv } = serveRecipe(ext, t)
-  const rebuildFile = join(ext, 'tasks', t.slug, 'rebuild.json')
-  let rebuild = null
-  if (existsSync(rebuildFile)) try { rebuild = JSON.parse(readFileSync(rebuildFile, 'utf8')) } catch { rebuild = {} } // refused by rebuildLines
-  const lines = trusted ? null : rebuildLines(recipe, sv, rebuild), split = !trusted && gradeMode(ext, t, sv) === 'split'
+  const lines = trusted ? null : rebuildLines(recipe, sv, savedRebuild(ext, t)), split = !trusted && gradeMode(ext, t, sv) === 'split'
   const head = (await must(['git', '-C', dir, 'rev-parse', 'HEAD'], 'git rev-parse')).trim(), sha7 = head.slice(0, 7)
   if (trusted && !(await trustedCommit(ext, data, dir, head))) throw new Error(`oracle-run --trusted: ${sha7} is no task's base or end and no seeded bug`)
   const low = await diskFloor(task, inj)
@@ -1309,6 +1313,98 @@ export async function oracleRun(args, inj = {}) {
   }
 }
 
+// a rebuild round's reply is data: its shape is checked before a line reaches docker (the make runs offline, so no further check)
+export function parseRebuild(text) {
+  const r = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
+  if (!Array.isArray(r?.lines) || r.lines.length > 60 || !r.lines.every((l) => typeof l === 'string' && l.trim())) throw new Error('the reply is not { lines: [at most 60 non-empty shell lines] }')
+  if (r.lines.some((l) => UNSAFE.test(l))) throw new Error('a line may not use --network=host, --security=insecure or an ssh or secret mount')
+  return { lines: r.lines }
+}
+
+// `rebuild <task>` (step 11 ruling 4): the product make at the base and at the end with the task's rebuild lines. When one fails, at
+// most 2 sealed rounds per task slug (serve's pattern: the agent sees the base's files, the recipe, the base's make log and of the end
+// one word) each give candidate lines, kept in rebuild.json once both makes pass with them. What it builds is removed when it ends.
+// inj.maker(commit, lines, log) -> boolean stands in for S, R and productImage
+export async function rebuild(args, inj = {}, print = (s) => console.log(s)) {
+  const { pos: [task] } = parseArgs(args, 1, false)
+  const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
+  const oracle = join(data, task, 'oracle'), runner = runnerFor(oracle, join(data, 'env/box', `${task}.json`))
+  const { recipe, serveDockerfile, sv } = serveRecipe(ext, t), current = savedRebuild(ext, t)
+  let lines = null, refused = null
+  // a default line a make container cannot replay (USER, COPY, ...) is a failed base make with no log: the agent gets the refusal
+  try { lines = rebuildLines(recipe, sv, current) } catch (e) { if (current || !e.message.includes('rebuild.json')) throw e; refused = e.message }
+  const brief = readFileSync(join(ext, 'briefs', 'rebuild.md'), 'utf8'), briefSha = sha(brief)
+  const saved = join(ext, 'tasks', t.slug, 'rebuild.json'), rounds = join(ext, 'tasks', t.slug, 'rebuild-rounds'), tsv = join(rounds, 'rounds.tsv')
+  const build = join(data, task, 'build'), logs = join(ext, 'sealed', t.slug, 'logs'), base7 = t.base.slice(0, 7), end7 = t.end.slice(0, 7)
+  for (const d of [rounds, build, logs]) mkdirSync(d, { recursive: true })
+  const low = await diskFloor(task, inj)
+  if (low) { print(low); return 3 }
+  const spent = () => roundRows(tsv).filter((r) => r[1] === t.slug).length, agent = inj.rebuildAgent ?? sealedRecipe
+  const record = (f) => recordDocker(join(data, task, 'docker.json'), f)
+  const stop = async () => { await removeRecorded(data, task, t.slug); process.exit(143) }
+  process.on('SIGTERM', stop)
+  process.on('SIGINT', stop)
+  try {
+    let make = inj.maker
+    if (!make) { // S and R as oracle-run builds them, from the BuildKit cache; then each make from R with the product's network
+      const diskFree = inj.diskFree ?? dockerDiskFree, repo = join(ext, 'repos', t.key), pfx = `bench-ext/${t.slug}:`
+      const osha8 = oracleSha(oracleFiles(oracle)).slice(0, 8), serveTag = `${pfx}${base7}-serve`, runnerTag = `${pfx}${base7}-runner-${osha8}`
+      const names = () => record(() => {}).images.map((i) => i.name), m = names().filter((i) => i === serveTag).length + 1
+      let seq = 0
+      const scratch = (what, commit, fn) => withExport({ name: t.key, repo }, commit, `${what}-${t.slug}-${process.pid}-${seq++}`, fn)
+      const image = imageBuilder({ record, scratch, recipe, diskFree })
+      await image(serveTag, serveDockerfile, t.base, join(build, `${base7}-${m}.serve.build.log`))
+      await image(runnerTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, join(logs, `rebuild-${base7}-${m}.runner.build.log`))
+      print(`${task} rebuild images=2`)
+      const network = await productNetwork(t, inj.registryHosts && (async () => inj.registryHosts))
+      make = async (commit, ls, log) => {
+        const sha7 = commit.slice(0, 7), n = names().filter((i) => i === `${pfx}${sha7}-serve` || i.startsWith(`${pfx}${sha7}-product-`)).length + 1
+        return !!(await productImage({ t, commit, baseImage: runnerTag, network, lines: ls, repo, osha8, n, platform: recipe.platform, record, scratch, log, diskFree }))
+      }
+    }
+    // the base's make log is readable (base files only); the end's is sealed and the end is made only after the base passed
+    const attempt = async (ls, label) => {
+      const log = join(build, `${base7}-rebuild-${label}.make.log`), base = await make(t.base, ls, log)
+      const end = base && (await make(t.end, ls, join(logs, `rebuild-${end7}-${label}.make.log`)))
+      print(`${task} rebuild make=${label} lines=${ls.length} base=${base ? 'ok' : 'failed'} end=${!base ? 'skipped' : end ? 'ok' : 'failed'}`)
+      return { lines: ls, base, end, log }
+    }
+    let last, why = null
+    if (refused) { last = { base: false, end: false, refused }; print(`${task} rebuild make=none base=refused`) }
+    else last = await attempt(lines, `current-${readdirSync(build).filter((f) => f.startsWith(`${base7}-rebuild-current-`)).length + 1}`) // a rerun overwrites no log
+    const fence = (s) => '```\n' + s.trimEnd() + '\n```'
+    const promptOf = () => [brief.trimEnd(), '', "The recipe's Dockerfile:", fence(recipe.dockerfile), '', 'The serve layer lines:', fence(sv.layer.join('\n')), '',
+      ...(last.refused ? [`The default rebuild lines cannot be made: ${last.refused}`]
+        : ['The current rebuild lines:', fence(last.lines.join('\n')), '', last.base ? 'the make passed at the base' : `The last 200 lines of the base make log:\n${fence(tail(last.log))}`]),
+      ...(last.base ? ['end: failed'] : []), ...(why ? ['', `The previous reply was not valid: ${why}`] : []), ''].join('\n')
+    while (!last.end && spent() < 2) {
+      const k = nextRound(tsv, rounds), prompt = join(rounds, `${k}.prompt.md`), out = join(rounds, `${k}.reply.md`)
+      writeFileSync(prompt, promptOf())
+      const reply = await agent({ env: join(ext, 'env', `${t.key}.json`), label: `rebuild-${t.slug}-${k}`, at: t.base, prompt, out })
+      if (reply == null) throw new Error(`rebuild round ${k}: no reply`) // a tool failure: the round is not spent
+      if (!existsSync(out)) writeFileSync(out, reply)
+      setRound(tsv, k, t.slug, 'replied')
+      let cand
+      try { cand = parseRebuild(reply).lines } catch (e) { // a spent round: the next one is told why
+        why = e.message
+        setRound(tsv, k, t.slug, 'bad reply')
+        print(`${task} rebuild round=${k} reply=bad`)
+        continue
+      }
+      why = null
+      last = await attempt(cand, String(k))
+      setRound(tsv, k, t.slug, last.end ? 'pass' : `${last.base ? 'end' : 'base'} failed`)
+      if (last.end) writeFileSync(saved, JSON.stringify({ lines: cand, briefSha, round: k }, null, 2) + '\n')
+    }
+    print(`${task} rebuild base=${last.refused ? 'refused' : last.base ? 'ok' : 'failed'} end=${last.end ? 'ok' : last.base ? 'failed' : 'skipped'} rounds=${spent()} result=${last.end ? 'ok' : 'failed'}`)
+    return last.end ? 0 : 1
+  } finally {
+    process.off('SIGTERM', stop)
+    process.off('SIGINT', stop)
+    await removeRecorded(data, task, t.slug)
+  }
+}
+
 export async function walk(args, inj = {}, print = (s) => console.log(s)) {
   const { pos: [groupsPath, stack], tier, removeOut: remove } = parseArgs(args, 2, true)
   const cfg = await Bun.file(groupsPath).json(), ext = join(dataOf(inj.data), 'ext')
@@ -1357,6 +1453,7 @@ export async function main(argv, inj = {}) {
       console.log(r.line)
       return r.code
     } else if (cmd === 'oracle-run') await oracleRun(rest, inj)
+    else if (cmd === 'rebuild') return await rebuild(rest, inj)
     else if (cmd === 'remove') { // what <data>/<task>/docker.json records, as a run killed before its own removal left it
       const { pos: [task] } = parseArgs(rest, 1, false), data = dataOf(inj.data)
       console.log(`${task} removed ${(await removeRecorded(data, task, taskOf(join(data, 'ext'), task).slug)).length}`)
