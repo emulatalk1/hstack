@@ -4,6 +4,8 @@ title: "Trial run plan"
 description: "Prereg step 11: close the five boundary carry-overs of the step 10 lock, move real-estate grading and arms into containers with their own Postgres, regrade every end unchanged, walk external tasks until H1 has 24, build the trial driver and register the trial's rules; the trial itself (H and B, k = 1, 4 tasks, the N rule) runs in a short follow-on plan once a plugin commit exists."
 status: draft
 generated: { by: claude-code/2.1.318, at: "2026-11-08T18:51:17+07:00" }
+verified:
+  - { by: claude-code-advisor/2.1.318, at: "2026-11-08T19:03:39+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
@@ -215,6 +217,7 @@ Each has a recommended default; the prereg is silent on all six.
   - `services` run once as root before the first turn; a box whose `services` fail is refused (exit 2).
   - proof rows added: 'no token in the box env', 'the API is reached only through the proxy', 'the proxy refuses a server tool', 'services are up' (real-estate), 'only the registry answers' (real-estate under decision 6 (a)).
   - the record adds `plugins` and `proxy` (allowed and refused counts).
+  - under ruling 6's fallback (Task 4 found no form that answers through the proxy): no proxy wiring; the box keeps step 8's env and API addresses, the tests and proof rows of the proxy are left out, and the record adds `cliCalls` (Bash calls naming the CLI binary or an API host). Task 8 builds one of the two, as Task 4 recorded.
 
 - [ ] **Step 1: Write the failing tests:** 'a plugin export with a repo-only path is refused'; 'the plugin dirs reach the CLI as --plugin-dir'; 'the box env holds no token'; 'the box reaches only the proxy' (gated); 'the real-estate box and make container reach only the registry' (gated, a fixture address list); 'services run before the first turn and a failure refuses the box'; 'arms.json takes plugin entries and a turn limit per set'.
 - [ ] **Step 2: Run** — FAIL. **Step 3: Implement**, removing `NO_PLUGINS` and the `db !== null` refusal for a task whose `db` is null. **Step 4:** Suites teed, `BENCH_EXT_DOCKER=1 bun test tests/bench-box.test.mjs` teed. Commit `git commit -m "Run plugins, the proxy and real-estate services in the box"`.
