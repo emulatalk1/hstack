@@ -2979,3 +2979,81 @@ Final fix wave: sonnet 114.7k 4.8 min, commit a28a955 (lock A1–A5, guards B6, 
 Final fix wave re-review: sonnet 82.8k 0.7 min, all 7 addressed, no new breakage. Final review clean.
 
 Ruling revised after the advisor's done-check: the resumed-run figures (Task 2, 3 and 7b fix rounds) are of unknown meaning (run usage or end-of-run context size); implementer usage is stated as a range, 1.30M–1.81M (lock "Usage and wall clock"), superseding the ruling that the totals stand.
+
+## 2026-11-08 — stick v1 plan (`docs/plans/2026-11-08-bench-stick-v1.md`), step 10, draft
+
+### Usage by task (implementer and reviewer subagents, as the SDD ledger gives them)
+
+| task | implementer | reviewer |
+|---|---|---|
+| 1 Register the rulings | sonnet 87.5k, 1.0 min | sonnet 84.4k, 0.8 min |
+| 2 The hash and the compare | opus 101.4k, 8.7 min; fix round (resumed) 103.7k, 0.3 min | opus 100.9k, 2.0 min; re-review sonnet 58.5k, 0.1 min |
+| 3 The reruns | the controller | the final review |
+| 4 The task lists | the controller | sonnet 88.2k, 1.4 min |
+| 5, 6 | the controller | the final review |
+
+Runs (+07): `step` 16:19:54; real-estate `kills` 16:20:17–16:35:36; external `kills` 16:35:54–17:19:27; `stick hash` 4.2 s. No sealed agent ran.
+
+## Step 10 SDD ledger (copied before the final review)
+
+```text
+# SDD ledger — plan: docs/plans/2026-11-08-bench-stick-v1.md
+
+Branch bench-step10 from main 5d3bcdc. Spec: docs/plans/2026-10-27-benchmark-prereg.md (reachable).
+User 2026-11-08: "Thảo luận với advisor đến khi thống nhất rồi excute" — advisor agreed (round 3), build now. Decision 1 (pairs read) not answered: default (b) unless answered before Task 6. Token still with the user.
+
+## Pre-flight scan
+
+| rows | produces / consumes | found |
+|---|---|---|
+| Task 1 ↔ Task 6 | reasons.tsv (T1) consumed by compare (T6) | consistent: globs in brace form, Bun.Glob expands braces (checked) |
+| Task 2 ↔ Task 6 | stick hash/compare (T2) used by T6 | consistent |
+| Task 2 ↔ Task 3 | none shared | — |
+| Task 3 ↔ Task 4 | step.json counts (T3) checked by tasks.tsv h1_ids (T4) | consistent; T4 after T3 |
+| Task 1 self | registers rulings + reasons | consistent |
+| Task 2 self | Interfaces say `ROOT` is the repo root; `bench/env.mjs` exports `ROOT = '/tmp/hstack-bench'` | conflict, ruled below |
+| Task 2 self | consumes `dataDir()` from oracle.mjs | oracle.mjs and grade.mjs guard CLI with import.meta.main: import is safe |
+| Task 3 self | kills-due imports oracleSha/oracleFiles from grade.mjs | guarded: safe |
+| Task 4 self | controller script + fresh reviewer | consistent with the task-ownership line |
+| Task 5/6 self | user-gated | consistent |
+
+Ruling: `progress/` paths in `stick compare` resolve to the repo root `resolve(import.meta.dir, '..')`, not `ROOT` of bench/env.mjs (that is /tmp/hstack-bench) — the plan meant the repo root, as lock6-compare.mjs's <repo> argument — cost if wrong: none, the test pins it.
+Ruling: decision 1 unanswered at build start: default (b) stands until Task 5 asks again — the user said execute — cost if wrong: the user answers later and Task 6 adapts.
+
+## Tasks
+Task 1: implementer sonnet 87.5k tokens, 1.0 min; reviewer sonnet 84.4k, 0.8 min
+Task 1: minor (deferred): the prereg's decision sentence says "before Task 6 (Task 5 asks once more)" with plan-task numbers and no plan name in that sentence
+Task 1: minor (deferred): the prereg's opening sentence is the implementer's summary, accurate but not a quote
+Task 1: complete (commits 3830dcb..489f642, review clean)
+Task 2: implementer opus 101.4k, 8.7 min; reviewer opus 100.9k, 2.0 min (1 Important: README manifest path)
+Task 2: minor (deferred): bytewise-sort test cannot tell Buffer.compare from UTF-16 .sort() (add a pair like '！'/'😀')
+Task 2: minor (deferred): no negative test for a folder named objects/ or refs/ outside a store
+Task 2: minor (deferred): a lock path that now names a directory throws EISDIR (exit 2) instead of being reported
+Task 2: minor (deferred): a socket or FIFO is skipped without a count
+Task 2: minor (deferred): each file is read whole into memory (about 600 MB in total; the CLI binary 337 MB)
+Task 2: fix round 1/5 (1 addressed, 0 open — README manifest path; commits 4565c69..bfc6982); implementer resume 2.2k-ish (resumed figure 103.7k), 0.3 min; re-review sonnet 58.5k, 0.1 min
+Task 2: complete (commits 489f642..bfc6982, review clean)
+Task 3: kills-due: s1-03, p1, p2 (3) — as predicted
+Task 3: step x24 16:19:54, all exit 0, resolver reused 6 / none 18, ran 0; changed s1-03/step.json, s1-03/step-f2p.json, s1-04/step.json only; ids s1-03 9→10, s1-04 4→5 (joined 2, left 0); H1 N 20 — as predicted
+Task 4: tasks.mjs (controller) → progress/stick-v1/tasks.tsv: external 27 (scored 24, retired 3), real-estate 16 (scored 9, dropped 6, trial-only 1), h1 tasks 20; rule (b) column equals the step 9 lock table; s1-03 scored 25 (26 less the 7.1 drop)
+Task 4: walk state: ext/walk.tsv equals progress/step5/walk.tsv; tier 1 rows s1 14 (max rank 13), s2 18 (14), s3 44 (16); candidates s1 3104, s2 4002, s3 26309
+Ruling: Task 4 ran while the p1/p2 kills lane ran — tasks.tsv reads no file kills writes (bugs.json state, manifests, validations, step.json) — cost if wrong: none
+Task 4: reviewer sonnet 88.2k, 1.4 min: Approved, 0 Critical, 0 Important
+Task 4: minor (deferred, lock text): tasks.mjs imports clScored from the main checkout's bench/oracle.mjs (identical today)
+Task 4: minor (deferred, lock text): real-estate h1_ids are step-oracle ids, not part of H1's N of 20; a missing step.json reads 0
+Task 4: minor (deferred, lock text): no rank column; "the first of the sorted list" is walk rank order (s2-10 rank 8 sits between s2-05 and s2-07)
+Task 3: kills real-estate lane 16:20:17–16:35:36: p1 bugs=1 fix=0/1 step=none, p2 bugs=1 fix=0/1 step=none, exit 0, PGSNAP equal; p1 and p2 kills.json byte-equal to the before copies
+Task 3: kills external lane s1-03 started 16:36
+Task 3: kills external lane 16:35:54–17:19:27 (43.6 min): s1-03 bugs=3 fix=2/3 step=none, exit 0; build cache pruned before (19.33 GB reclaimed, cache rule); kills.json changed: per bug killed unchanged (1, 0, 2), of 26 → 25 (the 7.1 drop)
+Task 3: H1 sensitivity: tasks with a step id 20, bugs 60, caught by a step id 12 (was 11), tasks with a catch 9 (was 8; s1-04's new id catches 1), missing 0
+Task 3: Docker after: bench-ext- containers 328, bench-ext/ images 162 (= step 9 lock), 0 -serve/-grade names; /tmp/hstack-bench empty
+Task 3: complete (controller; reviewed by the final review)
+Task 4: complete (commit 416999b, review clean)
+Task 5: decision 1: the user answered "Theo advisor" → the advisor's recommendation: no read, default (b); token: "Đã revoke, xoá box.env" → rm <data>/arm/box.env 17:2x, box.env absent
+Task 5: complete
+Task 6: compares step 3–9: changed 1, 2, 42, 4, 25, 0, 0 (74), missing 0, unexplained 0
+Task 6: stick hash: files 20789, link 47, node_modules 1, store 1071, secret 7, transcript 203, rewritten 53; self-compare equal 20789; manifest sha256 3cf3f740…0357
+Ruling: the first stick hash run wrote its own output into logs/step10/hash.out while hashing it; retaken with the output outside <data>, then copied in — cost: none, self-compare clean
+Ruling: kills-due.mjs first imported oracleSha from bench/grade.mjs (not exported); corrected to bench/lib/oracle.mjs before its only run — cost: none
+Task 6: tests at the lock: first run 563 pass, 49 skip, 1 fail (output not kept, name unknown); two reruns 564 pass, 49 skip, 0 fail, pristine — a flaky test, for the final review
+```
