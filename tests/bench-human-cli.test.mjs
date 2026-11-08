@@ -1,5 +1,5 @@
 import { test, expect, afterAll, spyOn } from 'bun:test'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { human } from '../bench/human.mjs'
@@ -595,4 +595,140 @@ test('recount counts human fix sources and leaves 7.1 drops out', async () => {
   expect(await runIn(s, ['recount', '--drop', 'r4'])).toEqual({ code: 0, out: ['recount r1 scored=3 meets yes', 'recount r2 scored=2 meets no', 'recount r3 scored=0 meets no', 'recount: meets 1 of 3'].join('\n') })
   expect((await runIn(s, ['recount'])).out.split('\n').slice(-2)).toEqual(['recount r4 scored=3 meets yes', 'recount: meets 2 of 4'])
   await expect(runIn(s, ['recount', '--drop', 'r9'])).rejects.toThrow('--drop r9 is not a task of tasks.json')
+})
+
+// --- proxy (the amendment of step 9): a stub stands in for the sealed reader agent, as the oracle tests' fake agents do ---
+const MODEL = 'claude-fable-5-1'
+const keysOf = (prompt) => [...readFileSync(prompt, 'utf8').matchAll(/^### (.+)$/gm)].map((m) => m[1])
+// writes the run record (code, models) and the reply reply(keys, call) gives; the caller adds promptSha
+const stub = (reply, calls = [], models = () => [MODEL]) => async (args, opts) => {
+  const arg = (k) => args[args.indexOf(k) + 1], out = arg('--out')
+  calls.push({ args, opts })
+  writeFileSync(`${out}.run.json`, JSON.stringify({ label: args[1], code: 0, models: models(args) }))
+  writeFileSync(out, reply(keysOf(arg('--prompt')), calls.length))
+  return 0
+}
+const say = (answer, keys) => `Here: ${JSON.stringify(keys.map((key) => ({ key, answer, note: 'SENTINEL-WHY\tline\nbreak' })))}`
+const runP = (c, args, agent) => withData(c, () => quiet(() => human(args, { agent })))
+const answerRows = (c, batch) => readFileSync(join(c, 'step9/answers', `${batch}.tsv`), 'utf8').trimEnd().split('\n').map((l) => l.split('\t'))
+const proxyDir = (c, batch) => join(c, 'step9/proxy', batch)
+
+test('proxy chunks rows and keeps a history segment whole', async () => {
+  await hist()
+  const c = join(tmp, 'pxh')
+  cpSync(hd, c, { recursive: true })
+  rmSync(join(c, 'step9/answers'), { recursive: true, force: true })
+  const calls = [], rows = jsonAt(join(c, 'step9/pages/history.json')), seg = (k) => k.replace(/#\d+$/, '').replace(/:\d+$/, '')
+  const r = await runP(c, ['proxy', 'history', hTask, '--chunk', '2'], stub((keys) => say('rule 1', keys), calls))
+  const prompts = calls.map((x) => x.args[x.args.indexOf('--prompt') + 1])
+  expect(prompts).toEqual(prompts.map((_, i) => join(proxyDir(c, 'history'), `${i + 1}.prompt.md`)))
+  const chunks = prompts.map(keysOf)
+  expect(chunks.flat()).toEqual(rows.map((x) => x.key)) // every row once, in page order
+  for (const ks of chunks) expect(ks.length <= 2 || new Set(ks.map(seg)).size === 1).toBe(true)
+  for (const s of new Set(rows.map((x) => seg(x.key)))) expect(chunks.filter((ks) => ks.some((k) => seg(k) === s))).toHaveLength(1) // never split
+  expect(chunks.find((ks) => ks.includes('p1:sA:0'))).toEqual(['p1:sA:0', 'p1:sA:2', 'p1:sA:5']) // 3 events: a chunk of its own
+  expect(chunks.some((ks) => ks.length === 2 && new Set(ks.map(seg)).size === 2)).toBe(true) // short segments are packed together
+  expect(r).toEqual({ code: 0, out: `proxy history: chunks ${chunks.length}, runs ${chunks.length}, answered ${rows.length}/${rows.length}, defaulted 0` })
+  const prompt = readFileSync(prompts[0], 'utf8')
+  expect(prompt).toContain('1. each time the agent stops to wait for a human answer;')
+  expect(prompt).toContain('Not counted: the harness\'s own automatic reminders, permission requests already covered by allow rules.')
+  expect(prompt).not.toMatch(/restart \(|first event|bash-input/) // nothing of the tool's rule
+}, 30000)
+
+test('proxy appends one answer per row and prints counts only', async () => {
+  const c = await copyOf('px1'), calls = []
+  const r = await runP(c, ['proxy', 'oracle-7.1', taskFile, '--chunk', '2'], stub((keys) => say('same', keys), calls))
+  expect(r).toEqual({ code: 0, out: 'proxy oracle-7.1: chunks 2, runs 2, answered 3/3, defaulted 0' })
+  const [a] = calls, arg = (k) => a.args[a.args.indexOf(k) + 1]
+  expect(a.args.slice(0, 2)).toEqual([taskFile, 'proxy-oracle-7.1-1'])
+  expect(calls[1].args[1]).toBe('proxy-oracle-7.1-2')
+  expect(arg('--model')).toBe(MODEL)
+  expect(arg('--out')).toBe(join(proxyDir(c, 'oracle-7.1'), '1.reply.md'))
+  expect(a.args).not.toContain('--tools') // sealedAgent's default: an empty tool list
+  expect(a.args).not.toContain('--at')
+  expect(typeof a.opts.record).toBe('function')
+  expect(jsonAt(`${arg('--out')}.run.json`).promptSha).toBe(new Bun.CryptoHasher('sha256').update(readFileSync(arg('--prompt'))).digest('hex'))
+  const rows = answerRows(c, 'oracle-7.1')
+  expect(rows.map((x) => x.slice(0, 3))).toEqual(page('oracle-7.1').map((x) => [x.key, 'same', `proxy ${MODEL}: SENTINEL-WHY line break`]))
+  expect(rows.every((x) => x.length === 4 && !Number.isNaN(Date.parse(x[3])))).toBe(true)
+  expect((await runIn(c, ['status'])).out).toContain('status oracle-7.1: rows 3, answered 3, applied no')
+  const sel = await runP(c, ['proxy', 'pairs', taskFile, '--model', 'm-x'], stub((keys) => say('B- worse', keys), [], () => ['m-x']))
+  expect(sel.out).toBe('proxy pairs: chunks 1, runs 1, answered 1/1, defaulted 0')
+  expect(answerRows(c, 'pairs')[0][2]).toBe('proxy m-x: SENTINEL-WHY line break')
+  for (const x of [r, sel]) for (const s of ['SENTINEL', id, sid, xid, 'same']) expect(x.out.replace(/proxy \S+: /, '')).not.toContain(s)
+  await expect(runP(c, ['proxy', 'pairs'], stub(() => ''))).rejects.toThrow('usage:')
+  await expect(runP(c, ['proxy', 'nope', taskFile], stub(() => ''))).rejects.toThrow('usage:')
+  await expect(runP(c, ['proxy', 'pairs', taskFile, '--chunk', '0'], stub(() => ''))).rejects.toThrow('usage:')
+})
+
+test('a reply missing a key is rerun once and the rest default', async () => {
+  const c = await copyOf('px2'), calls = [], keys = page('oracle-7.1').map((x) => x.key)
+  // the first reply answers one key; the rerun answers the first, gives the second an answer outside the set and leaves the third out
+  const r = await runP(c, ['proxy', 'oracle-7.1', taskFile], stub((ks, n) => (n === 1 ? say('same', ks.slice(0, 1))
+    : `[${JSON.stringify({ key: ks[0], answer: 'different', note: 'n' })},${JSON.stringify({ key: ks[1], answer: 'maybe', note: 'n' })}]`), calls))
+  expect(r).toEqual({ code: 0, out: 'proxy oracle-7.1: chunks 1, runs 2, answered 1/3, defaulted 2' })
+  expect(calls.map((x) => x.args[1])).toEqual(['proxy-oracle-7.1-1', 'proxy-oracle-7.1-1-2'])
+  expect(calls[1].args[calls[1].args.indexOf('--prompt') + 1]).toBe(join(proxyDir(c, 'oracle-7.1'), '1.prompt.md'))
+  for (const f of ['1.reply.md.run.json', '1-2.reply.md.run.json']) expect(existsSync(join(proxyDir(c, 'oracle-7.1'), f))).toBe(true)
+  expect(answerRows(c, 'oracle-7.1').map((x) => x.slice(0, 3))).toEqual([[keys[0], 'different', `proxy ${MODEL}: n`], [keys[1], 'unclear', `proxy ${MODEL} default: `], [keys[2], 'unclear', `proxy ${MODEL} default: `]])
+  // a run on another model is a failed run: rerun once, then the not-fix answer of the pair's kind
+  const fb = []
+  const l = await runP(c, ['proxy', 'labels', taskFile], stub((ks) => say('fix', ks), fb, () => ['claude-opus-5-5']))
+  expect(l.out).toBe('proxy labels: chunks 1, runs 2, answered 0/1, defaulted 1')
+  expect(fb).toHaveLength(2)
+  expect(answerRows(c, 'labels').map((x) => x.slice(0, 3))).toEqual([[`r1:${fix}`, 'build', `proxy ${MODEL} default: `]])
+})
+
+test('a stale prompt is refused', async () => {
+  const c = await copyOf('px3'), calls = [], agent = stub((ks) => say('same', ks), calls)
+  expect((await runP(c, ['proxy', 'pairs', taskFile], agent)).code).toBe(0)
+  const f = join(c, 'step9/pages/pairs.json'), prompt = join(proxyDir(c, 'pairs'), '1.prompt.md'), before = [sha(join(c, 'step9/answers/pairs.tsv')), readFileSync(prompt, 'utf8')]
+  writeFileSync(f, JSON.stringify(jsonAt(f).map((x) => ({ ...x, parts: [...x.parts, { title: 'more', text: 'x' }] }))))
+  expect(await runP(c, ['proxy', 'pairs', taskFile], agent)).toEqual({ code: 1, out: 'proxy pairs: refused, 1 run(s) whose prompt differs from the one they ran with' })
+  expect(calls).toHaveLength(1)
+  expect([sha(join(c, 'step9/answers/pairs.tsv')), readFileSync(prompt, 'utf8')]).toEqual(before)
+  // a chunk over the argv limit is refused before any run
+  const big = join(c, 'step9/pages/oracle-7.1.json')
+  writeFileSync(big, JSON.stringify(jsonAt(big).map((x) => ({ ...x, parts: [{ title: 'big', text: 'x'.repeat(400_000) }] }))))
+  expect((await runP(c, ['proxy', 'oracle-7.1', taskFile], agent)).out).toMatch(/^proxy oracle-7\.1: refused, chunk 1 is \d+ bytes, over 900000; use a smaller --chunk$/)
+  expect((await runP(c, ['proxy', 'oracle-7.1', taskFile, '--chunk', '2'], agent)).out).toBe('proxy oracle-7.1: chunks 2, runs 2, answered 3/3, defaulted 0')
+  expect(calls).toHaveLength(3)
+  writeFileSync(join(c, 'step9/answers/inputs.applied'), 'x\n') // an applied batch takes no more answers
+  expect(await runP(c, ['proxy', 'inputs', taskFile], agent)).toEqual({ code: 1, out: 'proxy inputs: refused, the batch is applied' })
+  expect(calls).toHaveLength(3)
+})
+
+test('proxy is idempotent', async () => {
+  const c = await copyOf('px4'), calls = [], agent = stub((ks) => say('clean', ks), calls)
+  const first = await runP(c, ['proxy', 'inputs', taskFile], agent), file = join(c, 'step9/answers/inputs.tsv'), was = readFileSync(file, 'utf8')
+  const again = await runP(c, ['proxy', 'inputs', taskFile], agent)
+  expect(again).toEqual(first)
+  expect(first.out).toBe('proxy inputs: chunks 1, runs 1, answered 1/1, defaulted 0')
+  expect(calls).toHaveLength(1)
+  expect(readFileSync(file, 'utf8')).toBe(was)
+  // a later answer of another reader is answered again, once
+  appendFileSync(file, `r1\tleak\tby hand\t2026-11-08T00:00:00Z\n`)
+  await runP(c, ['proxy', 'inputs', taskFile], agent)
+  await runP(c, ['proxy', 'inputs', taskFile], agent)
+  expect(answerRows(c, 'inputs').map((x) => x[1])).toEqual(['clean', 'leak', 'clean'])
+})
+
+test('the classify proxy prompt holds the raters\' brief and no agent label', async () => {
+  const c = await copyOf('px5'), calls = []
+  put(c, { 'briefs/classify.md': 'SENTINEL-CLASSIFY-BRIEF the rule\n' })
+  expect((await runP(c, ['proxy', 'classify', taskFile], stub((ks) => say('partly', ks), calls))).out).toBe('proxy classify: chunks 1, runs 1, answered 1/1, defaulted 0')
+  const prompt = readFileSync(calls[0].args[calls[0].args.indexOf('--prompt') + 1], 'utf8')
+  expect(prompt).toContain('SENTINEL-CLASSIFY-BRIEF the rule\n')
+  expect(prompt).toContain('one of `traceable`, `not traceable`, `partly`')
+  expect(prompt.indexOf('SENTINEL-CLASSIFY-BRIEF')).toBeLessThan(prompt.indexOf(`### ${id}`))
+  for (const p of page('classify')[0].parts) expect(prompt).toContain(`#### ${p.title}\n\n\`\`\`\n${p.text.trimEnd()}\n\`\`\`\n`)
+  // the raters' labels (traceable, not traceable), the agreed label (build) and the verdict (valid) beyond the answer list
+  expect(prompt).not.toMatch(/build|valid|agree|classify-[12]/)
+  expect(prompt.split('traceable').length - 1).toBe(4) // the brief's list and the reply's list, each naming traceable and not traceable
+  // a part holding a fence gets a longer one
+  const f = join(c, 'step9/pages/rerate-7.2.json')
+  writeFileSync(f, JSON.stringify(jsonAt(f).map((x) => ({ ...x, parts: [{ title: 'fenced', text: 'a\n```js\nx\n```\n' }] }))))
+  const more = []
+  await runP(c, ['proxy', 'rerate-7.2', taskFile], stub((ks) => say('partly', ks), more))
+  expect(readFileSync(more[0].args[more[0].args.indexOf('--prompt') + 1], 'utf8')).toContain('#### fenced\n\n````\na\n```js\nx\n```\n````\n')
 })

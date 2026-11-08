@@ -2,18 +2,20 @@
 // Step 9's human reads (rulings 2, 3, 10 and 11): each batch is built as a page file and served on 127.0.0.1 behind a
 // token; the answers are appended to data files. Prints counts only: a row, a page, an answer and a note are sealed.
 import { createHash, randomBytes } from 'node:crypto'
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { gitOut } from './bugs.mjs'
 import { ARMS } from './canary.mjs'
 import { taskOf } from './ext.mjs'
 import { check } from './input-check.mjs'
+import { fellBack } from './lib/agent.mjs'
 import { answerOk, answersFor, BATCHES, coldSwap, eventKey, events, historyKappa, humanText, lastAgentText, parseAnswers, planWindows, segments, toolLabel } from './lib/human.mjs'
 import { queuePick } from './lib/oracle.mjs'
 import { loadTask } from './lib/task.mjs'
 import { clScored, dataDir, labelLines, poolKeys, queueDraw, queuePools, readPairs, seedOf } from './oracle.mjs'
+import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] [--root] | status | history <transcripts dir> <task.json> | kappa history | apply <batch> | recount [--drop <task,...>]'
+const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] [--root] | status | history <transcripts dir> <task.json> | kappa history | apply <batch> | recount [--drop <task,...>] | proxy <batch> <task.json> [--model <id>] [--chunk <n>]'
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
 const read = (f) => readFileSync(f, 'utf8')
 // a tsv with a header as objects; a file that is not there has no rows
@@ -472,6 +474,128 @@ export function serve(data, batch, port = 0, root = false) {
   return server
 }
 
+// --- proxy (the amendment of step 9): a sealed reader agent answers a batch in place of the user ---
+const PROXY_MODEL = 'claude-fable-5-1', PROXY_CHUNK = 10, PROXY_MAX_BYTES = 900_000
+const PROXY_HEAD = 'You read for the human reader of a benchmark. You have no tools: everything you need is in this prompt. Answer each row from what it shows.'
+const TRACE_BRIEF = 'Each check\'s label is one of `traceable`, `not traceable`, `partly`. Here the rule\'s folder is not given: each check\'s input, sheet, entry and check file(s) are below, in this prompt. Reply in the format at the end of this prompt, which replaces any reply format the rule above names.'
+const BRIEFS = {
+  'oracle-7.1': 'Each row is one check written for a hidden test set, its manifest entry, and the test it was rewritten from (the lines holding that test\'s title are marked `>> `). Read the check next to its original test and say whether they check the same behaviour: `same`, `different`, or `unclear` when the row does not let you tell.',
+  inputs: 'Each row is the input every agent of a benchmark is given for one task (the requirement and its interface sheet), with the result of a mechanical check. Say whether the input holds code, a test, a source or test file path, a test pointer or the solution: `leak` if it does, `clean` if it does not.',
+  labels: 'Each row is one commit of a task, with the label brief the labellers had as its first part: apply that brief to this commit only. The answer depends on the pair\'s kind: a `later` pair is `fix` or `requirement change`, an `in-task` pair is `fix` or `build`; the answers each row takes are listed under it. Reply in the format at the end of this prompt, which replaces any reply format the label brief names.',
+  pairs: 'Each row is one task done by two variants of a coding agent: the diff of arm B, then the diff of arm B-. Say whether B-\'s work is visibly worse than B\'s: `B- worse`, `same` (about the same), or `B- better`.',
+  // section 9.3 of the prereg, verbatim: the rules and the not-counted list only, nothing of the tool's rule
+  history: `Each row is one human input in a past session in which a human worked with a coding agent on a plan: the agent's last message before it, the human's input, and where it falls. Label each event by these rules.
+
+Labelling rules (one intervention =):
+
+1. each time the agent stops to wait for a human answer;
+2. each time a human must edit a file, run a command or restart for the run to continue;
+3. a run abandoned because it cannot continue = 3 interventions.
+
+Not counted: the harness's own automatic reminders, permission requests already covered by allow rules.
+
+Answer \`rule 1\`, \`rule 2\` or \`rule 3\` for the rule that makes the event an intervention, or \`not counted\`.`,
+}
+// a row still unanswered after the rerun: the answer that stops a gate or leaves a check out, never one that passes
+const proxyDefault = (batch, row) => (batch === 'labels' ? answersFor(batch, row).find((a) => a !== 'fix')
+  : { 'oracle-7.1': 'unclear', 'rerate-7.2': 'partly', classify: 'partly', 'classify-2': 'partly', inputs: 'leak', pairs: 'same', history: 'not counted' }[batch])
+const fenceFor = (text) => '`'.repeat(Math.max(3, ...(String(text).match(/`+/g) ?? []).map((s) => s.length + 1)))
+const listOf = (as) => as.map((a) => `\`${a}\``).join(', ')
+
+// page order, at most n rows a chunk; history by segment (the key less its `:<line>` and `#n`), a segment never split
+function proxyChunks(batch, rows, n) {
+  const groups = []
+  for (const r of rows) {
+    const g = batch === 'history' ? r.key.replace(/#\d+$/, '').replace(/:\d+$/, '') : r.key
+    if (groups.at(-1)?.g === g) groups.at(-1).rows.push(r)
+    else groups.push({ g, rows: [r] })
+  }
+  const out = []
+  for (const { rows: rs } of groups) {
+    if (out.length && out.at(-1).length + rs.length <= n) out.at(-1).push(...rs)
+    else out.push([...rs])
+  }
+  return out
+}
+
+function proxyPrompt(data, batch, rows) {
+  const brief = batch === 'classify' || batch === 'classify-2' || batch === 'rerate-7.2'
+    ? `${read(join(data, 'briefs/classify.md')).trimEnd()}\n\n${TRACE_BRIEF}` : BRIEFS[batch]
+  const sets = rows.map((r) => answersFor(batch, r)), same = new Set(sets.map((s) => s.join('\t'))).size === 1
+  const body = rows.map((r, i) => [`### ${r.key}`, ...(same ? [] : [`Answers this row takes: ${listOf(sets[i])}.`]),
+    ...r.parts.map((p) => { const f = fenceFor(p.text); return `#### ${p.title}\n\n${f}\n${String(p.text).trimEnd()}\n${f}` })].join('\n\n')).join('\n\n')
+  return `${PROXY_HEAD}\n\n${brief}\n\n## The rows (${rows.length})\n\n${body}\n\n## Your reply\n\n` +
+    `Reply with one JSON array and nothing after it: \`[{ "key": "<key>", "answer": "<answer>", "note": "<one or two sentences on why>" }]\`, ` +
+    `naming every key of this prompt (each \`###\` heading) exactly once.${same ? ` \`answer\` is one of ${listOf(sets[0])}.` : ' `answer` is one of the answers its row takes.'}\n`
+}
+
+// the valid answers of a reply; ok when every key is answered once with an answer its row takes and nothing else is there
+function proxyReply(text, batch, rows) {
+  let arr = null
+  try { arr = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)) } catch {}
+  const got = new Map()
+  if (!Array.isArray(arr)) return { got, ok: false }
+  const items = arr.map((e) => ({ key: e?.key ?? e?.id, answer: e?.answer ?? e?.label, note: e?.note })), seen = new Map(), byKey = new Map(rows.map((r) => [r.key, r]))
+  for (const e of items) seen.set(e.key, (seen.get(e.key) ?? 0) + 1)
+  for (const e of items) if (byKey.has(e.key) && seen.get(e.key) === 1 && answerOk(batch, byKey.get(e.key), e.answer)) got.set(e.key, { answer: e.answer, note: e.note })
+  return { got, ok: got.size === rows.length && items.length === rows.length }
+}
+
+const sha256 = (s) => createHash('sha256').update(s).digest('hex')
+async function proxy(data, batch, rest, agent) {
+  const [taskFile, ...flags] = rest, o = { model: PROXY_MODEL, chunk: String(PROXY_CHUNK) }
+  if (!taskFile || taskFile.startsWith('--') || flags.length % 2) throw new Error(USAGE)
+  for (let i = 0; i < flags.length; i += 2) {
+    const k = flags[i].slice(2)
+    if (!['--model', '--chunk'].includes(flags[i]) || !flags[i + 1]) throw new Error(USAGE)
+    o[k] = flags[i + 1]
+  }
+  if (!/^[1-9]\d*$/.test(o.chunk)) throw new Error(USAGE)
+  const rows = readJson(join(data, 'step9/pages', `${batch}.json`))
+  if (!Array.isArray(rows)) throw new Error(`no page for ${batch}: build it first`)
+  const answers = join(data, 'step9/answers'), file = join(answers, `${batch}.tsv`)
+  if (existsSync(join(answers, `${batch}.applied`))) { console.log(`proxy ${batch}: refused, the batch is applied`); return 1 }
+  const dir = join(data, 'step9/proxy', batch), model = o.model
+  const chunks = proxyChunks(batch, rows, Number(o.chunk)).map((rs, i) => ({ c: i + 1, rows: rs, text: proxyPrompt(data, batch, rs) }))
+  // runClaude passes the prompt in argv (macOS ARG_MAX 1 MiB with the env): check every chunk before any run
+  const big = chunks.find((x) => Buffer.byteLength(x.text) > PROXY_MAX_BYTES)
+  if (big) { console.log(`proxy ${batch}: refused, chunk ${big.c} is ${Buffer.byteLength(big.text)} bytes, over ${PROXY_MAX_BYTES}; use a smaller --chunk`); return 1 }
+  const outOf = (c, n) => join(dir, `${c}${n === 1 ? '' : '-2'}.reply.md`)
+  // a run whose record exists was made with another prompt: nothing runs and nothing is written
+  const stale = chunks.flatMap(({ c, text }) => [1, 2].map((n) => readJson(`${outOf(c, n)}.run.json`)).filter((x) => x && x.promptSha !== sha256(text))).length
+  if (stale) { console.log(`proxy ${batch}: refused, ${stale} run(s) whose prompt differs from the one they ran with`); return 1 }
+  mkdirSync(dir, { recursive: true })
+  let runs = 0
+  const final = new Map()
+  for (const { c, rows: rs, text } of chunks) {
+    const prompt = join(dir, `${c}.prompt.md`)
+    writeFileSync(prompt, text)
+    for (const n of [1, 2]) {
+      const out = outOf(c, n), rec = `${out}.run.json`
+      if (!existsSync(rec)) {
+        rmSync(out, { force: true })
+        await agent([taskFile, `proxy-${batch}-${c}${n === 1 ? '' : '-2'}`, '--prompt', prompt, '--out', out, '--model', model], { record: (s) => ({ fellBack: fellBack(s) }) })
+        const x = readJson(rec)
+        if (x) writeFileSync(rec, JSON.stringify({ ...x, promptSha: sha256(text) }, null, 2) + '\n')
+      }
+      runs++
+      const x = readJson(rec), ran = x?.code === 0 && x.models?.includes(model) && !x.fellBack // another model is a failed run
+      const res = ran ? proxyReply(existsSync(out) ? read(out) : '', batch, rs) : { got: new Map(), ok: false }
+      if (res.ok || n === 2) { for (const [k, v] of res.got) final.set(k, v); break }
+    }
+  }
+  const given = existsSync(file) ? parseAnswers(read(file)) : new Map(), at = new Date().toISOString()
+  const lines = rows.map((r) => {
+    const v = final.get(r.key), answer = v ? v.answer : proxyDefault(batch, r)
+    const note = `proxy ${model}${v ? '' : ' default'}: ${v ? String(v.note ?? '') : ''}`.replace(/[\t\r\n]/g, ' ').slice(0, 2000)
+    const was = given.get(r.key)
+    return was?.answer === answer && was.note === note ? '' : `${r.key}\t${answer}\t${note}\t${at}\n` // the same answer again is not appended
+  }).join('')
+  if (lines) { mkdirSync(answers, { recursive: true }); appendFileSync(file, lines) }
+  console.log(`proxy ${batch}: chunks ${chunks.length}, runs ${runs}, answered ${final.size}/${rows.length}, defaulted ${rows.length - final.size}`)
+  return 0
+}
+
 function statusCmd(data) {
   const pages = join(data, 'step9/pages'), answers = join(data, 'step9/answers')
   for (const f of existsSync(pages) ? readdirSync(pages).filter((x) => x.endsWith('.json')).sort() : []) {
@@ -483,7 +607,7 @@ function statusCmd(data) {
 }
 
 // a number is an exit code; serve returns its server, which keeps the process up
-export async function human(args) {
+export async function human(args, { agent = sealedAgent } = {}) {
   if (!process.env.HSTACK_BENCH_MACHINE) throw new Error('set HSTACK_BENCH_MACHINE to the machine file (for example .evidence/bench/machine.json)')
   const data = dataDir(), [cmd, batch, ...rest] = args
   if (cmd === 'swap' && (args.length === 1 || (args.length === 3 && batch === '--drop'))) return swap(data, args.length === 3 ? rest[0].split(',') : [])
@@ -496,6 +620,7 @@ export async function human(args) {
   if (cmd === 'history' && args.length === 3) return history(data, batch, rest[0])
   if (cmd === 'kappa' && batch === 'history' && args.length === 2) return kappaHistory(data)
   if (cmd === 'apply' && args.length === 2) return apply(data, batch)
+  if (cmd === 'proxy' && Object.hasOwn(BATCHES, batch ?? '')) return proxy(data, batch, rest, agent)
   if (cmd === 'recount' && (args.length === 1 || (args.length === 3 && batch === '--drop'))) return recount(data, args.length === 3 ? rest[0].split(',') : [])
   throw new Error(USAGE)
 }

@@ -83,11 +83,21 @@ test('with no --tools the agent gets one empty --tools argument and an empty fol
   expect((await run(base(o))).code).toBe(0)
   const [c] = calls()
   expect(c.args.slice(c.args.indexOf('--tools'))).toEqual(['--tools', ''])
+  expect(c.args).not.toContain('--model')
   expect(c.files).toEqual([])
   expect(c.env).toEqual([]) // no BENCH_* variable reaches the agent
   expect(c.cwd.startsWith(realpathSync(ROOT))).toBe(true)
   expect(existsSync(c.cwd)).toBe(false)
   expect(rec(o).tools).toEqual([])
+  expect(rec(o).model).toBeNull()
+})
+
+test('--model passes the model to claude and records it', async () => {
+  const o = out()
+  expect((await run(base(o, '--model', 'm-1'))).code).toBe(0)
+  const [c] = calls()
+  expect(c.args.slice(c.args.indexOf('--model'), c.args.indexOf('--model') + 2)).toEqual(['--model', 'm-1'])
+  expect(rec(o).model).toBe('m-1')
 })
 
 test('--at runs in an export of that commit with no .git and no .claude/settings.json', async () => {
