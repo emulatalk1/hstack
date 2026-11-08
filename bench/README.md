@@ -246,4 +246,4 @@ ext/sealed/<slug>/{pr.json, f2p.json, logs/}           sealed: the PR's fields, 
 ext/walk.tsv  ext/removed.txt             the walk's verdicts (and step 5's `dropped`); the names --remove-out and step 5 removed
 ```
 
-Repo side: `progress/stick-v1/` holds the committed manifest `stick-v1.sha256`, `reasons.tsv` (the table "What changed since the locks" as `stick compare --reasons` reads it) and `tasks.tsv`.
+Repo side: the committed manifest is `progress/stick-v1.sha256` (`stick hash --out progress/stick-v1.sha256`); `progress/stick-v1/` holds `reasons.tsv` (the table "What changed since the locks" as `stick compare --reasons` reads it) and `tasks.tsv`.
