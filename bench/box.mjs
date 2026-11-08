@@ -33,8 +33,8 @@ export const ARM_LAYER = ['RUN rm -rf /work/.git /work/.bench.Dockerfile /work/.
 
 // step 11 ruling 2: what of a plugin enters a box. Only its component folders, and never a path only the repo may hold (the locks,
 // which name the cold repos, and the prereg): `git archive <commit> -- <paths>`, or the same folders of a plugin pinned by version.
-// files: the exported paths, sorted; sha256: of one `<sha256 of the file>  <mode, octal>  <path>` line per file, in that order (the mode:
-// a script's executable bit is part of what runs). A refusal removes only what this call made: an out that was there is never touched
+// files: the exported paths, sorted; sha256: of one `<sha256 of the file>  <mode>  <path>` line per file, in that order, the mode as git
+// records it (755 when any executable bit is set, else 644: a script's executable bit is part of what runs, the umask is not). A refusal removes only what this call made: an out that was there is never touched
 export const PLUGIN_PATHS = ['.claude-plugin', 'skills', 'agents', 'commands', 'hooks', 'scripts', 'bin', '.mcp.json']
 const REPO_ONLY = ['bench', 'progress', 'docs', 'tests', 'fixtures', '.evidence']
 export function pluginExport({ repo, commit, dir, paths, out }) {
@@ -70,7 +70,7 @@ export function pluginExport({ repo, commit, dir, paths, out }) {
   files.sort()
   const held = files.filter((f) => REPO_ONLY.includes(f.split('/')[0]))
   if (held.length) no(`it holds ${held[0]}`)
-  const mode = (f) => (lstatSync(join(out, f)).mode & 0o777).toString(8).padStart(3, '0')
+  const mode = (f) => (lstatSync(join(out, f)).mode & 0o111 ? '755' : '644')
   return { files, sha256: sha(files.map((f) => `${sha(readFileSync(join(out, f)))}  ${mode(f)}  ${f}\n`).join('')) }
 }
 
@@ -158,8 +158,14 @@ export async function proxyImage(scratch, data) {
   })
 }
 
-// the proxy answers no container but its box: a fresh container on the default bridge must get no answer from it
-export const proxyAlone = async (ip) => (await sp([...FW_RUN, FW, 'nc', '-zw4', ip, String(PROXY_PORT)], 60)).code !== 0
+// the proxy answers no container but its box: busybox `nc -z` from a fresh container on the default bridge exits 1, no connection.
+// true then; false when it connects (0); any other outcome (a Docker error, a missing tool, a timeout) means the check did not run: a throw
+export async function proxyAlone(ip, run = sp) {
+  const { code } = await run([...FW_RUN, FW, 'nc', '-zw4', ip, String(PROXY_PORT)], 60)
+  if (code === 1) return true
+  if (code === 0) return false
+  throw new Error(`the check that the proxy answers only its box did not run (${code === 'timeout' ? 'timed out' : `exit ${code}`})`)
+}
 
 // a private-set task's services, at proof time: its serve recipe's servicesReady, run as root in the box, exits 0. Null, or why not
 export async function servicesUp(box, ready) {
@@ -250,7 +256,9 @@ export async function enterBox({ data, task, id, name, base, repoGit, cli, turnT
     const started = {}
     for (const c of [box, proxy]) started[c] = (await must(['docker', 'inspect', '-f', '{{.State.StartedAt}}', c], `docker inspect ${c}`)).trim()
     const up = async (c) => (await sp(['docker', 'inspect', '-f', '{{.State.StartedAt}} {{.State.Running}}', c])).out.trim() === `${started[c]} true`
-    const alive = async () => (await up(box)) && up(proxy)
+    // the proxy's PID 1 is a sleep: a server that crashed or was killed for memory leaves the container running, so it must still listen
+    const listens = async () => (await sp([...FW_RUN, '--network', `container:${proxy}`, FW, 'nc', '-zw1', '127.0.0.1', String(PROXY_PORT)], 60)).code === 0
+    const alive = async () => (await up(box)) && (await up(proxy)) && listens()
     const killed = async () => {
       await sp(['docker', 'kill', box]) // this run created it
       await daemon() // a dead daemon is the machine's failure and throws
@@ -386,7 +394,9 @@ async function proofRows(b, { data, repo, token, cfg, print, port, outside, isPr
   c0 = c1; status = await post(SERVER_TOOL); c1 = await b.proxyCounts()
   const refused = status === '403' && c1.refused === c0.refused + 1 && (c1.reasons.tool ?? 0) === (c0.reasons.tool ?? 0) + 1
   row('the proxy refuses a server tool', refused ? null : `a web search tool through the proxy: ${status}, refused ${c0.refused} -> ${c1.refused}`)
-  row('the proxy answers only the box', (await proxyAlone(p.ip)) ? null : 'a fresh container on the default bridge reaches the proxy')
+  let alone
+  try { alone = (await proxyAlone(p.ip)) ? null : 'a fresh container on the default bridge reaches the proxy' } catch (e) { alone = e.message }
+  row('the proxy answers only the box', alone)
 
   const [v6, policy] = (await helper(box, "ip -6 addr show dev eth0 | grep -c inet6\nip6tables -S | grep -c '^-P OUTPUT DROP'\ntrue", 'the IPv6 check', ['--cap-add', 'NET_ADMIN'])).trim().split('\n')
   row('no IPv6 route out', v6 === '0' && policy === '1' ? null : `${v6} address(es) on eth0, ${policy} DROP policy`)

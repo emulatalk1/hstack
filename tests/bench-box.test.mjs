@@ -1,8 +1,8 @@
 import { test, expect, afterAll } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, FW_RUN, main, pinHosts, pluginExport, proofCode, rootRefused, rulesCommand, servicesUp, vsockRefused, withListener } from '../bench/box.mjs'
+import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, FW_RUN, main, pinHosts, pluginExport, proofCode, proxyAlone, rootRefused, rulesCommand, servicesUp, vsockRefused, withListener } from '../bench/box.mjs'
 import { withExport } from '../bench/env.mjs'
 import { productImage, removeRecorded, recordDocker } from '../bench/ext.mjs'
 import { API_HOSTS, RESUMES } from '../bench/lib/arm.mjs'
@@ -244,9 +244,28 @@ test('a plugin export is the same files and sha256 from a commit and from a fold
   writeFileSync(join(x, '.claude-plugin/plugin.json'), '{"name":"hp"}\n'); writeFileSync(join(x, 'skills/s1/SKILL.md'), 'skill\n'); chmodSync(join(x, 'skills/s1/SKILL.md'), 0o755)
   expect(pluginExport({ dir: x, version: '1', paths, out: c }).sha256).not.toBe(fromRepo.sha256)
   rmSync(c, { recursive: true })
+  // the mode as git records it: the umask of the extraction does not change the sha, any executable bit gives 755
+  const keep = process.umask(0o077), u = join(tmp, `pe-${rand()}`)
+  let strict
+  try { strict = pluginExport({ repo: prepo, commit: pcommit, paths, out: u }) } finally { process.umask(keep) }
+  expect(statSync(join(u, 'skills/s1/SKILL.md')).mode & 0o777).toBe(0o600) // extracted under 077
+  expect(strict.sha256).toBe(fromRepo.sha256)
+  chmodSync(join(x, 'skills/s1/SKILL.md'), 0o700)
+  const o = join(tmp, `pe-${rand()}`)
+  expect(pluginExport({ dir: x, version: '1', paths, out: o }).sha256).toBe(sha(`${sha('{"name":"hp"}\n')}  644  .claude-plugin/plugin.json\n${sha('skill\n')}  755  skills/s1/SKILL.md\n`))
+  for (const d of [u, o]) rmSync(d, { recursive: true })
   expect(readFileSync(join(a, 'skills/s1/SKILL.md'), 'utf8')).toBe('skill\n')
   expect(existsSync(join(a, 'bench'))).toBe(false)
   for (const d of [a, b]) rmSync(d, { recursive: true })
+})
+
+test('the proxy is alone only when nc ran and did not connect', async () => {
+  const runner = (code) => async (argv) => { expect(argv.slice(-4)).toEqual(['nc', '-zw4', '10.0.0.5', '8080']); return { out: '', err: '', code } }
+  expect(await proxyAlone('10.0.0.5', runner(1))).toBe(true)
+  expect(await proxyAlone('10.0.0.5', runner(0))).toBe(false) // reachable
+  await expect(proxyAlone('10.0.0.5', runner(125))).rejects.toThrow('did not run (exit 125)')
+  await expect(proxyAlone('10.0.0.5', runner(127))).rejects.toThrow('exit 127')
+  await expect(proxyAlone('10.0.0.5', runner('timeout'))).rejects.toThrow('timed out')
 })
 
 test('a box with no box.env or no proxy settings is refused before any Docker call', async () => {
@@ -479,11 +498,12 @@ dtest('a box that restarted runs no turn', async () => {
   } finally { await b.leave() }
 }, 600000)
 
-dtest('a proxy that restarted or died kills the run', async () => {
-  for (const [n, act] of [[7, ['restart', '-t', '0']], [8, ['kill']]]) {
+dtest('a proxy that restarted or died kills the run, and so does a dead proxy server', async () => {
+  for (const [n, act] of [[7, ['restart', '-t', '0']], [8, ['kill']], [9, ['exec', 'PROXY', 'pkill', '-f', 'proxy.mjs']]]) {
     const s = setup(), name = `${id}-B-${n}`, b = await enter(s, name, { blocked: denyOnly }), box = s.boxName(name)
     try {
-      expect(docker(...act, s.proxyName(name)).exitCode).toBe(0)
+      expect(docker(...(act.includes('PROXY') ? act.map((x) => (x === 'PROXY' ? s.proxyName(name) : x)) : [...act, s.proxyName(name)])).exitCode).toBe(0)
+      if (n === 9) expect(running(s.proxyName(name))).toBe(true) // PID 1, the sleep, lives on: only the server is gone
       expect(await b.turn({ prompt: 'mark' })).toEqual({ out: '', code: 'killed' })
       expect(running(box)).toBe(false)
       expect(await b.product(join(tmp, `p-${rand()}`))).toEqual({ code: 'killed' })
