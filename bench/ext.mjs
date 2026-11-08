@@ -903,8 +903,9 @@ export function parseServe(text) {
   if (!Array.isArray(r?.layer) || !r.layer.every((l) => typeof l === 'string') || typeof r.start !== 'string' || typeof r.ready !== 'string' || !r.ready.trim() || typeof r.notes !== 'string') throw new Error('the serve recipe is not { layer: [Dockerfile lines], start, ready, notes }')
   if (r.layer.some((l) => UNSAFE.test(l))) throw new Error('the layer may not use --network=host, --security=insecure or an ssh or secret mount')
   if (!r.start.trim()) throw new Error('start is empty: it must start the app') // an empty recipe would pass with nothing served
-  if (r.services !== undefined && typeof r.services !== 'string') throw new Error('services must be a string') // the part of start the box also needs
-  return { layer: r.layer, start: r.start, ready: r.ready, notes: r.notes, ...(r.services === undefined ? {} : { services: r.services }) }
+  // services: the part of start the box also needs; servicesReady: the command that says they are up (the box's proof runs it)
+  for (const k of ['services', 'servicesReady']) if (r[k] !== undefined && typeof r[k] !== 'string') throw new Error(`${k} must be a string`)
+  return { layer: r.layer, start: r.start, ready: r.ready, notes: r.notes, ...(r.services === undefined ? {} : { services: r.services }), ...(r.servicesReady === undefined ? {} : { servicesReady: r.servicesReady }) }
 }
 // a task's recipe and serve layer, the two Dockerfile halves of its serve image
 export function serveRecipe(ext, t) {
@@ -1162,6 +1163,13 @@ export async function productImage({ t, commit, baseImage, network, lines, repo,
   }
 }
 
+// decision 6 (a): a private-set product is made with the registry its arm's box had, pinned now; any other with no network
+export async function productNetwork(t, pin) {
+  if (t.stack !== PRIVATE_SET.stack) return 'none'
+  const hosts = await (pin ?? (() => pinHosts(PRIVATE_SET.registry)))()
+  return { ips: [...new Set(hosts.map((h) => h.ip))], hosts }
+}
+
 // step 11 ruling 7: the state of the last readiness line of this commit and oracle, or null; a two-column line names no oracle
 export function readinessOf(file, sha7, osha8) {
   let last = null
@@ -1249,9 +1257,7 @@ export async function oracleRun(args, inj = {}) {
     // a build log of the base is readable; any other commit may hold the PR, a seeded bug or an arm's product
     await image(serveTag, serveDockerfile, trusted ? 'HEAD' : t.base, !trusted || head === t.base ? serveLog : sealed('serve.build.log'))
     await image(runnerTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, sealed(trusted ? 'grade.build.log' : 'runner.build.log'))
-    // decision 6 (a): a private-set product is made with the registry its arm's box had, an external one with no network
-    const regHosts = !trusted && t.stack === PRIVATE_SET.stack ? inj.registryHosts ?? await pinHosts(PRIVATE_SET.registry) : null
-    const network = regHosts ? { ips: [...new Set(regHosts.map((h) => h.ip))], hosts: regHosts } : 'none'
+    const network = trusted ? null : await productNetwork(t, inj.registryHosts && (async () => inj.registryHosts))
     const product = trusted || await productImage({ t, commit: head, baseImage: runnerTag, network, lines, repo: dir, osha8, n, platform: recipe.platform, record, scratch, log: sealed('make.log'), diskFree })
     if (!product) throw new Error(`${sha7}: the product image was not made (the make failed: its log is sealed)`)
     if (split) {

@@ -230,6 +230,7 @@ test('arms.json takes plugin entries and a turn limit per set', async () => {
 
 test('the plugin dirs reach the CLI as --plugin-dir', async () => {
   arms({ plugins: { H: [hpEntry], W: [] } })
+  const exportsLeft = () => readdirSync(tmpdir()).filter((f) => f.startsWith('bench-plugins-')).sort().join('\n'), before = exportsLeft()
   try {
     const r = await cli(run('H', 1), { STUB_DONE: '0', STUB_PLUGINS: JSON.stringify([{ name: 'hp', path: '/p' }]) })
     expect(r).toMatchObject({ code: 0, stdout: 'p1-H-1 done\n' })
@@ -243,7 +244,11 @@ test('the plugin dirs reach the CLI as --plugin-dir', async () => {
     // an export that differs from the sha256 arms.json recorded is refused before any call
     arms({ plugins: { H: [{ ...hpEntry, sha256: 'f'.repeat(64) }], W: [] } })
     await err(run('H', 2), 'sha256')
+    // a probe that refuses the run: exit 2 from inside the box's step
+    arms({ plugins: { H: [hpEntry], W: [] } })
+    expect((await cli(run('H', 3), { STUB_DONE: '0', STUB_PLUGINS: '[]' })).code).toBe(2)
   } finally { arms() }
+  expect(exportsLeft()).toBe(before) // the export folder goes on every path: a run, a refused export, a refused probe
 })
 
 test('run-arm: a run that never says DONE is abandoned after 5 resumes, 5 + 3 interventions; B- runs the small model with its prompt', async () => {

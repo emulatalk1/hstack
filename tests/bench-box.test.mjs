@@ -2,7 +2,7 @@ import { test, expect, afterAll } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, FW_RUN, main, pinHosts, pluginExport, proofCode, rootRefused, rulesCommand, vsockRefused, withListener } from '../bench/box.mjs'
+import { ARM_LAYER, blockedTargets, cpOut, enterBox, freshRepo, FW_RUN, main, pinHosts, pluginExport, proofCode, rootRefused, rulesCommand, servicesUp, vsockRefused, withListener } from '../bench/box.mjs'
 import { withExport } from '../bench/env.mjs'
 import { productImage, removeRecorded, recordDocker } from '../bench/ext.mjs'
 import { API_HOSTS, RESUMES } from '../bench/lib/arm.mjs'
@@ -65,7 +65,7 @@ const PROXY = { auth: 'authorization', betas: [], cliVar: 'ANTHROPIC_AUTH_TOKEN'
 const PROXY_DOCKERFILE = 'FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a\nCOPY proxy.mjs /proxy/proxy.mjs\nRUN mkdir -p /out && chown bun /out\nUSER bun\nENTRYPOINT ["bun","/proxy/proxy.mjs","serve"]\n'
 const made = [] // what `setup` made
 // re: also a private-set task reId (tasks.json, the real-estate recipe and serve layer) with these services
-function setup({ token = true, re } = {}) {
+function setup({ token = true, re, ready } = {}) {
   const owner = `fx${rand()}`, data = join(tmp, owner), ext = join(data, 'ext'), key = `${owner}__app`, slug = `${key}__1`
   for (const d of [join(ext, 'tasks', slug), join(ext, 'serve', key), join(data, 'arm'), join(data, 'env')]) mkdirSync(d, { recursive: true })
   writeFileSync(join(data, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
@@ -81,7 +81,7 @@ function setup({ token = true, re } = {}) {
     for (const d of [join(ext, 'tasks/real-estate'), join(ext, 'serve/real-estate'), join(data, 'env/box')]) mkdirSync(d, { recursive: true })
     writeFileSync(join(data, 'tasks.json'), JSON.stringify({ [reId]: { base, end: base } }))
     writeFileSync(join(ext, 'tasks/real-estate/task-recipe.json'), JSON.stringify(recipe))
-    writeFileSync(join(ext, 'serve/real-estate/serve.json'), JSON.stringify({ layer: [], start: 'true', ready: 'true', notes: '', briefSha: 'x', services: re }))
+    writeFileSync(join(ext, 'serve/real-estate/serve.json'), JSON.stringify({ layer: [], start: 'true', ready: 'true', notes: '', briefSha: 'x', services: re, servicesReady: ready }))
     writeFileSync(join(data, 'env/box', `${reId}.json`), JSON.stringify({ name: reId, repo: fx, db: null, port: 50152, start: null, ready: null, setup: [], teardown: [], oracle: 'true', junit: 'j.xml' }))
   }
   const sl = re === undefined ? slug : 'real-estate'
@@ -222,6 +222,13 @@ test('a plugin export with a repo-only path is refused', () => {
   mkdirSync(join(linked, 'skills'), { recursive: true }); symlinkSync(join(prepo, 'progress'), join(linked, 'skills/progress'))
   expect(() => pluginExport({ dir: linked, version: '1', paths: ['skills'], out })).toThrow(/link/)
   expect(existsSync(out)).toBe(false)
+  // an out that was there before the call is never removed, whatever refuses
+  const kept = join(tmp, `kept-${rand()}`)
+  mkdirSync(kept); writeFileSync(join(kept, 'mine.txt'), 'mine\n')
+  for (const paths of [['skills'], ['bench'], []]) {
+    expect(() => pluginExport({ repo: prepo, commit: pcommit, paths, out: kept })).toThrow(/plugin export/)
+    expect(readFileSync(join(kept, 'mine.txt'), 'utf8')).toBe('mine\n')
+  }
 })
 
 test('a plugin export is the same files and sha256 from a commit and from a folder', () => {
@@ -230,7 +237,13 @@ test('a plugin export is the same files and sha256 from a commit and from a fold
   expect(fromRepo.files).toEqual(['.claude-plugin/plugin.json', 'skills/s1/SKILL.md'])
   expect(fromDir).toEqual(fromRepo)
   const sha = (x) => new Bun.CryptoHasher('sha256').update(x).digest('hex')
-  expect(fromRepo.sha256).toBe(sha(`${sha('{"name":"hp"}\n')}  .claude-plugin/plugin.json\n${sha('skill\n')}  skills/s1/SKILL.md\n`))
+  expect(fromRepo.sha256).toBe(sha(`${sha('{"name":"hp"}\n')}  644  .claude-plugin/plugin.json\n${sha('skill\n')}  644  skills/s1/SKILL.md\n`))
+  // the mode is part of it: the same bytes, executable, are another export
+  const x = join(tmp, `px-${rand()}`), c = join(tmp, `pe-${rand()}`)
+  mkdirSync(join(x, 'skills/s1'), { recursive: true }); mkdirSync(join(x, '.claude-plugin'))
+  writeFileSync(join(x, '.claude-plugin/plugin.json'), '{"name":"hp"}\n'); writeFileSync(join(x, 'skills/s1/SKILL.md'), 'skill\n'); chmodSync(join(x, 'skills/s1/SKILL.md'), 0o755)
+  expect(pluginExport({ dir: x, version: '1', paths, out: c }).sha256).not.toBe(fromRepo.sha256)
+  rmSync(c, { recursive: true })
   expect(readFileSync(join(a, 'skills/s1/SKILL.md'), 'utf8')).toBe('skill\n')
   expect(existsSync(join(a, 'bench'))).toBe(false)
   for (const d of [a, b]) rmSync(d, { recursive: true })
@@ -298,6 +311,13 @@ dtest('the plugin dirs are copied into the box and reach the CLI as --plugin-dir
   expect(args).not.toContain('/host/p') // the box's own dirs only
   expect(text(inBox('cat', '/arm/plugins/hp/skills/s1/SKILL.md'))).toBe('skill')
   expect(text(inBox('cat', '/arm/plugins/hp/.claude-plugin/plugin.json'))).toBe('{"name":"hp"}')
+}, 600000)
+
+dtest('services are up only when servicesReady exits 0 in the box', async () => {
+  const { box } = await shared()
+  expect(await servicesUp(box, 'test -d /work')).toBeNull()
+  expect(await servicesUp(box, 'exit 3')).toBe('servicesReady exited 3')
+  expect(await servicesUp(box, undefined)).toBe('the serve recipe has no servicesReady')
 }, 600000)
 
 dtest('root in the box cannot change a rule', async () => {
@@ -459,8 +479,23 @@ dtest('a box that restarted runs no turn', async () => {
   } finally { await b.leave() }
 }, 600000)
 
+dtest('a proxy that restarted or died kills the run', async () => {
+  for (const [n, act] of [[7, ['restart', '-t', '0']], [8, ['kill']]]) {
+    const s = setup(), name = `${id}-B-${n}`, b = await enter(s, name, { blocked: denyOnly }), box = s.boxName(name)
+    try {
+      expect(docker(...act, s.proxyName(name)).exitCode).toBe(0)
+      expect(await b.turn({ prompt: 'mark' })).toEqual({ out: '', code: 'killed' })
+      expect(running(box)).toBe(false)
+      expect(await b.product(join(tmp, `p-${rand()}`))).toEqual({ code: 'killed' })
+    } finally { await b.leave() }
+    for (const c of [box, s.proxyName(name)]) expect(seen('container', c)).toBe(false)
+  }
+}, 600000)
+
 dtest('leave removes the box and its images by their recorded names, and only those', async () => {
-  const s = setup(), name = `${id}-B-4`, b = await enter(s, name, { blocked: denyOnly }), box = s.boxName(name)
+  const s = setup(), name = `${id}-B-4`
+  writeFileSync(join(s.data, 'arm/docker.json'), JSON.stringify({ images: [{ name: 'bench-arm/proxy:1', id: 'sha256:earlier' }], containers: [] })) // an id an earlier proxy.mjs built
+  const b = await enter(s, name, { blocked: denyOnly }), box = s.boxName(name)
   const otherImage = `bench-ext/${s.slug}:other`, otherBox = `bench-ext-${s.slug}-other`
   expect(docker('tag', 'alpine:3.22', otherImage).exitCode).toBe(0)
   expect(docker('create', '--name', otherBox, 'alpine:3.22').exitCode).toBe(0)
@@ -475,7 +510,10 @@ dtest('leave removes the box and its images by their recorded names, and only th
   await b.leave() // a caller's finally after a refusal that already left
   for (const [kind, n] of [['container', box], ['container', s.proxyName(name)], ['image', s.serveTag], ['image', s.armTag]]) expect(seen(kind, n)).toBe(false)
   for (const [kind, n] of [['container', otherBox], ['image', otherImage], ['image', 'bench-arm/fw:1'], ['image', 'bench-arm/proxy:1'], ['image', 'alpine:3.22'], ['container', allowedName]]) expect(seen(kind, n)).toBe(true)
-  expect(JSON.parse(readFileSync(join(s.data, 'arm/docker.json'), 'utf8')).images.map((i) => i.name)).toEqual(['bench-arm/proxy:1']) // recorded once, kept across runs
+  const proxyIds = JSON.parse(readFileSync(join(s.data, 'arm/docker.json'), 'utf8')).images
+  expect(proxyIds.map((i) => i.name)).toEqual(['bench-arm/proxy:1', 'bench-arm/proxy:1']) // the earlier id kept, this build's appended once, kept across runs
+  expect(proxyIds[0].id).toBe('sha256:earlier')
+  expect(proxyIds[1].id).toBe(text(docker('image', 'inspect', '-f', '{{.Id}}', 'bench-arm/proxy:1')))
 }, 600000)
 
 // --- the private set: services and the registry ---
@@ -528,7 +566,7 @@ const prove = async (s, task = id) => {
   }
 }
 const ROWS = ['host paths absent', 'no mount, no socket, only the six capabilities', 'no bench or database env', 'no token in the box env', 'blocked targets', 'the API is reached only through the proxy',
-  'the proxy refuses a server tool', 'no IPv6 route out', 'the API answers', 'init lists no web tool', 'root cannot undo it', 'no vsock', 'a real database is out of reach']
+  'the proxy refuses a server tool', 'the proxy answers only the box', 'no IPv6 route out', 'the API answers', 'init lists no web tool', 'root cannot undo it', 'no vsock', 'a real database is out of reach']
 const arms = (s, smallModel, o = {}) => writeFileSync(join(s.data, 'arms.json'), JSON.stringify({ model: 'm', smallModel, cli: 'arm/claude', turnTimeoutSec: 5, proxy: PROXY, ...o }))
 
 test('proof with no box.env is refused before any Docker call', async () => {
@@ -560,18 +598,25 @@ dtest('proof passes every row of a box that holds, and a web tool at init fails 
 }, 600000)
 
 dtest('proof of a real-estate box adds the services and the registry rows', async () => {
-  const s = setup({ re: 'true' })
+  const s = setup({ re: 'touch /tmp/svc-up', ready: 'test -f /tmp/svc-up' })
   arms(s, 's', { turnTimeoutSec: { external: 5, re: 7 } })
   const { code, lines, record } = await prove(s, reId)
   expect(lines).toEqual([...ROWS, 'services are up', 'only the registry answers'].map((r) => `${r} ok`))
   expect(code).toBe(0)
   expect(record.task).toBe(reId)
+  // no servicesReady: the row cannot say the services are up
+  const n = setup({ re: 'true' })
+  arms(n, 's')
+  const none = await prove(n, reId)
+  expect(none.lines).toContain('services are up FAILED')
+  expect(none.record.rows.find((r) => r.row === 'services are up').detail).toBe('the serve recipe has no servicesReady')
+  expect(none.code).toBe(1)
   expect(seen('container', s.boxName(`${reId}-proof`))).toBe(false)
 }, 600000)
 
-test('proof exits non-zero when any row is skipped or failed', () => {
+test('proof exits non-zero when any row is not ok', () => {
   expect(proofCode([{ result: 'ok' }, { result: 'ok' }])).toBe(0)
-  expect(proofCode([{ result: 'ok' }, { result: 'skipped: no box.env' }])).toBe(1)
+  expect(proofCode([{ result: 'ok' }, { result: 'not run' }])).toBe(1)
   expect(proofCode([{ result: 'ok' }, { result: 'FAILED' }])).toBe(1)
 })
 

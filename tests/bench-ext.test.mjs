@@ -2,7 +2,7 @@ import { test, expect } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { boxEnv, oracleCommand, oracleRun, parseServe, readinessOf, rebuildLines, taskOf } from '../bench/ext.mjs'
+import { boxEnv, oracleCommand, oracleRun, parseServe, PRIVATE_SET, productNetwork, readinessOf, rebuildLines, taskOf } from '../bench/ext.mjs'
 import { sortKey, stackOf, staticOut, repoOut, baseOf, failToPass, nextToCheck, coldSetup, extraProbe, sampleOf, keptIds } from '../bench/lib/ext.mjs'
 
 const SEED = 'hstack-bench-2026-10-27'
@@ -298,11 +298,23 @@ test('taskOf reads a real-estate task from tasks.json', () => {
   } finally { rmSync(data, { recursive: true, force: true }) }
 })
 
+test('a private-set product is made with the pinned registry, any other with no network', async () => {
+  const pinned = [{ host: 'registry.example', ip: '10.0.0.7' }, { host: 'registry.example', ip: '10.0.0.8' }, { host: 'mirror.example', ip: '10.0.0.7' }]
+  let calls = 0
+  const pin = async () => { calls++; return pinned }
+  expect(await productNetwork({ stack: PRIVATE_SET.stack }, pin)).toEqual({ ips: ['10.0.0.7', '10.0.0.8'], hosts: pinned })
+  expect(await productNetwork({ stack: 's1' }, pin)).toBe('none')
+  expect(calls).toBe(1) // an external task pins nothing
+  expect(PRIVATE_SET.registry).toEqual(['registry.npmjs.org'])
+})
+
 test('a serve recipe may name services', () => {
   const r = { layer: [], start: 'run', ready: 'true', notes: '' }
   expect(parseServe(JSON.stringify(r))).toEqual(r) // absent: no field
   expect(parseServe(JSON.stringify({ ...r, services: 'pg_ctl start' }))).toEqual({ ...r, services: 'pg_ctl start' })
   expect(() => parseServe(JSON.stringify({ ...r, services: ['x'] }))).toThrow('services')
+  expect(parseServe(JSON.stringify({ ...r, services: 'pg_ctl start', servicesReady: 'pg_isready' }))).toEqual({ ...r, services: 'pg_ctl start', servicesReady: 'pg_isready' })
+  expect(() => parseServe(JSON.stringify({ ...r, servicesReady: 1 }))).toThrow('servicesReady')
 })
 
 test('box-env writes a task file with no host start and this checkout\'s oracle command', () => {

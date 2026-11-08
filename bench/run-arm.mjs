@@ -100,92 +100,92 @@ export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
   // the run folder keeps the settings and every turn's raw stream-json (prereg 7.2 labels a sample; 3 reads model ids)
   // ruling 2: each plugin as its allowlist export, equal to the sha256 arms.json recorded; and the token the box's proxy takes
   const exports = mkdtempSync(join(tmpdir(), 'bench-plugins-'))
-  let plugins
-  try {
-    plugins = entries.map((e) => {
+  try { return await inExports(exports) } finally { rmSync(exports, { recursive: true, force: true }) } // on every path
+  async function inExports(exports) {
+    const plugins = entries.map((e) => {
       const dir = join(exports, e.name), { sha256 } = pluginExport({ ...e, out: dir })
       if (sha256 !== e.sha256) throw new Error(`plugin ${e.name}: its export's sha256 ${sha256} is not the ${e.sha256} arms.json recorded`)
       return { name: e.name, dir, record: e.repo ? { name: e.name, commit: e.commit, sha256 } : { name: e.name, version: e.version, sha256 } }
     })
     if (box === enterBox) readToken(join(data, 'arm/box.env')) // the real box's proxy needs it: refused here, before any Docker call
-  } catch (e) { rmSync(exports, { recursive: true, force: true }); throw e }
-  const runDir = join(results, name), settings = join(runDir, 'settings.json')
-  rmSync(runDir, { recursive: true, force: true }) // no stale turns from a killed earlier attempt
-  mkdirSync(runDir, { recursive: true })
-  await Bun.write(settings, '{}\n')
-  const turns = []
-  const turn = async (b, o, label) => {
-    const r = await b.turn({ model, appendSystemPrompt, disallow, permissionMode: 'bypassPermissions', ...o }) // the plugins are the box's
-    await Bun.write(join(runDir, `${turns.length}-${label}.jsonl`), r.out)
-    turns.push({ turn: label, code: r.code === 'timeout' ? null : r.code, timedOut: r.code === 'timeout' })
-    return r
+    const runDir = join(results, name), settings = join(runDir, 'settings.json')
+    rmSync(runDir, { recursive: true, force: true }) // no stale turns from a killed earlier attempt
+    mkdirSync(runDir, { recursive: true })
+    await Bun.write(settings, '{}\n')
+    const turns = []
+    const turn = async (b, o, label) => {
+      const r = await b.turn({ model, appendSystemPrompt, disallow, permissionMode: 'bypassPermissions', ...o }) // the plugins are the box's
+      await Bun.write(join(runDir, `${turns.length}-${label}.jsonl`), r.out)
+      turns.push({ turn: label, code: r.code === 'timeout' ? null : r.code, timedOut: r.code === 'timeout' })
+      return r
+    }
+
+    // dropSettings off: the task repo's own .claude/ reaches every arm alike
+    return withExport(task, base, name, async (dir) => {
+      await freshRepo(dir, base)
+      const b = await box({ data, task, id, name, base, repoGit: join(dir, '.git'), cli: cfg.cli, turnTimeoutSec, plugins: plugins.map((p) => ({ name: p.name, dir: p.dir })), proxy: cfg.proxy })
+      try {
+        const probe = await turn(b, { prompt: 'Reply OK.' }, 'probe') // its own session, the main run's model, plugins and settings
+        let info, why
+        try { info = initInfo(probe.out); why = probe.code !== 0 ? `probe exited ${probe.code}` : probeOk(arm, info, expected, []) } catch (e) { why = e.message }
+        if (why) { console.error(`probe refused: ${why}`); return 2 }
+        const start = new Date().toISOString()
+
+        const sessionId = randomUUID(), outs = [], resumes = []
+        let reason = null, machine = null
+        for (let i = 0; ; i++) {
+          const r = await turn(b, i === 0 ? { prompt: input + '\n\n' + sheet + DONE_LINE, sessionId } : { prompt: CONTINUE, resume: sessionId }, i === 0 ? 'main' : `resume-${i}`)
+          outs.push(r.out)
+          if (r.code === 'killed' || r.code === 'memory') { machine = r.code; break } // the machine's failure, never the arm's
+          if (fellBack(r.out)) { machine = 'model'; break } // the whole session moved to another model, whatever modelUsage lists
+          if (apiError(r.out)) { machine = 'api'; break }
+          let text = null
+          try { text = finalText(r.out) } catch {}
+          const done = r.code === 0 && text?.trim() === 'DONE'
+          if (done) break
+          if (r.code === 'timeout') { reason = 'timeout'; break } // the arm's own timeout: a failed turn is just not DONE
+          if (i === RESUMES) { reason = 'no DONE'; break }
+          resumes.push('other') // a turn the runner answers with a resume (9.3): the main turn included, the last turn never
+        }
+        const us = outs.map(usage), sum = (k) => us.reduce((s, u) => s + u[k], 0)
+        const models = [...new Set(us.flatMap((u) => u.models))]
+        // served on another model than asked (a fallback); a run with no model at all (a cut turn) says nothing
+        if (!machine && model && models.length && !models.includes(model)) machine = 'model'
+        const tools = {}
+        for (const o of outs) for (const [k, v] of Object.entries(toolUses(o))) tools[k] = (tools[k] ?? 0) + v
+        const { models: probeModels, ...probeUsage } = usage(probe.out)
+        const fallback = [probe.out, ...outs].map(fallbackOf).find((f) => f) ?? null // the probe is on the arm's model too
+
+        let branched = false
+        if (!machine) {
+          const bundle = join(runDir, 'product.bundle')
+          try {
+            const p = await b.product(bundle)
+            if (p.code !== 0) machine = 'killed'
+            else {
+              await agentGit(task.repo, ...SAFE, '-c', 'gc.auto=0', 'fetch', '-q', '--no-tags', bundle, `HEAD:refs/heads/${branch}`)
+              branched = true
+            }
+          } catch (e) { console.error(e.message); machine = 'product' } // the record of a long run is written even when its product cannot be saved
+          rmSync(bundle, { force: true })
+        }
+        const abandoned = reason !== null || machine !== null
+        let proxy = null
+        try { proxy = await b.proxyCounts() } catch (e) { console.error(e.message) } // a dead box's proxy may be gone too: the record is still written
+        const rec = {
+          task: id, arm, run: n, base, model: model ?? null, version: info.version, plugins: plugins.map((p) => p.record), proxy, sessionId, start, end: new Date().toISOString(),
+          status: abandoned ? 'abandoned' : 'done', reason: machine ? 'machine' : reason, machine, resumes,
+          interventions: countInterventions({ hookLines: 0, resumes, abandoned }), // hookLines 0: no hook under -p, see the settings above
+          turns,
+          usage: { input: sum('input'), output: sum('output'), cacheRead: sum('cacheRead'), cacheWrite: sum('cacheWrite') },
+          models, fallback, probeUsage, probeModels, probe: info, transcripts: runDir, toolUses: tools, box: b.box, envCommit: b.envCommit, branch: branched ? branch : null,
+        }
+        await Bun.write(out, JSON.stringify(rec, null, 2) + '\n')
+        console.log(machine ? `${name} machine ${machine}` : `${name} ${rec.status}`)
+        return machine ? 3 : 0
+      } finally { await b.leave() }
+    }, root)
   }
-
-  // dropSettings off: the task repo's own .claude/ reaches every arm alike
-  return withExport(task, base, name, async (dir) => {
-    await freshRepo(dir, base)
-    const b = await box({ data, task, id, name, base, repoGit: join(dir, '.git'), cli: cfg.cli, turnTimeoutSec, plugins: plugins.map((p) => ({ name: p.name, dir: p.dir })), proxy: cfg.proxy })
-    try {
-      const probe = await turn(b, { prompt: 'Reply OK.' }, 'probe') // its own session, the main run's model, plugins and settings
-      let info, why
-      try { info = initInfo(probe.out); why = probe.code !== 0 ? `probe exited ${probe.code}` : probeOk(arm, info, expected, []) } catch (e) { why = e.message }
-      if (why) { console.error(`probe refused: ${why}`); return 2 }
-      const start = new Date().toISOString()
-
-      const sessionId = randomUUID(), outs = [], resumes = []
-      let reason = null, machine = null
-      for (let i = 0; ; i++) {
-        const r = await turn(b, i === 0 ? { prompt: input + '\n\n' + sheet + DONE_LINE, sessionId } : { prompt: CONTINUE, resume: sessionId }, i === 0 ? 'main' : `resume-${i}`)
-        outs.push(r.out)
-        if (r.code === 'killed' || r.code === 'memory') { machine = r.code; break } // the machine's failure, never the arm's
-        if (fellBack(r.out)) { machine = 'model'; break } // the whole session moved to another model, whatever modelUsage lists
-        if (apiError(r.out)) { machine = 'api'; break }
-        let text = null
-        try { text = finalText(r.out) } catch {}
-        const done = r.code === 0 && text?.trim() === 'DONE'
-        if (done) break
-        if (r.code === 'timeout') { reason = 'timeout'; break } // the arm's own timeout: a failed turn is just not DONE
-        if (i === RESUMES) { reason = 'no DONE'; break }
-        resumes.push('other') // a turn the runner answers with a resume (9.3): the main turn included, the last turn never
-      }
-      const us = outs.map(usage), sum = (k) => us.reduce((s, u) => s + u[k], 0)
-      const models = [...new Set(us.flatMap((u) => u.models))]
-      // served on another model than asked (a fallback); a run with no model at all (a cut turn) says nothing
-      if (!machine && model && models.length && !models.includes(model)) machine = 'model'
-      const tools = {}
-      for (const o of outs) for (const [k, v] of Object.entries(toolUses(o))) tools[k] = (tools[k] ?? 0) + v
-      const { models: probeModels, ...probeUsage } = usage(probe.out)
-      const fallback = [probe.out, ...outs].map(fallbackOf).find((f) => f) ?? null // the probe is on the arm's model too
-
-      let branched = false
-      if (!machine) {
-        const bundle = join(runDir, 'product.bundle')
-        try {
-          const p = await b.product(bundle)
-          if (p.code !== 0) machine = 'killed'
-          else {
-            await agentGit(task.repo, ...SAFE, '-c', 'gc.auto=0', 'fetch', '-q', '--no-tags', bundle, `HEAD:refs/heads/${branch}`)
-            branched = true
-          }
-        } catch (e) { console.error(e.message); machine = 'product' } // the record of a long run is written even when its product cannot be saved
-        rmSync(bundle, { force: true })
-      }
-      const abandoned = reason !== null || machine !== null
-      let proxy = null
-      try { proxy = await b.proxyCounts() } catch (e) { console.error(e.message) } // a dead box's proxy may be gone too: the record is still written
-      const rec = {
-        task: id, arm, run: n, base, model: model ?? null, version: info.version, plugins: plugins.map((p) => p.record), proxy, sessionId, start, end: new Date().toISOString(),
-        status: abandoned ? 'abandoned' : 'done', reason: machine ? 'machine' : reason, machine, resumes,
-        interventions: countInterventions({ hookLines: 0, resumes, abandoned }), // hookLines 0: no hook under -p, see the settings above
-        turns,
-        usage: { input: sum('input'), output: sum('output'), cacheRead: sum('cacheRead'), cacheWrite: sum('cacheWrite') },
-        models, fallback, probeUsage, probeModels, probe: info, transcripts: runDir, toolUses: tools, box: b.box, envCommit: b.envCommit, branch: branched ? branch : null,
-      }
-      await Bun.write(out, JSON.stringify(rec, null, 2) + '\n')
-      console.log(machine ? `${name} machine ${machine}` : `${name} ${rec.status}`)
-      return machine ? 3 : 0
-    } finally { await b.leave() }
-  }, root).finally(() => rmSync(exports, { recursive: true, force: true }))
 }
 
 if (import.meta.main) {

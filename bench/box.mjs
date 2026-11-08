@@ -33,17 +33,20 @@ export const ARM_LAYER = ['RUN rm -rf /work/.git /work/.bench.Dockerfile /work/.
 
 // step 11 ruling 2: what of a plugin enters a box. Only its component folders, and never a path only the repo may hold (the locks,
 // which name the cold repos, and the prereg): `git archive <commit> -- <paths>`, or the same folders of a plugin pinned by version.
-// files: the exported paths, sorted; sha256: of one `<sha256 of the file>  <path>` line per file, in that order. A refusal leaves no out
+// files: the exported paths, sorted; sha256: of one `<sha256 of the file>  <mode, octal>  <path>` line per file, in that order (the mode:
+// a script's executable bit is part of what runs). A refusal removes only what this call made: an out that was there is never touched
 export const PLUGIN_PATHS = ['.claude-plugin', 'skills', 'agents', 'commands', 'hooks', 'scripts', 'bin', '.mcp.json']
 const REPO_ONLY = ['bench', 'progress', 'docs', 'tests', 'fixtures', '.evidence']
 export function pluginExport({ repo, commit, dir, paths, out }) {
-  const no = (why) => { rmSync(out, { recursive: true, force: true }); throw new Error(`plugin export refused: ${why}`) }
+  let made = false
+  const no = (why) => { if (made) rmSync(out, { recursive: true, force: true }); throw new Error(`plugin export refused: ${why}`) }
+  if (existsSync(out)) no(`${out} exists`)
   if (!Array.isArray(paths) || !paths.length) no('paths must name the plugin\'s component folders')
   const repoOnly = paths.filter((p) => REPO_ONLY.includes(p)), other = paths.filter((p) => !PLUGIN_PATHS.includes(p))
   if (repoOnly.length) no(`${repoOnly.join(', ')} is the repo's, not the plugin's`)
   if (other.length) no(`${other.join(', ')} is not one of the component folders ${PLUGIN_PATHS.join(', ')}`)
-  if (existsSync(out)) throw new Error(`plugin export: ${out} exists`)
   mkdirSync(out, { recursive: true })
+  made = true
   if (commit) {
     const a = Bun.spawnSync(['git', '-C', repo, 'archive', '--format=tar', commit, '--', ...paths], { stdout: 'pipe', stderr: 'pipe' })
     if (a.exitCode !== 0) no(`git archive ${commit.slice(0, 7)} failed (exit ${a.exitCode})`)
@@ -67,7 +70,8 @@ export function pluginExport({ repo, commit, dir, paths, out }) {
   files.sort()
   const held = files.filter((f) => REPO_ONLY.includes(f.split('/')[0]))
   if (held.length) no(`it holds ${held[0]}`)
-  return { files, sha256: sha(files.map((f) => `${sha(readFileSync(join(out, f)))}  ${f}\n`).join('')) }
+  const mode = (f) => (lstatSync(join(out, f)).mode & 0o777).toString(8).padStart(3, '0')
+  return { files, sha256: sha(files.map((f) => `${sha(readFileSync(join(out, f)))}  ${mode(f)}  ${f}\n`).join('')) }
 }
 
 // the token's value from box.env's one KEY=value line; never printed, and handed only to the proxy
@@ -136,18 +140,32 @@ export async function fwImage(scratch) {
 }
 
 // the proxy's image, from the controller's <data>/arm/proxy/Dockerfile and this checkout's proxy.mjs, built from the cache on each
-// box so it always holds this checkout's proxy. Its name is recorded in <data>/arm/docker.json and kept across runs, like the helper's
+// box so it always holds this checkout's proxy. Its name is recorded in <data>/arm/docker.json before the build and each id it built
+// after it, appended (an earlier id is never overwritten, so every image built can be removed); kept across runs, like the helper's
 export async function proxyImage(scratch, data) {
   const file = join(data, 'arm/proxy/Dockerfile'), record = (f) => recordDocker(join(data, 'arm/docker.json'), f)
   if (!existsSync(file)) throw new Error(`${file} is missing: the proxy's image is built from it`)
-  record((d) => { if (!d.images.some((i) => i.name === PROXY)) d.images.push({ name: PROXY, id: null }) })
+  record((d) => { if (!d.images.some((i) => i.name === PROXY && i.id === null)) d.images.push({ name: PROXY, id: null }) })
   await scratch('proxy', null, async (dir) => {
     copyFileSync(file, join(dir, 'Dockerfile'))
     copyFileSync(join(import.meta.dir, 'proxy.mjs'), join(dir, 'proxy.mjs'))
     await must(['docker', 'build', '--progress=plain', '-t', PROXY, dir], `the build of ${PROXY}`, { timeoutSec: 600 })
   })
   const id = (await must(['docker', 'image', 'inspect', '-f', '{{.Id}}', PROXY], `docker image inspect ${PROXY}`)).trim()
-  record((d) => { d.images.find((i) => i.name === PROXY).id = id })
+  record((d) => {
+    d.images = d.images.filter((i) => !(i.name === PROXY && i.id === null))
+    if (!d.images.some((i) => i.name === PROXY && i.id === id)) d.images.push({ name: PROXY, id })
+  })
+}
+
+// the proxy answers no container but its box: a fresh container on the default bridge must get no answer from it
+export const proxyAlone = async (ip) => (await sp([...FW_RUN, FW, 'nc', '-zw4', ip, String(PROXY_PORT)], 60)).code !== 0
+
+// a private-set task's services, at proof time: its serve recipe's servicesReady, run as root in the box, exits 0. Null, or why not
+export async function servicesUp(box, ready) {
+  if (!ready) return 'the serve recipe has no servicesReady'
+  const { code } = await sp(['docker', 'exec', '-u', '0', '-w', '/work', box, 'sh', '-c', ready], 600)
+  return code === 0 ? null : `servicesReady exited ${code}`
 }
 
 // the rules of a container, checked from its own namespace by the real helper: each allowed target answers, and none of ruling 3's
@@ -210,14 +228,15 @@ export async function enterBox({ data, task, id, name, base, repoGit, cli, turnT
     const regHosts = isPrivate ? inj.registryHosts ?? await pinHosts(PRIVATE_SET.registry) : [], regIps = [...new Set(regHosts.map((h) => h.ip))]
     const limitSec = (RESUMES + 2) * turnTimeoutSec + 600
     record((d) => d.containers.push(proxy, box))
-    // the token goes in by a file only the create reads, so no argv or log holds it; the proxy ends by itself as the box does
+    // the token goes in by a file only the create reads, so no argv or log holds it. The proxy's process is a sleep of the box's limit,
+    // so it ends by itself as the box does; the server is started in it only once its rules hold
     await scratch('token', null, async (dir) => {
       const f = join(dir, 'proxy.env')
       writeFileSync(f, `BENCH_PROXY_TOKEN=${token}\n`, { mode: 0o600 })
       try {
         await must(['docker', 'create', '--name', proxy, '--cap-drop', 'ALL', '--memory', '256m', ...hosts.flatMap((h) => ['--add-host', `${h.host}:${h.ip}`]), '--env-file', f,
           ...[`BENCH_PROXY_AUTH=${pcfg.auth}`, `BENCH_PROXY_BETAS=${pcfg.betas.join(',')}`, `BENCH_PROXY_PORT=${PROXY_PORT}`, `BENCH_PROXY_UPSTREAM=${inj.upstream ?? 'https://api.anthropic.com'}`].flatMap((e) => ['-e', e]),
-          '--entrypoint', 'timeout', PROXY, String(limitSec), 'bun', '/proxy/proxy.mjs', 'serve'], `docker create ${proxy}`)
+          '--entrypoint', 'sleep', PROXY, String(limitSec)], `docker create ${proxy}`)
       } finally { rmSync(f, { force: true }) }
     })
     await must(['docker', 'start', proxy], `docker start ${proxy}`)
@@ -227,9 +246,11 @@ export async function enterBox({ data, task, id, name, base, repoGit, cli, turnT
     await must(['docker', 'start', box], `docker start ${box}`)
     const boxIp = await ipOf(box)
 
-    // a restart gives the box a new namespace with no rules: alive() fails, and nothing runs in it
-    const startedAt = (await must(['docker', 'inspect', '-f', '{{.State.StartedAt}}', box], `docker inspect ${box}`)).trim()
-    const alive = async () => (await sp(['docker', 'inspect', '-f', '{{.State.StartedAt}} {{.State.Running}}', box])).out.trim() === `${startedAt} true`
+    // a restart gives a container a new namespace with no rules (and the proxy no server): alive() fails, and nothing runs in the box
+    const started = {}
+    for (const c of [box, proxy]) started[c] = (await must(['docker', 'inspect', '-f', '{{.State.StartedAt}}', c], `docker inspect ${c}`)).trim()
+    const up = async (c) => (await sp(['docker', 'inspect', '-f', '{{.State.StartedAt}} {{.State.Running}}', c])).out.trim() === `${started[c]} true`
+    const alive = async () => (await up(box)) && up(proxy)
     const killed = async () => {
       await sp(['docker', 'kill', box]) // this run created it
       await daemon() // a dead daemon is the machine's failure and throws
@@ -237,13 +258,16 @@ export async function enterBox({ data, task, id, name, base, repoGit, cli, turnT
     }
     const api = apiIps.map((ip) => ({ ip, port: 443 })), out = [{ ip: proxyIp, port: PROXY_PORT }, ...regIps.map((ip) => ({ ip, port: 443 }))]
     await must(rulesCommand(proxy, fwScript({ in: [{ ip: boxIp, port: PROXY_PORT }], out: api })), 'the proxy\'s firewall rules', { timeoutSec: 600 })
+    await netCheck(proxy, api, { outside: inj.blocked })
+    // only now the server, as the image's user with the env of the create; bounded wait until it listens on its own loopback
+    await must(['docker', 'exec', '-d', proxy, 'bun', '/proxy/proxy.mjs', 'serve'], `the proxy server in ${proxy}`)
+    const listening = await sp([...FW_RUN, '--network', `container:${proxy}`, FW, 'sh', '-c', `for i in $(seq 80); do nc -zw1 127.0.0.1 ${PROXY_PORT} && exit 0; sleep 0.25; done; exit 1`], 60)
+    if (listening.code !== 0) throw new Error(`the proxy in ${proxy} did not listen within 20 s`)
     const rules = fwScript({ out })
     await (typeof inj.helper === 'function' ? inj.helper(rules) : must(inj.helper ?? rulesCommand(box, rules), 'the firewall rules', { timeoutSec: 600 }))
-    // the proxy may still be starting: give it a few seconds to listen before the check counts it silent
-    await sp([...FW_RUN, '--network', `container:${box}`, FW, 'sh', '-c', `for i in $(seq 40); do nc -zw1 ${proxyIp} ${PROXY_PORT} && exit 0; sleep 0.25; done; exit 1`], 60)
     // always the real helper: a rule step that did nothing must fail here. The box must not reach the API but through the proxy
     const routes = await netCheck(box, out, { outside: inj.blocked, more: api.map(({ ip, port }) => ({ host: ip, port })) })
-    await netCheck(proxy, api, { outside: inj.blocked })
+    if (!(await proxyAlone(proxyIp))) throw new Error('the firewall does not hold, run refused: the proxy answers a container that is not its box')
 
     await inBox(['mkdir', '-p', PLUGINS], 'mkdir in the box')
     await cpIn(inj.cli ?? cli, CLI)
@@ -320,7 +344,7 @@ const POST_PY = ['import sys, urllib.request as u, urllib.error as e', "r = u.Re
 // no model and no message: the API answers 400 and nothing is billed. A web search tool: the proxy must refuse it
 const PLAIN = '{"max_tokens":1,"messages":[]}', SERVER_TOOL = '{"max_tokens":1,"messages":[],"tools":[{"type":"web_search_20250305","name":"web_search"}]}'
 
-async function proofRows(b, { data, repo, token, cfg, print, port, outside, isPrivate }) {
+async function proofRows(b, { data, repo, token, cfg, print, port, outside, isPrivate, servicesReady }) {
   const box = b.box.name, rows = [], targets = blockedTargets(b.box.routes, port, outside), p = b.box.proxy
   const row = (name, why) => {
     const result = why === null ? 'ok' : 'FAILED'
@@ -362,6 +386,7 @@ async function proofRows(b, { data, repo, token, cfg, print, port, outside, isPr
   c0 = c1; status = await post(SERVER_TOOL); c1 = await b.proxyCounts()
   const refused = status === '403' && c1.refused === c0.refused + 1 && (c1.reasons.tool ?? 0) === (c0.reasons.tool ?? 0) + 1
   row('the proxy refuses a server tool', refused ? null : `a web search tool through the proxy: ${status}, refused ${c0.refused} -> ${c1.refused}`)
+  row('the proxy answers only the box', (await proxyAlone(p.ip)) ? null : 'a fresh container on the default bridge reaches the proxy')
 
   const [v6, policy] = (await helper(box, "ip -6 addr show dev eth0 | grep -c inet6\nip6tables -S | grep -c '^-P OUTPUT DROP'\ntrue", 'the IPv6 check', ['--cap-add', 'NET_ADMIN'])).trim().split('\n')
   row('no IPv6 route out', v6 === '0' && policy === '1' ? null : `${v6} address(es) on eth0, ${policy} DROP policy`)
@@ -388,8 +413,8 @@ async function proofRows(b, { data, repo, token, cfg, print, port, outside, isPr
   row('a real database is out of reach', before.get(named) === 'open' && !closed.length && !strings ? null : `the host with no rules: ${before.get(named)}; not proved: [${closed}]; ${strings} real_estate string(s) in the env`)
 
   if (isPrivate) {
-    // services: their command exited 0, as root, before the first turn (enterBox refuses the box otherwise); it is not run twice
-    row('services are up', b.box.services === 'ok' ? null : 'the services did not run')
+    // services: the serve recipe's servicesReady, now, in the box (enterBox already refused a box whose services failed)
+    row('services are up', await servicesUp(box, servicesReady))
     const reg = b.box.ips.filter((ip) => ip !== p.ip).map((ip) => ({ ip, port: 443 })), blocked = [...targets, ...api]
     row('only the registry answers', netOk(await helper(box, netScript(reg, blocked), 'the registry check'), reg, blocked))
   }
@@ -408,7 +433,8 @@ export async function proof(id, inj, print) {
     const b = await enterBox({ data, task, id, name, base: t.base, repoGit: join(dir, '.git'), cli: join(data, cfg.cli), turnTimeoutSec, proxy: cfg.proxy }, inj)
     let rows
     try {
-      rows = await withListener((port) => proofRows(b, { data, repo: task.repo, token: readToken(join(data, 'arm/box.env')), cfg, print, port, outside: inj.blocked, isPrivate }))
+      const servicesReady = serveRecipe(join(data, 'ext'), t).sv.servicesReady
+      rows = await withListener((port) => proofRows(b, { data, repo: task.repo, token: readToken(join(data, 'arm/box.env')), cfg, print, port, outside: inj.blocked, isPrivate, servicesReady }))
     } finally { await b.leave() }
     writeFileSync(join(data, 'arm', `proof-${id}.json`), JSON.stringify({ task: id, rows }, null, 2) + '\n')
     return proofCode(rows)
