@@ -261,6 +261,15 @@ test('a USER naming the image\'s final user is a no-op in the make, any other US
   expect(at('USER app', null)).toEqual(['cd /', "sh -c 'true'"]) // null: the check before any Docker call lets a USER wait for R's user
 })
 
+test('a line rebuild.json can replace carries the refusal mark, other errors do not', () => {
+  const err = (f) => { try { f(); return null } catch (e) { return e } }
+  for (const line of ['USER app', 'COPY x /work/', 'RUN <<EOF']) expect(err(() => rebuildLines(recipe, { layer: [line] })).refused).toBe(true)
+  expect(err(() => rebuildLines({ ...recipe, dockerfile: 'FROM a\nCOPY . /work\nCOPY . /work\n' }, { layer: [] })).refused).toBeUndefined()
+  const bad = err(() => rebuildLines(recipe, { layer: [] }, { lines: 'x' }))
+  expect(bad.message).toContain('rebuild.json')
+  expect(bad.refused).toBeUndefined()
+})
+
 test('rebuild.json with briefSha and round still feeds rebuildLines', () => {
   expect(rebuildLines(recipe, { layer: [] }, { lines: ['pip install --no-index -e .'], briefSha: 'a'.repeat(64), round: 2 })).toEqual(['pip install --no-index -e .'])
 })
