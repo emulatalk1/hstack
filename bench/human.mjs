@@ -531,8 +531,14 @@ function proxyPrompt(data, batch, rows) {
 
 // the valid answers of a reply; ok when every key is answered once with an answer its row takes and nothing else is there
 function proxyReply(text, batch, rows) {
+  // from the first `[`, the first span to a `]` (longest first) that parses as a non-empty array of objects: a `[1]` around it is skipped
   let arr = null
-  try { arr = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)) } catch {}
+  const objects = (a) => Array.isArray(a) && a.length && a.every((e) => e && typeof e === 'object' && !Array.isArray(e))
+  for (let i = text.indexOf('['); i >= 0 && !arr; i = text.indexOf('[', i + 1)) {
+    for (let j = text.lastIndexOf(']'); j > i && !arr; j = text.lastIndexOf(']', j - 1)) {
+      try { const a = JSON.parse(text.slice(i, j + 1)); if (objects(a)) arr = a } catch {}
+    }
+  }
   const got = new Map()
   if (!Array.isArray(arr)) return { got, ok: false }
   const items = arr.map((e) => ({ key: e?.key ?? e?.id, answer: e?.answer ?? e?.label, note: e?.note })), seen = new Map(), byKey = new Map(rows.map((r) => [r.key, r]))
@@ -565,7 +571,7 @@ async function proxy(data, batch, rest, agent) {
   const stale = chunks.flatMap(({ c, text }) => [1, 2].map((n) => readJson(`${outOf(c, n)}.run.json`)).filter((x) => x && x.promptSha !== sha256(text))).length
   if (stale) { console.log(`proxy ${batch}: refused, ${stale} run(s) whose prompt differs from the one they ran with`); return 1 }
   mkdirSync(dir, { recursive: true })
-  let runs = 0
+  let runs = 0, failed = 0
   const final = new Map()
   for (const { c, rows: rs, text } of chunks) {
     const prompt = join(dir, `${c}.prompt.md`)
@@ -580,6 +586,7 @@ async function proxy(data, batch, rest, agent) {
       }
       runs++
       const x = readJson(rec), ran = x?.code === 0 && x.models?.includes(model) && !x.fellBack // another model is a failed run
+      if (!ran) failed++
       const res = ran ? proxyReply(existsSync(out) ? read(out) : '', batch, rs) : { got: new Map(), ok: false }
       if (res.ok || n === 2) { for (const [k, v] of res.got) final.set(k, v); break }
     }
@@ -592,7 +599,7 @@ async function proxy(data, batch, rest, agent) {
     return was?.answer === answer && was.note === note ? '' : `${r.key}\t${answer}\t${note}\t${at}\n` // the same answer again is not appended
   }).join('')
   if (lines) { mkdirSync(answers, { recursive: true }); appendFileSync(file, lines) }
-  console.log(`proxy ${batch}: chunks ${chunks.length}, runs ${runs}, answered ${final.size}/${rows.length}, defaulted ${rows.length - final.size}`)
+  console.log(`proxy ${batch} (${model}): chunks ${chunks.length}, runs ${runs}, failed runs ${failed}, answered ${final.size}/${rows.length}, defaulted ${rows.length - final.size}`)
   return 0
 }
 
