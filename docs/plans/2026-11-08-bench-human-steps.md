@@ -33,6 +33,8 @@ The queue of step 5 ruling 16 and the two step 6 additions are the reads, row fo
 
 ## Decisions for the user (asked with this plan)
 
+**Decided by the user on 2026-11-08, with the choice of subagent-driven execution:** decision 1 option A (the user reads, the cold rows are swapped); decision 2 option (a) (the user against the registered mechanical rule); decision 3 option (a) (the local page; the user sees the probe in the preview, Save still to be confirmed before Task 7); decisions 4, 5 and 6 as recommended ("theo advisor"): every outsourcing session counts and the window decides, p6c gets one seeded bug at step 10 if it meets rule (b), and the four Docker names are removed. The token is revoked by the user.
+
 1. **Sealing against the human read.** What the user sees, batch by batch:
 
    | batch | rows | shown | content class |
