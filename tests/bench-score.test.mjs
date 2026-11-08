@@ -410,7 +410,7 @@ test('an arm product is not graded on a host task file', async () => {
     for (const args of [['--at', c2], ['--validate', c1, '--bad', c2]])
       await expect(grade([served, oracleDir, ...args], { root: sub })).rejects.toThrow('an arm product is not graded on the host')
     expect(runs.n()).toBe(0) // refused before any run
-    expect((await quiet(() => grade([f, oracleDir, '--at', c2], { root: sub }))).code).toBe(0) // start null: the oracle command runs it in Docker
+    expect((await quiet(() => grade([f, oracleDir, '--at', c2], { root: sub }))).code).toBe(0) // a task file with start null is not refused
     expect((await quiet(() => grade([served, oracleDir, '--at', c1], { root: sub }))).code).toBe(0) // no arm ref at c1
   } finally { git('update-ref', '-d', 'refs/heads/bench/t-B-1'); noValidations() }
 })
