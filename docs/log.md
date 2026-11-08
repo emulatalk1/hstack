@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-08
+* **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 12, "Amended at step 9") and the [human steps plan](/plans/2026-11-08-bench-human-steps.md) the user's decision that every step 9 read is made by a sealed reader agent on `claude-fable-5-1` in place of the user (decision 1 option C): what it sees, its chunks, no tools, the reply rule, one rerun and the per-batch defaults, and the deviations it makes (no human reads anything; the 7.2 gate measures one model against two raters of another), before any read.
 * **Update**: Added the [human steps plan](/plans/2026-11-08-bench-human-steps.md) (step 9) and registered its 11 rulings and the user's decisions of 2026-11-08 in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 12), with the deviations they make (the cold swap, one human against a registered rule for the interventions, the 3 pairs of 7.3 read by the user), before any read.
 
 ## 2026-11-07
