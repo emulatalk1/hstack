@@ -1,0 +1,12 @@
+env/real-estate.json	step 5 build ruling "no app at the base": the task field appFile added (progress/progress.md, step 5 Task 9)
+ext/walk.tsv	step 5 drops and replacements: s1-08 → s1-09, s2-04 → s2-10, s2-06 → s2-09 by walk --remove-out (step 5 lock)
+ext/sample.tsv	step 5 drops and replacements: s1-08 → s1-09, s2-04 → s2-10, s2-06 → s2-09 by walk --remove-out (step 5 lock)
+env/s*.json	step 9 Task 6, the oracle command rewritten with oracleCommand
+env/seeded/s*.json	step 9 Task 6, the oracle command rewritten with oracleCommand
+{p1,p2,p3,p4,p6a,p8e,s1-03,s1-04,s3-05,s3-06}/labels.json	step 9 ruling 5, a settled classification
+p8b/labels.json	step 9 ruling 5, a settled classification
+{p1,p2,p6c,s1-03}/oracle/manifest.json	step 9 rulings 6–7, the second batch or the 7.1 drop
+p1/agreement.json	step 9 ruling 7, the b2 rounds
+{s1-03,s1-04,s3-05,s3-06}/step.json	step 10 ruling 2, step rerun after the settled labels and the drop
+s1-03/step-f2p.json	step 10 ruling 2, the dropped check leaves the scored set
+{p1,s1-03}/seeded/kills.json	step 10 ruling 4, kills rerun on a changed oracle

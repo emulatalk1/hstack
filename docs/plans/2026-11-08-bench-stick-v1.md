@@ -35,6 +35,8 @@ sources:
 
 ## Decision for the user (asked with this plan)
 
+**Decided by the user on 2026-11-08**, with the choice of subagent-driven execution: build now, after the advisor and the controller agreed. Decision 1 was not answered: default (b) stands unless the user answers before Task 6 (Task 5 asks once more). The token is still with the user.
+
 1. **The 3 B/B- pairs of step 8, one last read before the lock.** The pairs page: https://claude.ai/artifact/58Q9rw5UuEPw4gPd6zpXxf (s1-02, s3-01, s3-02; arm products of public repos, not sealed). The reruns (Tasks 3–4) do not depend on the answer; only the lock (Task 6) waits for it.
    - **(a) You read them.** Answer `B- worse`, `same` or `B- better` per pair. If B- is visibly worse on any pair and the stick did not see it (`d` is 0 on all three), this plan stops after Task 4, and a fix-the-stick plan comes first (section 7.3); stick v1 is hashed after that plan. If not, the lock records one human read of the pairs and the stick stays **not validated**: the registered canary failed twice, and the read settles only the disagreement between the agent reader and the controller.
    - **(b) No read (default, the step 9 lock's ruling of 2026-11-08 stands).** The lock carries the step 9 lock's paragraph "The stick decision, 2026-11-08" and the wording of ruling 8 below.
