@@ -748,3 +748,15 @@ test('a bracket before or after the reply array does not spoil the reply', async
   expect(r.out).toBe(`proxy oracle-7.1 (${MODEL}): chunks 1, runs 1, failed runs 0, answered 3/3, defaulted 0`)
   expect(calls).toHaveLength(1)
 })
+
+// --- an applied batch is not rebuilt: build and history refuse and write nothing ---
+test('build and history refuse an applied batch and write nothing', async () => {
+  const g = join(tmp, 'gdata')
+  put(g, { 'machine.json': { forbid: { paths: [] } }, 'step9/answers/inputs.applied': 'sha\n', 'step9/answers/history.applied': 'sha\n' })
+  const run = (args) => withData(g, () => quiet(() => human(args)))
+  expect(await run(['build', 'inputs'])).toEqual({ code: 1, out: 'build inputs: refused, the batch is applied' })
+  expect(await run(['history', tr, hTask])).toEqual({ code: 1, out: 'history: refused, the batch is applied' })
+  expect(existsSync(join(g, 'step9/pages'))).toBe(false)
+  expect(existsSync(join(g, 'step9/seen.tsv'))).toBe(false)
+  expect(existsSync(join(g, 'history'))).toBe(false)
+})

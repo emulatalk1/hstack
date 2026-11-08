@@ -690,11 +690,12 @@ async function validate(c, { grade, agent, refs, only, tag = '' }) {
 // step 9 ruling 7: only these checks of a task of tasks.json, graded from a temporary oracle of their files and the scaffold
 // (sweep's pattern) with validate's bad and base versions and fixer rounds (`work/fix-<tag><round>/`); their verdicts are merged
 // into each validation-<fix7>.json, every other entry and field as it was, and a kept fix goes into the oracle
+// (its folder is work/ids-<tag>/, tag b2 for the plain command, split-b2 for split's call)
 async function validateIds(c, ids, { grade, agent, tag = 'b2-' }) {
   if (c.ext) throw new Error(USAGE)
   const all = manifestIn(c.oracleDir), mine = ids.map((id) => all.find((m) => m.id === id)), missing = mine.filter((m) => !m).length
   if (missing) throw new Error(`${c.task} validate --ids: ${missing} of ${ids.length} is not a check of its oracle`)
-  const ev = join(c.evDir, 'work', 'ids'), o = join(ev, 'oracle')
+  const ev = join(c.evDir, 'work', `ids-${tag.replace(/-$/, '')}`), o = join(ev, 'oracle') // one folder per call tag: a later call never overwrites an earlier call's grades
   rmSync(o, { recursive: true, force: true })
   mkdirSync(o, { recursive: true })
   scaffoldInto(join(c.data, 'oracle-scaffold'), o)

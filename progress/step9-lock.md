@@ -179,7 +179,7 @@ The 20 `Ruling:` lines of the ledger, in its order, each with its cost.
 8. A `pairs` row is a task with B then B- as its parts — cost: none.
 9. 'Agent, before' is the last assistant entry with non-empty text — cost: none.
 10. `build classify` and `classify-2` leave out rows of cold-setup tasks and print the count — cost: none.
-11. `recount` takes `--drop` and is run with `--drop p8b` (no data file records which real-estate tasks are kept) — cost: none.
+11. `recount` takes `--drop` and is run with `--drop p8b,p8b1` (no data file records which real-estate tasks are kept) — cost: none.
 12. `swap` must run before the second batch — cost: none in the plan's order.
 13. The plan's "25 env/seeded" was 24 external files plus `env/seeded/real-estate.json`, left for step 11 — cost: none.
 14. `serve --root` redirects `/` to `/<token>/`, used while the user reads, no subagent running while the pages are up — cost if wrong: during the read any local process could fetch a page.
@@ -195,7 +195,7 @@ The 20 `Ruling:` lines of the ledger, in its order, each with its cost.
 Each is listed in step 14's report.
 
 1. **The cold swap.** 13 sampled rows of cold-setup tasks (7 `oracle-7.1`, 5 `rerate-7.2`, 1 `inputs`) were replaced before any read, in new `-v2` files; the locked files are untouched. Reason: step 4 ruling 13 (nobody designing the plugin opens the cold-setup repos). Cost: the sampling of step 5 ruling 16 changes for 13 rows, and 2 disputed checks of cold tasks stay disputed.
-2. **An agent reader in place of a human for sections 5, 6.1, 6.3, 7.1, 7.2, 7.3 and 9.3** (option C, the user's decision after the pages went up). Reason: the user chose full automation. Cost: no human read anything at step 9; the input read, the fix labels (which chose the second batch's sources), the settling and re-rating of classifications, the 7.1 read, the intervention labels and the 7.3 pairs are one model's reads, and step 14 must say the stick was checked by agents only.
+2. **An agent reader in place of a human for sections 5, 6.1, 6.3, 7.1, 7.2, 7.3 and 9.3** (option C, the user's decision after the pages went up). Reason: the user chose full automation. Cost: no human read anything at step 9; the input read, the fix labels (which chose the second batch's sources), the settling and re-rating of classifications, the 7.1 read, the intervention labels and the 7.3 pairs are one model's reads, and step 14 must say that the step 9 reads were made by an agent reader only (see deviation 12 for what it may not say about the stick).
 3. **Decision 2: one rater against a mechanical rule**, and that rater is the agent reader. Reason: decision 2 option (a), then option C. Cost: κ measures the rule against one model, not how two humans agree.
 4. **7.2 recorded as not measurable by an agent.** Both re-rating gates stopped (16/20, 14/20); the user decided that one model against two raters of another does not measure usability, which rests on step 5's κ/AC1 branch. Cost: section 7.2's human re-rating has no result; the labels stand unchecked by a human.
 5. **History reported without a gate.** κ 0.18 is below 0.7; ruling 8 would stop the plan and change the rules or the tool in a new commit. The user decided no gate; the counts are reported and nothing was relabelled. Cost: the baseline of 9.3 rests on the tool's rule, which one model read differently (mostly rule 1 and rule 2 events the reader called not counted).
@@ -204,10 +204,13 @@ Each is listed in step 14's report.
 8. **`serve --root` itself.** It hands the token to any local GET of `/`. Reason: the preview pane opens `/` and a 48-character token cannot be typed on a phone. Cost: while the pages were up any local process could fetch a page; no subagent ran then.
 9. **The stick check of s3-02 on B's products** was outside the plan, added by the user's decision on the stick. Cost: 2 sealed grades, counts only.
 10. **The gate consequences of 7.1 and 7.2 and `partly` → `requirement`** are rulings the prereg left open, listed as deviations in "Applied at step 9" (deferred minor of Task 1: they are open rulings rather than deviations).
+11. **The history tool departs from registered ruling 8.** It folds a rejected tool use, the interrupt after it and the human message after them into one event (ledger rulings 4 and 6 on the reject merge and on a second reject or interrupt in the same turn, made during the build and never registered), and every later human message in the same turn, until the next assistant entry, is not an event. Cost: the corpus has 3 rejects each followed by an interrupt (ledger shape counts); the number of messages dropped by the swallowing was not measured. Reason: one human stop is one intervention.
+12. **The "Decided at step 9 after the reads" paragraph supersedes one sentence of the "Amended at step 9" paragraph.** The amendment says step 14 must report the stick "validated by agents only". The decision after the reads records the stick as not validated ("chưa kết luận"). So step 14 reports that the step 9 reads were made by an agent reader only, and the stick as not validated; it does not report the stick as validated by anyone.
 
 ## Checks at the lock
 
 - **Tests.** `HSTACK_BENCH_MACHINE=<data>/machine.json bun test ./tests`: **552 pass, 49 skip, 0 fail**, 601 tests in 30 files, 156.2 s, output pristine (header and summary only). `git status --short bench` and `git status --short tests` are empty; the last change to `bench/` or `tests/` is `5513d93`.
+- **After the final review** (commit of the fix wave): `bench/` and `tests/` changed again (the two guards and `validate --ids` folders); the suite then ran 553 pass, 49 skip, 0 fail, 602 tests in 30 files, pristine. The counts above are those at `5513d93`.
 - **Applied.** `bun bench/human.mjs status`: every batch `applied yes` (classify-2 1/1, classify 19/19, history 103/103, inputs 4/4, labels 12/12, oracle-7.1 50/50, pairs 3/3, rerate-7.2 40/40).
 - **Servers.** No `human.mjs serve` process (`pgrep` 0); nothing listens on the ports of the ledger (49909–49915) or the probe's 59452.
 - **`/tmp/hstack-bench`** is empty after the test run (it held one test fixture entry while the suite ran).
@@ -230,7 +233,8 @@ None. Every changed file of the step 5–8 hashes is one the plan's table names.
 ## Open points
 
 - **The stick decision, before step 10.** The step 8 stick is not concluded and not validated. The fix-the-stick decision is the user's, before step 10; the inputs to it are the step 8 verdicts (registered canary failed; the extension passed on a bootstrap bound of 0.057 with the t interval crossing 0), the reader's pairs read (B- worse on s3-01 and s3-02, against step 8 deviation 2) and the s3-02 check (the seeded checks pass for both arms there).
-- **Step 10's lock must not say "stick validated".**
+- **Step 10's lock must not say "stick validated".** The "Decided at step 9 after the reads" paragraph supersedes the amendment's sentence that step 14 reports the stick "validated by agents only" (deviation 12): the stick is not validated; step 14 reports that the step 9 reads were made by an agent reader only.
+- **`<data>/p1/work/ids/` holds the split run's records only.** It is hashed by this lock and was not moved. The `validate --ids` run of the second batch (call tag `b2`) wrote into the same folder first and was overwritten by the split run's call (final review, minor 4). From now on `validate --ids` uses `<task>/work/ids-<tag>/` per call tag (`ids-b2` for the plain command, `ids-split-b2` for split's call), so a later call cannot overwrite an earlier one's grade records. `build <batch>` and `history` now refuse a batch whose `answers/<batch>.applied` exists. Neither change was run on real data.
 - **Step 10 reruns.** `oracle step` again for the external tasks (step 6 ruling 2), s1-03 included, whose dropped check leaves the ids there; `kills` again for every task whose `oracle/` changed (step 7 lock): p1 (second batch), s1-03 (the 7.1 drop), and p2 and p6c, whose manifests changed only by `interface none` entries that score nothing; whether their kills must rerun is step 10's ruling. Decision 5 does not apply: p6c stays below rule (b) (2), so the 9 tasks named for seeded bugs stay.
 - **The token.** The user revokes it, then `rm <data>/arm/box.env` (unread).
 - **The 2 cold-task disputes stay disputed** (a disputed check scores H2 and is not a step candidate).
@@ -241,7 +245,7 @@ None. Every changed file of the step 5–8 hashes is one the plan's table names.
   - Task 2: `answersFor` reads inherited keys of `LABELS`; a 3-field answers row reads the third field as a note; later human messages in a turn after a reject or interrupt are swallowed.
   - Task 3: the 7.1 title marker falls back to the title's last segment; the `lang` part field is never emitted.
   - Task 3: an earlier note cannot be cleared from the page; each POST re-parses the answers file.
-  - Task 4: the `#n` key path shows every bash/clear part of the entry; no test that the page's keys equal kappa's; event order in a session is file order; `history` overwrites its outputs with no guard.
+  - Task 4: the `#n` key path shows every bash/clear part of the entry; no test that the page's keys equal kappa's; event order in a session is file order; `history` overwrote its outputs with no guard (a guard on an applied history was added in the final fix wave).
   - Task 5: `apply` reads the answers file twice; the inputs gate has no set; untested: b2 write into an oracle without a manifest, b2 `-2` rerun, 18/20 and 17/20 gate sizes, apply history; merge throws on a validation file without checks; `validate --ids` does not dedupe; unused `owners`; non-b2 split round numbering counts b2 rounds.
   - Task 7a: `--root` hands the token to any local GET of `/`; `--port --root 5` is accepted; no test for a repeated `--root` or `/?x`.
   - Task 7b: `--model` can override the ruled model (printed in the count line); a history segment over 900000 bytes cannot be split; id/label aliases are accepted in replies; the prompt rides in argv.
@@ -257,6 +261,7 @@ None. Every changed file of the step 5–8 hashes is one the plan's table names.
 - **Historical windows.** A plan's window starts at its base commit, so a plan written before the previous plan's last commit loses its writing events, and a fix plan between tasks falls outside every window (258 events outside).
 - **The pages passed through the app's preview connection** while they were up (no answer was saved then).
 - **The env before-hashes** of the 24 seeded files are only in the step 7 lock (`env-before.sha256` holds the 27 `env/s*.json`).
+- **The reply parser accepts `id` and `label` for `key` and `answer`.** The registered reply rule does not name these aliases. With 0 reruns in the 25 runs, nobody can tell whether the aliases were used.
 - **The s3-02 check is one task.** The seeded checks pass for both arms there; that says the instrument does not separate the arms on s3-02, not on the other tasks.
 
 ## Usage and wall clock
@@ -278,6 +283,8 @@ Subagents of the build, as the ledger gives them (implementer; reviewer):
 | 10 Lock | this session | none |
 
 Listed implementer tokens 1,810.3k; reviewer tokens 1,105.5k.
+
+A resumed agent's run figure (Task 3 and Task 7b fix rounds) includes re-reading its earlier context. The figures are real per-run usage, not double counts (ledger ruling; a run's tool uses reset each run, e.g. Task 3's fix run 9 tool uses against 45 for the first). If wrong, the total is overstated by up to about 0.4M.
 
 Agents of the runs (`lock-usage.out`, from the run records; input + output + cache write + cache read):
 

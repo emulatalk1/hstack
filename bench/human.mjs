@@ -157,6 +157,7 @@ const VIEWS = { inputs, 'oracle-7.1': oracle71, 'rerate-7.2': rerate, classify: 
 
 async function build(data, batch, rest) {
   if (!Object.hasOwn(VIEWS, batch)) throw new Error(USAGE)
+  if (existsSync(join(data, 'step9/answers', `${batch}.applied`))) { console.log(`build ${batch}: refused, the batch is applied`); return 1 }
   const logs = [], pos = []
   let attribution = null
   for (let i = 0; i < rest.length; i++) {
@@ -292,6 +293,7 @@ const HISTORY_N = 20
 
 async function history(data, dir, taskFile) {
   if (!dir || !taskFile) throw new Error(USAGE)
+  if (existsSync(join(data, 'step9/answers/history.applied'))) { console.log('history: refused, the batch is applied'); return 1 }
   const repo = (await loadTask(taskFile)).repo
   const tasks = Object.entries(readJson(join(data, 'tasks.json')) ?? {}).map(([task, t]) => ({ task, base: t.base, end: t.end }))
   if (!tasks.length) throw new Error('no tasks in tasks.json')

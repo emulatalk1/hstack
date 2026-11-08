@@ -2539,7 +2539,8 @@ test('validate --ids leaves every other entry unchanged', async () => {
   const grade = async (args) => { graded.push(JSON.parse(readFileSync(join(args[1], 'manifest.json'), 'utf8')).map((m) => m.id)); return fakeGrade(table, calls)(args) }
   const r = await quiet(() => oracle(['validate', task, 't1', '--ids', `${x},${y}`], { grade, agent: fakeAgents({}, agents) }))
   expect(r.code).toBe(0)
-  const tmpO = join(data, 't1/work/ids/oracle')
+  const tmpO = join(data, 't1/work/ids-b2/oracle')
+  expect(existsSync(join(data, 't1/work/ids'))).toBe(false) // the folder is per call tag
   expect(calls).toEqual([1, 2].map(() => [task, tmpO, '--validate', k1Full, '--bad', parentOf(k1Full), '--base', c0, '--sealed', '--reuse']))
   expect(graded).toEqual([[x, y], [x, y]]) // a pass, and one after the kept fix: only the ids
   expect(ls(tmpO)).toEqual([`${x}.spec.ts`, `${y}.spec.ts`, 'manifest.json', 'node_modules', 'package.json', 'run.config.ts'])
@@ -2578,7 +2579,7 @@ test('the split pass of a b2 round regrades no entry outside its ids', async () 
   const r = await quiet(() => oracle(['split', task, 't1'], { agent, grade }))
   expect(r.code).toBe(0)
   expect(r.out.split('\n').at(-1)).toBe('t1 split partly=1 split=1 failed=0 restored=0 settled=0 stale=0 new=2 classified=2 build=1 requirement=0 disputed=1')
-  expect(graded).toEqual([[join(data, 't1/work/ids/oracle'), [h1, h2]]]) // the halves only, never the fix commit's other checks
+  expect(graded).toEqual([[join(data, 't1/work/ids-split-b2/oracle'), [h1, h2]]]) // the halves only, never the fix commit's other checks
   expect(jsonAt(join(data, 't1', `validation-${k1}.json`)).checks).toEqual([...old, { id: h1, verdict: 'valid' }, { id: h2, verdict: 'valid' }])
   expect(jsonAt(join(data, 't1/oracle/manifest.json')).find((m) => m.id === b)).toMatchObject({ dropped: true, split_into: [h1, h2] })
   // the halves are classified in a round of their own whose name holds b2, so classify-2 takes its disputes
