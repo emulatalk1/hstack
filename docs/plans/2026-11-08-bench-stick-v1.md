@@ -2,8 +2,11 @@
 type: plan
 title: "Stick v1 plan"
 description: "Prereg step 10: rerun the external step oracles and the kills that step 9's changes made stale, commit the task lists, hash every file of the stick into one manifest, compare it with the step 3 to step 9 locks with a reason for each changed file, and lock stick v1 as not validated."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.318, at: "2026-11-08T15:37:14+07:00" }
+verified:
+  - { by: claude-code-advisor/2.1.318, at: "2026-11-08T16:05:00+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-08T18:20:40+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md

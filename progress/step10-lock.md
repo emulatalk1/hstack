@@ -175,3 +175,7 @@ Counts only; hashed in the manifest except the outputs written after the hash.
 | `run-kills-re.sh`, `run-kills-ext.sh` | the step 7 drivers, pointed at `logs/step10/` and the due tasks |
 | `tasks.mjs` | ruling 7: writes `progress/stick-v1/tasks.tsv` |
 | `before/` | the copies of `step.json`, `step-f2p.json` and the due `kills.json` taken before the reruns |
+
+## Approval, 2026-11-08
+
+The user approved the build on 2026-11-08 ("Duyệt build, và cho phép merge push"). The plan `docs/plans/2026-11-08-bench-stick-v1.md` is `stable`. The branch `bench-step10` is merged into `main` by fast-forward and pushed. Still open: everything under "Blocks Part 2", the step 11 walk and the flaky test, for step 11's plan.
