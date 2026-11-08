@@ -1,5 +1,5 @@
 import { test, expect, afterAll, spyOn } from 'bun:test'
-import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hunkOwners, agreement, usable, mergeLabels, introducer, oracleSha, queuePick, f2pOf, nextNumber, caseId, changedRanges, inChanged, applyEdit, EDGES } from '../bench/lib/oracle.mjs'
@@ -1286,6 +1286,23 @@ test('the queue refuses the step 9 folder', async () => {
   await expect(run(['--tasks', 'x1-01,nope', '--out', join(d, 'q')])).rejects.toThrow('not a classified task: nope')
   await expect(run(['--tasks', 'x1-01'])).rejects.toThrow('usage:')
   expect((await run(['--out', join(d, 'step90'), '--tasks', 'x1-01'])).code).toBe(0) // a sibling whose name starts with step9 is fine
+})
+
+test('the step 9 folder is guarded by its real path, and a started batch is not redrawn', async () => {
+  const { d } = await walkedData('wq4'), run = (out) => withData(d, () => quiet(() => oracle(['queue', '--tasks', 'x1-01', '--out', out])))
+  mkdirSync(join(d, 'step9'), { recursive: true })
+  writeFileSync(join(d, 'step9/classify.tsv'), 'LOCKED\n')
+  mkdirSync(join(d, 'elsewhere'), { recursive: true })
+  symlinkSync(join(d, 'step9'), join(d, 'alias')) // a link to step9, and a parent that is a link to it
+  symlinkSync(d, join(d, 'dlink')) // a path to the data folder through another name
+  for (const out of [join(d, 'alias'), join(d, 'alias/sub'), join(d, 'alias/not/yet'), join(d, 'dlink/step9'), join(d, 'dlink/step9/new'), join(d, 'elsewhere/../alias')]) await expect(run(out)).rejects.toThrow('step 9 folder')
+  expect(readdirSync(join(d, 'step9'))).toEqual(['classify.tsv'])
+  expect(readFileSync(join(d, 'step9/classify.tsv'), 'utf8')).toBe('LOCKED\n')
+  // a started batch (pages/ there) is not redrawn
+  mkdirSync(join(d, 'q/pages'), { recursive: true })
+  await expect(run(join(d, 'q'))).rejects.toThrow('started batch')
+  expect(existsSync(join(d, 'q/classify.tsv'))).toBe(false)
+  expect((await run(join(d, 'dlink/elsewhere'))).code).toBe(0) // a link to anywhere else is fine
 })
 
 test('the sample takes min(10, scored) per stack', async () => {

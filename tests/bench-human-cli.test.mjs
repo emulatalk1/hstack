@@ -823,3 +823,33 @@ test('without --queue, human reads step9 as before', async () => {
   expect(existsSync(join(c, 'step9/answers/oracle-7.1.applied'))).toBe(true)
   expect(existsSync(queued)).toBe(false)
 })
+
+// --- fix round 1: the walked 7.1 gate is n - 1, classify-2 takes no queue ---
+test('under --queue a 7.1 set passes with at least n - 1 same, step 9 keeps 9 of 10', async () => {
+  const { c, qd } = await walked('wq3'), ids3 = [xid, `${e7}-T3`, `${e7}-T4`]
+  put(c, { 'x1-01/oracle/manifest.json': ids3.map((x) => entry(x, { fix_commit: end, task: 'x1-01', file: 'checks/x.test.ts' })),
+    'step11/queue/sample-7.1.tsv': `set\ttask\tid\n${ids3.map((x) => `x1\tx1-01\t${x}`).join('\n')}\n` })
+  put(c, { 'step9/sample-7.1.tsv': `set\ttask\tid\n${ids3.map((x) => `x1\tx1-01\t${x}`).join('\n')}\n` })
+  rmSync(join(c, 'step9/sample-7.1-step.tsv')) // the same three rows in step 9's queue
+  const gate = async (queue, same) => {
+    for (const root of queue ? [qd] : [join(c, 'step9')]) rmSync(join(root, 'answers'), { recursive: true, force: true })
+    const q = queue ? ['--queue', qd] : [], b = await runIn(c, ['build', 'oracle-7.1', taskFile, ...q])
+    expect(b.out).toBe('build oracle-7.1: rows 3, parts 9')
+    mkdirSync(join(queue ? qd : join(c, 'step9'), 'answers'), { recursive: true })
+    writeFileSync(join(queue ? qd : join(c, 'step9'), 'answers/oracle-7.1.tsv'), ids3.map((x, i) => `${x}\t${i < same ? 'same' : 'different'}\t\t2026-11-08T00:00:00Z\n`).join(''))
+    return (await runIn(c, ['apply', 'oracle-7.1', ...q])).out.split('\n').slice(1)
+  }
+  expect(await gate(true, 2)).toEqual(['gate oracle-7.1 x1 2/3 pass'])
+  put(c, { 'x1-01/oracle/manifest.json': ids3.map((x) => entry(x, { fix_commit: end, task: 'x1-01', file: 'checks/x.test.ts' })) }) // the 7.1 drop of the first apply is undone
+  rmSync(join(qd, 'answers'), { recursive: true })
+  expect(await gate(true, 1)).toEqual(['gate oracle-7.1 x1 1/3 stop'])
+  put(c, { 'x1-01/oracle/manifest.json': ids3.map((x) => entry(x, { fix_commit: end, task: 'x1-01', file: 'checks/x.test.ts' })) })
+  rmSync(join(c, 'step9/pages'), { recursive: true, force: true })
+  expect(await gate(false, 2)).toEqual(['gate oracle-7.1 x1 2/3 stop']) // step 9's rule: 2 * 10 < 3 * 9
+})
+
+test('classify-2 takes no --queue', async () => {
+  const { c, qd } = await walked('wq5')
+  for (const cmd of [['build', 'classify-2'], ['apply', 'classify-2'], ['serve', 'classify-2'], ['proxy', 'classify-2', taskFile]]) await expect(runIn(c, [...cmd, '--queue', qd])).rejects.toThrow('usage:')
+  expect(existsSync(join(qd, 'pages'))).toBe(false)
+})

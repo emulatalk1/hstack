@@ -1173,9 +1173,17 @@ export const queueDraw = ({ n, sets }, seed) => sets.flatMap(([g, items]) => { c
 const queueDisputed = (data, sets) => sets.flatMap(([, ts]) => ts.flatMap((t) => { const a = readJson(join(data, t, 'agreement.json')); return [...a.disputed, ...splitRounds({ dir: join(data, t) }, a).flatMap((x) => x.disputed ?? [])].map((id) => [t, id]) }))
 
 // step 11 ruling 10: the disputes and the 7.1 sample of the named tasks only, in a folder of their own (never step 9's)
+// a path with its deepest existing ancestor resolved through symlinks, the rest appended (the path itself may not exist yet)
+function realish(p) {
+  const rest = []
+  let a = resolve(p)
+  while (!existsSync(a)) { rest.unshift(basename(a)); a = dirname(a) }
+  return join(realpathSync(a), ...rest)
+}
 function queueTasks(tasks, out) {
-  const data = dataDir(), dir = resolve(out), rel = relative(join(data, 'step9'), dir)
+  const data = dataDir(), dir = realish(out), rel = relative(realish(join(data, 'step9')), dir)
   if (!rel || (!rel.startsWith('..') && !isAbsolute(rel))) throw new Error('queue: --out is the step 9 folder or inside it')
+  if (existsSync(join(dir, 'pages'))) throw new Error('queue: --out holds pages already, a started batch is not redrawn')
   const { sets, pools } = queuePools(data, [], tasks)
   const got = new Set(sets.flatMap(([, ts]) => ts)), missing = tasks.filter((t) => !got.has(t))
   if (missing.length) throw new Error(`queue: not a classified task: ${missing.join(', ')}`)

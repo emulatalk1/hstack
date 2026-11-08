@@ -188,9 +188,10 @@ function writePage(q, batch, rows) {
 const writeJson = (f, x) => writeFileSync(f, JSON.stringify(x, null, 2) + '\n')
 const AGREES = { build: 'traceable', requirement: 'not traceable' } // an agreed label and the answer that agrees with it
 // one gate line per set, in the order the sets first come; a set passes at 90% (ruling 6: 9 of 10, 18 of 20)
-function gates(batch, list) {
+// `loose` (a walked queue, step 11 ruling 10): a set passes with at least n - 1 of its n rows `same`
+function gates(batch, list, loose = false) {
   const pass = [...new Set(list.map((x) => x.set))].map((set) => {
-    const xs = list.filter((x) => x.set === set), ok = xs.filter((x) => x.ok).length, p = ok * 10 >= xs.length * 9
+    const xs = list.filter((x) => x.set === set), ok = xs.filter((x) => x.ok).length, p = loose ? ok >= xs.length - 1 : ok * 10 >= xs.length * 9
     console.log(`gate ${batch} ${set} ${ok}/${xs.length} ${p ? 'pass' : 'stop'}`)
     return p
   })
@@ -223,7 +224,7 @@ function apply71(data, q, rows, ans) {
     if (x.step && Array.isArray(st?.ids)) writeJson(sf, { ...st, ids: st.ids.filter((id) => id !== x.id) })
   }
   console.log(`apply oracle-7.1: rows ${rows.length}, ${counts('oracle-7.1', rows, ans)}`)
-  return gates('oracle-7.1', list)
+  return gates('oracle-7.1', list, q !== join(data, 'step9'))
 }
 
 // ruling 6: the user's label against the agreed one; partly agrees with neither; no label changes
@@ -622,7 +623,7 @@ export async function human(argv, { agent = sealedAgent } = {}) {
   let args = argv, q = join(data, 'step9')
   const qi = argv.indexOf('--queue')
   if (qi > 0 && ['build', 'serve', 'status', 'apply', 'proxy'].includes(argv[0])) {
-    if (!argv[qi + 1]) throw new Error(USAGE)
+    if (!argv[qi + 1] || argv[1] === 'classify-2') throw new Error(USAGE) // classify-2 reads every task's b2 rounds, not the queue
     q = resolve(argv[qi + 1])
     args = argv.filter((_, i) => i !== qi && i !== qi + 1)
   }
