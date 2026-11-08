@@ -548,6 +548,22 @@ Registered before any read; `bench/human.mjs serve` has not run on a queue batch
 
 Registered before any reader run and any answer.
 
+**Decided at step 9 after the reads (2026-11-08).** Written after the reader's answers were applied, so it is a deviation that step 14's report lists. The reader (`claude-fable-5-1`) ran 24 runs (a pairs probe, then 6 batches), 0 failed, 0 defaulted, every row answered, and every answers file was applied. Results as applied:
+- **inputs:** 3/4, stop. The leak is on the external set (task-repo 2 clean; external 1 clean, 1 leak).
+- **7.1:** 50 rows, same 49, different 1, unclear 0. Every set is at least 9/10 (task-repo 10/10, s1 9/10, s2 10/10, s3 10/10, task-repo-step 10/10), and 1 check is dropped.
+- **7.2 re-rating:** task-repo 16/20, stop; external 14/20, stop. Task-repo: agreed requirement to not traceable 16, build to not traceable 2, requirement to traceable 1, requirement to partly 1. External: requirement to not traceable 8, build to traceable 6, requirement to traceable 3, requirement to partly 2, build to not traceable 1.
+- **classify:** 19 rows settled, build 3, requirement 16.
+- **labels:** 12 rows, fix 5, not fix 7.
+- **pairs:** B- worse 2, same 1, B- better 0 (s1-02 same, s3-01 B- worse, s3-02 B- worse).
+- **history:** κ 0.18, raw 0.57, AC1 0.49, n = 103, stop. Tool to reader: rule 1 to rule 1 57, rule 1 to not counted 18, rule 2 to not counted 16, rule 1 to rule 2 7, others 5.
+
+Three gates stopped (rerate-7.2, history, and the step 8 stick with the pairs read), and the controller and the user decided as follows.
+- **Controller ruling on the inputs gate: a plan defect, not a failure.** The leak is on the external set, whose input is the issue verbatim by the user's decision of 2026-11-02 ("issue text with code stays eligible; input-check is not an eligibility rule") and step 5 ruling 3. Section 5's human read checks the real-estate filter, and the task-repo set is 2/2 clean, so the gate passes on task-repo and the external leak is recorded as the known property it is. Cost if wrong: one external issue that states more than the requirement stays in the input, as the step 8 extension already recorded for s1-02 and s3-02.
+- **User decision on 7.2:** "agent không đo được". The 16/20 and 14/20 are recorded as one model against two raters of another, not as a measure of usability. 7.2 usability rests on the step 5 κ/AC1 branch (task-repo κ 0.73, external κ 0.91, both usable). The labels are unchanged.
+- **User decision on history:** no gate. The lock reports the tool's and the reader's counts per task, with κ 0.18, raw 0.57 and AC1 0.49.
+- **User decision on the step 8 stick:** not concluded ("chưa kết luận"; the user chose the advisor's recommendation after being asked explicitly). The stick is recorded as not validated. The reader's pairs read (B- visibly worse on s3-01 and s3-02) is a §7.3 trigger candidate and disagrees with step 8 deviation 2, where the controller and the advisor found B- not worse on all three; the reader agrees on s1-02 (identical diffs). No human has read the pairs. Before step 10 the seeded checks of s3-02 are graded on B's two products (counts only), and the fix-the-stick decision is taken before step 10. Step 10's lock must not say "stick validated".
+- **Sweep ruling (registered before the second batch runs):** a second-batch check whose validation reads `pre-existing` is recorded `pre-existing, moved to none` (step 5 ruling 12's wording), and `oracle sweep` is not run, because sweep revalidates receivers over whole fix commits and would rewrite hashed entries. Cost if wrong: such a check scores in no task.
+
 10. Stick v1: commit the task lists, a hash of every oracle, seeded and held-out file, and the step-1 to step-9 results. Only then does Part 2 (the plugin) begin. The plugin designer never opens the content of oracles, seeded bugs or held-out patches; it sees only scores. Exception on record: the session that wrote this plan read p8b's whole oracle (manifest, behaviours, specs, base-run errors) and may design the plugin, so p8b is used only in the trial run (step 11, not analysed) and is never one of the scored `real-estate` tasks.
 
 **Part 2: measuring the plugin (needs the plugin)**
