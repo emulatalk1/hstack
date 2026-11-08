@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { withExport } from '../bench/env.mjs'
-import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, productImage, recordDocker, removeOut, removeRecorded, runEnd, trustedCommit, word } from '../bench/ext.mjs'
+import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, gradeMode, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, productImage, recordDocker, removeOut, removeRecorded, runEnd, SERVE_EMPTY, trustedCommit, word } from '../bench/ext.mjs'
 import { oracleFiles } from '../bench/grade.mjs'
 import { oracleSha } from '../bench/lib/oracle.mjs'
 import { releaseRoot } from './bench-root.mjs'
@@ -659,7 +659,7 @@ function oracleTask({ inj, runner = RUNNER, serve = serveRecipe, rebuild = { lin
   // the serve layer installs with network, which only S's build has: the product's rebuild lines need none
   if (rebuild) writeFileSync(join(s.ext, 'tasks', s.slug(1), 'rebuild.json'), JSON.stringify(rebuild))
   mkdirSync(join(s.ext, 'serve', s.key), { recursive: true })
-  writeFileSync(join(s.ext, 'serve', s.key, 'serve.json'), JSON.stringify({ ...serve, briefSha: SERVE_BRIEF_SHA }))
+  writeFileSync(join(s.ext, 'serve', s.key, 'serve.json'), JSON.stringify({ briefSha: SERVE_BRIEF_SHA, ...serve })) // serve may carry briefSha: null, the empty recipe)
   const oracle = join(s.data, 's1-01', 'oracle')
   mkdirSync(oracle, { recursive: true })
   writeFileSync(join(oracle, 'T1.sh'), 'wget -q -O /dev/null http://127.0.0.1:8080/tests/zebra_ok.sh\n')
@@ -680,6 +680,7 @@ async function grade(s, args) {
   return { stdout: await new Response(p.stdout).text(), stderr: await new Response(p.stderr).text(), code: await p.exited }
 }
 const box = (s, c, n = 1) => `bench-ext-${s.slug(1)}-grade-${c.slice(0, 7)}-${n}`
+const app = (s, c, n = 1) => `bench-ext-${s.slug(1)}-app-${c.slice(0, 7)}-${n}`
 const make = (s, c, n = 1) => `bench-ext-${s.slug(1)}-make-${c.slice(0, 7)}-${n}`
 const O8 = (s, o = 'oracle') => oracleSha(oracleFiles(join(s.data, 's1-01', o))).slice(0, 8)
 // ruling 4: S and R from the base, then the commit's product image
@@ -712,20 +713,20 @@ dtest('grade validates a fixture check valid with end against base (needs BENCH_
 
 dtest('the grade container uses no network and is recorded in docker.json (needs BENCH_EXT_DOCKER=1)', async () => {
   const { s } = await validated()
-  // start lists the grade container's interfaces, the rebuild line the make container's (into the sealed make log)
+  // start lists the app container's interfaces (its log appended to the grade log), the rebuild line the make container's (into the sealed make log)
   for (const f of [join(s.data, 's1-01', 'logs', `${c07}-1.log`), join(s.ext, 'sealed', s.slug(1), 'logs', `grade-${c07}-2.make.log`)]) {
     const lines = readFileSync(f, 'utf8').split('\n')
     expect(lines).toContain('lo')
     expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
   }
   const d = json(join(s.data, 's1-01', 'docker.json'))
-  expect(d.containers).toEqual([make(s, c1), box(s, c1), make(s, c0, 2), box(s, c0, 2)])
+  expect(d.containers).toEqual([make(s, c1), app(s, c1), box(s, c1), make(s, c0, 2), app(s, c0, 2), box(s, c0, 2)])
   expect(d.images.map((i) => i.name)).toEqual([...tags(s, c1), ...tags(s, c0)])
   for (const i of d.images.slice(3)) expect(d.digests[i.name]).toBe(i.id) // S and R again, from the cache
   expect(d.digests[tags(s, c1)[2]]).toBe(d.images[2].id)
   for (const i of d.images) expect(i.id).toMatch(/^sha256:[0-9a-f]{64}$/)
   // the make container goes as soon as its image is committed; the rest by exact name as each run ends, digests kept
-  expect(readFileSync(join(s.ext, 'removed.txt'), 'utf8')).toBe([box(s, c1), ...tags(s, c1), box(s, c0, 2), ...tags(s, c0), ''].join('\n'))
+  expect(readFileSync(join(s.ext, 'removed.txt'), 'utf8')).toBe([app(s, c1), box(s, c1), ...tags(s, c1), app(s, c0, 2), box(s, c0, 2), ...tags(s, c0), ''].join('\n'))
   for (const c of d.containers) expect(exists('container', c)).toBe(false)
   for (const i of d.images) expect(exists('image', i.name)).toBe(false)
   expect(exists('container', 'bench-ext-other')).toBe(true)
@@ -777,7 +778,7 @@ dtest('a run past the container limit ends inside the container: timeout, no JUn
   expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(ready(s, [c17, 'timeout']))
   expect(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8')).toContain('bench: not done in 8 s, killed')
   const d = json(join(s.data, 's1-01', 'docker.json'))
-  expect(d.containers).toEqual([make(s, c1), box(s, c1)])
+  expect(d.containers).toEqual([make(s, c1), app(s, c1), box(s, c1)])
   for (const c of d.containers) expect(exists('container', c)).toBe(false)
   for (const i of d.images) expect(exists('image', i.name)).toBe(false)
 }, 900000)
@@ -844,6 +845,85 @@ dtest('the trusted path builds the commit as step 10 did (needs BENCH_EXT_DOCKER
   expect([d.images.map((i) => i.name), d.containers]).toEqual([[`bench-ext/${s.slug(1)}:${c17}-serve`, `bench-ext/${s.slug(1)}:${c17}-grade`], [box(s, c1)]])
   expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(ready(s, [c17, 'ready']))
   for (const i of d.images) expect(exists('image', i.name)).toBe(false)
+}, 900000)
+
+// step 11 ruling 5 (M3): a served task is graded in two containers, the app's (P, from the product image, no network) and the
+// oracle's (O, from R, in P's network namespace); a task with no serve start, or with grade-mode shared, in one from the product image
+test('gradeMode is split for a serve start, shared for none or a grade-mode file reading shared', () => {
+  const s = oracleTask(), t = { slug: s.slug(1), key: s.key }, f = join(s.ext, 'tasks', s.slug(1), 'grade-mode')
+  expect(gradeMode(s.ext, t)).toBe('split')
+  writeFileSync(f, ' shared\n')
+  expect(gradeMode(s.ext, t)).toBe('shared')
+  writeFileSync(f, 'split\n')
+  expect(gradeMode(s.ext, t)).toBe('split')
+  rmSync(f)
+  writeFileSync(join(s.ext, 'serve', s.key, 'serve.json'), JSON.stringify({ ...SERVE_EMPTY, briefSha: null }))
+  expect(gradeMode(s.ext, t)).toBe('shared')
+})
+const appPart = (log) => log.split(/^bench: the app's output.*$/m) // [O's part, P's part]
+const busybox = (start) => ({ ...serveRecipe, start: `${start}; busybox-extras httpd -p 8080 -h /work` })
+
+dtest('the oracle runs beside the app in split mode (needs BENCH_EXT_DOCKER=1)', async () => {
+  // only the app (P) holds the end's file src/feature.txt: R, which O runs, is the base's; T2 fetches it from P over the loopback
+  const s = oracleTask({ runner: { layer: [], run: 'sh /oracle/run.sh; [ -e /work/src/feature.txt ] && echo "fx: O holds the product" || echo "fx: O holds the base"' } })
+  const r = await grade(s, ['--at', c1, '--sealed'])
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  expect(r.stdout).toStartWith(`${c17} junit=ok pass=2 fail=0 `)
+  const [graded, appLog] = appPart(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8'))
+  expect(graded).toContain('fx: O holds the base\n')
+  expect(appLog.split('\n')).toContain('lo') // P's own interfaces: loopback only
+  expect(appLog.split('\n').filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(ready(s, [c17, 'ready']))
+  const d = json(join(s.data, 's1-01', 'docker.json'))
+  expect(d.containers).toEqual([make(s, c1), app(s, c1), box(s, c1)])
+  for (const c of d.containers) expect(exists('container', c)).toBe(false)
+  for (const i of d.images) expect(exists('image', i.name)).toBe(false)
+}, 900000)
+
+dtest('a product that writes a JUnit in its own container does not change the grade (needs BENCH_EXT_DOCKER=1)', async () => {
+  // at the base T2 fails; the product's start plants a JUnit (and the ready marker) with every case passing in its own /out
+  const planted = `<testsuite><testcase classname="fx" name="${c17}-T1 serves"/><testcase classname="fx" name="${c17}-T2 serves"/></testsuite>`
+  const s = oracleTask({ serve: busybox(`mkdir -p /out; echo '${planted}' > /out/junit.xml; touch /out/.bench-ready`) })
+  const r = await grade(s, ['--at', c0, '--sealed'])
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  expect(r.stdout).toStartWith(`${c07} junit=ok pass=1 fail=1 `)
+  expect(json(join(s.data, 's1-01', 'docker.json')).containers).toEqual([make(s, c0), app(s, c0), box(s, c0)])
+}, 900000)
+
+dtest('the product cannot read the oracle (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = oracleTask({ serve: busybox('ls /oracle; ls -a /') })
+  const r = await grade(s, ['--at', c1, '--sealed'])
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  expect(r.stdout).toStartWith(`${c17} junit=ok pass=2 fail=0 `)
+  const [graded, appLog] = appPart(readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8'))
+  expect(appLog).toMatch(/^ls: \/oracle: No such file or directory$/m) // in the app's log only
+  expect(appLog.split('\n')).not.toContain('oracle')
+  expect(appLog.split('\n')).toContain('work')
+  expect(graded).not.toContain('/oracle')
+}, 900000)
+
+dtest('a task with no serve start is graded in one container (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = oracleTask({ serve: { ...SERVE_EMPTY, briefSha: null } })
+  // with no app the checks read the files: the end's src/feature.txt is in the one container only if it is the product's
+  writeFileSync(join(s.data, 's1-01', 'oracle', 'T1.sh'), 'test -e /work/tests/zebra_ok.sh\n')
+  writeFileSync(join(s.data, 's1-01', 'oracle', 'T2.sh'), 'test -e /work/src/feature.txt\n')
+  const r = await grade(s, ['--at', c1, '--sealed'])
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  expect(r.stdout).toStartWith(`${c17} junit=ok pass=2 fail=0 `)
+  expect(json(join(s.data, 's1-01', 'docker.json')).containers).toEqual([make(s, c1), box(s, c1)])
+  expect(readFileSync(join(s.data, 's1-01', 'build', 'readiness.tsv'), 'utf8')).toBe(ready(s, [c17, 'ready']))
+}, 900000)
+
+dtest('grade-mode shared forces one container (needs BENCH_EXT_DOCKER=1)', async () => {
+  const s = oracleTask()
+  writeFileSync(join(s.ext, 'tasks', s.slug(1), 'grade-mode'), 'shared\n')
+  const r = await grade(s, ['--at', c1, '--sealed'])
+  expect(r).toMatchObject({ code: 0, stderr: '' })
+  expect(r.stdout).toStartWith(`${c17} junit=ok pass=2 fail=0 `)
+  expect(json(join(s.data, 's1-01', 'docker.json')).containers).toEqual([make(s, c1), box(s, c1)])
+  const log = readFileSync(join(s.data, 's1-01', 'logs', `${c17}-1.log`), 'utf8')
+  expect(log).not.toMatch(/^bench: the app's output/m)
+  expect(log.split('\n')).toContain('lo') // start ran in the grade container
 }, 900000)
 
 // productImage alone, on a fixture image whose /work holds the base's tracked files and an untracked build output

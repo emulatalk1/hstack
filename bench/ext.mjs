@@ -443,12 +443,12 @@ export async function buildImage({ scratch, dockerfile, test, platform, commit, 
   })
 }
 
-// one run in a new container `name` of image with no network and a static command: files(dir) writes what goes in to
+// one run in a new container `name` of image with no network (or net) and a static command: files(dir) writes what goes in to
 // dest (/work) by docker cp; created() records the name as soon as it exists. { how, timedOut, exitCode, oom } (how: runEnd);
 // a throw when Docker fails, the run is killed from outside, or it prints a disk-full message while the disk is low
-async function runContainer({ scratch, name, image, platform, cmd, files, created, log, timeoutSec, diskFree, stage, dest = '/work' }) {
+async function runContainer({ scratch, name, image, platform, cmd, files, created, log, timeoutSec, diskFree, stage, dest = '/work', net = ['--network', 'none'] }) {
   stage('run')
-  await must(['docker', 'create', '--network', 'none', '--platform', platform, '--name', name, image, ...cmd], `docker create ${name}`)
+  await must(['docker', 'create', ...net, '--platform', platform, '--name', name, image, ...cmd], `docker create ${name}`)
   created()
   stage('cp')
   await scratch('in', null, async (dir) => {
@@ -895,7 +895,7 @@ export const imageBuilder = ({ record, scratch, recipe, diskFree }) => async (ta
 // the container's static command: in /work, start (dir/.bench-start.sh) in the background, then ready every 2 s until it
 // exits 0 (then the sh line `then`, by default exit 0) or readySec pass by the clock (a background timer's file; exit 3,
 // after one more ready run whose output the log keeps). A ready that answers only after the limit fails
-const serveScript = (readySec, dir = '/work', then = 'exit 0') => ['cd /work', 'rm -f /tmp/.bench-ready-limit', `(sleep ${readySec}; touch /tmp/.bench-ready-limit) &`, `sh ${dir}/.bench-start.sh &`,
+const serveScript = (readySec, dir = '/work', then = 'exit 0', start = true) => ['cd /work', 'rm -f /tmp/.bench-ready-limit', `(sleep ${readySec}; touch /tmp/.bench-ready-limit) &`, ...(start ? [`sh ${dir}/.bench-start.sh &`] : []),
   'while :; do', `  if sh ${dir}/.bench-ready.sh >/dev/null 2>&1; then [ -e /tmp/.bench-ready-limit ] && break; echo "bench: ready"; ${then}; fi`,
   '  [ -e /tmp/.bench-ready-limit ] && break', '  sleep 2', 'done',
   `echo "bench: ready did not exit 0 within ${readySec} s; its output now:"`, `sh ${dir}/.bench-ready.sh 2>&1 | tail -n 20`, 'exit 3', ''].join('\n')
@@ -906,7 +906,8 @@ const serveScript = (readySec, dir = '/work', then = 'exit 0') => ['cd /work', '
 const gradeScript = (limitSec) => ['mkdir -p /out', "echo '<testsuites/>' > /out/junit.xml", 'sh /oracle/.bench-body.sh &', 'body=$!',
   `(sleep ${limitSec}; touch /out/.bench-timeout; echo "bench: not done in ${limitSec} s, killed"; kill -9 0) &`,
   'wait $body', 'code=$?', '[ -e /out/.bench-timeout ] && exit 124', 'exit $code', ''].join('\n')
-const gradeBody = (readySec) => serveScript(readySec, '/oracle', 'touch /out/.bench-ready; sh /oracle/.bench-run.sh; echo "bench: run exited $?"; exit 0')
+// split: O starts nothing, the app runs in P
+const gradeBody = (readySec, split) => serveScript(readySec, '/oracle', 'touch /out/.bench-ready; sh /oracle/.bench-run.sh; echo "bench: run exited $?"; exit 0', !split)
 
 // `serve` (ruling 5 of step 5): a serve recipe per repo, from rounds of a sealed agent, that serves the task at its base and
 // its end in one offline container of the task's recipe plus the layer. What it builds is removed as soon as it ends
@@ -1137,6 +1138,13 @@ export function readinessOf(file, sha7, osha8) {
   return last
 }
 
+// step 11 ruling 5: 'split' (the app in P, the oracle in O) unless the serve recipe has no start (the checks then run in the
+// runner's own process) or ext/tasks/<slug>/grade-mode reads shared (set only from the end regrade, never from a product)
+export function gradeMode(ext, t, sv = serveRecipe(ext, t).sv) {
+  const f = join(ext, 'tasks', t.slug, 'grade-mode')
+  return !sv.start.trim() || (existsSync(f) && readFileSync(f, 'utf8').trim() === 'shared') ? 'shared' : 'split'
+}
+
 // the trusted path takes only a task's base or end (sample.tsv, tasks.json) or a seeded bug, so never an arm's product. Each
 // base and end is resolved in the task repo and compared whole: a commit sharing only a short sha's prefix is not the task's
 export async function trustedCommit(ext, data, dir, head) {
@@ -1150,8 +1158,10 @@ export async function trustedCommit(ext, data, dir, head) {
 
 // `oracle-run` (step 5, step 11 rulings 4 and 7): grade's oracle command for an external task. S, the task's base built with the
 // recipe plus the serve layer (with network), and R, FROM S with the oracle's runner layer, are built from the BuildKit cache;
-// the commit of BENCH_DIR (HEAD) gets its product image from R (productImage, no network), and one offline container from it
-// starts the app, waits for ready and runs the checks; its JUnit goes to BENCH_JUNIT. BENCH_TRUSTED=1 (grade --trusted) builds
+// the commit of BENCH_DIR (HEAD) gets its product image from R (productImage, no network). In split mode (gradeMode, ruling 5)
+// the app runs alone in an offline container P from it, and a container O from R in P's network namespace waits for ready and
+// runs the checks; in shared mode one offline container from the product image does both. O's (or the one's) JUnit goes to
+// BENCH_JUNIT. BENCH_TRUSTED=1 (grade --trusted) builds
 // HEAD itself as step 10 did, recipe and serve layer with network, then the runner layer, for a task's base or end or a seeded
 // bug only. Everything it built is removed when it ends
 export async function oracleRun(args, inj = {}) {
@@ -1164,7 +1174,7 @@ export async function oracleRun(args, inj = {}) {
   const rebuildFile = join(ext, 'tasks', t.slug, 'rebuild.json')
   let rebuild = null
   if (existsSync(rebuildFile)) try { rebuild = JSON.parse(readFileSync(rebuildFile, 'utf8')) } catch { rebuild = {} } // refused by rebuildLines
-  const lines = trusted ? null : rebuildLines(recipe, sv, rebuild)
+  const lines = trusted ? null : rebuildLines(recipe, sv, rebuild), split = !trusted && gradeMode(ext, t, sv) === 'split'
   const head = (await must(['git', '-C', dir, 'rev-parse', 'HEAD'], 'git rev-parse')).trim(), sha7 = head.slice(0, 7)
   if (trusted && !(await trustedCommit(ext, data, dir, head))) throw new Error(`oracle-run --trusted: ${sha7} is no task's base or end and no seeded bug`)
   const low = await diskFloor(task, inj)
@@ -1183,13 +1193,13 @@ export async function oracleRun(args, inj = {}) {
   const recorded = record(() => {}).images.map((i) => i.name)
   const n = recorded.filter((i) => i === `${pfx}${sha7}-serve` || i.startsWith(`${pfx}${sha7}-product-`)).length + 1
   const serveLog = join(build, `${at7}-${recorded.filter((i) => i === serveTag).length + 1}.serve.build.log`)
-  const name = `bench-ext-${t.slug}-grade-${sha7}-${n}`, sealed = (what) => join(logs, `grade-${sha7}-${n}.${what}`), log = sealed('log')
+  const name = `bench-ext-${t.slug}-grade-${sha7}-${n}`, app = `bench-ext-${t.slug}-app-${sha7}-${n}`, sealed = (what) => join(logs, `grade-${sha7}-${n}.${what}`), log = sealed('log')
   let seq = 0
   const scratch = (what, commit, fn) => withExport({ name: t.key, repo: dir }, commit, `${what}-${t.slug}-${process.pid}-${seq++}`, fn)
   const image = imageBuilder({ record, scratch, recipe, diskFree })
-  let box = null
+  const boxes = []
   const stop = async () => {
-    if (box) await sp(['docker', 'kill', box]) // this run created it
+    for (const b of boxes) await sp(['docker', 'kill', b]) // this run created them
     await removeRecorded(data, task, t.slug)
     process.exit(143)
   }
@@ -1201,17 +1211,36 @@ export async function oracleRun(args, inj = {}) {
     await image(runnerTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, sealed(trusted ? 'grade.build.log' : 'runner.build.log'))
     const product = trusted || await productImage({ t, commit: head, baseImage: runnerTag, network: 'none', lines, repo: dir, osha8, n, platform: recipe.platform, record, scratch, log: sealed('make.log'), diskFree })
     if (!product) throw new Error(`${sha7}: the product image was not made (the make failed: its log is sealed)`)
-    const r = await runContainer({ scratch, name, image: trusted ? runnerTag : product, platform: recipe.platform, cmd: ['sh', '/oracle/.bench-grade.sh'], dest: '/oracle', log, timeoutSec: 1800, diskFree,
-      stage: () => {}, created: () => { box = name; record((d) => d.containers.push(name)) },
+    if (split) {
+      // P runs start (its argument, no file: P gets nothing of the oracle's) in /work; the sleep keeps the namespace up
+      // whether the app runs or dies, and ends P by itself if oracle-run is killed. Both names recorded first, P's first,
+      // so removal kills it first
+      record((d) => d.containers.push(app, name))
+      await must(['docker', 'create', '--network', 'none', '--platform', recipe.platform, '--name', app, product, 'sh', '-c', `cd /work; sh -c "$1" & exec sleep ${limitSec + 600}`, 'sh', sv.start], `docker create ${app}`)
+      boxes.push(app)
+      await must(['docker', 'start', app], `docker start ${app}`)
+    }
+    const r = await runContainer({ scratch, name, image: trusted || split ? runnerTag : product, platform: recipe.platform, cmd: ['sh', '/oracle/.bench-grade.sh'], dest: '/oracle', log, timeoutSec: 1800, diskFree,
+      net: split ? ['--network', `container:${app}`] : undefined, // O joins P's namespace: P's loopback, no network object
+      stage: () => {}, created: () => { boxes.push(name); if (!split) record((d) => d.containers.push(name)) },
       files: (into) => {
         // as oracleSha counts it (no node_modules, a symlink by its own text), so --reuse stays sound
         cpSync(oracle, into, { recursive: true, verbatimSymlinks: true, filter: (f) => basename(f) !== 'node_modules' })
         writeFileSync(join(into, '.bench-grade.sh'), gradeScript(limitSec))
-        writeFileSync(join(into, '.bench-body.sh'), gradeBody(readySec))
-        writeFileSync(join(into, '.bench-start.sh'), `${sv.start}\n`)
+        writeFileSync(join(into, '.bench-body.sh'), gradeBody(readySec, split))
+        if (!split) writeFileSync(join(into, '.bench-start.sh'), `${sv.start}\n`)
         writeFileSync(join(into, '.bench-ready.sh'), `${sv.ready}\n`)
         writeFileSync(join(into, '.bench-run.sh'), `${runner.run}\n`)
       } })
+    let appOom = false
+    if (split) { // P's output goes to the sealed log after O's; nothing of P's is read for the grade
+      appendFileSync(log, `bench: the app's output (${app}):\n`)
+      const fd = openSync(log, 'a')
+      try { await runGroup(['docker', 'logs', app], { timeoutSec: 300, stdout: fd, stderr: fd }) } finally { closeSync(fd) }
+      const st = await sp(['docker', 'inspect', '-f', '{{.State.OOMKilled}}', app])
+      if (st.code) { await daemon(); throw new Error(`docker inspect ${app} failed (exit ${st.code})`) }
+      appOom = st.out.trim() === 'true'
+    }
     const readiness = (s) => appendFileSync(join(build, 'readiness.tsv'), `${sha7}\t${osha8}\t${s}\n`)
     if (r.timedOut) { readiness('timeout'); throw new Error(`${name}: not done in 1800 s, killed`) } // runContainer killed it
     await scratch('out', null, async (o) => {
@@ -1220,7 +1249,7 @@ export async function oracleRun(args, inj = {}) {
       const out = join(o, 'out'), plain = lstatSync(out).isDirectory()
       if (plain && existsSync(join(out, '.bench-timeout'))) { readiness('timeout'); throw new Error(`${name}: not done in ${limitSec} s, killed inside`) }
       readiness(plain && existsSync(join(out, '.bench-ready')) ? 'ready' : 'not ready')
-      if (r.how === 'oom') { readiness('memory'); throw new Error(`${name} was killed for memory (OOMKilled)`) } // the last line says it, so the canary can tell it apart
+      if (r.how === 'oom' || appOom) { readiness('memory'); throw new Error(`${r.how === 'oom' ? name : app} was killed for memory (OOMKilled)`) } // the last line says it, so the canary can tell it apart
       if (plain && lstatSync(join(out, 'junit.xml')).isFile()) copyFileSync(join(out, 'junit.xml'), junit)
     })
   } finally {
