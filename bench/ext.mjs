@@ -1039,23 +1039,32 @@ const instructions = (text) => {
   const out = []
   let cur = null
   for (const line of text.split('\n')) {
-    if (/^\s*#/.test(line) || (cur === null && !line.trim())) continue // a comment, inside a continuation too
+    if (/^\s*#/.test(line) || !line.trim()) continue // a comment or a blank line, inside a continuation too, as Docker skips them
     const more = /\\\s*$/.test(line), part = more ? line.replace(/\\\s*$/, '') : line
     cur = cur === null ? part.trimStart() : cur + part
     if (!more) { out.push(cur.trimEnd()); cur = null }
   }
   return cur === null ? out : [...out, cur.trimEnd()]
 }
-function shellLine(ins) {
+const no = (why) => new Error(`the rebuild lines cannot ${why} in a make container: write ext/tasks/<slug>/rebuild.json`)
+// the RUN prefix: the last SHELL of the final stage before the copy (JSON form), else Docker's default sh -c
+function stageShell(stage) {
+  const ins = stage.findLast((l) => /^SHELL(\s|$)/i.test(l))
+  if (!ins) return 'sh -c'
+  let argv = null
+  try { argv = JSON.parse(ins.replace(/^SHELL\s*/i, '')) } catch {}
+  if (!Array.isArray(argv) || !argv.length || !argv.every((a) => typeof a === 'string')) throw no('take a SHELL that is not a JSON array of strings')
+  return argv.map(word).join(' ')
+}
+function shellLine(ins, shell = 'sh -c') {
   const [, op, rest] = /^(\S+)\s*([\s\S]*)$/.exec(ins), kw = op.toUpperCase()
-  const no = (why) => new Error(`the rebuild lines cannot ${why} in a make container: write ext/tasks/<slug>/rebuild.json`)
   if (kw === 'RUN') {
     let body = rest
     for (let m; (m = /^--(\S+)\s+/.exec(body)); body = body.slice(m[0].length))
       if (/^mount=/.test(m[1]) && !/(^|,)type=(cache|tmpfs)(,|$)/.test(m[1].slice(6))) throw no(`run a RUN with a ${m[1].split(',')[0]} other than a cache or tmpfs mount`)
     if (/<<-?\s*["']?[A-Za-z_]/.test(body)) throw no('run a RUN heredoc')
     try { const argv = JSON.parse(body); if (Array.isArray(argv)) return argv.map((a) => word(String(a))).join(' ') } catch {} // not JSON: shell form, as Docker reads it
-    return `sh -c ${word(body)}`
+    return `${shell} ${word(body)}`
   }
   if (kw === 'ENV') return /^[^\s=]+=/.test(rest) ? `export ${rest}` : `export ${rest.split(/\s/)[0]}=${word(rest.replace(/^\S+\s+/, ''))}`
   if (kw === 'ARG') return rest.includes('=') ? `export ${rest}` : null
@@ -1070,8 +1079,9 @@ export function rebuildLines(recipe, serve, rebuild) {
     if (!Array.isArray(rebuild.lines) || !rebuild.lines.every((l) => typeof l === 'string')) throw new Error('rebuild.json is not { lines: [shell lines] }')
     return rebuild.lines
   }
-  const stage = ins.slice(0, at[0]), state = stage.slice(stage.findLastIndex((l) => /^FROM\s/i.test(l)) + 1).filter((l) => /^(ARG|WORKDIR)\s/i.test(l))
-  return ['cd /', ...[...state, ...ins.slice(at[0] + 1), ...instructions(serve.layer.join('\n'))].map(shellLine).filter((l) => l !== null)]
+  const before = ins.slice(0, at[0]), stage = before.slice(before.findLastIndex((l) => /^FROM\s/i.test(l)) + 1), shell = stageShell(stage)
+  const state = stage.filter((l) => /^(ARG|WORKDIR)\s/i.test(l))
+  return ['cd /', ...[...state, ...ins.slice(at[0] + 1), ...instructions(serve.layer.join('\n'))].map((l) => shellLine(l, shell)).filter((l) => l !== null)]
 }
 // the make script's head: every path of the base's tree (a NUL-separated list in the container) goes from /work, so a file
 // the product deleted is gone and an untracked build output stays; then the commit's export, copied in at /tmp/bench-product
@@ -1127,10 +1137,14 @@ export function readinessOf(file, sha7, osha8) {
   return last
 }
 
-// the trusted path takes only a task's base or end (sample.tsv, tasks.json) or a seeded bug, so never an arm's product
-async function trustedCommit(ext, data, dir, head) {
+// the trusted path takes only a task's base or end (sample.tsv, tasks.json) or a seeded bug, so never an arm's product. Each
+// base and end is resolved in the task repo and compared whole: a commit sharing only a short sha's prefix is not the task's
+export async function trustedCommit(ext, data, dir, head) {
   const f = join(data, 'tasks.json'), tasks = existsSync(f) ? Object.values(JSON.parse(readFileSync(f, 'utf8'))) : []
-  if ([...sampleRows(ext), ...tasks].some((r) => [r.base, r.end].some((c) => typeof c === 'string' && c.length >= 7 && head.startsWith(c)))) return true
+  for (const c of new Set([...sampleRows(ext), ...tasks].flatMap((r) => [r.base, r.end]).filter((x) => typeof x === 'string' && x))) {
+    const r = await sp(['git', '-C', dir, 'rev-parse', '--verify', '-q', `${c}^{commit}`])
+    if (r.code === 0 && r.out.trim() === head) return true // one that does not resolve here (another repo's, ambiguous) is not this commit
+  }
   return (await must(['git', '-C', dir, 'for-each-ref', '--points-at', 'HEAD', 'refs/seeded/'], 'git for-each-ref')).trim() !== ''
 }
 

@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { withExport } from '../bench/env.mjs'
-import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, productImage, recordDocker, removeOut, removeRecorded, runEnd, word } from '../bench/ext.mjs'
+import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, productImage, recordDocker, removeOut, removeRecorded, runEnd, trustedCommit, word } from '../bench/ext.mjs'
 import { oracleFiles } from '../bench/grade.mjs'
 import { oracleSha } from '../bench/lib/oracle.mjs'
 import { releaseRoot } from './bench-root.mjs'
@@ -893,3 +893,15 @@ dtest('the product is made with no network (needs BENCH_EXT_DOCKER=1)', async ()
   expect(lines).toContain('lo')
   expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
 }, 600000)
+
+test('the trusted gate compares the task shas whole, never by prefix', async () => {
+  const data = join(tmp, `trust-${rand()}`), ext = join(data, 'ext')
+  mkdirSync(ext, { recursive: true })
+  writeFileSync(join(ext, 'sample.tsv'), `${SAMPLE_HEAD}\n`) // no external task: only tasks.json's short shas
+  writeFileSync(join(data, 'tasks.json'), JSON.stringify({ r1: { base: c0.slice(0, 7), end: c1.slice(0, 7) }, r2: { base: 'nosuchref', end: 'deadbeef' } }))
+  const twin = c1.slice(0, 7) + (c1.endsWith('0') ? '1' : '0').repeat(33) // shares only the 7-hex prefix with the end
+  expect(await trustedCommit(ext, data, fx, twin)).toBe(false)
+  expect(await trustedCommit(ext, data, fx, c1)).toBe(true)
+  expect(await trustedCommit(ext, data, fx, c0)).toBe(true)
+  expect(await trustedCommit(ext, data, fx, c2)).toBe(false)
+})

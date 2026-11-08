@@ -234,6 +234,18 @@ test('a recipe that copies the repo twice is refused', () => {
     expect(() => rebuildLines(recipe, { layer: [line] })).toThrow(what)
 })
 
+test('the RUN lines keep the shell of the final stage at the copy, and a SHELL that is not JSON is refused', () => {
+  const at = (d) => rebuildLines({ ...recipe, dockerfile: d }, { layer: ['RUN echo $0'] })
+  expect(at('FROM a\nSHELL ["/bin/bash","-o","pipefail","-c"]\nCOPY . /work\nRUN false | true\nRUN ["true"]\n')).toEqual(
+    ['cd /', "'/bin/bash' '-o' 'pipefail' '-c' 'false | true'", "'true'", "'/bin/bash' '-o' 'pipefail' '-c' 'echo $0'"])
+  expect(at('FROM a\nSHELL ["/bin/bash","-c"]\nFROM b\nCOPY . /work\nRUN false | true\n')).toEqual(['cd /', "sh -c 'false | true'", "sh -c 'echo $0'"]) // another stage's
+  for (const d of ['FROM a\nSHELL /bin/bash -c\nCOPY . /work\n', 'FROM a\nSHELL []\nCOPY . /work\n']) expect(() => at(d)).toThrow('rebuild.json')
+})
+
+test('a blank or comment line inside a continuation is skipped, as Docker does', () => {
+  expect(rebuildLines({ ...recipe, dockerfile: 'FROM a\nCOPY . /work\nRUN apk add \\\nx \\\n\n  # note\ny\nRUN true\n' }, { layer: [] })).toEqual(['cd /', "sh -c 'apk add x y'", "sh -c 'true'"])
+})
+
 test('rebuild.json replaces the recipe lines', () => {
   expect(rebuildLines(recipe, { layer: ['USER node'] }, { lines: ['npm ci --offline', 'cd web && npm run build'] })).toEqual(['npm ci --offline', 'cd web && npm run build'])
   for (const bad of [{}, { lines: 'npm ci' }, { lines: [1] }]) expect(() => rebuildLines(recipe, { layer: [] }, bad)).toThrow('rebuild.json is not { lines: [shell lines] }')
