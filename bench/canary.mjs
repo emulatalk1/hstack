@@ -15,7 +15,8 @@ import { runArm } from './run-arm.mjs'
 
 const USAGE = 'usage: bun bench/canary.mjs run <task> | report | diagnose'
 const SEED = 'hstack-bench-2026-10-27' // the extended verdict's bootstrap seed (prereg 7.3)
-const K = 2, ATTEMPTS = 2, CACHE_LIMIT = 15e9, PAIRS = 3, MACHINE_RUNS = 2, ARMS = ['B', 'B-']
+const K = 2, ATTEMPTS = 2, CACHE_LIMIT = 15e9, PAIRS = 3, MACHINE_RUNS = 2
+export const ARMS = ['B', 'B-']
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
 const fx = (x, digits = 2) => (typeof x === 'number' ? x.toFixed(digits) : 'none')
 class Stop extends Error {}

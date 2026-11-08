@@ -19,8 +19,8 @@ const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>]
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
-const dataDir = () => dirname(resolve(process.env.HSTACK_BENCH_MACHINE))
-const readPairs = (src) => readFileSync(join(src, 'pairs.tsv'), 'utf8').split('\n').slice(1).filter(Boolean)
+export const dataDir = () => dirname(resolve(process.env.HSTACK_BENCH_MACHINE))
+export const readPairs = (src) => readFileSync(join(src, 'pairs.tsv'), 'utf8').split('\n').slice(1).filter(Boolean)
   .map((l) => { const [commit, task, kind, hunks] = l.split('\t'); return { commit, task, kind, hunks: hunks ? hunks.split(',') : [] } })
 
 // { file, old } per hunk of a -U0 diff; a deleted file keeps its old path. `---`/`+++` are headers only between a
@@ -100,13 +100,9 @@ function finalReply(src, r, task) {
   return { runs: 0, text: '' }
 }
 
-async function label(taskPath, r, task, agent) {
-  if (!['1', '2'].includes(r)) throw new Error(USAGE)
-  const { repo } = await loadTask(taskPath)
-  const data = dataDir(), src = join(data, 'sources')
+// the labellers' task line and one line per pair, as their prompt gives them (step 9's labels page shows the same)
+export async function labelLines(data, repo, task, list) {
   const tasks = await Bun.file(join(data, 'tasks.json')).json()
-  const list = readPairs(src).filter((p) => p.task === task)
-  if (!list.length) throw new Error(`no pairs of ${task} in pairs.tsv`)
   const subjects = new Map(readRows(data, tasks).map((x) => [x.commit, x.subject]))
   const lines = []
   for (const p of list) {
@@ -115,7 +111,17 @@ async function label(taskPath, r, task, agent) {
     lines.push(`- ${p.commit} (${p.kind}): ${subject}\n  hunks: ${hunks}`)
   }
   const { no, plan, base, end } = tasks[task]
-  const prompt = `${readFileSync(join(data, 'briefs/label.md'), 'utf8')}\n## The task\n\n${task}: plan ${no} (\`${plan}\`), its commits ${base}..${end} (first parent).\n\n## The commits (${list.length})\n\n${lines.join('\n')}\n`
+  return { taskLine: `${task}: plan ${no} (\`${plan}\`), its commits ${base}..${end} (first parent).`, lines }
+}
+
+async function label(taskPath, r, task, agent) {
+  if (!['1', '2'].includes(r)) throw new Error(USAGE)
+  const { repo } = await loadTask(taskPath)
+  const data = dataDir(), src = join(data, 'sources')
+  const list = readPairs(src).filter((p) => p.task === task)
+  if (!list.length) throw new Error(`no pairs of ${task} in pairs.tsv`)
+  const { taskLine, lines } = await labelLines(data, repo, task, list)
+  const prompt = `${readFileSync(join(data, 'briefs/label.md'), 'utf8')}\n## The task\n\n${taskLine}\n\n## The commits (${list.length})\n\n${lines.join('\n')}\n`
   const promptFile = join(src, 'prompts', `label-${task}.md`)
   mkdirSync(dirname(promptFile), { recursive: true })
   // both labellers get the same text; it is written only when it differs, so a running labeller never sees it change
@@ -1069,32 +1075,43 @@ async function split(c, agent, validate) {
 const tsvOut = (f, head, rows) => writeFileSync(f, [head.join('\t'), ...rows.map((r) => r.join('\t'))].join('\n') + '\n')
 
 // ruling 16: the step 9 queue over the classified tasks of each set; exit 3 when a set's pooled agreement is not usable
-async function queue() {
-  const data = dataDir(), ext = join(data, 'ext'), q = join(data, 'step9')
-  const seed = seedOf(data)
+// the pools ruling 16 draws from (step 9's cold swap rebuilds them): per file, [set, [[task, id], ...]] and the count per set
+export function queuePools(data) {
+  const ext = join(data, 'ext')
   const sampleFile = join(ext, 'sample.tsv'), [head, ...rows] = existsSync(sampleFile) ? readFileSync(sampleFile, 'utf8').trim().split('\n').map((l) => l.split('\t')) : [[]]
   const stackOf = new Map(rows.map((r) => [r[head.indexOf('task')], r[head.indexOf('stack')]]))
   const done = (t) => existsSync(join(data, t, 'agreement.json'))
   const sets = [['task-repo', Object.keys(readJson(join(data, 'tasks.json')) ?? {}).filter(done)], ['external', [...stackOf.keys()].filter(done)]]
   const ctx = (t) => ({ data, task: t, dir: join(data, t) })
+  const groups = [['task-repo', sets[0][1]], ...[...new Set(sets[1][1].map((t) => stackOf.get(t)))].sort().map((s) => [s, sets[1][1].filter((t) => stackOf.get(t) === s)])]
+  const s71 = groups.map(([g, ts]) => [g, ts.flatMap((t) => (clManifest(ctx(t)) ?? []).filter((e) => e.dropped !== true && e.interface !== 'none' && SAMPLE_71.includes(clVerdict(ctx(t), e))).map((e) => [t, e.id]))])
+  // 7.2: only checks both raters gave the same traceable or not traceable label, never a bucket a rule assigned
+  const agreed = (t) => ['classify', ...splitRounds({ dir: join(data, t) }, readJson(join(data, t, 'agreement.json'))).map((x) => x.name)].flatMap((n) => {
+    const l2 = new Map((readJson(join(data, t, `${n}-2.json`)) ?? []).map((x) => [x.id, x.label]))
+    return (readJson(join(data, t, `${n}-1.json`)) ?? []).filter((x) => x.label !== 'partly' && l2.get(x.id) === x.label).map((x) => [t, x.id])
+  })
+  const s72 = sets.map(([g, ts]) => [g, ts.flatMap(agreed)])
+  return { sets, pools: { 'sample-7.1': { n: 10, sets: s71 }, 'sample-7.2': { n: 20, sets: s72 }, inputs: { n: 2, sets: sets.map(([g, ts]) => [g, ts.map((t) => [t, t])]) } } }
+}
+// a pool's pick: [set, task, id] rows; an id twice in a pool counts once, under its last task
+export const poolKeys = (items) => new Map(items.map(([t, id]) => [id, t]))
+export const queueDraw = ({ n, sets }, seed) => sets.flatMap(([g, items]) => { const owner = poolKeys(items); return queuePick([...owner.keys()], n, seed).map((id) => [g, owner.get(id), id]) })
+
+async function queue() {
+  const data = dataDir(), q = join(data, 'step9')
+  const seed = seedOf(data)
+  const { sets, pools } = queuePools(data)
   mkdirSync(q, { recursive: true })
   const src = join(data, 'sources/labels.tsv')
   const step9 = existsSync(src) ? readFileSync(src, 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')).filter((r) => r[5] === 'step9').map((r) => r.slice(0, 3)) : []
   tsvOut(join(q, 'labels.tsv'), ['commit', 'task', 'kind'], step9)
   const disputed = sets.flatMap(([, ts]) => ts.flatMap((t) => { const a = readJson(join(data, t, 'agreement.json')); return [...a.disputed, ...splitRounds({ dir: join(data, t) }, a).flatMap((x) => x.disputed ?? [])].map((id) => [t, id]) }))
   tsvOut(join(q, 'classify.tsv'), ['task', 'id'], disputed)
-  const pick = (name, ids, n) => { const owner = new Map(ids.map(([t, id]) => [id, t])); return queuePick([...owner.keys()], n, seed).map((id) => [name, owner.get(id), id]) }
-  const groups = [['task-repo', sets[0][1]], ...[...new Set(sets[1][1].map((t) => stackOf.get(t)))].sort().map((s) => [s, sets[1][1].filter((t) => stackOf.get(t) === s)])]
-  const s71 = groups.flatMap(([g, ts]) => pick(g, ts.flatMap((t) => (clManifest(ctx(t)) ?? []).filter((e) => e.dropped !== true && e.interface !== 'none' && SAMPLE_71.includes(clVerdict(ctx(t), e))).map((e) => [t, e.id])), 10))
+  const s71 = queueDraw(pools['sample-7.1'], seed)
   tsvOut(join(q, 'sample-7.1.tsv'), ['set', 'task', 'id'], s71)
-  // 7.2: only checks both raters gave the same traceable or not traceable label, never a bucket a rule assigned
-  const agreed = (t) => ['classify', ...splitRounds({ dir: join(data, t) }, readJson(join(data, t, 'agreement.json'))).map((x) => x.name)].flatMap((n) => {
-    const l2 = new Map((readJson(join(data, t, `${n}-2.json`)) ?? []).map((x) => [x.id, x.label]))
-    return (readJson(join(data, t, `${n}-1.json`)) ?? []).filter((x) => x.label !== 'partly' && l2.get(x.id) === x.label).map((x) => [t, x.id])
-  })
-  const s72 = sets.flatMap(([g, ts]) => pick(g, ts.flatMap(agreed), 20))
+  const s72 = queueDraw(pools['sample-7.2'], seed)
   tsvOut(join(q, 'sample-7.2.tsv'), ['set', 'task', 'id'], s72)
-  const inputs = sets.flatMap(([g, ts]) => queuePick(ts, 2, seed).map((t) => [g, t]))
+  const inputs = queueDraw(pools.inputs, seed).map((r) => r.slice(0, 2))
   tsvOut(join(q, 'inputs.tsv'), ['set', 'task'], inputs)
   console.log(`queue: labels ${step9.length}, classify ${disputed.length}, sample-7.1 ${s71.length}, sample-7.2 ${s72.length}, inputs ${inputs.length}`)
   const stop = []
