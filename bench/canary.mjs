@@ -3,7 +3,7 @@
 // product graded right after its run, resuming from results/ and grades/; `report` scores and judges; `diagnose` (verdict fail only) is ruling 14.
 // A run stands when its record has machine null and the arm's configured model. Nothing here names a task, a stack or a model.
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { dataOf, DISK_FLOOR_GB, dockerDiskFree, daemon as dockerDaemon, must, oracleCommand, parseSize, readinessOf, sp, taskOf } from './ext.mjs'
 import { grade as gradeRun, resolveCommit } from './grade.mjs'
 import { armArgs } from './lib/arm.mjs'
@@ -15,11 +15,12 @@ import { runArm } from './run-arm.mjs'
 
 const USAGE = 'usage: bun bench/canary.mjs run <task> | report | diagnose'
 const SEED = 'hstack-bench-2026-10-27' // the extended verdict's bootstrap seed (prereg 7.3)
-const K = 2, ATTEMPTS = 2, CACHE_LIMIT = 15e9, PAIRS = 3, MACHINE_RUNS = 2
+export const ATTEMPTS = 2
+const K = 2, CACHE_LIMIT = 15e9, PAIRS = 3, MACHINE_RUNS = 2
 export const ARMS = ['B', 'B-']
-const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
-const fx = (x, digits = 2) => (typeof x === 'number' ? x.toFixed(digits) : 'none')
-class Stop extends Error {}
+export const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
+export const fx = (x, digits = 2) => (typeof x === 'number' ? x.toFixed(digits) : 'none')
+export class Stop extends Error {}
 
 // ruling 1: the first 2 tasks of each stack in sample.tsv order
 export function canaryTasks(data) {
@@ -36,15 +37,15 @@ export function extendedTasks(data) {
 }
 
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const records = (data, task) => {
-  const re = new RegExp(`^${reEsc(task)}-(B-?)-(\\d+)\\.json$`), dir = join(data, 'results')
+export const records = (data, task) => {
+  const re = new RegExp(`^${reEsc(task)}-([A-Za-z]+-?)-(\\d+)\\.json$`), dir = join(data, 'results')
   return (existsSync(dir) ? readdirSync(dir) : []).filter((f) => re.test(f)).map((f) => readJson(join(dir, f))).filter(Boolean)
 }
 // the k lowest-numbered runs of an arm that are not the machine's and ran on the arm's model now configured
-const standing = (recs, arm, cfg) => recs.filter((r) => r.arm === arm && r.machine === null && r.model === (armArgs(arm, cfg).model ?? null)).sort((a, b) => a.run - b.run).slice(0, K)
+export const standing = (recs, arm, cfg, k = K) => recs.filter((r) => r.arm === arm && r.machine === null && r.model === (armArgs(arm, cfg).model ?? null)).sort((a, b) => a.run - b.run).slice(0, k)
 
 // the readiness of the run that wrote this grade: its commit and its oracle (step 11 ruling 7)
-const readiness = (data, task, g) => readinessOf(join(data, task, 'build/readiness.tsv'), g?.commit?.slice(0, 7), g?.oracleSha?.slice(0, 8))
+export const readiness = (data, task, g) => readinessOf(join(data, task, 'build/readiness.tsv'), g?.commit?.slice(0, 7), g?.oracleSha?.slice(0, 8))
 // the task file the grades use: the task's own with only `oracle` changed, so the oracle-run is this checkout's, not the one the
 // task file (hashed in the locks) names. Written when missing or different; runArm keeps env/<task>.json, it never runs the oracle.
 function canaryTaskFile(data, task) {
@@ -53,21 +54,25 @@ function canaryTaskFile(data, task) {
   if (!existsSync(file) || readFileSync(file, 'utf8') !== text) { mkdirSync(join(data, 'env/canary'), { recursive: true }); writeFileSync(file, text) }
   return file
 }
-const gradeFile = (data, task, sha) => join(data, task, 'grades', `${sha.slice(0, 7)}.json`)
+export const gradeFile = (data, task, sha, rel = 'grades') => join(data, task, rel, `${sha.slice(0, 7)}.json`)
 // a grade is good when it is this commit's, has a JUnit, the app got ready and some check gave a result (a runner that dies
 // after ready leaves a placeholder JUnit, every check `error`)
-const good = (data, task, sha) => {
-  const g = readJson(gradeFile(data, task, sha))
+export const good = (data, task, sha, rel = 'grades') => {
+  const g = readJson(gradeFile(data, task, sha, rel))
   return g?.commit === sha && g.junit === 'ok' && readiness(data, task, g) === 'ready' && g.checks?.some((c) => c.result !== 'error') === true
 }
-const attemptsFile = (data) => join(data, 'canary/attempts.json')
-const attemptsOf = (data) => readJson(attemptsFile(data)) ?? {}
-function bump(data, sha) {
-  const a = attemptsOf(data)
-  a[sha] = (a[sha] ?? 0) + 1
-  mkdirSync(join(data, 'canary'), { recursive: true })
-  writeFileSync(attemptsFile(data), JSON.stringify(a, null, 2) + '\n')
+// a driver's own kind of run: its slots, its k, the task file its grades use, the oracle kinds a product is graded with, its attempts file
+// and the env folder its arms and shas read. The canary's is below; the trial (bench/trial.mjs) passes its own.
+export const ATTEMPTS_FILE = 'canary/attempts.json'
+export const attemptsOf = (data, file = ATTEMPTS_FILE) => readJson(join(data, file)) ?? {}
+function bump(data, key, file) {
+  const a = attemptsOf(data, file)
+  a[key] = (a[key] ?? 0) + 1
+  mkdirSync(dirname(join(data, file)), { recursive: true })
+  writeFileSync(join(data, file), JSON.stringify(a, null, 2) + '\n')
 }
+export const attemptKey = (kind, sha) => (kind.grades === 'grades' ? sha : `${kind.grades}:${sha}`)
+const CANARY = { slots: ['B:1', 'B:2', 'B-:1', 'B-:2'], k: K, envDir: 'env', taskFile: canaryTaskFile, kinds: () => [{ oracle: 'oracle', grades: 'grades' }], attempts: ATTEMPTS_FILE }
 
 // ruling 10: the machine's failure is the daemon or the disk, never a grade's result
 async function machineDown(c) {
@@ -76,20 +81,25 @@ async function machineDown(c) {
   return free !== null && free < DISK_FLOOR_GB
 }
 
-// grade the run's product until it has a good grade or ATTEMPTS grades; { label, did }
-async function gradeProduct(c, task, rec) {
-  const sha = await shaOf(c, task, rec), env = canaryTaskFile(c.data, task), file = gradeFile(c.data, task, sha)
-  let did = false
-  while (!good(c.data, task, sha) && (attemptsOf(c.data)[sha] ?? 0) < ATTEMPTS) {
-    did = true
-    rmSync(file, { force: true }) // an attempt that writes nothing must not leave the one before it standing
-    // a throw is never an attempt (its message may be sealed, so it is not printed): the driver stops
-    try { await c.grade([env, join(c.data, task, 'oracle'), '--at', sha, '--sealed']) } catch { rmSync(file, { force: true }); throw new Stop('machine') }
-    if (!good(c.data, task, sha) && (await machineDown(c))) { rmSync(file, { force: true }); throw new Stop('machine') } // an attempt the machine spoiled is not counted
-    bump(c.data, sha)
+// grade the run's product with each oracle kind until it has a good grade or ATTEMPTS grades; { label, did }
+export async function gradeProduct(c, task, rec, o = CANARY) {
+  const sha = await shaOf(c, task, rec), env = o.taskFile(c.data, task)
+  let did = false, ok = true, again = false
+  for (const kind of o.kinds(c.data, task)) {
+    const file = gradeFile(c.data, task, sha, kind.grades), key = attemptKey(kind, sha), n = () => attemptsOf(c.data, o.attempts)[key] ?? 0
+    while (!good(c.data, task, sha, kind.grades) && n() < ATTEMPTS) {
+      did = true
+      rmSync(file, { force: true }) // an attempt that writes nothing must not leave the one before it standing
+      // a throw is never an attempt (its message may be sealed, so it is not printed): the driver stops
+      try { await c.grade([env, join(c.data, task, kind.oracle), '--at', sha, '--sealed']) } catch { rmSync(file, { force: true }); throw new Stop('machine') }
+      if (!good(c.data, task, sha, kind.grades) && (await machineDown(c))) { rmSync(file, { force: true }); throw new Stop('machine') } // an attempt the machine spoiled is not counted
+      bump(c.data, key, o.attempts)
+    }
+    ok &&= good(c.data, task, sha, kind.grades)
+    again ||= n() > 1
   }
   // under --sealed a memory kill reads as no result, so it counts as noresult like any other
-  return { did, label: good(c.data, task, sha) ? ((attemptsOf(c.data)[sha] ?? 0) > 1 ? 'again' : 'ok') : 'noresult' }
+  return { did, label: ok ? (again ? 'again' : 'ok') : 'noresult' }
 }
 
 // every stop is exit 3: a throw is told on stderr and read as the machine's when the daemon or disk is down, else a refusal
@@ -102,18 +112,18 @@ async function stopOnThrow(c, fn) {
 }
 const shaOf = (c, task, rec) => stopOnThrow(c, () => c.sha(task, rec.branch))
 
-async function runTask(c, task) {
-  const cfg = readJson(join(c.data, 'arms.json')), env = join(c.data, 'env', `${task}.json`)
+export async function runTask(c, task, o = CANARY) {
+  const cfg = readJson(join(c.data, 'arms.json')), env = join(c.data, o.envDir, `${task}.json`)
   const base = taskOf(join(c.data, 'ext'), task).base
   if ((await c.cacheBytes()) > CACHE_LIMIT) await c.prune()
   // ruling 12: the order of the 4 slots; the j-th slot of an arm is that arm's j-th standing run
-  const seq = queuePick(['B:1', 'B:2', 'B-:1', 'B-:2'].map((s) => `${task}:${s}`), 4, seedOf(c.data)).map((s) => s.split(':')[1])
+  const seq = queuePick(o.slots.map((s) => `${task}:${s}`), o.slots.length, seedOf(c.data)).map((s) => s.split(':')[1])
   const slot = {}
   for (const arm of seq) {
     const j = (slot[arm] = (slot[arm] ?? 0) + 1)
     let rec, ran = false, machineRuns = 0
     for (;;) {
-      const recs = records(c.data, task), have = standing(recs, arm, cfg)
+      const recs = records(c.data, task), have = standing(recs, arm, cfg, o.k)
       if (have.length >= j) { rec = have[j - 1]; break }
       const n = Math.max(0, ...recs.filter((r) => r.arm === arm).map((r) => r.run)) + 1
       const code = await stopOnThrow(c, () => c.runArm([env, arm, String(n), '--input', join(c.data, task, 'input.md'), '--at', base]))
@@ -127,9 +137,9 @@ async function runTask(c, task) {
         if (++machineRuns >= MACHINE_RUNS) throw new Stop('machine') // the box keeps failing: stop before more tokens go
         continue // the machine's failure: the next number takes this slot's place
       }
-      if (!standing(records(c.data, task), arm, cfg).some((r) => r.run === n)) throw new Error(`${task} ${arm} ${n}: the record does not stand after exit ${code}`)
+      if (!standing(records(c.data, task), arm, cfg, o.k).some((r) => r.run === n)) throw new Error(`${task} ${arm} ${n}: the record does not stand after exit ${code}`)
     }
-    const { did, label } = await gradeProduct(c, task, rec)
+    const { did, label } = await gradeProduct(c, task, rec, o)
     if (ran || did) console.log(`${task} ${arm} ${rec.run} ${rec.status} grade=${label}`)
   }
   return 0
@@ -221,25 +231,34 @@ async function gitDiff(data, task, from, to) {
   return out
 }
 
-export async function canary(args, inj = {}) {
-  const [cmd, task, ...rest] = args, data = dataOf()
-  const c = { data, runArm, grade: gradeRun, daemon: dockerDaemon, diskFree: dockerDiskFree,
+// the driver's context: the real docker, grade and runArm unless injected; `envDir` is where the task files of the arms and the shas are
+export function context(data, envDir, inj = {}) {
+  return { data, runArm, grade: gradeRun, daemon: dockerDaemon, diskFree: dockerDiskFree,
     cacheBytes: async () => { // the build cache row of `docker system df`; NaN when it cannot be told (no prune)
       const r = await sp(['docker', 'system', 'df', '--format', '{{.Type}}\t{{.Size}}'])
       const row = r.code ? null : r.out.split('\n').map((l) => l.split('\t')).find(([t]) => t === 'Build Cache')
       return row ? parseSize(row[1]) : NaN
     },
     prune: () => must(['docker', 'builder', 'prune', '-f'], 'docker builder prune', { timeoutSec: 1800 }),
-    sha: async (t, branch) => resolveCommit((await loadTask(join(data, 'env', `${t}.json`))).repo, `refs/heads/${branch}`),
+    sha: async (t, branch) => resolveCommit((await loadTask(join(data, envDir, `${t}.json`))).repo, `refs/heads/${branch}`),
     diff: (t, from, to) => gitDiff(data, t, from, to), ...inj }
+}
+
+// a Stop is told and exits 3
+export async function runStopped(c, task, o = CANARY) {
+  try { return await runTask(c, task, o) } catch (e) {
+    if (!(e instanceof Stop)) throw e
+    console.log(`${task} stopped: ${e.message}`)
+    return 3
+  }
+}
+
+export async function canary(args, inj = {}) {
+  const [cmd, task, ...rest] = args, data = dataOf(), c = context(data, 'env', inj)
   if (cmd === 'report' && args.length === 1) return report(c)
   if (cmd === 'diagnose' && args.length === 1) return diagnose(c)
   if (cmd === 'run' && /^[a-z0-9][a-z0-9_-]*$/.test(task ?? '') && !rest.length) {
-    try { return await runTask(c, task) } catch (e) {
-      if (!(e instanceof Stop)) throw e
-      console.log(`${task} stopped: ${e.message}`)
-      return 3
-    }
+    return runStopped(c, task)
   }
   throw new Error(USAGE)
 }
