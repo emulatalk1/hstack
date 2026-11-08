@@ -4,14 +4,16 @@
 // the interface sheet, up to 5 resumes until the agent replies DONE, and the product comes back as a git bundle, fetched into the
 // task repo as bench/<task>-<arm>-<n>. A run the machine failed (machine in the record) stops at once, has no branch and exits 3.
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { agentEnv } from './agent-replay.mjs'
-import { enterBox, freshRepo } from './box.mjs'
+import { enterBox, freshRepo, pluginExport, readToken } from './box.mjs'
 import { gitWith, ROOT, withExport } from './env.mjs'
+import { PRIVATE_SET, taskOf } from './ext.mjs'
 import { resolveCommit } from './grade.mjs'
 import { apiError, fallbackOf, fellBack, finalText, toolUses, usage } from './lib/agent.mjs'
-import { armArgs, countInterventions, initInfo, probeOk, RESUMES } from './lib/arm.mjs'
+import { armArgs, countInterventions, initInfo, probeOk, proxyConfig, RESUMES, turnLimit } from './lib/arm.mjs'
 import { loadTask } from './lib/task.mjs'
 
 const USAGE = 'usage: bun bench/run-arm.mjs <task.json> <B|B-|H|W> <run-no> --input <data>/<task>/input.md --at <base>'
@@ -22,36 +24,41 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
 const SAFE = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false']
 const agentGit = (dir, ...args) => gitWith({ env: agentEnv(), timeout: 300_000 }, dir, ...args)
 
-async function loadArms(path) {
+// arms.json. plugins.H and plugins.W: step 11 ruling 2's entries, { name, repo, commit, paths, sha256 } or { name, dir, version, paths,
+// sha256 } for a plugin pinned by version (repo and dir relative to this file); turnTimeoutSec one number or { external, re };
+// proxy what the probe found (no default: see proxyConfig)
+export async function loadArms(path) {
   const bad = (why) => { throw new Error(`arms ${path}: ${why}`) }
   const c = await Bun.file(path).json().catch(() => null)
-  if (!c || typeof c !== 'object' || Array.isArray(c)) bad('must be { model?, smallModel, cli, plugins: { H: [], W: [] }, turnTimeoutSec? }')
+  if (!c || typeof c !== 'object' || Array.isArray(c)) bad('must be { model?, smallModel, cli, plugins: { H: [], W: [] }, turnTimeoutSec?, proxy }')
   if (c.model !== undefined && (typeof c.model !== 'string' || !c.model)) bad('model must be a non-empty string')
   if (typeof c.smallModel !== 'string' || !c.smallModel) bad('smallModel must be a non-empty string')
   if (typeof c.cli !== 'string' || !c.cli) bad('cli must be the path of the CLI binary, relative to this file')
   const cli = resolve(dirname(path), c.cli)
   if (!statSync(cli, { throwIfNoEntry: false })?.isFile()) bad(`cli ${cli} is not a file`)
   const turnTimeoutSec = c.turnTimeoutSec ?? 14400
-  if (!Number.isInteger(turnTimeoutSec) || turnTimeoutSec <= 0) bad('turnTimeoutSec must be a positive integer')
+  const other = typeof turnTimeoutSec === 'object' && turnTimeoutSec ? Object.keys(turnTimeoutSec).filter((k) => k !== 'external' && k !== PRIVATE_SET.stack) : []
+  if (other.length) bad(`turnTimeoutSec has no set ${other[0]}: it is one number or { external, ${PRIVATE_SET.stack} }`)
+  try { for (const set of ['external', PRIVATE_SET.stack]) turnLimit(turnTimeoutSec, set) } catch (e) { bad(e.message) }
+  try { proxyConfig(c.proxy) } catch (e) { bad(e.message) }
   const plugins = {}
   for (const arm of ['H', 'W']) {
     const l = c.plugins?.[arm]
-    if (!Array.isArray(l) || !l.every((d) => typeof d === 'string')) bad(`plugins.${arm} must be an array of plugin dirs`)
-    plugins[arm] = l.map((d) => resolve(dirname(path), d))
-    for (const d of plugins[arm]) if (!statSync(d, { throwIfNoEntry: false })?.isDirectory()) bad(`plugin dir ${d} does not exist`)
+    if (!Array.isArray(l)) bad(`plugins.${arm} must be an array of plugin entries`)
+    plugins[arm] = l.map((e, i) => {
+      const at = `plugins.${arm}[${i}]`
+      if (!e || typeof e !== 'object' || Array.isArray(e)) bad(`${at} must be { name, repo, commit, paths, sha256 } or { name, dir, version, paths, sha256 }`)
+      if (typeof e.name !== 'string' || !ID.test(e.name)) bad(`${at} name must match ${ID.source}`)
+      if (!Array.isArray(e.paths) || !e.paths.every((x) => typeof x === 'string')) bad(`${at} paths must be the plugin's component folders`)
+      if (typeof e.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(e.sha256)) bad(`${at} sha256 must be the export's sha256`)
+      const byCommit = e.repo !== undefined, where = resolve(dirname(path), byCommit ? String(e.repo) : String(e.dir ?? ''))
+      if (byCommit && (typeof e.commit !== 'string' || !/^[0-9a-f]{40}$/.test(e.commit))) bad(`${at} commit must be a full sha`)
+      if (!byCommit && (typeof e.dir !== 'string' || typeof e.version !== 'string' || !e.version)) bad(`${at} must name a repo and commit, or a dir and version`)
+      if (!statSync(where, { throwIfNoEntry: false })?.isDirectory()) bad(`${at} ${byCommit ? 'repo' : 'dir'} ${where} does not exist`)
+      return byCommit ? { name: e.name, repo: where, commit: e.commit, paths: e.paths, sha256: e.sha256 } : { name: e.name, dir: where, version: e.version, paths: e.paths, sha256: e.sha256 }
+    })
   }
-  return { model: c.model, smallModel: c.smallModel, cli, plugins, turnTimeoutSec }
-}
-
-// the name a plugin dir shows at init: its manifest name, else the folder name
-const pluginName = async (dir) => (await Bun.file(join(dir, '.claude-plugin/plugin.json')).json().catch(() => null))?.name ?? basename(dir)
-
-// what each plugin dir was at the run: commit null when it is not in a git repo
-async function pluginInfo(dir) {
-  const head = await Bun.$`git -C ${dir} rev-parse HEAD`.nothrow().quiet()
-  const commit = head.exitCode === 0 ? head.stdout.toString().trim() : null
-  const dirty = commit !== null && (await Bun.$`git -C ${dir} status --porcelain -- .`.quiet().text()).trim() !== ''
-  return { dir, name: await pluginName(dir), commit, dirty }
+  return { model: c.model, smallModel: c.smallModel, cli, plugins, turnTimeoutSec, proxy: c.proxy }
 }
 
 export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
@@ -66,14 +73,17 @@ export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
   if (!/^[1-9]\d*$/.test(runNo)) throw new Error(`run-no ${runNo} must be a positive integer`)
   const n = Number(runNo)
   const task = await loadTask(taskPath)
-  // shortcut: a real-estate arm needs Postgres inside its box, plan of step 11
-  if (task.db !== null) throw new Error('arm runs have no database guard yet')
+  // a task file with a host database (and its repo, the copy) is the trusted replays'; an arm runs on a box task file (db null), whose
+  // services run in its box and whose products land in the store
+  if (task.db !== null) throw new Error('a task file with a host database is not an arm\'s: run it on the task\'s box task file')
   const data = dirname(resolve(process.env.HSTACK_BENCH_MACHINE))
   const cfg = await loadArms(join(data, 'arms.json'))
-  const { model, pluginDirs, appendSystemPrompt, disallow } = armArgs(arm, cfg)
-  const plugins = await Promise.all(pluginDirs.map(pluginInfo)), expected = plugins.map((p) => p.name)
+  const { model, plugins: entries, appendSystemPrompt, disallow } = armArgs(arm, cfg)
+  const expected = entries.map((e) => e.name)
   const inputPath = resolve(flags.input), id = basename(dirname(inputPath))
   if (!ID.test(id)) throw new Error(`task id ${id} (the input's folder) must match ${ID.source}`)
+  // one limit for every task, or the limit of the task's set (the private set's stack, else external)
+  const turnTimeoutSec = turnLimit(cfg.turnTimeoutSec, typeof cfg.turnTimeoutSec === 'number' || taskOf(join(data, 'ext'), id).stack !== PRIVATE_SET.stack ? 'external' : PRIVATE_SET.stack)
   const input = await Bun.file(inputPath).text().catch(() => null)
   if (input === null) throw new Error(`input ${inputPath} is missing or unreadable`)
   const sheetPath = join(dirname(inputPath), 'interface.md'), sheet = await Bun.file(sheetPath).text().catch(() => null)
@@ -88,13 +98,24 @@ export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
   // settings hold no hook, every arm gets the same empty file, and interventions come from the turns answered with a resume (hookLines 0).
   // bench/responder-hook.mjs stays for a mode where the tool does reach the agent.
   // the run folder keeps the settings and every turn's raw stream-json (prereg 7.2 labels a sample; 3 reads model ids)
+  // ruling 2: each plugin as its allowlist export, equal to the sha256 arms.json recorded; and the token the box's proxy takes
+  const exports = mkdtempSync(join(tmpdir(), 'bench-plugins-'))
+  let plugins
+  try {
+    plugins = entries.map((e) => {
+      const dir = join(exports, e.name), { sha256 } = pluginExport({ ...e, out: dir })
+      if (sha256 !== e.sha256) throw new Error(`plugin ${e.name}: its export's sha256 ${sha256} is not the ${e.sha256} arms.json recorded`)
+      return { name: e.name, dir, record: e.repo ? { name: e.name, commit: e.commit, sha256 } : { name: e.name, version: e.version, sha256 } }
+    })
+    if (box === enterBox) readToken(join(data, 'arm/box.env')) // the real box's proxy needs it: refused here, before any Docker call
+  } catch (e) { rmSync(exports, { recursive: true, force: true }); throw e }
   const runDir = join(results, name), settings = join(runDir, 'settings.json')
   rmSync(runDir, { recursive: true, force: true }) // no stale turns from a killed earlier attempt
   mkdirSync(runDir, { recursive: true })
   await Bun.write(settings, '{}\n')
   const turns = []
   const turn = async (b, o, label) => {
-    const r = await b.turn({ model, pluginDirs, appendSystemPrompt, disallow, permissionMode: 'bypassPermissions', ...o })
+    const r = await b.turn({ model, appendSystemPrompt, disallow, permissionMode: 'bypassPermissions', ...o }) // the plugins are the box's
     await Bun.write(join(runDir, `${turns.length}-${label}.jsonl`), r.out)
     turns.push({ turn: label, code: r.code === 'timeout' ? null : r.code, timedOut: r.code === 'timeout' })
     return r
@@ -103,7 +124,7 @@ export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
   // dropSettings off: the task repo's own .claude/ reaches every arm alike
   return withExport(task, base, name, async (dir) => {
     await freshRepo(dir, base)
-    const b = await box({ data, task, id, name, base, repoGit: join(dir, '.git'), cli: cfg.cli, turnTimeoutSec: cfg.turnTimeoutSec, pluginDirs })
+    const b = await box({ data, task, id, name, base, repoGit: join(dir, '.git'), cli: cfg.cli, turnTimeoutSec, plugins: plugins.map((p) => ({ name: p.name, dir: p.dir })), proxy: cfg.proxy })
     try {
       const probe = await turn(b, { prompt: 'Reply OK.' }, 'probe') // its own session, the main run's model, plugins and settings
       let info, why
@@ -150,8 +171,10 @@ export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
         rmSync(bundle, { force: true })
       }
       const abandoned = reason !== null || machine !== null
+      let proxy = null
+      try { proxy = await b.proxyCounts() } catch (e) { console.error(e.message) } // a dead box's proxy may be gone too: the record is still written
       const rec = {
-        task: id, arm, run: n, base, model: model ?? null, version: info.version, plugins, sessionId, start, end: new Date().toISOString(),
+        task: id, arm, run: n, base, model: model ?? null, version: info.version, plugins: plugins.map((p) => p.record), proxy, sessionId, start, end: new Date().toISOString(),
         status: abandoned ? 'abandoned' : 'done', reason: machine ? 'machine' : reason, machine, resumes,
         interventions: countInterventions({ hookLines: 0, resumes, abandoned }), // hookLines 0: no hook under -p, see the settings above
         turns,
@@ -162,7 +185,7 @@ export async function runArm(args, { root = ROOT, box = enterBox } = {}) {
       console.log(machine ? `${name} machine ${machine}` : `${name} ${rec.status}`)
       return machine ? 3 : 0
     } finally { await b.leave() }
-  }, root)
+  }, root).finally(() => rmSync(exports, { recursive: true, force: true }))
 }
 
 if (import.meta.main) {

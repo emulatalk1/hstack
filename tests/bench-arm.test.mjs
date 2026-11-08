@@ -2,7 +2,9 @@ import { test, expect, afterAll } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { API_HOSTS, WEB_OFF, armArgs, boxArgs, countInterventions, fwScript, initInfo, netOk, netScript, probeOk, RESUMES } from '../bench/lib/arm.mjs'
+import { API_HOSTS, WEB_OFF, armArgs, boxArgs, countInterventions, fwScript, initInfo, netOk, netScript, parseCounts, probeOk, proxyConfig, RESUMES, turnLimit } from '../bench/lib/arm.mjs'
+import { pluginExport } from '../bench/box.mjs'
+import { loadArms } from '../bench/run-arm.mjs'
 import { claudeArgs } from '../bench/lib/agent.mjs'
 import { clean } from '../bench/env.mjs'
 import { ROOT, releaseRoot } from './bench-root.mjs'
@@ -40,11 +42,11 @@ test('a run that stops without DONE counts one intervention per resume', () => {
 })
 
 test('B and B- load no plugin, H and W load their list', () => {
-  const cfg = { model: 'big', smallModel: 'small', plugins: { H: ['/h', '/dep'], W: ['/w'] } }
-  expect(armArgs('B', cfg)).toEqual({ model: 'big', pluginDirs: [], appendSystemPrompt: undefined, disallow: ['WebSearch', 'WebFetch'] })
-  expect(armArgs('B-', cfg)).toEqual({ model: 'small', pluginDirs: [], appendSystemPrompt: 'Write no tests. Do not run or check your work. Stop after one pass.', disallow: ['WebSearch', 'WebFetch'] })
-  expect(armArgs('H', cfg)).toEqual({ model: 'big', pluginDirs: ['/h', '/dep'], appendSystemPrompt: undefined, disallow: ['WebSearch', 'WebFetch'] })
-  expect(armArgs('W', cfg)).toEqual({ model: 'big', pluginDirs: ['/w'], appendSystemPrompt: undefined, disallow: ['WebSearch', 'WebFetch'] })
+  const h = [{ name: 'h' }, { name: 'dep' }], w = [{ name: 'w' }], cfg = { model: 'big', smallModel: 'small', plugins: { H: h, W: w } }
+  expect(armArgs('B', cfg)).toEqual({ model: 'big', plugins: [], appendSystemPrompt: undefined, disallow: ['WebSearch', 'WebFetch'] })
+  expect(armArgs('B-', cfg)).toEqual({ model: 'small', plugins: [], appendSystemPrompt: 'Write no tests. Do not run or check your work. Stop after one pass.', disallow: ['WebSearch', 'WebFetch'] })
+  expect(armArgs('H', cfg)).toEqual({ model: 'big', plugins: h, appendSystemPrompt: undefined, disallow: ['WebSearch', 'WebFetch'] })
+  expect(armArgs('W', cfg)).toEqual({ model: 'big', plugins: w, appendSystemPrompt: undefined, disallow: ['WebSearch', 'WebFetch'] })
   expect(armArgs('B', { ...cfg, model: undefined }).model).toBeUndefined()
   expect(() => armArgs('X', cfg)).toThrow()
 })
@@ -95,7 +97,8 @@ writeFileSync(stub, `#!/usr/bin/env bun
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 const a = process.argv.slice(2), probe = a[1] === 'Reply OK.'
 const prev = existsSync(process.env.STUB_LOG) ? readFileSync(process.env.STUB_LOG, 'utf8').trim().split('\\n').length - 1 : 0 // main turns so far
-appendFileSync(process.env.STUB_LOG, JSON.stringify({ probe, args: a, cwd: process.cwd(), files: readdirSync(process.cwd()).sort(), env: Object.keys(process.env).filter((k) => /BENCH/.test(k)) }) + '\\n')
+const pd = a.includes('--plugin-dir') ? a[a.indexOf('--plugin-dir') + 1] : null, pluginFiles = pd ? [...new Bun.Glob('**/*').scanSync({ cwd: pd, dot: true })].sort() : []
+appendFileSync(process.env.STUB_LOG, JSON.stringify({ probe, args: a, cwd: process.cwd(), files: readdirSync(process.cwd()).sort(), env: Object.keys(process.env).filter((k) => /BENCH/.test(k)), pluginFiles }) + '\\n')
 const say = (o) => console.log(JSON.stringify(o))
 say({ type: 'system', subtype: 'init', claude_code_version: '9.9.9', tools: ['Bash'], slash_commands: [], plugins: JSON.parse(process.env.STUB_PLUGINS ?? '[]') })
 const model = probe ? 'probe-m' : process.env.STUB_MODEL ?? (a.includes('--model') ? a[a.indexOf('--model') + 1] : 'main-m')
@@ -115,7 +118,8 @@ say({ type: 'result', subtype: 'success', is_error: !probe && process.env.STUB_A
 chmodSync(stub, 0o755)
 
 const calls = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [])
-const arms = (o = {}) => writeFileSync(join(data, 'arms.json'), JSON.stringify({ smallModel: 'small-m', cli: stub, plugins: { H: [], W: [] }, turnTimeoutSec: 20, ...o }))
+const PROXY = { auth: 'authorization', betas: [], cliVar: 'ANTHROPIC_AUTH_TOKEN' }
+const arms = (o = {}) => writeFileSync(join(data, 'arms.json'), JSON.stringify({ smallModel: 'small-m', cli: stub, plugins: { H: [], W: [] }, turnTimeoutSec: 20, proxy: PROXY, ...o }))
 arms()
 // real: runArm's own default box, the production one
 const cli = async (args, env = {}, { real = false } = {}) => {
@@ -183,17 +187,63 @@ test('run-arm: DONE on the main turn is zero interventions and no resume', async
   expect(result('p1-B-5')).toMatchObject({ status: 'done', resumes: [], interventions: 0 })
 })
 
-test('run-arm records each plugin dir with its name, commit and whether it is dirty', async () => {
-  const hp = join(tmp, 'hp-repo'), plain = join(tmp, 'plain')
-  mkdirSync(join(hp, '.claude-plugin'), { recursive: true }); mkdirSync(plain)
-  writeFileSync(join(hp, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'hp' }))
-  const hg = (...a) => Bun.spawnSync(['git', '-C', hp, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
-  hg('init', '-q'); hg('add', '.'); hg('commit', '-qm', 'p'); writeFileSync(join(hp, 'new.md'), 'x')
-  arms({ plugins: { H: [hp, plain], W: [] } })
-  const r = await cli(run('H', 1), { STUB_DONE: '0', STUB_PLUGINS: JSON.stringify([{ name: 'hp', path: hp }, { name: 'plain', path: plain }]) })
-  expect(r).toMatchObject({ code: 0, stdout: 'p1-H-1 done\n' })
-  expect(result('p1-H-1').plugins).toEqual([{ dir: hp, name: 'hp', commit: hg('rev-parse', 'HEAD'), dirty: true }, { dir: plain, name: 'plain', commit: null, dirty: false }])
-  arms()
+// a plugin repo with its components and the repo-only folders a plugin export must never carry
+const hp = join(tmp, 'hp-repo')
+mkdirSync(join(hp, '.claude-plugin'), { recursive: true }); mkdirSync(join(hp, 'skills/s1'), { recursive: true }); mkdirSync(join(hp, 'bench'))
+writeFileSync(join(hp, '.claude-plugin/plugin.json'), JSON.stringify({ name: 'hp' })); writeFileSync(join(hp, 'skills/s1/SKILL.md'), 'skill\n'); writeFileSync(join(hp, 'bench/lock.md'), 'lock\n')
+const hg = (...a) => Bun.spawnSync(['git', '-C', hp, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a]).stdout.toString().trim()
+hg('init', '-q'); hg('add', '.'); hg('commit', '-qm', 'p')
+const hpCommit = hg('rev-parse', 'HEAD'), hpPaths = ['.claude-plugin', 'skills']
+const hpSha = (() => { const out = join(tmp, 'hp-sha'); try { return pluginExport({ repo: hp, commit: hpCommit, paths: hpPaths, out }).sha256 } finally { rmSync(out, { recursive: true, force: true }) } })()
+const hpEntry = { name: 'hp', repo: hp, commit: hpCommit, paths: hpPaths, sha256: hpSha }
+
+test('arms.json takes plugin entries and a turn limit per set', async () => {
+  const f = join(tmp, 'arms-shape.json'), write = (o) => writeFileSync(f, JSON.stringify({ smallModel: 's', cli: stub, plugins: { H: [], W: [] }, proxy: PROXY, ...o }))
+  write({ plugins: { H: [{ ...hpEntry, repo: 'hp-repo' }, { name: 'dep', dir: 'hp-repo', version: '1.2.0', paths: ['skills'], sha256: 'a'.repeat(64) }], W: [] }, turnTimeoutSec: { external: 14400, re: 28800 } })
+  const c = await loadArms(f)
+  expect(c.plugins.H).toEqual([{ ...hpEntry, repo: hp }, { name: 'dep', dir: hp, version: '1.2.0', paths: ['skills'], sha256: 'a'.repeat(64) }]) // relative to arms.json
+  expect([turnLimit(c.turnTimeoutSec, 'external'), turnLimit(c.turnTimeoutSec, 're')]).toEqual([14400, 28800])
+  write({ turnTimeoutSec: 600 })
+  expect(turnLimit((await loadArms(f)).turnTimeoutSec, 're')).toBe(600) // one number stays accepted
+  write({})
+  expect((await loadArms(f)).turnTimeoutSec).toBe(14400)
+  for (const [o, want] of [[{ turnTimeoutSec: { external: 10 } }, 're'], [{ turnTimeoutSec: { external: 10, re: 0 } }, 're'], [{ turnTimeoutSec: { external: 10, re: 10, other: 1 } }, 'other'],
+    [{ plugins: { H: ['/a/dir'], W: [] } }, 'plugins.H'], [{ plugins: { H: [{ ...hpEntry, sha256: 'x' }], W: [] } }, 'sha256'], [{ plugins: { H: [{ ...hpEntry, name: '../x' }], W: [] } }, 'name'],
+    [{ plugins: { H: [{ ...hpEntry, repo: 'nope' }], W: [] } }, 'nope'], [{ plugins: { H: [{ ...hpEntry, commit: undefined }], W: [] } }, 'commit'],
+    [{ proxy: undefined }, 'no proxy'], [{ proxy: { ...PROXY, auth: 'cookie' } }, 'proxy'], [{ proxy: { ...PROXY, cliVar: 'ANTHROPIC_API_KEY' } }, 'proxy'], [{ proxy: { ...PROXY, betas: ['a,b'] } }, 'proxy']]) {
+    write(o)
+    await expect(loadArms(f)).rejects.toThrow(want)
+  }
+  expect(() => turnLimit({ external: 1 }, 're')).toThrow('re')
+  expect(proxyConfig(PROXY)).toEqual(PROXY)
+  // a run of a private-set task takes the re limit: 1 s cuts the main turn, which external's 20 s would not
+  const slow = join(tmp, 'claude-slow-re')
+  writeFileSync(slow, `#!/bin/sh\ncase "$2" in "Reply OK.") exec "${stub}" "$@";; esac\nsleep 5\n`)
+  chmodSync(slow, 0o755)
+  writeFileSync(join(data, 'tasks.json'), JSON.stringify({ p1: { base: 'a'.repeat(40), end: 'b'.repeat(40) } }))
+  arms({ cli: slow, turnTimeoutSec: { external: 20, re: 1 } })
+  try {
+    expect(await cli(run('B', 40))).toMatchObject({ code: 0, stdout: 'p1-B-40 abandoned\n' })
+    expect(result('p1-B-40')).toMatchObject({ reason: 'timeout' })
+  } finally { rmSync(join(data, 'tasks.json')); arms() }
+})
+
+test('the plugin dirs reach the CLI as --plugin-dir', async () => {
+  arms({ plugins: { H: [hpEntry], W: [] } })
+  try {
+    const r = await cli(run('H', 1), { STUB_DONE: '0', STUB_PLUGINS: JSON.stringify([{ name: 'hp', path: '/p' }]) })
+    expect(r).toMatchObject({ code: 0, stdout: 'p1-H-1 done\n' })
+    for (const c of calls()) {
+      const dirs = c.args.filter((x, i) => c.args[i - 1] === '--plugin-dir')
+      expect(dirs.length).toBe(1)
+      expect(c.pluginFiles).toEqual(['.claude-plugin/plugin.json', 'skills/s1/SKILL.md']) // the export, not the repo: no bench/
+    }
+    expect(result('p1-H-1').plugins).toEqual([{ name: 'hp', commit: hpCommit, sha256: hpSha }])
+    expect(result('p1-H-1').proxy).toEqual({ allowed: 0, refused: 0, reasons: {} }) // the stand-in box's counts
+    // an export that differs from the sha256 arms.json recorded is refused before any call
+    arms({ plugins: { H: [{ ...hpEntry, sha256: 'f'.repeat(64) }], W: [] } })
+    await err(run('H', 2), 'sha256')
+  } finally { arms() }
 })
 
 test('run-arm: a run that never says DONE is abandoned after 5 resumes, 5 + 3 interventions; B- runs the small model with its prompt', async () => {
@@ -218,16 +268,16 @@ test('run-arm: a B probe whose init lists a plugin stops with exit 2, no main tu
 
 const err = async (args, want, env = {}) => { const r = await cli(args, env); expect(r.code).toBe(2); expect(r.stderr).toContain(want); expect(calls()).toEqual([]) }
 
-test('a task with a database is still refused', async () => {
+test('a task file with a host database is refused: an arm runs on a box task file', async () => {
   const dbTask = join(tmp, 'task-db.json')
   writeFileSync(dbTask, JSON.stringify({ ...JSON.parse(readFileSync(task, 'utf8')), db: 'bench_x' }))
-  await err([dbTask, ...run('B', 3).slice(1)], 'arm runs have no database guard yet')
+  await err([dbTask, ...run('B', 3).slice(1)], 'host database')
 })
 
 test('run-arm refuses an unknown arm, a missing plugin dir, a missing cli and an existing branch, before any call', async () => {
   await err(run('X', 3), 'arm')
   await err(run('B', 0), 'run')
-  arms({ plugins: { H: [join(tmp, 'nope')], W: [] } })
+  arms({ plugins: { H: [{ ...hpEntry, repo: join(tmp, 'nope') }], W: [] } })
   await err(run('H', 3), 'nope')
   writeFileSync(join(data, 'arms.json'), JSON.stringify({ cli: stub, plugins: { H: [], W: [] } }))
   await err(run('B', 3), 'smallModel')
@@ -351,18 +401,23 @@ test('a product bundle fetches into a bare shallow repo and a repo on its altern
   expect(Bun.spawnSync(['git', '-C', seeded, 'cat-file', '-p', 'solo:k.txt']).stdout.toString()).toBe('kept\n')
 })
 
-test('a plugin dir is refused by the real box', async () => {
-  const shim = join(tmp, 'shim'), dockerLog = join(tmp, 'docker.log'), plugin = join(tmp, 'a-plugin')
-  mkdirSync(shim); mkdirSync(plugin)
+test('a plugin path under bench is refused before any Docker call, and so is a run with no box.env', async () => {
+  const shim = join(tmp, 'shim'), dockerLog = join(tmp, 'docker.log')
+  mkdirSync(shim)
   writeFileSync(join(shim, 'docker'), `#!/bin/sh\necho "$@" >> ${dockerLog}\nexit 1\n`); chmodSync(join(shim, 'docker'), 0o755)
-  arms({ plugins: { H: [plugin], W: [] } })
-  const r = await cli(run('H', 27), { PATH: `${shim}:${process.env.PATH}`, STUB_DONE: '0' }, { real: true })
-  expect(r.code).toBe(2)
-  expect(r.stderr).toContain('plugin')
+  arms({ plugins: { H: [{ ...hpEntry, paths: ['skills', 'bench'] }], W: [] } })
+  try {
+    const r = await cli(run('H', 27), { PATH: `${shim}:${process.env.PATH}`, STUB_DONE: '0' }, { real: true })
+    expect(r.code).toBe(2)
+    expect(r.stderr).toContain('bench')
+    arms()
+    const n = await cli(run('B', 28), { PATH: `${shim}:${process.env.PATH}`, STUB_DONE: '0' }, { real: true }) // the fixture data has no arm/box.env
+    expect(n.code).toBe(2)
+    expect(n.stderr).toContain('box.env')
+  } finally { arms() }
   expect(existsSync(dockerLog)).toBe(false) // refused before any Docker call
   expect(calls()).toEqual([])
   expect(existsSync(join(data, 'results', 'p1-H-27.json'))).toBe(false)
-  arms()
 })
 
 test('every arm has the web tools off and B- alone has the three instructions', () => {
@@ -383,7 +438,7 @@ test('probeOk refuses a web tool at init, for every arm', () => {
 })
 
 const hosts = [{ host: 'api.example', ip: '10.0.0.1' }, { host: 'claude.example', ip: '10.0.0.2' }]
-const box = { name: 'bench-ext-x-arm-t-B-1', image: 'img:1-arm', platform: 'linux/arm64', hosts, limitSec: 90000, memoryGB: 6 }
+const box = { name: 'bench-ext-x-arm-t-B-1', image: 'img:1-arm', platform: 'linux/arm64', hosts, limitSec: 90000, memoryGB: 6, env: ['ANTHROPIC_AUTH_TOKEN=bench-placeholder'] }
 test('boxArgs mounts nothing and asks for no capability', () => {
   const a = boxArgs(box)
   expect(a.slice(0, 2)).toEqual(['create', '--name'])
@@ -397,43 +452,56 @@ test('boxArgs mounts nothing and asks for no capability', () => {
   for (const bad of ['-v', '--volume', '--mount', '--privileged', '--cap-add', '--pid', '--ipc', '--network', '--memory-swap']) expect(a).not.toContain(bad)
   expect(a.join(' ')).not.toContain('docker.sock')
   expect(boxArgs({ ...box, hosts: [] })).not.toContain('--add-host')
+  expect(a.filter((x, i) => a[i - 1] === '-e')).toEqual(['ANTHROPIC_AUTH_TOKEN=bench-placeholder'])
+  expect(a.indexOf('-e')).toBeLessThan(a.indexOf('img:1-arm')) // an option of create, not an argument of sleep
   expect(API_HOSTS).toEqual(['api.anthropic.com', 'console.anthropic.com', 'platform.claude.com', 'claude.ai'])
 })
 
-test('fwScript drops by default and opens only 443 to the given addresses', () => {
-  const s = fwScript(['10.0.0.1', '172.17.0.9'])
+test('fwScript drops by default and opens only the given targets, out and in', () => {
+  const s = fwScript({ out: [{ ip: '10.0.0.1', port: 8080 }, { ip: '172.17.0.9', port: 443 }], in: [{ ip: '172.17.0.5', port: 8080 }] })
   expect(s.startsWith('set -e')).toBe(true)
   for (const c of ['iptables', 'ip6tables']) for (const ch of ['INPUT', 'OUTPUT', 'FORWARD']) expect(s).toContain(`${c} -P ${ch} DROP`)
   expect(s).toContain('-o lo -j ACCEPT')
   expect(s).toContain('-i lo -j ACCEPT')
   expect(s.match(/ESTABLISHED,RELATED/g).length).toBe(4)
   const opens = s.split('\n').filter((l) => l.includes('--dport'))
-  expect(opens).toEqual(['iptables -A OUTPUT -p tcp --dport 443 -d 10.0.0.1/32 -j ACCEPT', 'iptables -A OUTPUT -p tcp --dport 443 -d 172.17.0.9/32 -j ACCEPT'])
-  expect(fwScript([])).not.toContain('--dport')
-  expect(() => fwScript(['1.2.3.4; reboot'])).toThrow()
-  expect(() => fwScript(['::1'])).toThrow()
+  expect(opens).toEqual(['iptables -A OUTPUT -p tcp --dport 8080 -d 10.0.0.1/32 -j ACCEPT', 'iptables -A OUTPUT -p tcp --dport 443 -d 172.17.0.9/32 -j ACCEPT',
+    'iptables -A INPUT -p tcp --dport 8080 -s 172.17.0.5/32 -j ACCEPT'])
+  expect(fwScript({})).not.toContain('--dport')
+  expect(() => fwScript({ out: [{ ip: '1.2.3.4; reboot', port: 443 }] })).toThrow()
+  expect(() => fwScript({ out: [{ ip: '::1', port: 443 }] })).toThrow()
+  expect(() => fwScript({ in: [{ ip: '1.2.3.4', port: '80; reboot' }] })).toThrow()
+  expect(() => fwScript({ out: [{ ip: '1.2.3.4', port: 70000 }] })).toThrow()
 })
 
-test('netScript probes each address on 443 and each blocked target; netOk reads the lines', () => {
+test('netScript probes each allowed target and each blocked target; netOk reads the lines', () => {
   const blocked = [{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 }, { host: '172.17.0.1', port: 5432 }]
-  const s = netScript(['10.0.0.1'], blocked)
-  expect(s).toContain('nc -zw4 10.0.0.1 443')
+  const s = netScript([{ ip: '10.0.0.1', port: 8080 }], blocked)
+  expect(s).toContain('nc -zw4 10.0.0.1 8080')
   expect(s).toContain('nc -zw4 172.17.0.1 5432')
   expect(s).toContain('ip -6 addr show dev eth0 | grep -c inet6')
-  expect(() => netScript(['10.0.0.1'], [{ host: 'a;b', port: 1 }])).toThrow()
-  const good = 'reach 10.0.0.1:443\nblocked 1.1.1.1:443\nblocked github.com:443\nblocked 172.17.0.1:5432\nv6 0\n'
-  expect(netOk(good, ['10.0.0.1'], blocked)).toBeNull()
+  expect(() => netScript([{ ip: '10.0.0.1', port: 443 }], [{ host: 'a;b', port: 1 }])).toThrow()
+  expect(() => netScript([{ ip: '10.0.0.1;x', port: 443 }], [])).toThrow()
+  const good = 'reach 10.0.0.1:8080\nblocked 1.1.1.1:443\nblocked github.com:443\nblocked 172.17.0.1:5432\nv6 0\n'
+  expect(netOk(good, [{ ip: '10.0.0.1', port: 8080 }], blocked)).toBeNull()
 })
 
 test('netOk refuses a blocked address that answers and an allowed one that does not', () => {
-  const blocked = [{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 }]
+  const blocked = [{ host: '1.1.1.1', port: 443 }, { host: 'github.com', port: 443 }], allowed = [{ ip: '10.0.0.1', port: 443 }]
   const ok = ['reach 10.0.0.1:443', 'blocked 1.1.1.1:443', 'blocked github.com:443', 'v6 0']
   const with_ = (f) => f(ok).join('\n')
-  expect(netOk(with_((l) => l.map((x) => x === 'blocked 1.1.1.1:443' ? 'reach 1.1.1.1:443' : x)), ['10.0.0.1'], blocked)).toContain('1.1.1.1:443')
-  expect(netOk(with_((l) => l.map((x) => x === 'reach 10.0.0.1:443' ? 'blocked 10.0.0.1:443' : x)), ['10.0.0.1'], blocked)).toContain('10.0.0.1:443')
-  expect(netOk(with_((l) => l.filter((x) => !x.includes('github'))), ['10.0.0.1'], blocked)).toContain('github.com:443')
-  expect(netOk(with_((l) => l.map((x) => x === 'v6 0' ? 'v6 1' : x)), ['10.0.0.1'], blocked)).toContain('IPv6')
-  expect(netOk(with_((l) => l.filter((x) => !x.startsWith('v6'))), ['10.0.0.1'], blocked)).toContain('IPv6')
-  expect(netOk('', ['10.0.0.1'], blocked)).not.toBeNull()
-  expect(netOk(ok.join('\n'), [], blocked)).not.toBeNull() // no allowed address: nothing proves the firewall lets the API through
+  expect(netOk(with_((l) => l.map((x) => x === 'blocked 1.1.1.1:443' ? 'reach 1.1.1.1:443' : x)), allowed, blocked)).toContain('1.1.1.1:443')
+  expect(netOk(with_((l) => l.map((x) => x === 'reach 10.0.0.1:443' ? 'blocked 10.0.0.1:443' : x)), allowed, blocked)).toContain('10.0.0.1:443')
+  expect(netOk(with_((l) => l.filter((x) => !x.includes('github'))), allowed, blocked)).toContain('github.com:443')
+  expect(netOk(with_((l) => l.map((x) => x === 'v6 0' ? 'v6 1' : x)), allowed, blocked)).toContain('IPv6')
+  expect(netOk(with_((l) => l.filter((x) => !x.startsWith('v6'))), allowed, blocked)).toContain('IPv6')
+  expect(netOk('', allowed, blocked)).not.toBeNull()
+  expect(netOk(ok.join('\n'), [], blocked)).not.toBeNull() // no allowed target: nothing proves the firewall lets anything through
+  expect(netOk(ok.join('\n'), [{ ip: '10.0.0.1', port: 8080 }], blocked)).toContain('10.0.0.1:8080') // the port is part of the target
+})
+
+test('the proxy counts file reads as numbers, and anything else throws', () => {
+  expect(parseCounts('allowed 3 refused 2 path=1 tool=1 upstream=1\n')).toEqual({ allowed: 3, refused: 2, reasons: { path: 1, tool: 1, upstream: 1 } })
+  expect(parseCounts('allowed 0 refused 0\n')).toEqual({ allowed: 0, refused: 0, reasons: {} })
+  for (const bad of ['', 'allowed 1\n', 'allowed 1 refused 0 x-api-key: secret\n', 'allowed 1 refused 0\nmore\n']) expect(() => parseCounts(bad)).toThrow('counts')
 })

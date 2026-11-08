@@ -5,7 +5,7 @@
 import { appendFileSync, closeSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { fwImage, rulesCommand } from './box.mjs'
+import { fwImage, netCheck, pinHosts, rulesCommand } from './box.mjs'
 import { withExport } from './env.mjs'
 import { oracleFiles } from './grade.mjs'
 import { check as inputCheck } from './input-check.mjs'
@@ -725,8 +725,8 @@ export async function removeOut(ext, slug, { ok = false } = {}) {
   await removeNames(ext, slug, { containers: meta.containers, images, ids: meta.imageIds })
 }
 
-// containers, then images, by exact name and never with -f, only names of this slug (`bench-ext-<slug>-`,
-// `bench-ext/<slug>:`); then each recorded image id no tag points at any more (a later build of the same tag left it
+// containers, then images, by exact name and never with -f, only names of this slug (`bench-ext-<slug>-`, a box's proxy
+// `bench-arm-proxy-bench-ext-<slug>-`, `bench-ext/<slug>:`); then each recorded image id no tag points at any more (a later build of the same tag left it
 // untagged). Each name removed is appended to removed.txt; one already gone is passed over
 async function removeNames(ext, slug, { containers, images, ids }) {
   const gone = []
@@ -736,7 +736,7 @@ async function removeNames(ext, slug, { containers, images, ids }) {
     else if (!/no such (container|image)/i.test(r.err)) console.error(`could not remove ${name}`)
   }
   // killed first (an error when it is not running): a SIGKILLed oracle-run leaves its container running, and rm has no -f
-  for (const c of new Set(containers)) if (c.startsWith(`bench-ext-${slug}-`)) { await sp(['docker', 'kill', c]); await rm('rm', c) }
+  for (const c of new Set(containers)) if (c.startsWith(`bench-ext-${slug}-`) || c.startsWith(`bench-arm-proxy-bench-ext-${slug}-`)) { await sp(['docker', 'kill', c]); await rm('rm', c) }
   for (const i of new Set(images)) if (i.startsWith(`bench-ext/${slug}:`)) await rm('rmi', i)
   for (const id of new Set(ids)) {
     const t = await sp(['docker', 'image', 'inspect', '-f', '{{len .RepoTags}}', id])
@@ -811,8 +811,9 @@ export function taskOf(ext, task) {
   return { ...rows[index], ...keyOf(rows[index].id), index }
 }
 // step 11 ruling 8: the private task set (<data>/tasks.json) has the shape of an external task. Its store key and stack name are
-// these constants (README); the index starts past any external one, so a port or a name never collides
-export const PRIVATE_SET = { key: 'real-estate', stack: 're', indexFrom: 1000 }
+// these constants (README); the index starts past any external one, so a port or a name never collides. registry: the names its
+// boxes and make containers reach on 443 (decision 6 (a)), pinned when each is made
+export const PRIVATE_SET = { key: 'real-estate', stack: 're', indexFrom: 1000, registry: ['registry.npmjs.org'] }
 function privateTask(ext, task) {
   const f = join(dirname(ext), 'tasks.json'), tasks = existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : {}, pos = Object.keys(tasks).indexOf(task)
   if (pos < 0) throw new Error(`no task ${task} in sample.tsv`)
@@ -1117,8 +1118,8 @@ export function rebuildLines(recipe, serve, rebuild) {
 export const overlayScript = (list) => ['set -e', 'cd /work', `xargs -0 -r rm -rf -- < ${list}`, 'cp -a /tmp/bench-product/. /work/', 'rm -rf /tmp/bench-product', ''].join('\n')
 
 // step 11 ruling 4: the image of commit, made from baseImage (R) in container `bench-ext-<slug>-make-<sha7>-<n>` with the arm's
-// network: 'none', or { ips, hosts } for Docker's default bridge with the box's capabilities and firewall (443 to ips only),
-// set from outside before any product line runs. The overlay and the rebuild lines run by `docker exec` as the image's user;
+// network: 'none', or { ips, hosts, blocked? } for Docker's default bridge with the box's capabilities and firewall (443 to ips only),
+// set from outside and checked as the box's is (blocked: a test's stand-in for the public targets) before any product line runs. The overlay and the rebuild lines run by `docker exec` as the image's user;
 // the container is committed as `bench-ext/<slug>:<sha7>-product-<osha8>` and removed. Both names are recorded first. The id;
 // false when the make exits non-zero or passes timeoutSec (the product's failure: no image); a throw when Docker fails or the
 // disk is full and low
@@ -1139,7 +1140,9 @@ export async function productImage({ t, commit, baseImage, network, lines, repo,
     await must(['docker', 'start', name], `docker start ${name}`)
     if (network !== 'none') {
       await fwImage(scratch)
-      await must(rulesCommand(name, fwScript(network.ips)), 'the firewall rules of the make container', { timeoutSec: 600 })
+      const out = network.ips.map((ip) => ({ ip, port: 443 }))
+      await must(rulesCommand(name, fwScript({ out })), 'the firewall rules of the make container', { timeoutSec: 600 })
+      await netCheck(name, out, { outside: network.blocked })
     }
     const fd = openSync(log, 'w')
     let code
@@ -1246,7 +1249,10 @@ export async function oracleRun(args, inj = {}) {
     // a build log of the base is readable; any other commit may hold the PR, a seeded bug or an arm's product
     await image(serveTag, serveDockerfile, trusted ? 'HEAD' : t.base, !trusted || head === t.base ? serveLog : sealed('serve.build.log'))
     await image(runnerTag, `FROM ${serveTag}\n${runner.layer.join('\n')}\n`, null, sealed(trusted ? 'grade.build.log' : 'runner.build.log'))
-    const product = trusted || await productImage({ t, commit: head, baseImage: runnerTag, network: 'none', lines, repo: dir, osha8, n, platform: recipe.platform, record, scratch, log: sealed('make.log'), diskFree })
+    // decision 6 (a): a private-set product is made with the registry its arm's box had, an external one with no network
+    const regHosts = !trusted && t.stack === PRIVATE_SET.stack ? inj.registryHosts ?? await pinHosts(PRIVATE_SET.registry) : null
+    const network = regHosts ? { ips: [...new Set(regHosts.map((h) => h.ip))], hosts: regHosts } : 'none'
+    const product = trusted || await productImage({ t, commit: head, baseImage: runnerTag, network, lines, repo: dir, osha8, n, platform: recipe.platform, record, scratch, log: sealed('make.log'), diskFree })
     if (!product) throw new Error(`${sha7}: the product image was not made (the make failed: its log is sealed)`)
     if (split) {
       // P runs start (its argument, no file: P gets nothing of the oracle's) in /work; the sleep keeps the namespace up

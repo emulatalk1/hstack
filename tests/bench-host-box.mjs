@@ -12,7 +12,7 @@ const agentGit = (dir, ...args) => gitWith({ env: agentEnv(), timeout: 300_000 }
 
 // HOSTBOX_TURN=killed|memory: the machine's failure on every turn but the probe; HOSTBOX_TURN=fallback (turns) or HOSTBOX_PROBE=fallback (the probe):
 // the turn runs, and its stream holds the CLI's model_refusal_fallback notice; HOSTBOX_PRODUCT=killed|throw: the product step fails
-export async function hostBox({ data, name, repoGit, cli, turnTimeoutSec }) {
+export async function hostBox({ data, name, repoGit, cli, turnTimeoutSec, plugins = [] }) {
   const dir = join(repoGit, '..'), settings = join(data, 'results', name, 'settings.json')
   await agentGit(dir, ...BENCH, 'commit', '-q', '--no-verify', '--allow-empty', '-m', 'env')
   const envCommit = (await Bun.$`git -C ${dir} rev-parse HEAD`.quiet().text()).trim()
@@ -22,7 +22,7 @@ export async function hostBox({ data, name, repoGit, cli, turnTimeoutSec }) {
     turn: async (opts) => {
       const probe = opts.prompt === 'Reply OK.', mode = probe ? process.env.HOSTBOX_PROBE : process.env.HOSTBOX_TURN
       if (mode && mode !== 'fallback') return { out: '', code: mode }
-      const r = await runGroup([cli, ...claudeArgs({ ...opts, settings })], { cwd: dir, env: agentEnv(), stdout: 'pipe', stderr: 2, timeoutSec: turnTimeoutSec })
+      const r = await runGroup([cli, ...claudeArgs({ ...opts, pluginDirs: plugins.map((p) => p.dir), settings })], { cwd: dir, env: agentEnv(), stdout: 'pipe', stderr: 2, timeoutSec: turnTimeoutSec })
       const notice = { type: 'system', subtype: 'model_refusal_fallback', original_model: 'small-m', fallback_model: 'other-m', category: 'cyber', scope: 'session' }
       return mode ? { ...r, out: r.out + JSON.stringify(notice) + '\n' } : r
     },
@@ -34,6 +34,7 @@ export async function hostBox({ data, name, repoGit, cli, turnTimeoutSec }) {
       await agentGit(dir, ...SAFE, 'bundle', 'create', dest, 'HEAD')
       return { code: 0 }
     },
+    proxyCounts: async () => ({ allowed: 0, refused: 0, reasons: {} }), // no proxy on the host: nothing passed one
     leave: async () => {},
     box: { name: 'host', image: 'host', memoryGB: null, ips: [], routes: '' },
   }
