@@ -168,6 +168,25 @@ test('the server needs its token', async () => {
   expect(data.rows.map((r) => [r.key, r.answers])).toEqual([['r1', ['clean', 'leak']]])
 })
 
+test('serve --root redirects / to the token path', async () => {
+  await built
+  const r = await run(['serve', 'inputs', '--root']); started.push(r.code)
+  const token = readFileSync(join(d, 'step9/pages/inputs.token'), 'utf8').trim(), s = { server: r.code, token }
+  expect(r.out).toBe(`serve inputs port ${r.code.port}`)
+  const res = await fetch(url(s, '/'), { redirect: 'manual' })
+  expect([res.status, res.headers.get('location')]).toEqual([302, `/${token}/`])
+  expect((await fetch(url(s, '/'))).status).toBe(200) // followed: the page loads
+  for (const p of ['/data', '/x/']) expect((await fetch(url(s, p))).status).toBe(404)
+  expect((await fetch(url(s, '/'), { method: 'POST', body: '{}' })).status).toBe(404)
+})
+
+test('without --root, / is still 404', async () => {
+  await built
+  const s = await serveOn('inputs')
+  const res = await fetch(url(s, '/'), { redirect: 'manual' })
+  expect([res.status, res.headers.get('location')]).toEqual([404, null])
+})
+
 test('the server refuses an unknown key, an unknown answer and any write after apply', async () => {
   await built
   const s = await serveOn('labels'), file = join(d, 'step9/answers/labels.tsv'), key = `r1:${fix}`

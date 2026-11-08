@@ -13,7 +13,7 @@ import { queuePick } from './lib/oracle.mjs'
 import { loadTask } from './lib/task.mjs'
 import { clScored, dataDir, labelLines, poolKeys, queueDraw, queuePools, readPairs, seedOf } from './oracle.mjs'
 
-const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] | status | history <transcripts dir> <task.json> | kappa history | apply <batch> | recount [--drop <task,...>]'
+const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] [--root] | status | history <transcripts dir> <task.json> | kappa history | apply <batch> | recount [--drop <task,...>]'
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
 const read = (f) => readFileSync(f, 'utf8')
 // a tsv with a header as objects; a file that is not there has no rows
@@ -429,7 +429,7 @@ fetch('data').then((x) => x.json()).then((x) => {
 </body></html>
 `
 
-export function serve(data, batch, port = 0) {
+export function serve(data, batch, port = 0, root = false) {
   if (!Object.hasOwn(BATCHES, batch)) throw new Error(USAGE)
   const pages = join(data, 'step9/pages'), rows = readJson(join(pages, `${batch}.json`))
   if (!Array.isArray(rows)) throw new Error(`no page for ${batch}: build it first`)
@@ -445,6 +445,7 @@ export function serve(data, batch, port = 0) {
     error: () => status(500), // logs nothing
     async fetch(req) {
       const path = new URL(req.url).pathname
+      if (root && req.method === 'GET' && path === '/') return new Response(null, { status: 302, headers: { location: `${base}/` } }) // the preview pane loads `/`
       if (path === base) return new Response(null, { status: 302, headers: { location: `${base}/` } })
       if (req.method === 'GET' && path === `${base}/`) return new Response(PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } })
       if (req.method === 'GET' && path === `${base}/data`) {
@@ -487,7 +488,10 @@ export async function human(args) {
   const data = dataDir(), [cmd, batch, ...rest] = args
   if (cmd === 'swap' && (args.length === 1 || (args.length === 3 && batch === '--drop'))) return swap(data, args.length === 3 ? rest[0].split(',') : [])
   if (cmd === 'build' && batch) return build(data, batch, rest)
-  if (cmd === 'serve' && batch && (rest.length === 0 || (rest.length === 2 && rest[0] === '--port' && /^\d+$/.test(rest[1])))) return serve(data, batch, rest.length ? Number(rest[1]) : 0)
+  if (cmd === 'serve' && batch) {
+    const root = rest.includes('--root'), o = rest.filter((x) => x !== '--root'), ok = rest.length - o.length <= 1
+    if (ok && (o.length === 0 || (o.length === 2 && o[0] === '--port' && /^\d+$/.test(o[1])))) return serve(data, batch, o.length ? Number(o[1]) : 0, root)
+  }
   if (cmd === 'status' && args.length === 1) return statusCmd(data)
   if (cmd === 'history' && args.length === 3) return history(data, batch, rest[0])
   if (cmd === 'kappa' && batch === 'history' && args.length === 2) return kappaHistory(data)
