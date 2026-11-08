@@ -15,10 +15,8 @@ export const BATCHES = {
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 
 export function answersFor(batch, row) {
-  if (batch !== 'labels') return BATCHES[batch].answers
-  const a = LABELS[row?.kind]
-  if (!a) throw new Error(`a labels row needs kind later or in-task, got ${row?.kind}`)
-  return a
+  if (!Object.hasOwn(BATCHES, batch)) throw new Error(`unknown batch ${batch}`)
+  return batch === 'labels' ? (LABELS[row?.kind] ?? []) : BATCHES[batch].answers
 }
 export const answerOk = (batch, row, answer) => answersFor(batch, row).includes(answer)
 
@@ -27,8 +25,9 @@ export function parseAnswers(tsv) {
   const out = new Map()
   for (const line of tsv.split('\n')) {
     if (!line.trim()) continue
-    const [key, answer, note = '', at = ''] = line.split('\t')
-    out.set(key, { answer, note, at })
+    // a tab inside a note must not shift `at`: key and answer are the first two fields, `at` the last
+    const f = line.replace(/\r$/, '').split('\t')
+    out.set(f[0], { answer: f[1], note: f.length > 3 ? f.slice(2, -1).join('\t') : (f[2] ?? ''), at: f.length > 3 ? f.at(-1) : '' })
   }
   return out
 }
@@ -36,36 +35,43 @@ export function parseAnswers(tsv) {
 // ruling 3: per set, the pick over the pool without cold keys; queuePick sorts and cuts, so every non-cold row of the old pick stays, in order
 export function coldSwap(rows, pool, n, isCold, seed) {
   const sets = [...new Set([...rows.map((r) => r.set), ...n.keys()])]
-  const out = sets.flatMap((set) => queuePick((pool.get(set) ?? []).filter((k) => !isCold(k)), n.get(set) ?? 0, seed).map((key) => ({ set, key })))
+  const out = sets.flatMap((set) => {
+    const keep = (pool.get(set) ?? []).filter((k) => !isCold(k)), want = n.get(set) ?? 0
+    if (keep.length < want) throw new Error(`the pool of ${set} has ${keep.length} non-cold keys, fewer than ${want}`)
+    return queuePick(keep, want, seed).map((key) => ({ set, key }))
+  })
   for (const r of rows) if (!isCold(r.key) && !out.some((o) => o.set === r.set && o.key === r.key)) throw new Error(`the old pick holds ${r.key}, which the pool of ${r.set} cannot give`)
   return out
 }
 
 export const planWindows = (tasks, time) => tasks.map(({ task, base, end }) => ({ task, from: time(base), to: time(end) }))
 
-const REJECT = "The user doesn't want to proceed"
+const REJECT = "The user doesn't want to"
+const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => x?.text ?? '').join('') : '')
 const NOT_TEXT = ['<command-', '<local-command', '<system-reminder>', '<task-notification>', '<bash-stdout>', '<bash-stderr>']
 
 // ruling 8's filter, for the lines of one session in file order. `turn` counts the assistant entries before the event.
-// An interrupt swallows the message after it in the same turn (one event, hence one rule 1); no text is kept.
+// A reject, the interrupt in the next entry and the message after them with no assistant entry between are one event (the first of them); no text is kept.
 export function events(lines) {
   const out = []
   let turn = 0
   for (const l of lines) {
-    if (l.isSidechain || l.isMeta) continue
+    if (l.isSidechain || l.isMeta || l.isCompactSummary) continue
     if (l.type === 'assistant') { turn++; continue }
     if (l.type !== 'user') continue
     const c = l.message?.content
+    let messaged = false // at most one message event per entry
     for (const p of typeof c === 'string' ? [{ type: 'text', text: c }] : Array.isArray(c) ? c : []) {
+      const prev = out.at(-1), open = prev?.turn === turn ? prev.kind : null
       const add = (kind) => out.push({ at: l.timestamp, kind, turn })
-      if (p.type === 'tool_result') { if (JSON.stringify(p.content ?? '').includes(REJECT)) add('reject'); continue }
+      if (p.type === 'tool_result') { if (textOf(p.content).trimStart().startsWith(REJECT) && open !== 'reject') add('reject'); continue }
       if (p.type !== 'text') continue
       const t = p.text.trimStart()
-      if (t.startsWith('[Request interrupted')) add('interrupt')
+      if (t.startsWith('[Request interrupted')) { if (open !== 'reject' && open !== 'interrupt') add('interrupt') }
       else if (t.startsWith('<bash-input>')) add('bash')
       else if (t.startsWith('<command-')) { if (/<command-name>\s*\/(clear|compact)\s*<\/command-name>/.test(t)) add('clear') }
       else if (NOT_TEXT.some((s) => t.startsWith(s)) || !t) continue
-      else if (!(out.at(-1)?.kind === 'interrupt' && out.at(-1).turn === turn)) add('message')
+      else if (!messaged && open !== 'reject' && open !== 'interrupt') { add('message'); messaged = true }
     }
   }
   return out
@@ -85,7 +91,8 @@ export function segments(sessions, windows) {
     }
     for (const [task, es] of per) segs.push({ key: `${task}:${id}`, task, events: es })
   }
-  return { segments: segs, outside }
+  // by the first event's time, so a caller takes a plan's first segment by index
+  return { segments: segs.sort((a, b) => Date.parse(a.events[0].at) - Date.parse(b.events[0].at)), outside }
 }
 
 // ruling 8's tool rule; rule 3 is never given
