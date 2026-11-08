@@ -43,7 +43,8 @@ function world(name, { tasks = ['t1', 't2', 'p1', 'p2'] } = {}) {
   writeFileSync(join(d, 'arms.json'), JSON.stringify({ model: 'M', smallModel: 'S', cli: 'x', plugins: { H: [], W: [] } }))
   writeFileSync(join(d, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
   writeFileSync(join(d, 'trial/tasks.txt'), tasks.join('\n') + '\n')
-  writeFileSync(join(d, 'step11/walked.txt'), 'walked\n')
+  writeFileSync(join(d, 'step11/walked.txt'), 'walked\np2x\n')
+  writeFileSync(join(d, 'trial/floor.json'), JSON.stringify(Object.fromEntries(ALL.map((t) => [t, { H: 0, B: 0 }])))) // a trial already started with no earlier run
   for (const t of ALL) {
     writeFileSync(join(d, 'env/box', `${t}.json`), JSON.stringify({ name: t, repo: join(d, 'repo'), db: null, port: 4000, start: null, ready: null, setup: [], teardown: [], oracle: 'x', junit: 'out/junit.xml', timeoutSec: 60 }))
     writeFileSync(join(d, t, 'step.json'), JSON.stringify(PRIV.includes(t) ? { oracle: 'step/oracle', ids: ['a1', 'a2'], candidates: 1, seed: 's' } : { oracle: 'oracle', ids: ['a1', 'a2'], candidates: 1, seed: 's' }))
@@ -154,4 +155,75 @@ test('the report prints the measures, sigma_d, N and the walk, and no check id',
   expect(rep.sigma_d).toBeCloseTo(sigmaD(ds), 9)
   expect(/\ba[123]\b/.test(r.out + JSON.stringify(rep))).toBe(false) // no check id anywhere
   expect(existsSync(join(d, 'trial/report.json'))).toBe(true)
+})
+
+// fix round 1
+const ids = (d, task, v) => writeFileSync(join(d, task, 'step.json'), JSON.stringify({ oracle: 'oracle', ids: v, candidates: 0, seed: 's' }))
+
+test('the trial counts only records above its floor: a canary B run is neither taken nor regraded', async () => {
+  const d = world('floor', { tasks: ['t1'] })
+  rmSync(join(d, 'trial/floor.json'))
+  const olds = [1, 2].map((n) => {
+    const name = nameOf('t1', 'B', n), sha = shaOf(`bench/${name}`), f = join(d, 't1/grades', `${sha.slice(0, 7)}.json`)
+    writeFileSync(join(d, 'results', `${name}.json`), JSON.stringify(record('t1', 'B', n)))
+    putGrade(d, 't1', sha, { pass: ['a1'] })
+    writeFileSync(join(d, 't1/build/readiness.tsv'), `${sha.slice(0, 7)}\tready\n`) // a step 8 line: no oracle column
+    return [f, readFileSync(f, 'utf8')]
+  })
+  // before any run the report counts none of them
+  const early = await go(d, ['report'], fakes(d))
+  expect(early.out).toContain('t1 B no standing run')
+  const f = fakes(d), r = await go(d, ['run', 't1'], f)
+  expect(r.code).toBe(0)
+  expect(f.calls.filter((c) => c.startsWith('run ')).sort()).toEqual(['run t1-B-3', 'run t1-H-1'])
+  expect(f.calls.filter((c) => c.startsWith('grade ')).map((c) => c.split(' ')[2]).sort()).toEqual([shaOf('bench/t1-B-3'), shaOf('bench/t1-H-1')].map((x) => x.slice(0, 7)).sort())
+  for (const [file, text] of olds) expect(readFileSync(file, 'utf8')).toBe(text)
+  expect(json(join(d, 'trial/floor.json'))).toEqual({ t1: { H: 0, B: 2 } })
+  const f2 = fakes(d)
+  await go(d, ['run', 't1'], f2)
+  expect(f2.calls).toEqual([]) // a rerun neither moves the floor nor repeats a run
+  expect(json(join(d, 'trial/floor.json'))).toEqual({ t1: { H: 0, B: 2 } })
+  await go(d, ['report'], fakes(d))
+  expect(json(join(d, 'trial/report.json')).runs.map((x) => [x.arm, x.run]).sort()).toEqual([['B', 3], ['H', 1]])
+})
+
+test('a task with no step id is refused by run and tells report not judged', async () => {
+  const d = world('nostep')
+  ids(d, 't2', [])
+  const r = await go(d, ['run', 't2'], fakes(d))
+  expect(r.error).toContain('t2: no step id')
+  for (const t of ['t1', 'p1', 'p2']) for (const arm of ['B', 'H']) putRun(d, t, arm, { pass: ['a1', 'a2', 'a3'] })
+  const rep = await go(d, ['report'], fakes(d))
+  expect(rep.code).toBe(0)
+  expect(rep.out).toContain('trial not judged: t2: no step id')
+  expect(json(join(d, 'trial/report.json'))).toMatchObject({ judged: false, reason: ['t2: no step id'] })
+})
+
+test('a task in walked.txt is refused even with no row in sample.tsv', async () => {
+  const d = world('walkedp'), f = fakes(d)
+  writeFileSync(join(d, 'step11/walked.txt'), 'p2\n')
+  expect((await go(d, ['run', 'p2'], f)).error).toContain('p2 is a walked task')
+  expect(f.calls).toEqual([])
+})
+
+test('report applies the gates of run, and CR line ends do not hide a cold task', async () => {
+  const d = world('gates')
+  const sample = readFileSync(join(d, 'ext/sample.tsv'), 'utf8').replace(/\n/g, '\r\n')
+  writeFileSync(join(d, 'ext/sample.tsv'), sample)
+  writeFileSync(join(d, 'trial/tasks.txt'), 't1\r\ncold\r\n')
+  expect((await go(d, ['run', 'cold'], fakes(d))).error).toContain('cold-setup')
+  expect((await go(d, ['report'], fakes(d))).error).toContain('cold-setup')
+  expect((await go(d, ['run', 't1'], fakes(d))).code).toBe(0) // tasks.txt with CRLF still names t1
+})
+
+test('report catches only a missing score: any other error propagates', async () => {
+  const d = world('propagate', { tasks: ['t1'] })
+  putRun(d, 't1', 'B', { pass: ['a1', 'a2', 'a3'] })
+  putRun(d, 't1', 'H', { grade: false })
+  const sha = shaOf('bench/t1-H-1')
+  writeFileSync(join(d, 't1/grades', `${sha.slice(0, 7)}.json`), JSON.stringify({ commit: sha, junit: 'ok' })) // a grade with no checks
+  writeFileSync(join(d, 'trial/attempts.json'), JSON.stringify({ [sha]: 2 }))
+  const r = await go(d, ['report'], fakes(d))
+  expect(r.code).toBe('threw')
+  expect(r.error).toMatch(/checks|undefined/)
 })

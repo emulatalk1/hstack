@@ -82,7 +82,11 @@ async function machineDown(c) {
 }
 
 // grade the run's product with each oracle kind until it has a good grade or ATTEMPTS grades; { label, did }
+// a driver with a floor (the trial's) counts only records above it: `o.floor(data, task)` is { <arm>: n } or undefined
+export const aboveFloor = (recs, floor) => (floor ? recs.filter((r) => r.run > (floor[r.arm] ?? 0)) : recs)
 export async function gradeProduct(c, task, rec, o = CANARY) {
+  // a record at or under the floor is another driver's: its grade files are never touched
+  if (o.floor && !aboveFloor([rec], o.floor(c.data, task)).length) throw new Error(`${task} ${rec.arm} ${rec.run}: a record under the floor is not graded here`)
   const sha = await shaOf(c, task, rec), env = o.taskFile(c.data, task)
   let did = false, ok = true, again = false
   for (const kind of o.kinds(c.data, task)) {
@@ -123,9 +127,9 @@ export async function runTask(c, task, o = CANARY) {
     const j = (slot[arm] = (slot[arm] ?? 0) + 1)
     let rec, ran = false, machineRuns = 0
     for (;;) {
-      const recs = records(c.data, task), have = standing(recs, arm, cfg, o.k)
+      const all = records(c.data, task), have = standing(aboveFloor(all, o.floor?.(c.data, task)), arm, cfg, o.k)
       if (have.length >= j) { rec = have[j - 1]; break }
-      const n = Math.max(0, ...recs.filter((r) => r.arm === arm).map((r) => r.run)) + 1
+      const n = Math.max(0, ...all.filter((r) => r.arm === arm).map((r) => r.run)) + 1
       const code = await stopOnThrow(c, () => c.runArm([env, arm, String(n), '--input', join(c.data, task, 'input.md'), '--at', base]))
       ran = true
       if (code === 2) throw new Stop('refused')
@@ -137,7 +141,7 @@ export async function runTask(c, task, o = CANARY) {
         if (++machineRuns >= MACHINE_RUNS) throw new Stop('machine') // the box keeps failing: stop before more tokens go
         continue // the machine's failure: the next number takes this slot's place
       }
-      if (!standing(records(c.data, task), arm, cfg, o.k).some((r) => r.run === n)) throw new Error(`${task} ${arm} ${n}: the record does not stand after exit ${code}`)
+      if (!standing(aboveFloor(records(c.data, task), o.floor?.(c.data, task)), arm, cfg, o.k).some((r) => r.run === n)) throw new Error(`${task} ${arm} ${n}: the record does not stand after exit ${code}`)
     }
     const { did, label } = await gradeProduct(c, task, rec, o)
     if (ran || did) console.log(`${task} ${arm} ${rec.run} ${rec.status} grade=${label}`)
