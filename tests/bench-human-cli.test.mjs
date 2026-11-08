@@ -1,5 +1,5 @@
 import { test, expect, afterAll, spyOn } from 'bun:test'
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { human } from '../bench/human.mjs'
@@ -759,4 +759,67 @@ test('build and history refuse an applied batch and write nothing', async () => 
   expect(existsSync(join(g, 'step9/pages'))).toBe(false)
   expect(existsSync(join(g, 'step9/seen.tsv'))).toBe(false)
   expect(existsSync(join(g, 'history'))).toBe(false)
+})
+
+// --- step 11 ruling 10: `--queue <dir>` moves every read and write of build, serve, status, apply and proxy into the folder ---
+const snapshot = (root) => {
+  const out = new Map(), walk = (p) => { if (statSync(p).isDirectory()) for (const f of readdirSync(p).sort()) walk(join(p, f)); else out.set(p, readFileSync(p, 'utf8')) }
+  if (existsSync(root)) walk(root)
+  return out
+}
+// a copy of the fixture with a walked queue of its own: the same dispute, but only the external check in the 7.1 sample
+const walked = async (name) => {
+  const c = await copyOf(name), qd = join(c, 'step11/queue')
+  put(c, { 'briefs/classify.md': 'CLASSIFY-BRIEF\n', 'step11/queue/classify.tsv': `task\tid\nr1\t${id}\n`, 'step11/queue/sample-7.1.tsv': `set\ttask\tid\nx1\tx1-01\t${xid}\n` })
+  return { c, qd }
+}
+
+test('human --queue writes pages and answers under its folder and leaves step9 alone', async () => {
+  const { c, qd } = await walked('wq1'), before = snapshot(join(c, 'step9')), q = ['--queue', qd]
+  expect(before.size).toBeGreaterThan(0)
+  expect((await runIn(c, ['build', 'classify', ...q])).out).toBe('build classify: rows 1, parts 4, cold left out 0')
+  expect((await runIn(c, ['build', 'oracle-7.1', taskFile, ...q])).out).toBe('build oracle-7.1: rows 1, parts 3') // step 9's page has 3 rows
+  expect(jsonAt(join(qd, 'pages/oracle-7.1.json')).map((r) => r.key)).toEqual([xid])
+  expect(readFileSync(join(qd, 'seen.tsv'), 'utf8').trim().split('\n')).toEqual(['batch\ttask\tkey', `classify\tr1\t${id}`, `oracle-7.1\tx1-01\t${xid}`])
+  // serve: the token lands beside the page, and a write goes to the queue's answers
+  const sv = await runIn(c, ['serve', 'oracle-7.1', ...q])
+  started.push(sv.code)
+  expect(sv.out).toMatch(/^serve oracle-7.1 port \d+$/)
+  const token = readFileSync(join(qd, 'pages/oracle-7.1.token'), 'utf8').trim()
+  expect((await fetch(`http://127.0.0.1:${sv.code.port}/${token}/answer`, { method: 'POST', body: JSON.stringify({ key: xid, answer: 'same', note: 'n' }) })).status).toBe(200)
+  expect(readFileSync(join(qd, 'answers/oracle-7.1.tsv'), 'utf8')).toContain(`${xid}\tsame\tn\t`)
+  // proxy answers the classify page under the queue; status and apply read it there
+  const calls = []
+  const px = await runP(c, ['proxy', 'classify', taskFile, ...q], stub((keys) => say('traceable', keys), calls))
+  expect(px.out).toBe('proxy classify (claude-fable-5-1): chunks 1, runs 1, failed runs 0, answered 1/1, defaulted 0')
+  expect(calls[0].args[calls[0].args.indexOf('--out') + 1]).toBe(join(qd, 'proxy/classify/1.reply.md'))
+  expect((await runIn(c, ['status', ...q])).out).toBe('status classify: rows 1, answered 1, applied no\nstatus oracle-7.1: rows 1, answered 1, applied no')
+  expect((await runIn(c, ['apply', 'oracle-7.1', ...q])).out).toBe('apply oracle-7.1: rows 1, same 1, different 0, unclear 0\ngate oracle-7.1 x1 1/1 pass')
+  expect((await runIn(c, ['apply', 'classify', ...q])).out).toBe('apply classify: rows 1, build 1, requirement 0')
+  expect(jsonAt(join(c, 'r1/labels.json'))[id]).toBe('build') // the task's own file, as step 9's apply writes it
+  expect(existsSync(join(qd, 'answers/classify.applied'))).toBe(true)
+  expect(await runIn(c, ['build', 'classify', ...q])).toEqual({ code: 1, out: 'build classify: refused, the batch is applied' })
+  // step9/ is byte-equal after all of it: no page, answer, proxy run, seen row or applied mark went there
+  expect(snapshot(join(c, 'step9'))).toEqual(before)
+  // a command that takes no --queue says so
+  await expect(runIn(c, ['swap', ...q])).rejects.toThrow('usage:')
+  await expect(runIn(c, ['build', 'classify', '--queue'])).rejects.toThrow('usage:')
+})
+
+test('without --queue, human reads step9 as before', async () => {
+  const c = await copyOf('wq2'), queued = join(c, 'step11/queue')
+  expect((await runIn(c, ['build', 'oracle-7.1', taskFile])).out).toBe('build oracle-7.1: rows 3, parts 9')
+  expect(jsonAt(join(c, 'step9/pages/oracle-7.1.json')).map((r) => r.key)).toEqual([id, xid, sid])
+  expect(readFileSync(join(c, 'step9/seen.tsv'), 'utf8')).toContain(`oracle-7.1\tr1\t${id}`)
+  expect(existsSync(queued)).toBe(false)
+  // naming step9 as the queue is the same call
+  const page9 = readFileSync(join(c, 'step9/pages/oracle-7.1.json'), 'utf8')
+  rmSync(join(c, 'step9/pages'), { recursive: true })
+  await runIn(c, ['build', 'oracle-7.1', taskFile, '--queue', join(c, 'step9')])
+  expect(readFileSync(join(c, 'step9/pages/oracle-7.1.json'), 'utf8')).toBe(page9)
+  answer(c, 'oracle-7.1', [[id, 'same'], [xid, 'same'], [sid, 'same']])
+  expect((await runIn(c, ['status'])).out).toContain('status oracle-7.1: rows 3, answered 3, applied no')
+  expect((await runIn(c, ['apply', 'oracle-7.1'])).code).toBe(0)
+  expect(existsSync(join(c, 'step9/answers/oracle-7.1.applied'))).toBe(true)
+  expect(existsSync(queued)).toBe(false)
 })

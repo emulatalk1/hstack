@@ -1253,6 +1253,53 @@ test('queue exits 3 on a set that is not usable', async () => {
   expect(q.out.split('\n').slice(-2)).toEqual(['external: tasks 1, checks 9, kappa=-0.50 raw=0.00 ac1=-0.50 usable no', 'stop: external not usable'])
 })
 
+// --- step 11 ruling 10: `queue --tasks <task,...> --out <dir>` draws the walked tasks' reads in a folder of their own ---
+// x1-01 has 12 sampled checks (a dispute in T2), x2-01 has 3 and a broken one; r1 is a task-repo task the walk never names
+const walkedData = async (name) => {
+  const d = clData(name), e = END.slice(0, 7), f = FIX.slice(0, 7), g = '7654321'
+  const many = (p, k) => Array.from({ length: k }, (_, i) => [`${p}-T${i + 1}`, i % 2 ? 'absent-at-base' : 'valid'])
+  const files = (rows) => Object.fromEntries(rows.map(([id]) => [`${id}.ts`, 'SENTINEL-CHECK\n']))
+  const re = many(f, 14), x1 = many(e, 12), x2 = [...many(g, 3), [`${g}-T9`, 'broken']]
+  clTask(d, 'r1', FIX, re, files(re)); clTask(d, 'x1-01', END, x1, files(x1)); clTask(d, 'x2-01', g.padEnd(40, '0'), x2, files(x2))
+  const rate = (r, id) => (id.endsWith('-T2') && r === 2 ? 'partly' : 'traceable')
+  for (const a of [[join(d, 'env/r.json'), 'r1'], ['x1-01'], ['x2-01']]) expect((await withData(d, () => quiet(() => oracle(['classify', ...a], { agent: fake([], { rate }) })))).code).toBe(0)
+  return { d, ids: (rows) => rows.map((r) => r[0]), re, x1, x2, e, g }
+}
+const tsvAt = (f) => readFileSync(f, 'utf8').trim().split('\n').map((l) => l.split('\t'))
+
+test('a queue over named tasks draws only from them', async () => {
+  const { d, ids, x1, e } = await walkedData('wq1'), out = join(d, 'step11/queue')
+  const q = await withData(d, () => quiet(() => oracle(['queue', '--tasks', 'x1-01', '--out', out])))
+  expect(q).toEqual({ code: 0, out: 'queue: classify 1, sample-7.1 10' })
+  expect(readdirSync(out).sort()).toEqual(['classify.tsv', 'sample-7.1.tsv']) // no 7.2, inputs or labels for walked tasks
+  expect(tsvAt(join(out, 'classify.tsv'))).toEqual([['task', 'id'], ['x1-01', `${e}-T2`]])
+  const s71 = tsvAt(join(out, 'sample-7.1.tsv'))
+  expect(s71[0]).toEqual(['set', 'task', 'id'])
+  expect(s71.slice(1)).toEqual(queuePick(ids(x1), 10, SEED).map((id) => ['x1', 'x1-01', id]))
+  expect(existsSync(join(d, 'step9'))).toBe(false)
+})
+
+test('the queue refuses the step 9 folder', async () => {
+  const { d } = await walkedData('wq2'), run = (args) => withData(d, () => quiet(() => oracle(['queue', ...args])))
+  for (const out of [join(d, 'step9'), join(d, 'step9/sub'), join(d, 'x1-01/../step9'), join(d, 'step11/../step9/')]) await expect(run(['--tasks', 'x1-01', '--out', out])).rejects.toThrow('step 9 folder')
+  expect(existsSync(join(d, 'step9'))).toBe(false)
+  await expect(run(['--tasks', 'x1-01,nope', '--out', join(d, 'q')])).rejects.toThrow('not a classified task: nope')
+  await expect(run(['--tasks', 'x1-01'])).rejects.toThrow('usage:')
+  expect((await run(['--out', join(d, 'step90'), '--tasks', 'x1-01'])).code).toBe(0) // a sibling whose name starts with step9 is fine
+})
+
+test('the sample takes min(10, scored) per stack', async () => {
+  const { d, ids, re, x1, x2 } = await walkedData('wq3'), out = join(d, 'q')
+  expect((await withData(d, () => quiet(() => oracle(['queue', '--tasks', 'x2-01,x1-01,r1', '--out', out])))).code).toBe(0)
+  const s71 = tsvAt(join(out, 'sample-7.1.tsv')).slice(1), by = (set) => s71.filter((r) => r[0] === set).map((r) => r[2])
+  expect(by('x1')).toEqual(queuePick(ids(x1), 10, SEED)) // 12 scored -> 10
+  expect(by('x1')).toHaveLength(10)
+  expect(by('x2')).toEqual(queuePick(ids(x2.slice(0, 3)), 10, SEED)) // 3 scored (not the broken one) -> all 3
+  expect(by('x2')).toHaveLength(3)
+  expect(by('task-repo')).toEqual(queuePick(ids(re), 10, SEED))
+  expect(tsvAt(join(out, 'classify.tsv')).slice(1).map((r) => r[0]).sort()).toEqual(['r1', 'x1-01', 'x2-01'])
+})
+
 // --- step 6 task 2: the fail-to-pass matcher, id numbering over step oracles, the score command ---
 test('f2pOf matches parametrised and qualified names and asks when a segment is in both lists', () => {
   const cid = (c) => caseId(c)

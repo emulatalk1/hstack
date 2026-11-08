@@ -3,7 +3,7 @@
 // token; the answers are appended to data files. Prints counts only: a row, a page, an answer and a note are sealed.
 import { createHash, randomBytes } from 'node:crypto'
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { gitOut } from './bugs.mjs'
 import { ARMS } from './canary.mjs'
 import { taskOf } from './ext.mjs'
@@ -15,7 +15,7 @@ import { loadTask } from './lib/task.mjs'
 import { clScored, dataDir, labelLines, poolKeys, queueDraw, queuePools, readPairs, seedOf } from './oracle.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> | build oracle-7.1 <task.json> | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> | serve <batch> [--port <n>] [--root] | status | history <transcripts dir> <task.json> | kappa history | apply <batch> | recount [--drop <task,...>] | proxy <batch> <task.json> [--model <id>] [--chunk <n>]'
+const USAGE = 'usage: bun bench/human.mjs swap [--drop <task,...>] | build <inputs|rerate-7.2|classify|classify-2|pairs> [--queue <dir>] | build oracle-7.1 <task.json> [--queue <dir>] | build labels <task.json> --log <file|dir> [--log <file|dir> ...] --attribution <file> [--queue <dir>] | serve <batch> [--port <n>] [--root] [--queue <dir>] | status [--queue <dir>] | history <transcripts dir> <task.json> | kappa history | apply <batch> [--queue <dir>] | recount [--drop <task,...>] | proxy <batch> <task.json> [--model <id>] [--chunk <n>] [--queue <dir>]'
 const readJson = (f) => { try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null } }
 const read = (f) => readFileSync(f, 'utf8')
 // a tsv with a header as objects; a file that is not there has no rows
@@ -73,17 +73,17 @@ async function originTest(repo, ref, origin) {
   return lines.map((l) => (t && l.includes(t) ? `>> ${l}` : `   ${l}`)).join('\n')
 }
 
-function inputs(data) {
-  return tsvRows(sampleOf(join(data, 'step9'), 'inputs')).map(({ task }) => {
+function inputs(data, q) {
+  return tsvRows(sampleOf(q, 'inputs')).map(({ task }) => {
     const input = read(join(data, task, 'input.md')), hits = check(input)
     return { key: task, task, parts: [part('input.md', input), part('interface.md', read(join(data, task, 'interface.md'))),
       part('input-check', hits.length ? `FAIL ${hits.length} hits` : 'PASS no code, test or source pointer')] }
   })
 }
 
-async function oracle71(data, taskFile) {
+async function oracle71(data, q, taskFile) {
   if (!taskFile) throw new Error(USAGE)
-  const q = join(data, 'step9'), tasks = readJson(join(data, 'tasks.json')) ?? {}, repo = (await loadTask(taskFile)).repo
+  const tasks = readJson(join(data, 'tasks.json')) ?? {}, repo = (await loadTask(taskFile)).repo
   const rows = [...tsvRows(sampleOf(q, 'sample-7.1')).map((r) => ({ ...r, step: false })), ...tsvRows(join(q, 'sample-7.1-step.tsv')).map((r) => ({ ...r, step: true }))]
   const out = []
   for (const { task, id, step } of rows) {
@@ -113,24 +113,24 @@ function classView(data, task, id) {
   }
   throw new Error(`a row of ${task} is in no classify folder`)
 }
-const rerate = (data) => tsvRows(sampleOf(join(data, 'step9'), 'sample-7.2')).map((r) => classView(data, r.task, r.id))
+const rerate = (data, q) => tsvRows(sampleOf(q, 'sample-7.2')).map((r) => classView(data, r.task, r.id))
 // a classification batch's { task, id } rows: classify.tsv and the step 6 addition `<task>-classify.tsv`; classify-2, the
 // second batch's disputes: the disputed ids of each task's b2 rounds
-const classRows = (data, batch) => batch === 'classify'
-  ? readdirSync(join(data, 'step9')).filter((f) => /^(.+-)?classify\.tsv$/.test(f)).sort().flatMap((f) => tsvRows(join(data, 'step9', f)))
+const classRows = (data, q, batch) => batch === 'classify'
+  ? readdirSync(q).filter((f) => /^(.+-)?classify\.tsv$/.test(f)).sort().flatMap((f) => tsvRows(join(q, f)))
   : queuePools(data).sets.flatMap(([, ts]) => ts).flatMap((t) => (readJson(join(data, t, 'agreement.json'))?.splitRounds ?? []).filter((x) => x.name.includes('b2')).flatMap((x) => x.disputed ?? []).map((id) => ({ task: t, id })))
 // a cold-setup task's disputes stay disputed and unread (decision 1 A, ruling 5); `cold` counts them for the count line
-const classBatch = (batch) => (data) => {
-  const all = classRows(data, batch), cold = coldOf(data), rows = all.filter((r) => !cold.has(r.task))
+const classBatch = (batch) => (data, q) => {
+  const all = classRows(data, q, batch), cold = coldOf(data), rows = all.filter((r) => !cold.has(r.task))
   return Object.assign(rows.map((r) => classView(data, r.task, r.id)), { cold: all.length - rows.length })
 }
 
-async function labels(data, taskFile, logs, attribution) {
+async function labels(data, q, taskFile, logs, attribution) {
   if (!taskFile || !logs.length || !attribution) throw new Error(USAGE)
   const repo = (await loadTask(taskFile)).repo, pairs = readPairs(join(data, 'sources')), logFiles = logs.flatMap(filesUnder)
   const naming = (files, sha7) => files.flatMap((f) => read(f).split('\n').filter((l) => l.includes(sha7)).map((l) => `${relative(data, f).startsWith('..') ? f : relative(data, f)}: ${l}`)).join('\n')
   const brief = read(join(data, 'briefs/label.md')), out = []
-  for (const { commit, task } of tsvRows(join(data, 'step9/labels.tsv'))) {
+  for (const { commit, task } of tsvRows(join(q, 'labels.tsv'))) {
     const p = pairs.find((x) => x.commit === commit && x.task === task)
     if (!p) throw new Error(`labels: a row of ${task} has no pair in sources/pairs.tsv`)
     const { taskLine, lines } = await labelLines(data, repo, task, [p]), sha7 = commit.slice(0, 7)
@@ -155,9 +155,9 @@ function pairsView(data) {
 
 const VIEWS = { inputs, 'oracle-7.1': oracle71, 'rerate-7.2': rerate, classify: classBatch('classify'), 'classify-2': classBatch('classify-2'), labels, pairs: pairsView }
 
-async function build(data, batch, rest) {
+async function build(data, q, batch, rest) {
   if (!Object.hasOwn(VIEWS, batch)) throw new Error(USAGE)
-  if (existsSync(join(data, 'step9/answers', `${batch}.applied`))) { console.log(`build ${batch}: refused, the batch is applied`); return 1 }
+  if (existsSync(join(q, 'answers', `${batch}.applied`))) { console.log(`build ${batch}: refused, the batch is applied`); return 1 }
   const logs = [], pos = []
   let attribution = null
   for (let i = 0; i < rest.length; i++) {
@@ -166,19 +166,19 @@ async function build(data, batch, rest) {
     else pos.push(rest[i])
   }
   if (pos.length > 1 || (batch !== 'labels' && (logs.length || attribution))) throw new Error(USAGE)
-  const rows = await VIEWS[batch](data, pos[0], logs, attribution)
-  writePage(data, batch, rows)
+  const rows = await VIEWS[batch](data, q, pos[0], logs, attribution)
+  writePage(q, batch, rows)
   console.log(`build ${batch}: rows ${rows.length}, parts ${rows.reduce((s, r) => s + r.parts.length, 0)}${rows.cold === undefined ? '' : `, cold left out ${rows.cold}`}`)
   return 0
 }
 
 // the batch's page file, and the sealed record of what the user was shown (ruling 2): batch, task, key, once each
-function writePage(data, batch, rows) {
+function writePage(q, batch, rows) {
   if (new Set(rows.map((r) => r.key)).size !== rows.length) throw new Error(`build ${batch}: a key is there twice`)
-  const pages = join(data, 'step9/pages')
+  const pages = join(q, 'pages')
   mkdirSync(pages, { recursive: true })
   writeFileSync(join(pages, `${batch}.json`), JSON.stringify(rows.map(({ key, kind, parts }) => ({ key, ...(kind ? { kind } : {}), parts })), null, 2) + '\n')
-  const seen = join(data, 'step9/seen.tsv'), had = new Set(tsvRows(seen).map((r) => `${r.batch}\t${r.key}`))
+  const seen = join(q, 'seen.tsv'), had = new Set(tsvRows(seen).map((r) => `${r.batch}\t${r.key}`))
   if (!existsSync(seen)) writeFileSync(seen, 'batch\ttask\tkey\n')
   const add = rows.filter((r) => !had.has(`${batch}\t${r.key}`)).map((r) => `${batch}\t${r.task}\t${r.key}\n`).join('')
   if (add) appendFileSync(seen, add)
@@ -199,8 +199,8 @@ function gates(batch, list) {
 const counts = (batch, rows, ans) => BATCHES[batch].answers.map((a) => `${a} ${rows.filter((r) => ans.get(r.key) === a).length}`).join(', ')
 
 // ruling 5: traceable -> build, not traceable and partly -> requirement, into labels.json only
-const applyClass = (batch) => (data, rows, ans) => {
-  const task = new Map(classRows(data, batch).map((r) => [r.id, r.task]))
+const applyClass = (batch) => (data, q, rows, ans) => {
+  const task = new Map(classRows(data, q, batch).map((r) => [r.id, r.task]))
   if (rows.some((r) => !task.has(r.key))) throw new Error(`apply ${batch}: a row is in no queue file`)
   const label = (r) => (ans.get(r.key) === 'traceable' ? 'build' : 'requirement')
   for (const t of new Set(rows.map((r) => task.get(r.key)))) {
@@ -212,8 +212,7 @@ const applyClass = (batch) => (data, rows, ans) => {
 }
 
 // ruling 6: `different` drops the check (a task-repo step check leaves step.json ids too); `unclear` counts against the gate only
-function apply71(data, rows, ans) {
-  const q = join(data, 'step9')
+function apply71(data, q, rows, ans) {
   const where = new Map([...tsvRows(sampleOf(q, 'sample-7.1')).map((r) => [r.id, { ...r, step: false }]), ...tsvRows(join(q, 'sample-7.1-step.tsv')).map((r) => [r.id, { ...r, set: 'task-repo-step', step: true }])])
   const list = rows.map((r) => ({ ...where.get(r.key), id: r.key, ok: ans.get(r.key) === 'same', drop: ans.get(r.key) === 'different' }))
   const fileOf = (x) => join(data, x.task, x.step ? 'step/oracle' : 'oracle', 'manifest.json')
@@ -228,40 +227,40 @@ function apply71(data, rows, ans) {
 }
 
 // ruling 6: the user's label against the agreed one; partly agrees with neither; no label changes
-function apply72(data, rows, ans) {
-  const where = new Map(tsvRows(sampleOf(join(data, 'step9'), 'sample-7.2')).map((r) => [r.id, r]))
+function apply72(data, q, rows, ans) {
+  const where = new Map(tsvRows(sampleOf(q, 'sample-7.2')).map((r) => [r.id, r]))
   if (rows.some((r) => !where.has(r.key))) throw new Error('apply rerate-7.2: a row has no sample row')
   return gates('rerate-7.2', rows.map((r) => { const w = where.get(r.key); return { set: w.set, ok: AGREES[readJson(join(data, w.task, 'labels.json'))?.[r.key]] === ans.get(r.key) } }))
 }
 
 const APPLY = {
   classify: applyClass('classify'), 'classify-2': applyClass('classify-2'), 'oracle-7.1': apply71, 'rerate-7.2': apply72,
-  inputs: (data, rows, ans) => { // a leak stops the plan
+  inputs: (data, q, rows, ans) => { // a leak stops the plan
     const clean = rows.filter((r) => ans.get(r.key) === 'clean').length
     console.log(`gate inputs ${clean}/${rows.length} ${clean === rows.length ? 'pass' : 'stop'}`)
     return clean === rows.length ? 0 : 3
   },
-  labels: (data, rows, ans) => { // ruling 4: the pairs called fix are the second batch
+  labels: (data, q, rows, ans) => { // ruling 4: the pairs called fix are the second batch
     const fix = rows.filter((r) => ans.get(r.key) === 'fix')
-    writeFileSync(join(data, 'step9/batch2.tsv'), ['commit\ttask\tkind', ...fix.map((r) => { const i = r.key.indexOf(':'); return [r.key.slice(i + 1), r.key.slice(0, i), r.kind].join('\t') })].join('\n') + '\n')
+    writeFileSync(join(q, 'batch2.tsv'), ['commit\ttask\tkind', ...fix.map((r) => { const i = r.key.indexOf(':'); return [r.key.slice(i + 1), r.key.slice(0, i), r.kind].join('\t') })].join('\n') + '\n')
     console.log(`apply labels: rows ${rows.length}, fix ${fix.length}, not fix ${rows.length - fix.length}`)
     return 0
   },
-  pairs: (data, rows, ans) => { console.log(`apply pairs: rows ${rows.length}, ${counts('pairs', rows, ans)}`); return 0 },
-  history: (data, rows) => { console.log(`apply history: rows ${rows.length}`); return 0 }, // kappa history reads the answers
+  pairs: (data, q, rows, ans) => { console.log(`apply pairs: rows ${rows.length}, ${counts('pairs', rows, ans)}`); return 0 },
+  history: (data, q, rows) => { console.log(`apply history: rows ${rows.length}`); return 0 }, // kappa history reads the answers
 }
 
-function apply(data, batch) {
+function apply(data, q, batch) {
   if (!Object.hasOwn(APPLY, batch)) throw new Error(USAGE)
-  const rows = readJson(join(data, 'step9/pages', `${batch}.json`))
+  const rows = readJson(join(q, 'pages', `${batch}.json`))
   if (!Array.isArray(rows)) throw new Error(`no page for ${batch}: build it first`)
-  const dir = join(data, 'step9/answers'), file = join(dir, `${batch}.tsv`), applied = join(dir, `${batch}.applied`)
+  const dir = join(q, 'answers'), file = join(dir, `${batch}.tsv`), applied = join(dir, `${batch}.applied`)
   const given = existsSync(file) ? parseAnswers(read(file)) : new Map(), ans = new Map()
   for (const r of rows) if (answerOk(batch, r, given.get(r.key)?.answer)) ans.set(r.key, given.get(r.key).answer)
   if (ans.size < rows.length) { console.log(`apply ${batch}: refused, unanswered ${rows.length - ans.size} of ${rows.length}`); return 1 }
   const sha = createHash('sha256').update(existsSync(file) ? readFileSync(file) : '').digest('hex')
   if (existsSync(applied) && read(applied).trim() !== sha) { console.log(`apply ${batch}: refused, the answers changed after apply`); return 1 }
-  const code = APPLY[batch](data, rows, ans)
+  const code = APPLY[batch](data, q, rows, ans)
   mkdirSync(dir, { recursive: true })
   writeFileSync(applied, `${sha}\n`) // the server refuses every write from now on
   return code
@@ -321,7 +320,7 @@ async function history(data, dir, taskFile) {
       part('Agent, before', lastAgentText(entries, e.line)), part('Human', humanText(entries, e)),
       part('Where', `task ${seg.task}, session ${list.indexOf(seg) + 1} of ${list.length}, event ${i + 1} of ${seg.events.length}`)] }))
   }
-  writePage(data, 'history', rows)
+  writePage(join(data, 'step9'), 'history', rows)
 
   const total = segs.reduce((n, s) => n + s.events.length, 0)
   console.log(`history: sessions ${sessions.length}, unparsable lines ${bad}, segments ${segs.length}, events ${total}, outside ${outside}, sample ${picked.length}, events in sample ${rows.length}`)
@@ -433,11 +432,11 @@ fetch('data').then((x) => x.json()).then((x) => {
 </body></html>
 `
 
-export function serve(data, batch, port = 0, root = false) {
+export function serve(data, batch, port = 0, root = false, q = join(data, 'step9')) {
   if (!Object.hasOwn(BATCHES, batch)) throw new Error(USAGE)
-  const pages = join(data, 'step9/pages'), rows = readJson(join(pages, `${batch}.json`))
+  const pages = join(q, 'pages'), rows = readJson(join(pages, `${batch}.json`))
   if (!Array.isArray(rows)) throw new Error(`no page for ${batch}: build it first`)
-  const answers = join(data, 'step9/answers'), file = join(answers, `${batch}.tsv`), applied = join(answers, `${batch}.applied`)
+  const answers = join(q, 'answers'), file = join(answers, `${batch}.tsv`), applied = join(answers, `${batch}.applied`)
   const byKey = new Map(rows.map((r) => [r.key, r]))
   const token = randomBytes(24).toString('hex'), tokenFile = join(pages, `${batch}.token`)
   writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 })
@@ -550,7 +549,7 @@ function proxyReply(text, batch, rows) {
 }
 
 const sha256 = (s) => createHash('sha256').update(s).digest('hex')
-async function proxy(data, batch, rest, agent) {
+async function proxy(data, q, batch, rest, agent) {
   const [taskFile, ...flags] = rest, o = { model: PROXY_MODEL, chunk: String(PROXY_CHUNK) }
   if (!taskFile || taskFile.startsWith('--') || flags.length % 2) throw new Error(USAGE)
   for (let i = 0; i < flags.length; i += 2) {
@@ -559,11 +558,11 @@ async function proxy(data, batch, rest, agent) {
     o[k] = flags[i + 1]
   }
   if (!/^[1-9]\d*$/.test(o.chunk)) throw new Error(USAGE)
-  const rows = readJson(join(data, 'step9/pages', `${batch}.json`))
+  const rows = readJson(join(q, 'pages', `${batch}.json`))
   if (!Array.isArray(rows)) throw new Error(`no page for ${batch}: build it first`)
-  const answers = join(data, 'step9/answers'), file = join(answers, `${batch}.tsv`)
+  const answers = join(q, 'answers'), file = join(answers, `${batch}.tsv`)
   if (existsSync(join(answers, `${batch}.applied`))) { console.log(`proxy ${batch}: refused, the batch is applied`); return 1 }
-  const dir = join(data, 'step9/proxy', batch), model = o.model
+  const dir = join(q, 'proxy', batch), model = o.model
   const chunks = proxyChunks(batch, rows, Number(o.chunk)).map((rs, i) => ({ c: i + 1, rows: rs, text: proxyPrompt(data, batch, rs) }))
   // runClaude passes the prompt in argv (macOS ARG_MAX 1 MiB with the env): check every chunk before any run
   const big = chunks.find((x) => Buffer.byteLength(x.text) > PROXY_MAX_BYTES)
@@ -605,8 +604,8 @@ async function proxy(data, batch, rest, agent) {
   return 0
 }
 
-function statusCmd(data) {
-  const pages = join(data, 'step9/pages'), answers = join(data, 'step9/answers')
+function statusCmd(q) {
+  const pages = join(q, 'pages'), answers = join(q, 'answers')
   for (const f of existsSync(pages) ? readdirSync(pages).filter((x) => x.endsWith('.json')).sort() : []) {
     const batch = f.slice(0, -5), keys = new Set((readJson(join(pages, f)) ?? []).map((r) => r.key))
     const given = existsSync(join(answers, `${batch}.tsv`)) ? parseAnswers(read(join(answers, `${batch}.tsv`))) : new Map()
@@ -616,20 +615,29 @@ function statusCmd(data) {
 }
 
 // a number is an exit code; serve returns its server, which keeps the process up
-export async function human(args, { agent = sealedAgent } = {}) {
+export async function human(argv, { agent = sealedAgent } = {}) {
   if (!process.env.HSTACK_BENCH_MACHINE) throw new Error('set HSTACK_BENCH_MACHINE to the machine file (for example .evidence/bench/machine.json)')
-  const data = dataDir(), [cmd, batch, ...rest] = args
+  const data = dataDir()
+  // `--queue <dir>`: where the reads of build, serve, status, apply and proxy live (default step 9's folder)
+  let args = argv, q = join(data, 'step9')
+  const qi = argv.indexOf('--queue')
+  if (qi > 0 && ['build', 'serve', 'status', 'apply', 'proxy'].includes(argv[0])) {
+    if (!argv[qi + 1]) throw new Error(USAGE)
+    q = resolve(argv[qi + 1])
+    args = argv.filter((_, i) => i !== qi && i !== qi + 1)
+  }
+  const [cmd, batch, ...rest] = args
   if (cmd === 'swap' && (args.length === 1 || (args.length === 3 && batch === '--drop'))) return swap(data, args.length === 3 ? rest[0].split(',') : [])
-  if (cmd === 'build' && batch) return build(data, batch, rest)
+  if (cmd === 'build' && batch) return build(data, q, batch, rest)
   if (cmd === 'serve' && batch) {
     const root = rest.includes('--root'), o = rest.filter((x) => x !== '--root'), ok = rest.length - o.length <= 1
-    if (ok && (o.length === 0 || (o.length === 2 && o[0] === '--port' && /^\d+$/.test(o[1])))) return serve(data, batch, o.length ? Number(o[1]) : 0, root)
+    if (ok && (o.length === 0 || (o.length === 2 && o[0] === '--port' && /^\d+$/.test(o[1])))) return serve(data, batch, o.length ? Number(o[1]) : 0, root, q)
   }
-  if (cmd === 'status' && args.length === 1) return statusCmd(data)
+  if (cmd === 'status' && args.length === 1) return statusCmd(q)
   if (cmd === 'history' && args.length === 3) return history(data, batch, rest[0])
   if (cmd === 'kappa' && batch === 'history' && args.length === 2) return kappaHistory(data)
-  if (cmd === 'apply' && args.length === 2) return apply(data, batch)
-  if (cmd === 'proxy' && Object.hasOwn(BATCHES, batch ?? '')) return proxy(data, batch, rest, agent)
+  if (cmd === 'apply' && args.length === 2) return apply(data, q, batch)
+  if (cmd === 'proxy' && Object.hasOwn(BATCHES, batch ?? '')) return proxy(data, q, batch, rest, agent)
   if (cmd === 'recount' && (args.length === 1 || (args.length === 3 && batch === '--drop'))) return recount(data, args.length === 3 ? rest[0].split(',') : [])
   throw new Error(USAGE)
 }

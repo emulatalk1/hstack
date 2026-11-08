@@ -3,7 +3,7 @@
 // pair twice by sealed agents, merge the labels; then rewrite each source's tests as black-box checks by sealed writers
 // (ruling 9). Prints counts only: a reply, a manifest and a check are sealed.
 import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join, normalize, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path'
 import { gitOut, readRows } from './bugs.mjs'
 import { appendWalk, parseRunner, readinessOf, removeRecorded, taskOf } from './ext.mjs'
 import { grade as gradeCmd, oracleFiles } from './grade.mjs'
@@ -15,7 +15,7 @@ import { fixMatches, floorScore, killsOf, ownVerdict, verdict } from './lib/scor
 import { loadTask } from './lib/task.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
-const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> [--batch 2] | write <external task> | validate <task.json> <task> [--ids <id,...>] | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | classify <task.json> <task> --round b2 | split [<task.json>] <task> | queue | score <task> <sha> | step <external task> | step <task.json> <task> | seed <external task> | seed <task.json> <task> | kills <external task> | kills <task.json> <task>'
+const USAGE = 'usage: bun bench/oracle.mjs pairs <task.json> [--drop <task,...>] | label <task.json> <1|2> <task> | labels | write <task.json> <commit> [--batch 2] | write <external task> | validate <task.json> <task> [--ids <id,...>] | validate <external task> | sweep <task.json> [--drop <task,...>] | sheet <external task> | classify [<task.json>] <task> | classify <task.json> <task> --round b2 | split [<task.json>] <task> | queue [--tasks <task,...> --out <dir>] | score <task> <sha> | step <external task> | step <task.json> <task> | seed <external task> | seed <task.json> <task> | kills <external task> | kills <task.json> <task>'
 const LABELS = { later: ['fix', 'requirement change'], 'in-task': ['fix', 'build'] }
 const PAIRS_HEAD = 'commit\ttask\tkind\thunks'
 
@@ -1147,12 +1147,12 @@ const tsvOut = (f, head, rows) => writeFileSync(f, [head.join('\t'), ...rows.map
 
 // ruling 16: the step 9 queue over the classified tasks of each set; exit 3 when a set's pooled agreement is not usable
 // the pools ruling 16 draws from (step 9's cold swap rebuilds them): per file, [set, [[task, id], ...]] and the count per set.
-// `drop`: tasks the locked queue did not draw from (step 9's swap)
-export function queuePools(data, drop = []) {
+// `drop`: tasks the locked queue did not draw from (step 9's swap); `only`: draw from these tasks alone (step 11's walked queue)
+export function queuePools(data, drop = [], only = null) {
   const ext = join(data, 'ext')
   const sampleFile = join(ext, 'sample.tsv'), [head, ...rows] = existsSync(sampleFile) ? readFileSync(sampleFile, 'utf8').trim().split('\n').map((l) => l.split('\t')) : [[]]
   const stackOf = new Map(rows.map((r) => [r[head.indexOf('task')], r[head.indexOf('stack')]]))
-  const done = (t) => existsSync(join(data, t, 'agreement.json')) && !drop.includes(t)
+  const done = (t) => existsSync(join(data, t, 'agreement.json')) && !drop.includes(t) && (!only || only.includes(t))
   const sets = [['task-repo', Object.keys(readJson(join(data, 'tasks.json')) ?? {}).filter(done)], ['external', [...stackOf.keys()].filter(done)]]
   const ctx = (t) => ({ data, task: t, dir: join(data, t) })
   const groups = [['task-repo', sets[0][1]], ...[...new Set(sets[1][1].map((t) => stackOf.get(t)))].sort().map((s) => [s, sets[1][1].filter((t) => stackOf.get(t) === s)])]
@@ -1169,6 +1169,24 @@ export function queuePools(data, drop = []) {
 export const poolKeys = (items) => new Map(items.map(([t, id]) => [id, t]))
 export const queueDraw = ({ n, sets }, seed) => sets.flatMap(([g, items]) => { const owner = poolKeys(items); return queuePick([...owner.keys()], n, seed).map((id) => [g, owner.get(id), id]) })
 
+// the disputed [task, id] rows of the sets' tasks: the main round's and the split rounds'
+const queueDisputed = (data, sets) => sets.flatMap(([, ts]) => ts.flatMap((t) => { const a = readJson(join(data, t, 'agreement.json')); return [...a.disputed, ...splitRounds({ dir: join(data, t) }, a).flatMap((x) => x.disputed ?? [])].map((id) => [t, id]) }))
+
+// step 11 ruling 10: the disputes and the 7.1 sample of the named tasks only, in a folder of their own (never step 9's)
+function queueTasks(tasks, out) {
+  const data = dataDir(), dir = resolve(out), rel = relative(join(data, 'step9'), dir)
+  if (!rel || (!rel.startsWith('..') && !isAbsolute(rel))) throw new Error('queue: --out is the step 9 folder or inside it')
+  const { sets, pools } = queuePools(data, [], tasks)
+  const got = new Set(sets.flatMap(([, ts]) => ts)), missing = tasks.filter((t) => !got.has(t))
+  if (missing.length) throw new Error(`queue: not a classified task: ${missing.join(', ')}`)
+  mkdirSync(dir, { recursive: true })
+  const disputed = queueDisputed(data, sets), s71 = queueDraw(pools['sample-7.1'], seedOf(data))
+  tsvOut(join(dir, 'classify.tsv'), ['task', 'id'], disputed)
+  tsvOut(join(dir, 'sample-7.1.tsv'), ['set', 'task', 'id'], s71)
+  console.log(`queue: classify ${disputed.length}, sample-7.1 ${s71.length}`)
+  return 0
+}
+
 async function queue() {
   const data = dataDir(), q = join(data, 'step9')
   const seed = seedOf(data)
@@ -1177,7 +1195,7 @@ async function queue() {
   const src = join(data, 'sources/labels.tsv')
   const step9 = existsSync(src) ? readFileSync(src, 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')).filter((r) => r[5] === 'step9').map((r) => r.slice(0, 3)) : []
   tsvOut(join(q, 'labels.tsv'), ['commit', 'task', 'kind'], step9)
-  const disputed = sets.flatMap(([, ts]) => ts.flatMap((t) => { const a = readJson(join(data, t, 'agreement.json')); return [...a.disputed, ...splitRounds({ dir: join(data, t) }, a).flatMap((x) => x.disputed ?? [])].map((id) => [t, id]) }))
+  const disputed = queueDisputed(data, sets)
   tsvOut(join(q, 'classify.tsv'), ['task', 'id'], disputed)
   const s71 = queueDraw(pools['sample-7.1'], seed)
   tsvOut(join(q, 'sample-7.1.tsv'), ['set', 'task', 'id'], s71)
@@ -1585,6 +1603,10 @@ export async function oracle(args, inj = {}) {
     return cmd === 'classify' ? classify(c, agent) : split(c, agent, validateRun)
   }
   if (cmd === 'queue' && args.length === 1) return queue()
+  if (cmd === 'queue' && args.length === 5 && args.slice(1).filter((_, i) => i % 2 === 0).sort().join() === '--out,--tasks' && args.slice(1).filter((_, i) => i % 2).every(Boolean)) {
+    const v = (f) => args[args.indexOf(f) + 1]
+    return queueTasks(v('--tasks').split(',').filter(Boolean), v('--out'))
+  }
   if (cmd === 'score' && taskPath && rest.length === 1) return scoreCmd(taskPath, rest[0])
   if (cmd === 'step' && taskPath && rest.length === 1) return stepRe(await taskCtx(rest[0], taskPath), { agent, grade })
   if (cmd === 'step' && taskPath && rest.length === 0) return step(clCtx(taskPath), agent)
