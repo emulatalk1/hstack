@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-11-10
+* **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 12, "Decided by the user on 2026-11-10") and the [trial run plan](/plans/2026-11-08-bench-trial.md) the user's decisions after the step 11 regrade: three private-set checks leave the score by 7.1 (A), s3-08 leaves H1–H4 as not gradeable offline so s3 walks 3 tasks (B), M3 closed only where split mode holds (C), and the walk's rulings (a `perStack` copy of `groups.json`, `cold_setup` restored, serve verdicts in `serve.tsv`, a second queue folder), with reasons for each file they change.
+
 ## 2026-11-08
 * **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 12, "Applied at step 11") the 14 rulings of the [trial run plan](/plans/2026-11-08-bench-trial.md) and the user's decisions of 2026-11-08 (every default; Phase B as a follow-on plan), with its deviations and the reasons file `progress/step11/reasons.tsv`, before any change to `grade`, `oracle-run`, the box or the reader.
 * **Approve**: The user approved the step 10 build; the [stick v1 plan](/plans/2026-11-08-bench-stick-v1.md) is `stable`, and stick v1 (`progress/step10-lock.md`, `progress/stick-v1.sha256`) is merged into main. Part 2 waits on step 11's plan for the step 8 carry-overs.

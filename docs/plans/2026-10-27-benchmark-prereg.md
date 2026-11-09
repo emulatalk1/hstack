@@ -660,6 +660,21 @@ The compare of ruling 11 gets a reason per changed glob in `progress/step11/reas
 
 Registered before any change to `grade`, `oracle-run`, the box or the reader; `bench/proxy.mjs` and `bench/trial.mjs` do not exist.
 
+**Decided by the user on 2026-11-10** ("Theo đề xuất"), after the third full regrade (Task 12) left five differences from the locks, each classified content-free (exit codes, file names, one repeat, and a networked repeat of a trusted end); registered before the change each makes and before the walk:
+
+1. **(A) Three private-set checks leave the score by section 7.1** (a check must pass on the reference). p8a `d1ea76b-T13` (step oracle) and p8e `eb2b016-T7` (fix-commit oracle) pass only with network at run time; p8e `a9c2377-T15` (step oracle) differs in the container with or without network. Under the step 11 grade environment, which every arm's product takes (rulings 4–8), none of the three passes on its reference. Each manifest entry gets `dropped: true` and a `drop_reason` naming this decision, and a step check also leaves `step.json` `ids` (the form of step 9 ruling 6). Step ids: p8a 14 to 13, p8e 14 to 13; p8e's scored fix-commit checks 6 to 5 (rule (b) still met). s2-08's difference matched the lock on its repeat (flaky, 1 of 2) and changes nothing.
+2. **(B) s3-08 (pola-rs/polars#29923) is not gradeable offline** and leaves the H1–H4 set: its product cannot be rebuilt offline to match its end (2 sealed rebuild rounds and 1 extra round; the make passes, but the end grades as its base). It stays in `ext/sample.tsv` (it still counts toward its repo's cap and the walk's order); `s3-08/step.json` gets `ids: []`, the old ids kept under `dropped_ids` with a `drop_reason`, so H1's N counts it out (19 before the walk); `tasks-step11.tsv` lists it `dropped`. The walk of ruling 10 therefore adds s1 2 and s3 3 tasks with a non-empty step oracle (8 per stack without s3-08).
+3. **(C) M3 is recorded as closed only where split mode holds:** s1-02, s1-04, s1-06, s1-09, s2-03, s2-09 and the private set. It stays open for the 10 s1 and s2 tasks graded in one container (`grade-mode` = `shared`: s1-01, s1-03, s1-05, s1-07, s2-01, s2-02, s2-05, s2-07, s2-08, s2-10) and for all of s3 (ruling 5).
+
+Rulings for the walk, registered with these decisions:
+
+- `walk` stops a stack at `perStack` (8) accepted tasks and `sample` takes a stack's first `perStack` accepted rows. The walk runs on a copy, `logs/step11/groups-walk.json`, that differs from `ext/groups.json` only in `perStack`, raised one accepted task at a time; `ext/groups.json` stays byte-equal. s3's rank 16 (the-open-engine/zeroshot#944) was accepted at step 5 but left out of the sample by `perStack`, so it is s3's first walked task.
+- `sample` recomputes `cold_setup`. After each `sample`, the controller restores that column so the cold-setup tasks stay those of stick v1 (s1-09, s2-09, s3-07, s3-08) and every walked row reads `no` (ruling 10); no other cell of a kept row changes.
+- A walked task's serve verdict is appended to `ext/step5-logs/serve.tsv`, where `oracle write` reads it; every other driver log goes to `logs/step11/`.
+- If a second reader queue is needed after `oracle step` (a walked task whose step oracle is empty), it is `<data>/step11/queue-2`, since Task 10's tool refuses a folder that already holds `pages/`.
+
+Deviations (for step 14): three checks dropped after the stick v1 lock because of the grade environment, not a human read (A); s3-08 out of H1–H4 although the step 5 pipeline kept it (B); s3 walks 3 tasks, not 2, so that H1's N reaches 24 (B); M3 closed per task, not per set (C). The reasons file gains a line per file these change.
+
 **Part 2: measuring the plugin (needs the plugin)**
 
 11. Trial run: 2 `real-estate` tasks (p8b and one other) and 2 external tasks (the first of the sorted list), arms H and B, k = 1. Measure tokens, hours, σ_d; apply the N rule of 10.2. Not analysed.

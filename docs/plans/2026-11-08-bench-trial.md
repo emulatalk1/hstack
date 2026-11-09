@@ -270,7 +270,7 @@ Each has a recommended default; the prereg is silent on all six.
 ### Task 13: The walk (controller and sealed agents)
 
 - [ ] **Step 1:** Copy the step 5 drivers (`ext/step5-walk.sh`, `step5-serve.sh`, `step5-sheet.sh`) to `<data>/logs/step11/`, re-pointed at this checkout and at `logs/step11/` (they name the step 5 worktree).
-- [ ] **Step 2:** Per stack s1, s3: `bun bench/ext.mjs walk <groups> <stack>` from where it stopped; each accepted candidate through the step 5 pipeline under this branch's `oracle-run`; `box-env` for it; then the reader on its disputes and the 7.1 sample (Task 10's queue, decision 5), `oracle step`; count tasks with ids; stop a stack at 8.
+- [ ] **Step 2:** Per stack s1, s3: `bun bench/ext.mjs walk <groups> <stack>` from where it stopped; each accepted candidate through the step 5 pipeline under this branch's `oracle-run`; `box-env` for it; then the reader on its disputes and the 7.1 sample (Task 10's queue, decision 5), `oracle step`; count tasks with ids; stop a stack at 8 (s3 without s3-08, the user's decision (B) of 2026-11-10).
 - [ ] **Step 3:** `oracle seed` and `oracle kills` on each walked task. Count the dependency files each walked PR changes (file names only).
 - [ ] **Step 4:** Recount H1's N; expect 24. Record each walked task's row (id, repo, rank, ids, scored checks, seeded bugs) for the task list.
 
@@ -302,10 +302,12 @@ Sketched here so the trial's shape is fixed now; the follow-on plan adds only th
 - A served task graded in one container (ruling 5) and an end graded through the networked path (ruling 4), each listed by name.
 - Reads for walked tasks are an agent's (decision 5 (a)).
 - The external set grows past 24 (s1 and s3 walk until each has 8 tasks with a step oracle, so H2–H4 run on every kept task, 26 or more) while section 4.2 says 8 per stack and the step 10 lock's H4 line says 24; the reason is the user's decision of 2026-11-05 (H1's N counts only tasks with a step oracle, and the walk tops it up).
+- Decided by the user on 2026-11-10 (prereg section 12, "Decided by the user on 2026-11-10"): p8a `d1ea76b-T13`, p8e `eb2b016-T7` and p8e `a9c2377-T15` leave the score by 7.1 (they fail on the reference under the step 11 grade environment); s3-08 leaves H1–H4 as not gradeable offline, so s3 walks 3 tasks; M3 is closed only where split mode holds.
+- The walk runs on `logs/step11/groups-walk.json` (`perStack` raised one accepted task at a time) and the controller restores `cold_setup` in `ext/sample.tsv` after each `sample`.
 
 ## Known limits
 
-- **M3 stays open for in-process interfaces** (s3, and any task ruled `shared`): the checks run product code in the runner's process.
+- **M3 stays open for in-process interfaces and for shared-mode tasks:** all of s3, and s1-01, s1-03, s1-05, s1-07, s2-01, s2-02, s2-05, s2-07, s2-08, s2-10 (`grade-mode` = `shared`); closed for s1-02, s1-04, s1-06, s1-09, s2-03, s2-09 and the private set (the user's decision (C) of 2026-11-10).
 - **I2 depends on the probe** (ruling 6): with the fallback, the nested route stays open and is only counted.
 - **A product that needs a new dependency cannot build** (external; real-estate under decision 6 (b)), as in the box; it reads `noresult`, equally for every arm.
 - **The real-estate box runs Postgres, the dev server and browsers under `--memory 6g`;** a kill is `machine memory`, told to the user.

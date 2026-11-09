@@ -1,7 +1,15 @@
 ext/walk.tsv	step 11 ruling 10, the walk appends the candidates it checks for s1 and s3
-ext/sample.tsv	step 11 ruling 10, the walk adds its accepted tasks (s1 +2, s3 +2) to the sample
+ext/sample.tsv	step 11 ruling 10 and the user's decision (B) of 2026-11-10, the walk adds its accepted tasks (s1 +2, s3 +3 with a step oracle) to the sample; cold_setup restored to stick v1's
 ext/repos/*/packed-refs	step 11 ruling 10, the walk fetches walked PRs into existing stores
 ext/repos/*/refs/**	step 11 ruling 10, the walk fetches walked PRs into existing stores
 ext/repos/*/shallow	step 11 ruling 10, the walk fetches walked PRs into existing stores
 seeded/repos/*/shallow	step 11 ruling 10, seedRepo copies the shallow file of the store it seeds from
 arms.json	step 11 ruling 8, the turn limit per set (real-estate 28800 s); ruling 2, plugin entries later
+arm/proof-s1-01.json	step 11 Tasks 4 and 11, the box proof of s1-01 rerun on this branch (proxy route)
+p8a/step/oracle/manifest.json	the user's decision (A) of 2026-11-10, d1ea76b-T13 dropped by 7.1 under the step 11 grade environment
+p8a/step.json	the user's decision (A) of 2026-11-10, d1ea76b-T13 leaves the step ids
+p8e/oracle/manifest.json	the user's decision (A) of 2026-11-10, eb2b016-T7 dropped by 7.1 under the step 11 grade environment
+p8e/step/oracle/manifest.json	the user's decision (A) of 2026-11-10, a9c2377-T15 dropped by 7.1 under the step 11 grade environment
+p8e/step.json	the user's decision (A) of 2026-11-10, a9c2377-T15 leaves the step ids
+s3-08/step.json	the user's decision (B) of 2026-11-10, s3-08 not gradeable offline: ids moved to dropped_ids
+ext/step5-logs/serve.tsv	step 11 ruling 10, the walked tasks' serve verdicts, where oracle write reads them
