@@ -1131,7 +1131,7 @@ export function rebuildLines(recipe, serve, rebuild, user) {
 // the product deleted is gone and an untracked build output stays; then only the paths the commit changed since the base (a second
 // NUL-separated list, relative to the repo root) are touched in the export (at /tmp/bench-product), so they are newer than the base's
 // build outputs and an mtime-based build rebuilds them while every other file keeps the export's older time; then copied in with `cp -a`
-export const overlayScript = (list, changed) => ['set -e', 'cd /work', `xargs -0 -r rm -rf -- < ${list}`, `(cd /tmp/bench-product && xargs -0 -r touch -h -- < ${changed})`, 'cp -a /tmp/bench-product/. /work/', 'rm -rf /tmp/bench-product', ''].join('\n')
+export const overlayScript = (list, changed) => ['set -e', 'cd /work', `xargs -0 -r rm -rf -- < ${list}`, `(cd /tmp/bench-product && xargs -0 -r touch -c -h -- < ${changed})`, 'cp -a /tmp/bench-product/. /work/', 'rm -rf /tmp/bench-product', ''].join('\n')
 
 // step 11 ruling 4: the image of commit, made from baseImage (R) in container `bench-ext-<slug>-make-<sha7>-<n>` with the arm's
 // network: 'none', or { ips, hosts, blocked? } for Docker's default bridge with the box's capabilities and firewall (443 to ips only),

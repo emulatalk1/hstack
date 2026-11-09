@@ -980,7 +980,7 @@ dtest('the product is made with no network (needs BENCH_EXT_DOCKER=1)', async ()
 
 test('the overlay script touches the changed list between the rm and the cp, never everything', () => {
   const lines = overlayScript('/l', '/c').split('\n'), touch = lines.findIndex((l) => l.includes('touch'))
-  expect(lines[touch]).toBe('(cd /tmp/bench-product && xargs -0 -r touch -h -- < /c)')
+  expect(lines[touch]).toBe('(cd /tmp/bench-product && xargs -0 -r touch -c -h -- < /c)')
   expect(lines.indexOf('xargs -0 -r rm -rf -- < /l')).toBeLessThan(touch)
   expect(touch).toBeLessThan(lines.indexOf('cp -a /tmp/bench-product/. /work/'))
   expect(lines.filter((l) => l.includes('touch'))).toHaveLength(1)
@@ -1001,6 +1001,8 @@ test('the touch line reaches a path with a space or a leading dash, and an empty
   run('-dash\0dir with space/c d\0')
   expect(mt('-dash')).toBeGreaterThan(old.getTime()); expect(mt('dir with space/c d')).toBeGreaterThan(old.getTime())
   expect(mt('keep')).toBe(old.getTime())
+  run('gone\0no dir/gone\0') // a listed path the export lacks (export-ignore): no error, nothing created
+  expect(existsSync(join(d, 'gone'))).toBe(false); expect(existsSync(join(d, 'no dir'))).toBe(false)
 })
 
 dtest("the overlay makes the product newer than the base's build outputs (needs BENCH_EXT_DOCKER=1)", async () => {
