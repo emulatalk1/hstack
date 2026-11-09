@@ -23,7 +23,7 @@ const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
        bun bench/ext.mjs box-env <task>
        bun bench/ext.mjs serve <groups.json> <task>
        bun bench/ext.mjs oracle-run <task>   (grade's oracle command: BENCH_DIR, BENCH_ORACLE, BENCH_JUNIT, BENCH_TRUSTED)
-       bun bench/ext.mjs rebuild <task>   (sealed rounds that write tasks/<slug>/rebuild.json when the product make fails offline)
+       bun bench/ext.mjs rebuild <task> [--extra-round <note>]   (sealed rounds that write tasks/<slug>/rebuild.json when the product make fails offline)
        bun bench/ext.mjs remove <task>`
 const sha = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
 const flag = (argv, k) => argv.find((a) => a.startsWith(`${k}=`))?.slice(k.length + 1)
@@ -477,9 +477,9 @@ async function runContainer({ scratch, name, image, platform, cmd, files, create
 // rounds.tsv (`k slug result`): one row per round, written as soon as its reply exists (an interrupted round still counts),
 // its result filled in after
 const roundRows = (tsv) => (existsSync(tsv) ? readFileSync(tsv, 'utf8').split('\n').filter(Boolean).map((l) => l.split('\t')) : [])
-function setRound(tsv, k, slug, result) {
+function setRound(tsv, k, slug, result, extra = false) {
   const rows = roundRows(tsv).map((r) => r.join('\t'))
-  const line = `${k}\t${slug}\t${result}`, i = rows.findIndex((l) => l.startsWith(`${k}\t${slug}\t`))
+  const line = `${k}\t${slug}\t${result}${extra ? '\textra' : ''}`, i = rows.findIndex((l) => l.startsWith(`${k}\t${slug}\t`))
   if (i >= 0) rows[i] = line
   else rows.push(line)
   writeFileSync(`${tsv}.tmp`, rows.join('\n') + '\n')
@@ -1338,8 +1338,12 @@ export function parseRebuild(text) {
 // each give candidate lines, kept in rebuild.json once both makes pass with them. A make the agent may read runs FROM S (no runner
 // layer, whose output must never reach it); the grade's makes run FROM R, their logs sealed. What it builds is removed when it ends.
 // inj.maker(image, commit, lines, log) -> boolean stands in for building S and R and for productImage
+// --extra-round <note> (controller ruling s3-02): this run's budget is the rounds spent + 1, whatever the budget, and its one round's
+// prompt ends with `Also known: <note>`; the note is one line of at most 300 characters
 export async function rebuild(args, inj = {}, print = (s) => console.log(s)) {
-  const { pos: [task] } = parseArgs(args, 1, false)
+  const at = args.indexOf('--extra-round'), note = at < 0 ? null : args[at + 1]
+  if (at >= 0 && (note == null || !note.trim() || /[\r\n]/.test(note) || note.length > 300)) throw new Error('--extra-round takes one non-empty line of at most 300 characters')
+  const { pos: [task] } = parseArgs(at < 0 ? args : args.filter((_, i) => i !== at && i !== at + 1), 1, false)
   const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
   const oracle = join(data, task, 'oracle'), runner = runnerFor(oracle, join(data, 'env/box', `${task}.json`))
   const { recipe, serveDockerfile, sv } = serveRecipe(ext, t), current = savedRebuild(ext, t)
@@ -1357,6 +1361,7 @@ export async function rebuild(args, inj = {}, print = (s) => console.log(s)) {
   const low = await diskFloor(task, inj)
   if (low) { print(low); return 3 }
   const spent = () => roundRows(tsv).filter((r) => r[1] === t.slug).length, agent = inj.rebuildAgent ?? sealedRecipe
+  const limit = note == null ? 2 : spent() + 1, extra = note != null
   const record = (f) => recordDocker(join(data, task, 'docker.json'), f)
   const stop = async () => { await removeRecorded(data, task, t.slug); process.exit(143) }
   process.on('SIGTERM', stop)
@@ -1402,24 +1407,24 @@ export async function rebuild(args, inj = {}, print = (s) => console.log(s)) {
     const stage = () => (last.serve === false ? `The last 200 lines of the base make log:\n${fence(tail(last.log))}` : !last.base ? 'base (in the grade image): failed' : 'the make passed at the base\nend: failed')
     const promptOf = () => [brief.trimEnd(), '', "The recipe's Dockerfile:", fence(recipe.dockerfile), '', 'The serve layer lines:', fence(sv.layer.join('\n')), '',
       ...(last.refused ? [`The default rebuild lines cannot be made: ${last.refused}`] : ['The current rebuild lines:', fence(last.lines.join('\n')), '', stage()]),
-      ...(why ? ['', `The previous reply was not valid: ${why}`] : []), ''].join('\n')
-    while (!last.end && spent() < 2) {
+      ...(why ? ['', `The previous reply was not valid: ${why}`] : []), ...(extra ? ['', `Also known: ${note}`] : []), ''].join('\n')
+    while (!last.end && spent() < limit) {
       const k = nextRound(tsv, rounds), prompt = join(rounds, `${k}.prompt.md`), out = join(rounds, `${k}.reply.md`)
       writeFileSync(prompt, promptOf())
       const reply = await agent({ env: join(ext, 'env', `${t.key}.json`), label: `rebuild-${t.slug}-${k}`, at: t.base, prompt, out })
       if (reply == null) throw new Error(`rebuild round ${k}: no reply`) // a tool failure: the round is not spent
       if (!existsSync(out)) writeFileSync(out, reply)
-      setRound(tsv, k, t.slug, 'replied')
+      setRound(tsv, k, t.slug, 'replied', extra)
       let cand
       try { cand = parseRebuild(reply).lines } catch (e) { // a spent round: the next one is told why
         why = e.message
-        setRound(tsv, k, t.slug, 'bad reply')
+        setRound(tsv, k, t.slug, 'bad reply', extra)
         print(`${task} rebuild round=${k} reply=bad`)
         continue
       }
       why = null
       last = await attempt(cand, String(k))
-      setRound(tsv, k, t.slug, last.end ? 'pass' : last.serve === false ? 'base failed' : !last.base ? 'grade base failed' : 'end failed')
+      setRound(tsv, k, t.slug, last.end ? 'pass' : last.serve === false ? 'base failed' : !last.base ? 'grade base failed' : 'end failed', extra)
       if (last.end) writeFileSync(saved, JSON.stringify({ lines: cand, briefSha, round: k }, null, 2) + '\n')
     }
     print(`${task} rebuild base=${last.refused ? 'refused' : last.base ? 'ok' : 'failed'} end=${last.end ? 'ok' : last.base ? 'failed' : 'skipped'} rounds=${spent()} result=${last.end ? 'ok' : 'failed'}`)

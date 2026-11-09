@@ -1004,7 +1004,7 @@ function rebuildTask(o = {}) {
 async function rebuildIn(s, maker, replies = [], more = {}) {
   const out = [], calls = [], makes = []
   let i = 0
-  const code = await rebuild(['s1-01'], { data: s.data, diskFree: async () => 100, ...more,
+  const code = await rebuild(['s1-01', ...(more.flags ?? [])], { data: s.data, diskFree: async () => 100, ...more,
     maker: async (image, commit, lines, log) => { makes.push([image, commit, lines]); return maker(image, commit, lines, log) },
     rebuildAgent: async (a) => { calls.push({ ...a, text: readFileSync(a.prompt, 'utf8') }); return replies[i++] ?? null } }, (l) => out.push(l))
   return { code, out, calls, makes }
@@ -1100,6 +1100,51 @@ test('the budget is two rounds per task, then result=failed exit 1', async () =>
   const again = await rebuildIn(s, async (image, commit, lines, log) => { writeFileSync(log, 'no index\n'); return false }, [reply])
   expect(again).toMatchObject({ code: 1, calls: [] })
   expect(again.out.at(-1)).toBe('s1-01 rebuild base=failed end=skipped rounds=2 result=failed')
+})
+
+const spend = (s) => { mkdirSync(s.rounds, { recursive: true }); writeFileSync(join(s.rounds, 'rounds.tsv'), `1\t${s.slug(1)}\tbase failed\n2\t${s.slug(1)}\tbase failed\n`) }
+const NOTE = 'the install needs a proxy-free index'
+
+test('an extra round runs past a spent budget and carries the note', async () => {
+  const s = rebuildTask(); spend(s)
+  const r = await rebuildIn(s, async (image, commit, lines, log) => { writeFileSync(log, 'no index\n'); return lines[0] === 'ok' }, [JSON.stringify({ lines: ['ok'] }), JSON.stringify({ lines: ['ok'] })], { flags: ['--extra-round', NOTE] })
+  expect(r.code).toBe(0)
+  expect(r.calls.length).toBe(1)
+  expect(r.calls[0].text).toEndWith(`\nAlso known: ${NOTE}\n`)
+  expect(readFileSync(join(s.rounds, 'rounds.tsv'), 'utf8')).toBe(`1\t${s.slug(1)}\tbase failed\n2\t${s.slug(1)}\tbase failed\n3\t${s.slug(1)}\tpass\textra\n`)
+  expect(r.out.at(-1)).toBe('s1-01 rebuild base=ok end=ok rounds=3 result=ok')
+  // a failing extra round is the only one: the budget is the rounds spent + 1
+  const t = rebuildTask(); spend(t)
+  const f = await rebuildIn(t, async (image, commit, lines, log) => { writeFileSync(log, 'no index\n'); return false }, [JSON.stringify({ lines: ['x'] }), JSON.stringify({ lines: ['y'] })], { flags: ['--extra-round', NOTE] })
+  expect(f.code).toBe(1)
+  expect(f.calls.length).toBe(1)
+  expect(readFileSync(join(t.rounds, 'rounds.tsv'), 'utf8')).toEndWith(`3\t${t.slug(1)}\tbase failed\textra\n`)
+})
+
+test('the note is refused when empty, multi-line or too long', async () => {
+  const s = rebuildTask(); spend(s)
+  for (const note of ['', '   ', 'one\ntwo', 'x'.repeat(301), undefined]) {
+    const flags = note === undefined ? ['--extra-round'] : ['--extra-round', note]
+    await expect(rebuildIn(s, async () => false, [JSON.stringify({ lines: ['x'] })], { flags })).rejects.toThrow('--extra-round takes one non-empty line of at most 300 characters')
+  }
+  expect(readFileSync(join(s.rounds, 'rounds.tsv'), 'utf8').split('\n').filter(Boolean).length).toBe(2)
+  const ok = await rebuildIn(s, async (image, commit, lines, log) => { writeFileSync(log, 'no index\n'); return false }, [JSON.stringify({ lines: ['x'] })], { flags: ['--extra-round', 'x'.repeat(300)] })
+  expect(ok.calls.length).toBe(1)
+})
+
+test('without the flag a spent budget still ends result=failed', async () => {
+  const s = rebuildTask(); spend(s)
+  const r = await rebuildIn(s, async () => false, [JSON.stringify({ lines: ['x'] })])
+  expect(r).toMatchObject({ code: 1, calls: [] })
+  expect(r.out.at(-1)).toBe('s1-01 rebuild base=failed end=skipped rounds=2 result=failed')
+})
+
+test('a pass of the current lines spends no extra round', async () => {
+  const s = rebuildTask({ rebuild: { lines: ['true'] } }); spend(s)
+  const r = await rebuildIn(s, async () => true, [JSON.stringify({ lines: ['x'] })], { flags: ['--extra-round', NOTE] })
+  expect(r).toMatchObject({ code: 0, calls: [] })
+  expect(r.out.at(-1)).toBe('s1-01 rebuild base=ok end=ok rounds=2 result=ok')
+  expect(readFileSync(join(s.rounds, 'rounds.tsv'), 'utf8').split('\n').filter(Boolean).length).toBe(2)
 })
 
 test('a bad reply spends a round and the next prompt says why', async () => {
