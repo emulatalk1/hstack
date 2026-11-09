@@ -1128,8 +1128,10 @@ export function rebuildLines(recipe, serve, rebuild, user) {
   return ['cd /', ...[...state, ...ins.slice(at[0] + 1), ...instructions(serve.layer.join('\n'))].map((l) => shellLine(l, shell, user)).filter((l) => l !== null)]
 }
 // the make script's head: every path of the base's tree (a NUL-separated list in the container) goes from /work, so a file
-// the product deleted is gone and an untracked build output stays; then the commit's export (at /tmp/bench-product) is touched, so it is newer than the base's build outputs (git archive gives commit times), and copied in
-export const overlayScript = (list) => ['set -e', 'cd /work', `xargs -0 -r rm -rf -- < ${list}`, 'find /tmp/bench-product -exec touch -h {} +', 'cp -a /tmp/bench-product/. /work/', 'rm -rf /tmp/bench-product', ''].join('\n')
+// the product deleted is gone and an untracked build output stays; then only the paths the commit changed since the base (a second
+// NUL-separated list, relative to the repo root) are touched in the export (at /tmp/bench-product), so they are newer than the base's
+// build outputs and an mtime-based build rebuilds them while every other file keeps the export's older time; then copied in with `cp -a`
+export const overlayScript = (list, changed) => ['set -e', 'cd /work', `xargs -0 -r rm -rf -- < ${list}`, `(cd /tmp/bench-product && xargs -0 -r touch -h -- < ${changed})`, 'cp -a /tmp/bench-product/. /work/', 'rm -rf /tmp/bench-product', ''].join('\n')
 
 // step 11 ruling 4: the image of commit, made from baseImage (R) in container `bench-ext-<slug>-make-<sha7>-<n>` with the arm's
 // network: 'none', or { ips, hosts, blocked? } for Docker's default bridge with the box's capabilities and firewall (443 to ips only),
@@ -1141,13 +1143,16 @@ export async function productImage({ t, commit, baseImage, network, lines, repo,
   const sha7 = commit.slice(0, 7), tag = `bench-ext/${t.slug}:${sha7}-product-${osha8}`, name = `bench-ext-${t.slug}-make-${sha7}-${n}`
   const ls = Bun.spawnSync(['git', '-C', repo, 'ls-tree', '-r', '-z', '--name-only', t.base], { stdout: 'pipe', stderr: 'pipe' })
   if (ls.exitCode !== 0) throw new Error(`git ls-tree of the base ${t.base.slice(0, 7)} failed (exit ${ls.exitCode})`)
+  const df = Bun.spawnSync(['git', '-C', repo, 'diff', '--name-only', '-z', '--no-renames', '--diff-filter=ACMRT', t.base, commit], { stdout: 'pipe', stderr: 'pipe' })
+  if (df.exitCode !== 0) throw new Error(`git diff of the base ${t.base.slice(0, 7)} and ${sha7} failed (exit ${df.exitCode})`)
   const net = network === 'none' ? ['--network', 'none'] : [...CAP_DROPS, ...(network.hosts ?? []).flatMap((h) => ['--add-host', `${h.host}:${h.ip}`])]
   record((d) => { d.images.push({ name: tag, id: null }); d.containers.push(name) })
   try {
     await must(['docker', 'create', '--name', name, '--platform', platform, ...net, baseImage, 'sleep', String(timeoutSec + 600)], `docker create ${name}`)
     await scratch('make', null, async (dir) => {
       writeFileSync(join(dir, 'base.list'), ls.stdout) // the paths as bytes: a space or a newline stays in its path
-      writeFileSync(join(dir, 'make.sh'), [overlayScript('/tmp/.bench-make/base.list'), ...lines, 'rm -rf /tmp/.bench-make', ''].join('\n'))
+      writeFileSync(join(dir, 'changed.list'), df.stdout)
+      writeFileSync(join(dir, 'make.sh'), [overlayScript('/tmp/.bench-make/base.list', '/tmp/.bench-make/changed.list'), ...lines, 'rm -rf /tmp/.bench-make', ''].join('\n'))
       await must(['docker', 'cp', `${dir}/.`, `${name}:/tmp/.bench-make`], `docker cp into ${name}`, { quiet: true })
     })
     await scratch('product', commit, (dir) => must(['docker', 'cp', `${dir}/.`, `${name}:/tmp/bench-product`], `docker cp into ${name}`, { quiet: true }))

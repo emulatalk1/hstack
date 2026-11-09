@@ -1,7 +1,7 @@
 import { test, expect, afterAll } from 'bun:test'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { withExport } from '../bench/env.mjs'
 import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, gradeMode, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, overlayScript, productImage, rebuild, recordDocker, removeOut, removeRecorded, runEnd, SERVE_EMPTY, trustedCommit, word } from '../bench/ext.mjs'
 import { oracleFiles } from '../bench/grade.mjs'
@@ -978,10 +978,29 @@ dtest('the product is made with no network (needs BENCH_EXT_DOCKER=1)', async ()
   expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
 }, 600000)
 
-test('the overlay script touches the product before it copies it in', () => {
-  const lines = overlayScript('/l').split('\n'), touch = lines.indexOf('find /tmp/bench-product -exec touch -h {} +')
-  expect(touch).toBeGreaterThan(-1)
+test('the overlay script touches the changed list between the rm and the cp, never everything', () => {
+  const lines = overlayScript('/l', '/c').split('\n'), touch = lines.findIndex((l) => l.includes('touch'))
+  expect(lines[touch]).toBe('(cd /tmp/bench-product && xargs -0 -r touch -h -- < /c)')
+  expect(lines.indexOf('xargs -0 -r rm -rf -- < /l')).toBeLessThan(touch)
   expect(touch).toBeLessThan(lines.indexOf('cp -a /tmp/bench-product/. /work/'))
+  expect(lines.filter((l) => l.includes('touch'))).toHaveLength(1)
+  expect(lines.some((l) => l.includes('find'))).toBe(false)
+})
+
+test('the touch line reaches a path with a space or a leading dash, and an empty list touches nothing', () => {
+  const d = join(tmp, `touch-${rand()}`), old = new Date('2020-01-01T00:00:00Z'), mt = (f) => statSync(join(d, f)).mtimeMs
+  mkdirSync(join(d, 'dir with space'), { recursive: true })
+  for (const f of ['-dash', 'dir with space/c d', 'keep']) { writeFileSync(join(d, f), 'x'); utimesSync(join(d, f), old, old) }
+  const run = (list) => {
+    writeFileSync(join(d, '..', `${basename(d)}.list`), list)
+    const line = overlayScript('/l', `${d}.list`).split('\n').find((l) => l.includes('touch')).replace('/tmp/bench-product', d)
+    expect(Bun.spawnSync(['sh', '-c', line]).exitCode).toBe(0)
+  }
+  run('')
+  expect(['-dash', 'dir with space/c d', 'keep'].map(mt)).toEqual([old.getTime(), old.getTime(), old.getTime()])
+  run('-dash\0dir with space/c d\0')
+  expect(mt('-dash')).toBeGreaterThan(old.getTime()); expect(mt('dir with space/c d')).toBeGreaterThan(old.getTime())
+  expect(mt('keep')).toBe(old.getTime())
 })
 
 dtest("the overlay makes the product newer than the base's build outputs (needs BENCH_EXT_DOCKER=1)", async () => {
@@ -1004,6 +1023,29 @@ dtest("the overlay makes the product newer than the base's build outputs (needs 
   record((d) => d.containers.push(look))
   expect(docker('create', '--name', look, '--network', 'none', `bench-ext/${slug}:${product.slice(0, 7)}-product-abcdef12`, 'cat', '/work/out.txt').exitCode).toBe(0)
   expect(docker('start', '-a', look).stdout.toString()).toBe('product\n')
+}, 600000)
+
+dtest('files the product did not change keep their export time (needs BENCH_EXT_DOCKER=1)', async () => {
+  const past = { GIT_AUTHOR_DATE: '2020-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z' }
+  const mk = join(tmp, 'overlay-keep'), g = (...a) => Bun.spawnSync(['git', '-C', mk, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { env: { ...process.env, ...past } }).stdout.toString().trim()
+  mkdirSync(mk)
+  g('init', '-q')
+  writeFileSync(join(mk, 'Makefile'), 'out.txt: src.txt\n\tcp src.txt out.txt\nkeep.out: keep.txt\n\tcp keep.txt keep.out\n'); writeFileSync(join(mk, 'src.txt'), 'base\n'); writeFileSync(join(mk, 'keep.txt'), 'keep\n')
+  g('add', '.'); g('commit', '-qm', 'base')
+  const base = g('rev-parse', 'HEAD')
+  writeFileSync(join(mk, 'src.txt'), 'product\n')
+  g('add', '-A'); g('commit', '-qm', 'product')
+  const product = g('rev-parse', 'HEAD')
+  const f = overlayImage({ repo: mk, base, product, // both outputs are built at the image build, after both commits
+    dockerfile: 'FROM alpine:3.22\nRUN apk add --no-cache make\nCOPY . /work\nRUN cd /work && make out.txt keep.out\n' })
+  ovFixtures.push(f)
+  const { slug, record, make } = await f, look = `bench-ext-${slug}-look-1`
+  await Bun.sleep(1500)
+  expect(await make(1, ['make out.txt keep.out'], 'abcdef12')).toMatch(/^sha256:[0-9a-f]{64}$/)
+  record((d) => d.containers.push(look))
+  expect(docker('create', '--name', look, '--network', 'none', `bench-ext/${slug}:${product.slice(0, 7)}-product-abcdef12`, 'sh', '-c',
+    'cd /work && cat out.txt && make -q keep.out && echo uptodate && ! [ keep.txt -nt keep.out ] && echo older').exitCode).toBe(0)
+  expect(docker('start', '-a', look).stdout.toString()).toBe('product\nuptodate\nolder\n')
 }, 600000)
 
 test('the trusted gate compares the task shas whole, never by prefix', async () => {
