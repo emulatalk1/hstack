@@ -3,7 +3,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { withExport } from '../bench/env.mjs'
-import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, gradeMode, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, productImage, rebuild, recordDocker, removeOut, removeRecorded, runEnd, SERVE_EMPTY, trustedCommit, word } from '../bench/ext.mjs'
+import { buildImage, diskFailure, diskIsLow, FEEDBACK, freeGB, gradeMode, issueAsOf, needsFeedback, netFailure, parseRecipe, parseSize, overlayScript, productImage, rebuild, recordDocker, removeOut, removeRecorded, runEnd, SERVE_EMPTY, trustedCommit, word } from '../bench/ext.mjs'
 import { oracleFiles } from '../bench/grade.mjs'
 import { oracleSha } from '../bench/lib/oracle.mjs'
 import { releaseRoot } from './bench-root.mjs'
@@ -17,6 +17,7 @@ const dtest = DOCKER ? test : test.skip
 const dropRoot = releaseRoot()
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-ext-check-')))
 const made = [] // every data folder setup made
+const ovFixtures = [] // the productImage fixtures' promises
 // image ids that existed before this run: a cached build can give one of them again, and a container this run did not
 // create may hold it, so it is never this run's to remove
 const idsBefore = new Set(DOCKER ? Bun.spawnSync(['docker', 'images', '-a', '-q', '--no-trunc']).stdout.toString().split('\n').filter(Boolean) : [])
@@ -27,7 +28,7 @@ afterAll(async () => {
     writeFileSync(f, JSON.stringify({ ...meta, imageIds: meta.imageIds.filter((id) => !idsBefore.has(id)) }))
     await removeOut(s.ext, s.slug(n))
   }
-  if (ovOnce) { const { data, slug } = await ovOnce; await removeRecorded(data, 'ov', slug) } // productImage's fixture, by its records
+  for (const f of ovFixtures) { const { data, slug } = await f; await removeRecorded(data, 'ov', slug) } // productImage's fixtures, by their records
   rmSync(tmp, { recursive: true, force: true })
   dropRoot()
 }, 600000)
@@ -938,20 +939,22 @@ const ovBase = ovGit('rev-parse', 'HEAD')
 writeFileSync(join(ov, 'a'), 'new\n'); writeFileSync(join(ov, 'e'), 'e\n'); rmSync(join(ov, 'b')); rmSync(join(ov, 'dir with space'), { recursive: true })
 ovGit('add', '-A'); ovGit('commit', '-qm', 'product')
 const ovProduct = ovGit('rev-parse', 'HEAD')
-let ovOnce
-const overlayFixture = () => (ovOnce ??= (async () => {
+const overlayImage = async ({ repo, base, product, dockerfile }) => {
   const slug = `fx${rand()}__ov__1`, data = join(tmp, slug), log = (n) => join(data, `make-${n}.log`)
   for (const d of ['ov', 'ext']) mkdirSync(join(data, d), { recursive: true }) // ext: removed.txt
   const record = (f) => recordDocker(join(data, 'ov', 'docker.json'), f)
   let seq = 0
-  const scratch = (what, commit, fn) => withExport({ name: slug, repo: ov }, commit, `${what}-${process.pid}-${seq++}`, fn)
+  const scratch = (what, commit, fn) => withExport({ name: slug, repo }, commit, `${what}-${process.pid}-${seq++}`, fn)
   const baseImage = `bench-ext/${slug}:base`
   record((d) => d.images.push({ name: baseImage, id: null }))
-  const id = await buildImage({ scratch, dockerfile: 'FROM alpine:3.22\nCOPY . /work\nRUN mkdir -p /work/node_modules && echo kept > /work/node_modules/x\n', test: 'true\n', platform, commit: ovBase, tag: baseImage, log: join(data, 'base.log'), diskFree: async () => 100 })
+  const id = await buildImage({ scratch, dockerfile, test: 'true\n', platform, commit: base, tag: baseImage, log: join(data, 'base.log'), diskFree: async () => 100 })
   expect(id).toMatch(/^sha256:/)
-  const make = (n, lines, osha8) => productImage({ t: { slug, base: ovBase }, commit: ovProduct, baseImage, network: 'none', lines, repo: ov, osha8, n, platform, record, scratch, log: log(n), diskFree: async () => 100 })
+  const make = (n, lines, osha8) => productImage({ t: { slug, base }, commit: product, baseImage, network: 'none', lines, repo, osha8, n, platform, record, scratch, log: log(n), diskFree: async () => 100 })
   return { slug, data, record, make, log }
-})())
+}
+let ovOnce
+const overlayFixture = () => (ovOnce ??= (ovFixtures.push(overlayImage({ repo: ov, base: ovBase, product: ovProduct,
+  dockerfile: 'FROM alpine:3.22\nCOPY . /work\nRUN mkdir -p /work/node_modules && echo kept > /work/node_modules/x\n' })), ovFixtures.at(-1)))
 
 dtest('the overlay removes deleted base files and keeps build outputs (needs BENCH_EXT_DOCKER=1)', async () => {
   const { slug, record, make } = await overlayFixture(), look = `bench-ext-${slug}-look-1`
@@ -973,6 +976,34 @@ dtest('the product is made with no network (needs BENCH_EXT_DOCKER=1)', async ()
   const lines = readFileSync(log(2), 'utf8').split('\n')
   expect(lines).toContain('lo')
   expect(lines.filter((l) => /^(eth|en|wl)/.test(l))).toEqual([])
+}, 600000)
+
+test('the overlay script touches the product before it copies it in', () => {
+  const lines = overlayScript('/l').split('\n'), touch = lines.indexOf('find /tmp/bench-product -exec touch -h {} +')
+  expect(touch).toBeGreaterThan(-1)
+  expect(touch).toBeLessThan(lines.indexOf('cp -a /tmp/bench-product/. /work/'))
+})
+
+dtest("the overlay makes the product newer than the base's build outputs (needs BENCH_EXT_DOCKER=1)", async () => {
+  const past = { GIT_AUTHOR_DATE: '2020-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z' } // git archive gives files their commit time
+  const mk = join(tmp, 'overlay-make'), g = (...a) => Bun.spawnSync(['git', '-C', mk, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { env: { ...process.env, ...past } }).stdout.toString().trim()
+  mkdirSync(mk)
+  g('init', '-q')
+  writeFileSync(join(mk, 'Makefile'), 'out.txt: src.txt\n\tcp src.txt out.txt\n'); writeFileSync(join(mk, 'src.txt'), 'base\n')
+  g('add', '.'); g('commit', '-qm', 'base')
+  const base = g('rev-parse', 'HEAD')
+  writeFileSync(join(mk, 'src.txt'), 'product\n')
+  g('add', '-A'); g('commit', '-qm', 'product')
+  const product = g('rev-parse', 'HEAD')
+  const f = overlayImage({ repo: mk, base, product, // out.txt is built at the image build, after both commits
+    dockerfile: 'FROM alpine:3.22\nRUN apk add --no-cache make\nCOPY . /work\nRUN cd /work && make out.txt\n' })
+  ovFixtures.push(f)
+  const { slug, record, make } = await f, look = `bench-ext-${slug}-look-1`
+  await Bun.sleep(1500) // busybox touch has second resolution: the make must start a second after the image build
+  expect(await make(1, ['make out.txt'], 'abcdef12')).toMatch(/^sha256:[0-9a-f]{64}$/)
+  record((d) => d.containers.push(look))
+  expect(docker('create', '--name', look, '--network', 'none', `bench-ext/${slug}:${product.slice(0, 7)}-product-abcdef12`, 'cat', '/work/out.txt').exitCode).toBe(0)
+  expect(docker('start', '-a', look).stdout.toString()).toBe('product\n')
 }, 600000)
 
 test('the trusted gate compares the task shas whole, never by prefix', async () => {

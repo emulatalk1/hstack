@@ -1128,8 +1128,8 @@ export function rebuildLines(recipe, serve, rebuild, user) {
   return ['cd /', ...[...state, ...ins.slice(at[0] + 1), ...instructions(serve.layer.join('\n'))].map((l) => shellLine(l, shell, user)).filter((l) => l !== null)]
 }
 // the make script's head: every path of the base's tree (a NUL-separated list in the container) goes from /work, so a file
-// the product deleted is gone and an untracked build output stays; then the commit's export, copied in at /tmp/bench-product
-export const overlayScript = (list) => ['set -e', 'cd /work', `xargs -0 -r rm -rf -- < ${list}`, 'cp -a /tmp/bench-product/. /work/', 'rm -rf /tmp/bench-product', ''].join('\n')
+// the product deleted is gone and an untracked build output stays; then the commit's export (at /tmp/bench-product) is touched, so it is newer than the base's build outputs (git archive gives commit times), and copied in
+export const overlayScript = (list) => ['set -e', 'cd /work', `xargs -0 -r rm -rf -- < ${list}`, 'find /tmp/bench-product -exec touch -h {} +', 'cp -a /tmp/bench-product/. /work/', 'rm -rf /tmp/bench-product', ''].join('\n')
 
 // step 11 ruling 4: the image of commit, made from baseImage (R) in container `bench-ext-<slug>-make-<sha7>-<n>` with the arm's
 // network: 'none', or { ips, hosts, blocked? } for Docker's default bridge with the box's capabilities and firewall (443 to ips only),
