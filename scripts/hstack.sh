@@ -1,7 +1,7 @@
 #!/bin/sh
 # hstack run state and the two hooks. POSIX sh + git only: the project's box may have no other runtime.
 # State lives outside the work tree and outside .git (Claude Code guards writes into .git), in
-# ${HSTACK_STATE:-$HOME/.hstack}/<checksum of the git dir>, so it is never committed and never part of the product.
+# ${HSTACK_STATE:-$HOME/.hstack} (or /tmp/.hstack without HOME)/<checksum of the git dir>, so it is never committed and never part of the product.
 # usage: hstack.sh dir|start|phase <name> [skipped: <why>]|missing|lock <file>...|gate|elapsed|done|hook-start|hook-stop
 
 PHASES='setup oracle build gate review explore mutate final'
@@ -9,7 +9,7 @@ MAX_BLOCKS=3
 
 state() {
   G=$(git rev-parse --absolute-git-dir 2>/dev/null) || return 1
-  S="${HSTACK_STATE:-$HOME/.hstack}/$(printf '%s' "$G" | cksum | cut -d' ' -f1)"
+  S="${HSTACK_STATE:-${HOME:-/tmp}/.hstack}/$(printf '%s' "$G" | cksum | cut -d' ' -f1)"
   mkdir -p "$S" && printf '%s\n' "$G" > "$S/repo"
 }
 
