@@ -675,6 +675,8 @@ Rulings for the walk, registered with these decisions:
 
 Deviations (for step 14): three checks dropped after the stick v1 lock because of the grade environment, not a human read (A); s3-08 out of H1–H4 although the step 5 pipeline kept it (B); s3 walks 3 tasks, not 2, so that H1's N reaches 24 (B); M3 closed per task, not per set (C). The reasons file gains a line per file these change.
 
+**Decided by the user on 2026-11-10, during the walk:** s3's candidate vercel/turborepo#13756 (rank 19) ran out of Docker disk at its check (two images of 10.3 GB and a 31.9 GB build cache against Docker's 61,035 MiB disk; pnpm/pnpm#14077 had run out once before and then failed its recipe). It is ruled out as `out: docker disk too small` in `ext/walk.tsv`, a deviation for step 14 (a candidate excluded by the machine, not by a rule of 4.2), and the walk goes on to the next candidate.
+
 **Part 2: measuring the plugin (needs the plugin)**
 
 11. Trial run: 2 `real-estate` tasks (p8b and one other) and 2 external tasks (the first of the sorted list), arms H and B, k = 1. Measure tokens, hours, σ_d; apply the N rule of 10.2. Not analysed.
