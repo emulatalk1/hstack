@@ -3066,3 +3066,288 @@ Final fix wave: sonnet 67.4k, 0.5 min, commit 4134ccc; re-review sonnet 70.3k, 0
 Final review: minor (deferred): tests/bench-human-cli.test.mjs:26 restores HSTACK_BENCH_MACHINE as "undefined" when it was unset (same pattern, out of scope)
 After the fix wave: bun test ./tests 564 pass, 49 skip, 0 fail, output kept (7 lines, pristine); stick compare of the manifest: equal 20789, changed 0
 ```
+
+## Step 11 Phase A
+
+Plan `docs/plans/2026-11-08-bench-trial.md` (draft), branch `bench-step11` from `main` (6d8bee6). Lock: `progress/step11a-lock.md`. Model and tokens/minutes are those the SDD ledger records; "not recorded" means the ledger gives none. A resumed agent's figure may be its context size rather than new work.
+
+| task | implementer | reviewer |
+|---|---|---|
+| 1 Register the rulings | sonnet 89.4k, 1.4 min; fix round (resumed) 92.9k, 0.3 min | sonnet 92.5k, 1.2 min; re-review sonnet |
+| 2 Test hygiene and the hash guard | sonnet, not recorded; step 4 flaky loop by the controller | sonnet, not recorded |
+| 3 The proxy | sonnet, not recorded; fix round (resumed) | opus, not recorded; re-review sonnet |
+| 4 The proxy probe | the controller (token received 2026-11-09) | none |
+| 5 Product image, readiness per oracle | opus, not recorded; fix round (resumed) 292k + 305k (context), 35 + 7 min | opus, not recorded; re-review sonnet |
+| 6 The split grade | opus, not recorded | opus, not recorded |
+| 7 Real-estate as a task | sonnet, not recorded (step 5 by the controller) | sonnet, not recorded |
+| 8 The box | opus ~300k, ~35 min; fix rounds 1 and 2 (resumed) | opus, not recorded; re-reviews opus, sonnet |
+| 9 The trial driver | sonnet, not recorded; fix round (resumed) | opus, not recorded; re-review sonnet |
+| 10 Queue for the walked tasks | sonnet, not recorded; fix round (resumed) | sonnet, not recorded; re-review sonnet |
+| 11 The proofs | the controller | none |
+| 12 The regrade | the controller | none |
+| 12a `rebuild` tool | opus, not recorded; fix round (resumed) | opus, not recorded; re-review sonnet |
+| 12b extra-round flag | sonnet, not recorded | sonnet, not recorded |
+| 12c overlay touches product files | sonnet, not recorded | sonnet, not recorded |
+| 12d overlay touches changed paths | sonnet, not recorded; fix round (resumed) | sonnet, not recorded; re-review sonnet |
+| 13a Register decisions A/B/C | sonnet 68k, 0.5 min | none (checked by diff) |
+| 13 The walk | the controller, with sealed agents (below) | none |
+| 14 Phase A lock | hash, compare and task list by the controller; lock writer sonnet, not recorded | the final review (not yet run) |
+
+Sealed agent runs of step 11 (`logs/step11/lock-usage.mjs`; run records started on or after 2026-11-08; counts only):
+
+| lane | runs | code ≠ 0 | input | output | cacheRead | cacheWrite | minutes | model |
+|---|---|---|---|---|---|---|---|---|
+| walked tasks (task folders) | 53 | 0 | 788 | 401,402 | 17,408,806 | 1,447,636 | 66.8 | claude-opus-5-5 |
+| walk checks and rebuild rounds | 36 | 0 | 472 | 222,623 | 8,644,434 | 965,392 | 39.5 | claude-opus-5-5 |
+| serve rounds | 2 | not recorded | 36 | 12,944 | 315,528 | 48,629 | 2.3 | not recorded |
+| reader | 5 | not recorded | 10 | 10,297 | 3,245 | 492,383 | 2.7 | claude-fable-5-1 |
+
+Wall clock: the walk 2026-11-09T22:31Z (s3-09) to 2026-11-10T11:47Z (last kills). Tests: `tests-1.out` 637 pass, 64 skip, 0 fail. The full regrade ran three times (the third started 2026-11-09 20:48); the total hours are not recorded in the ledger.
+
+## Step 11 SDD ledger (copied before the final review)
+
+```text
+# SDD ledger — plan: docs/plans/2026-11-08-bench-trial.md
+
+Scope of this build: Phase A, Tasks 1–14. Spec: docs/plans/2026-10-27-benchmark-prereg.md. User decisions 2026-11-08: all defaults (a), Phase B as a follow-on plan.
+
+## Pre-flight scan
+| pair / task | produces vs consumes | finding |
+|---|---|---|
+| T2 ↔ T10 | both touch tests/bench-human-cli.test.mjs (T2 fixes withData restore; T10 adds --queue tests) | sequential, no conflict |
+| T3 → T8 | proxy.mjs serveProxy/refusal consumed by box wiring | consistent |
+| T4 → T8 | authHeader + CLI env form found by probe; fallback deliverables named in T8 | consistent |
+| T5 → T6 | productImage, R image, osha8 tags consumed by split grade | consistent |
+| T5 ↔ T8 | T5's make container for {ips} uses fwScript; T8 changes fwScript to {out,in} | Ruling below |
+| T5 → T12 | grade --out, --trusted used by regrade | consistent |
+| T7 → T8, T9, T12, T13 | taskOf RE, services, box-env, runner source | consistent |
+| T9 ← canary | reuses canary run/grade/record; env/box via T7 | consistent |
+| T10 → T13 | oracle queue --tasks --out, human --queue | consistent |
+| each task self-consistency | T1–T14 tests vs code vs files read once | T2 step 4 is controller's (writes <data>); T7 step 5, T4, T11–T14 controller's |
+
+Ruling: T5 calls the existing fwScript(ips) (443 only) for a registry-limited make container; T8 moves it to fwScript({out,in}) and updates T5's call site — the signature change belongs to the box task, and T5's tests are offline-only — cost if wrong: one call site edited twice.
+Ruling: implementers never get the token, <data> paths for writing, or real data; Tasks 4, 7.5, 11–14 and T2 step 4 run in the controller — the plan's Global Constraints — cost: none.
+Task 1: dispatched (sonnet), BASE db7b16c
+Task 1: implementer done 9af467b (sonnet 89.4k, 1.4 min); review dispatched (sonnet)
+Task 1: review (sonnet 92.5k, 1.2 min): spec ❌ 1 Important (decision 1 lost its reading), minors (dropped rule sentences in rulings 2,4,5,6,8, decisions 2,3,6; reasons globs wider than ruling 11's list).
+Ruling: the dropped rule-bearing sentences join fix round 1 as spec-missing, not deferred minors — the brief required every rule kept, and the prereg text is what step 14 cites — cost if wrong: one extra short fix.
+Ruling: ruling 11's list (plan and prereg) is widened to name packed-refs and shallow files; reasons.tsv stays — the walk does fetch into stores — cost if wrong: a wider glob explains a store change it should not.
+Task 1: fix round 1 dispatched (resume), FIX_BASE 9af467b
+Task 1: fix round 1/5 (all addressed, 0 open; commits 9af467b..901e678; implementer resume 92.9k 0.3 min, re-review sonnet)
+Task 1: complete (commits db7b16c..901e678, review clean)
+Ruling: implementers tee their full suite runs to the SDD workspace (tests-task<N>.out), not to <data>/logs/step11 — implementers never write <data>; the controller's runs go to <data>/logs/step11 — cost: none.
+Task 2: dispatched (sonnet), BASE 901e678
+Task 2: implementer done 0a6d99d (sonnet); review dispatched
+Task 2: review (sonnet): spec ✅, approved; ⚠️ count-line parsers checked by controller with git grep (only docs/locks quote it).
+Task 2: minor (deferred): a dangling symlink given as --out slips past the guard (writeFileSync follows it into <data>).
+Task 2: minor (deferred): no test for --out as an existing link into <data>, nor for a non-real spelling of <data>.
+Task 2: minor (deferred): --out equal to <data> itself passes the guard, then fails EISDIR (nothing written).
+Task 2: complete (commits 901e678..0a6d99d, review clean); step 4 (flaky loop) running in the controller
+Ruling: Task 3's interface loses models/'model' (left over from before ruling 6 dropped the model filter) and gains betas and the auth header forms, so Task 4's probe can try both CLI env forms — cost if wrong: a header option unused.
+Task 3: dispatched (sonnet), BASE fae49da (note: Task 2 step 4 flaky loop runs concurrently; a failure overlapping Task 3's suite run is read with that in mind)
+Task 3: implementer done 4c22b7d (sonnet); review dispatched (opus: security-relevant)
+Task 3: review (opus): spec ✅; 3 Important (idle timeout cuts a silent request >255 s; parsed-vs-raw body mismatch lets a duplicate `tools` key hide a server tool; URL image/document sources let the API fetch the web).
+Ruling: URL sources are refused (reason `source`: any object with `source.type === 'url'` anywhere in the body) and ruling 6 in the plan and the prereg says so — a URL source is a server-side fetch, which is exactly what ruling 6 exists to stop; registered during the build, before any run — cost if wrong: an arm that legitimately cites a URL image gets a 403, equally for every arm.
+Ruling: three fail-closed minors of this security component join fix round 1 (development:false with a fixed 500 error handler; BENCH_PROXY_AUTH only `authorization` or `x-api-key`; a non-array `tools` refused) — they are cheap and keep the proxy closed by default — cost: a slightly larger fix.
+Task 3: minor (deferred): whole body read before the path check; missing counts dir crashes startup (loud); transfer-encoding not in drop list (Bun strips it); tests share `seen` and depend on order.
+Task 3: fix round 1 dispatched (resume), FIX_BASE 4c22b7d
+Task 2 step 4 (controller): flaky loop, 4 candidate files x 10 runs, 40/40 exit 0, 0 fail (<data>/logs/step11/flaky.lines). Not reproduced; every later full run is teed (ruling 14).
+Task 3: fix round 1/5 (4 addressed, 0 open; commits 4c22b7d..6d15d8b; re-review sonnet)
+Task 3: minor (deferred): hasUrlSource spread push overflows near 1M array elements (fails closed, 500); JSON re-serialisation loses ints >2^53; `tools: null` now refused (Task 4 probe shows whether the CLI sends it).
+Task 3: complete (commits fae49da..6d15d8b, review clean)
+Controller: <data>/arm/proxy/Dockerfile written (FROM oven/bun:1.4.4-alpine@sha256:4cf82f56…, USER bun, /out owned by bun); pulled image recorded in <data>/arm/proxy/names.tsv. Token asked of the user; Task 4 waits for it, Tasks 5–7, 9, 10 go first.
+Ruling: task order becomes 5, 6, 7, 9, 10, then 4 and 8 once the token arrives — Task 8 consumes Task 4's probe result and nothing else depends on Task 4 — cost: none.
+Task 5: dispatched (opus), BASE 6d15d8b
+Task 5: implementer done a0d0bd7..16d87bb (opus); suite 585 pass 52 skip 0 fail; gated 86 pass.
+Ruling: the product tag keeps `-<osha8>` (ruling 4 says the tags carry the oracle; the brief's interface line predates that sentence) — cost: none.
+Ruling: readiness readers in bench/oracle.mjs (notReadyOf) changed beyond the brief's file list are in scope — ruling 7 says every reader reads per oracle — cost: none.
+Note: default rebuild lines rerun serve-layer package installs offline, so most served repos will need a rebuild.json from ruling 4's sealed rounds at Task 12; expected, registered.
+Task 5: review dispatched (opus)
+Task 5: review (opus, ~2026-11-08): spec ✅; 1 Important (SHELL before the copy dropped in rebuildLines); ⚠️ the {ips} make branch untested — Task 8 must cover it, with a network check after the rules.
+Ruling: two cheap minors join fix round 1: blank lines inside a `\` continuation (a valid recipe would be refused, sending its repo to a needless rebuild round) and whole-sha matching for the trusted gate (security, defence in depth) — cost: a slightly larger fix.
+Task 5: minor (deferred): a base folder the product turns into a file gets noresult; make-container removal not logged in ext/removed.txt; make container has no memory cap (an OOM reads as noresult); nc -z probe in the gated test can fail for other reasons; overlay fixture lacks newline/dash paths; trusted path untested for refs/seeded and tasks.json; USER before the copy follows R's final user.
+Task 5: fix round 1 dispatched (resume), FIX_BASE 16d87bb
+Task 5: fix round 1/5 (3 addressed, 0 open; commits 16d87bb..d11a5df; implementer opus 292k+305k (context), 35+7 min; re-review sonnet)
+Task 5: minor (deferred): trustedCommit passes a tasks.json value to git rev-parse unguarded (a leading '-' would read as an option; trusted file).
+Task 5: complete (commits 6d15d8b..d11a5df, review clean)
+Task 6: dispatched (opus), BASE d11a5df
+Task 6: implementer done e5864eb (opus); suite 589 pass 57 skip 0 fail; gated 95 pass. Ruling: P's output appended to the sealed grade log under its own header (no separate file) — the log is sealed either way and diagnosis keeps working — cost: none. Review dispatched (opus).
+Task 6: review (opus): spec ✅, approved, 0 Critical/Important.
+Task 6: minor (deferred): P's log is appended only on the normal path (lost when O's create/inspect throws or O is killed) — move it to finally.
+Task 6: minor (deferred): a P OOM is hidden behind O's timeout; docker logs result ignored (300 s cut unmarked); OOM detection untested (as before).
+Task 6: minor (deferred): O shares P's /etc/hosts, resolv.conf and loopback ports/abstract sockets — P can redirect what O connects to (not /out); one line for the lock's limits if a runner opens a loopback debug port.
+Task 6: minor (deferred): test discrimination — planted .bench-ready proves nothing; P OOM, SIGTERM with two containers, P dying early untested; ready runs against base /work in O.
+Task 6: complete (commits d11a5df..e5864eb, review clean)
+Task 7: dispatched (sonnet), BASE e5864eb
+Task 7 step 5 (controller, in progress): wrote <data>/ext/tasks/real-estate/task-recipe.json (node:24-bookworm, PGDG postgresql-17 with trust auth, mailpit v1.31.4 from its image, pnpm 9.15.4, playwright@1.58.2 chromium before the copy; after the copy `pnpm install --frozen-lockfile` when package.json exists and the bench .env: 12 keys = the copy's .env key set, values from env.sh, PAYLOAD_SECRET a fresh random placeholder, SMTP user/pass empty), <data>/ext/serve/real-estate/serve.json (services: Postgres, Mailpit, bench_re and bench_re_test created; start: services, seed:demo, pnpm dev; ready: curl /), <data>/env/real-estate/runner.json (layer: @playwright/test@1.58.2 at /node_modules; run: oracle.sh's warm-ups, then playwright with BENCH_JUNIT=/out/junit.xml). Every RE base/end has playwright 1.58.2, node 24, lockfile 9.0. Store <data>/ext/repos/real-estate: bare, alternates to the copy's objects, refs/tasks/<task>/{base,end} for the 11 tasks (22 refs).
+Task 7: implementer done 073c383 (sonnet); suite 593 pass 57 skip 0 fail; review dispatched (sonnet)
+Task 7: review (sonnet): spec ✅, approved.
+Ruling: PRIVATE_SET (`real-estate`, `re`) stays in bench/ext.mjs and is listed as a deviation of the "bench/ names no stack, customer or task" constraint — ruling 8 fixes those paths by name and bench/ already names the set in box.mjs, input-check.mjs, oracle.mjs and run-arm.mjs — cost if wrong: one constant to move to a data file.
+Task 7: minor (deferred): tasks.json shas not validated (missing base → undefined without a store); index shifts if tasks.json gains a middle entry (ports are labels only); no snapshot test of taskEnv's byte-identical output; box-env does not check the runner file exists; all 11 RE tasks share one slug (rebuild.json, grade-mode, serve.err are per set — the plan's single recipe).
+Task 7: complete (commits e5864eb..073c383, review clean); step 5: box-env written for 35 tasks; S of real-estate at p8b's base built in 259 s.
+Task 7 step 5: S of real-estate at d1ea76b served once, ready after 13 s, Postgres accepting, Mailpit up, .env and browsers present; image 3.72 GB; removed by recorded names (`ext remove p8b`); pgsnap equal around it.
+Risk to watch at the regrade: next/font/google cannot fetch Google Fonts offline (the dev server falls back), so a check that depends on font metrics may change against the host-graded locks.
+Task 9: dispatched (sonnet), BASE 073c383
+Ruling: walked tasks are listed in <data>/step11/walked.txt (Task 13 writes it as each walked task is accepted); the trial driver refuses them — ruling 10 keeps walked repos unopened by the designer — cost: one file.
+Task 9: implementer done fb2fc19 (sonnet); suite 599 pass 57 skip 0 fail; canary refactored (exports), review dispatched (opus)
+Task 9: review (opus): spec ❌; 1 Critical (the trial would take step 8's standing B-1 of s2-01/s3-02 as its B run and could delete a step 8 grade file), 2 Important (a task with empty step ids gives d=0 and deflates σ_d; walked gate only covers sample.tsv rows).
+Ruling: the trial gets its own record floor: trial/floor.json records per task and arm the highest run number existing when the trial first touches that task; only runs above it count, and gradeProduct never removes a grade file of a commit that is not a trial run — ruling 12's same window — cost: none.
+Ruling: three minors join fix round 1 (catch only ScoreMissing; report applies the same refusal gates; trim CR in sample.tsv/tasks.txt fields) — they make gates fail closed and errors visible — cost: slightly larger fix.
+Task 9: minor (deferred): NaN minutes when a record lacks start/end; duplicated sample.tsv parsing; untested second-attempt / step-grade key / noresult / machine numbering at k=1; weak leak probe ids; tests-task9.out holds only summary lines (the controller's teed runs are the record).
+Task 9: fix round 1 dispatched (resume), FIX_BASE fb2fc19
+Task 9: fix round 1/5 (4 addressed, 0 open; commits fb2fc19..161dbcd; re-review sonnet)
+Task 9: minor (deferred): report throws on a standing record whose branch is gone (was "no score"); gradeProduct's under-floor guard has no direct test; canary B runs made after the trial floor would count as trial runs (step 8 is closed); canary/ext sample.tsv parsing not CR-safe.
+Task 9: complete (commits 073c383..161dbcd, review clean)
+Task 10: dispatched (sonnet), BASE 161dbcd
+Task 10: implementer done 2826408 (sonnet); suite 609 pass 57 skip 0 fail; review dispatched (sonnet)
+Task 10: review (sonnet): 1 Important (--out guard compares path strings, an alias/symlink to step9 passes); ⚠️ gates() uses 9-of-10 (ok*10 >= len*9), stricter than ruling 10's "fewer than n − 1 same stops" for n < 10 — confirmed a real gap, joins the fix.
+Ruling: under --queue the 7.1 gate is ruling 10's (at least n − 1 `same`), step 9's 9-of-10 stays without --queue; classify-2 with --queue is a usage error; queue --tasks refuses an --out that already holds pages/ — protects the locked step 9 labels and a started batch — cost: none.
+Task 10: minor (deferred): no test of a walked task with no disputes (header-only classify.tsv, vacuous apply — read the count lines); --queue followed by another flag takes it as the folder.
+Task 10: fix round 1 dispatched (resume), FIX_BASE 2826408
+Task 10: fix round 1/5 (4 addressed, 0 open; commits 2826408..a23c49e; re-review sonnet)
+Ruling: with --queue a 7.1 set of n = 1 always passes (at least n − 1 = 0 `same`), the literal reading of ruling 10; a `different` answer still drops that check (step 9 ruling 6) — cost if wrong: one walked check read as different passes the gate while leaving the score.
+Task 10: minor (deferred): classify-2 guard bypassed when --queue precedes the batch name; loose gate keyed on the path string (a --queue symlink to step9 gets n − 1); realish treats a dangling link as absent.
+Task 10: complete (commits 161dbcd..a23c49e, review clean)
+Ruling: Task 8 goes ahead before the token arrives, assuming the proxy route works, with the probe's unknowns as config (`arms.json` box: proxy auth header, the CLI's placeholder variable name, betas); if Task 4's probe fails, a follow-up switches Task 8 to ruling 6's fallback — Task 8 is the long pole and the token is the user's — cost if wrong: Task 8's proxy wiring is partly unused under the fallback.
+Task 8: dispatched (opus), BASE a23c49e
+Task 8: implementer done 8ca05d2 (opus, ~300k, ~35 min); gated 106 pass (815 s), suite 617 pass 59 skip 0 fail.
+Ruling: the `db !== null` refusal stays (box task files have db null; an env/<task>.json with db set has the copy as repo, and an arm must never fetch branches into the copy, ruling 8) — cost: none.
+Ruling: `registry.npmjs.org` lives in PRIVATE_SET in bench/ext.mjs, listed with PRIVATE_SET as one deviation of the "names no stack" constraint — cost if wrong: one constant to move to data.
+Ruling: the token is visible to `docker inspect` on the host (the host is trusted; no argv, log or box holds it) — noted as a known limit — cost: none.
+Task 8: review dispatched (opus)
+Task 8: review (opus): spec ✅; 2 Important (pluginExport deletes a pre-existing `out` on refusal; 'services are up' row restates enterBox's gate).
+Ruling: the oracleRun change (private-set products made with the pinned registry) is accepted before Task 12 — decision 6 (a) and ruling 4 — and gets a unit test of the branch in the fix — cost: none.
+Ruling: fix round 1 also takes the security minors: an outside check that the proxy answers only the box; the proxy's StartedAt in alive(); the proxy starts its server only after its rules are set and checked; earlier proxy image ids kept in the record; file mode in the plugin sha lines; the export folder removed on every path; the stale 'skipped' test state — each closes a gap in the boundary this plan exists to close — cost: a larger fix round.
+Task 8: minor (deferred): 'API reached only through the proxy' accepts 401/404 (only 'the API answers' proves the token) — README note; record field box.ips changed meaning since step 8.
+Task 8: fix round 1 dispatched (resume), FIX_BASE 8ca05d2
+Controller: serve.json of the private set gains servicesReady (pg_isready, bench_re exists, Mailpit SMTP port open); nc presence in the image to be confirmed at Task 11.
+Task 8: fix round 1/5 (9 addressed; 2 new Important open — proxyAlone fails open on a docker error; a dead proxy server process is not seen by alive(); minor: sha depends on umask; commits 8ca05d2..3fa2642; re-review opus)
+Ruling: the plugin sha line records only git's mode (755 if any exec bit, else 644) — the sha must not depend on the machine's umask — joins round 2 — cost: none.
+Task 8: fix round 2 dispatched (resume), FIX_BASE 3fa2642
+Task 8: fix round 2/5 (3 addressed, 0 open; commits 3fa2642..048bf13; gated 109 pass, suite 619 pass 61 skip 0 fail; re-review sonnet)
+Task 8: minor (deferred): listens() kills a healthy run on a transient docker error (no retry, +1 docker run per alive); export files keep the extraction's modes in the box while the sha says 644/755 (box runs as root); group/other exec bit reads 755 unlike git.
+Task 8: complete (commits a23c49e..048bf13, review clean)
+Phase A code tasks done: 1, 2, 3, 5, 6, 7 (code + data), 8, 9, 10. Waiting on the user's token for Task 4; then 11–14.
+Task 4 (controller): token received 2026-11-09 in chat, written to <data>/arm/box.env (mode 600, 1 line, never printed); arms.json gains turnTimeoutSec {external 14400, re 28800} and proxy form A {auth authorization, betas [oauth-2025-04-20], cliVar ANTHROPIC_AUTH_TOKEN}; proof s1-01 running (logs/step11/probe-A-s1-01.out).
+Task 4: probe result — form A answers: proxy auth `authorization` (Bearer token) with beta `oauth-2025-04-20`, CLI placeholder var ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL to the proxy. proof s1-01: 15/15 rows ok, exit 0 ('the API answers': real CLI turns on claude-opus-5-5 and claude-sonnet-5-5 through the proxy; 'no token in the box env' ok; 'the proxy refuses a server tool' ok; the API addresses silent from the box). Ruling 6's fallback not needed. The proof output holds no token string (0 matches).
+Task 4: complete. Task 11 step 1 = this proof (Task 8 had landed before it).
+Task 11: proof p8b (private set) 17/17 ok, exit 0 (services are up, only the registry answers, a real database is out of reach); pgsnap equal; 0 token strings in the output.
+Task 11: plugin fixture (throwaway repo, 2 files, sha256 45cebc06cd7c…) through pluginExport into the s1-01 box: turn exit 0, init plugins ["bench-fixture"], its skill listed, 0 web tools, AskUserQuestion absent; no container left.
+Task 11: complete.
+Task 12: step 1 deps (logs/step11/deps.txt): 24/24 external PRs change 0 dependency files (cold 4 included), so no end takes the networked trusted path. Driver regrade.sh started 2026-11-09 01:58 detached: 75 grades (ext 24 oracle + 24 seeded; RE 11 oracle + 7 step + 9 seeded).
+Task 12: the first regrade (s1-01 oracle, seeded) got junit=missing; docker.json shows S and R built, product images null: the make (offline rebuild lines) failed. Driver stopped on its 2-dead rule. Advisor consulted.
+Ruling (plan defect): ruling 4 registered sealed rebuild rounds but no task built the tool; Task 12a adds `bun bench/ext.mjs rebuild <task>` (serve's pattern; the agent sees the base's files, the recipe, the serve layer and the READABLE base make log; told the end's result as a stage word; writes ext/tasks/<slug>/rebuild.json; validation = make at base then at end; at most 2 rounds per repo key, shared by the tasks of one repo) — the base make log holds base files only, like serve's base logs — cost if wrong: one tool and up to 2 sealed rounds per failing repo.
+Make survey (logs/step11/make-survey.mjs, base log readable, end log sealed): s1-01 base=fail end=fail — base log: pip's isolated build of `-e .` cannot reach pypi (the expected offline case, not an instrument bug). Survey of the other 34 tasks started detached.
+Driver fix due before the rerun: a no-result output is not "done" (check junit in the count line), and a task without a working make waits for its rebuild.json.
+Task 12a: dispatched (opus), BASE 048bf13; ruling: the round budget is 2 per task slug (each task of one repo has its own base) — ruling 4 said per repo — cost: a repo with two tasks may spend 4 rounds
+Ruling: a USER line in the rebuild lines naming the image's final user (R's Config.User; '' = root) is a no-op; any other USER stays refused — the survey's USER refusals all come from `USER root` in 5 serve layers while the make already runs as root — added to Task 12a — cost: none.
+Ruling: when the default lines are refused (no make ran), `rebuild` sends the agent the refusal message in place of the base log — added to Task 12a — cost: none.
+Task 12a: implementer done 9a3798a..68c87f8 (opus); gated 111 pass, suite 629 pass 62 skip 0 fail.
+Ruling: when the base make fails, the end make is skipped (`end=skipped`) — the prompt would not carry the end's word anyway — cost: none.
+Ruling: the private set's agent env `ext/env/real-estate.json` is written by the controller only if a private-set task needs a round (its survey make may pass with the registry) — cost: none.
+Task 12a: review dispatched (opus)
+Task 12a: review (opus): spec ✅, approved; 3 points for rulings.
+Ruling: the round loop's READABLE base make runs FROM S (recipe + serve layer at the base, no runner layer), so its log holds base files and the recipe's own output only; the candidate's validation (base, then end) runs FROM R with both logs sealed — R holds the oracle's runner layer, whose output must not reach an agent prompt or a readable file — fix round 1 — cost: one more make per round.
+Record: the controller read the tail of s1-01's base make log made FROM R (survey, before this ruling); it showed already-installed package names of that image, among them runner-layer tools. No check, id or end content. Listed as a sealing note for the lock.
+Ruling: the private set's shared rebuild.json — after any private-set pass, `rebuild` is run on every other private task (a pass writes nothing) before its grades — cost: a few makes.
+Ruling: the refused-lines path keys on an error marker (a property set by no()), not on the message text — fix round 1 — cost: none.
+Task 12a: minor (deferred): no gated test of oracle-run's USER ordering (mismatch refused after R, match passes); running rebuild beside a grade of the same task removes the grade's names (README note); lines before a no-op USER run as R's user; untested USER spellings with tabs/case; ``` in a recipe breaks the prompt fence.
+Task 12a: fix round 1 dispatched (resume), FIX_BASE 68c87f8
+Ruling: the survey's base make logs (<task>/build/<base7>-survey.make.log, made FROM R) are moved into ext/sealed/<slug>/logs/ when the survey ends and are not read again — they hold runner-layer output, the same reason as Task 12a's S ruling — cost: none.
+Task 12a: fix round 1/5 (2 addressed, 0 open; commits 68c87f8..ccb21dd; gated 113 pass, suite 631 pass 62 skip 0 fail; re-review sonnet)
+Task 12a: minor (deferred): a no-round rerun reuses the sealed current-<c> log name; final line does not tell an S base failure from an R one (rounds.tsv does); S's make may run as another user if a runner layer sets USER.
+Task 12a: complete (commits 048bf13..ccb21dd, review clean)
+Survey: s3-03 make error (thrown, not a failed make); build cache was 28.7 GB (the survey script lacked the 15 GB rule); docker builder prune -f run by hand; s3-03 to be surveyed again at the end.
+Controller: the private-set runner layer failed to build at p1 and p2 (npm install --prefix / hits npm's 'Tracker idealTree already exists'; reproduced in a throwaway node:24-bookworm container --rm). runner.json layer changed to install @playwright/test@1.58.2 in /opt/bench-oracle with /node_modules a link to it (tested: a spec in /oracle resolves it). The rest of the private set's survey will fail the same way; it is rerun after the survey ends.
+Make survey done (logs/step11/make-survey.lines, -2.lines): both ok 20 (s1-05 s1-07 s2-02 s2-08 s2-09 s2-10 s3-03 s3-04 s3-05 and all 11 private-set tasks); base fail 8 (s1-01 s1-03 s1-09 s2-07 s3-01 s3-06 s3-07 s3-08); refused USER 6 (s1-02 s1-04 s1-06 s2-01 s2-03 s2-05, surveyed before the USER no-op); end-only fail 1 (s3-02). s3-03 and p1–p4 were surveyed again (cache prune; runner fix). 30 survey base logs moved into ext/sealed/<slug>/logs (one via a mis-resolved 8b path, put right).
+Task 12: rebuild driver (logs/step11/rebuild.sh) on the 15 tasks; it checks the current lines first, so a task that passes now spends no round.
+Task 12: rebuild results so far: ok with 0 rounds s1-02 s2-01 s2-03 s2-05; 1 round s1-01 s1-03 s1-04 s1-06 s1-09 s2-07; 2 rounds s3-06; FAILED after 2 rounds s3-01, s3-02 (base ok, end failed).
+User decision 2026-11-09 ("a"): a sealed diagnosis agent may read the end make logs of tasks whose rebuild failed and report only a category word and a generic one-line mechanism (no file, function, test, crate, message text, version or path). Asked after a first attempt was blocked by the session's own rule against reading ext/sealed/.
+Task 12: s3-07 rebuild FAILED after 2 rounds (base ok, end failed). Driver stopped by SIGTERM at the user's request to sleep the machine (2026-11-09 ~09:15); s3-08 was mid-run: no result recorded, no container left; rerun s3-08 on return.
+Advisor: do not read sealed logs; classify end-only failures content-free: docker die/oom events (exit codes, durations — the daemon buffer kept only recent polars makes: exit 137 after ~340 s), base..end file names (rust-toolchain*, .cargo/config*, build.rs, tests/), and one end make WITH network (end is trusted) recording pass/fail only; then rule per class: timeout → raise the make limit; fetch → a `prefetch` field run at the S build (base, network) so the offline cache holds what the end needs (the box gets the same S); compile → end via --trusted, task flagged. Plan defect to record: sealed rounds see only the base and the word `end: failed`, so they cannot fix an end-only failure.
+Task 12: s3-08 rebuild ok after 2 rounds (rerun after the sleep). Failed: s3-01, s3-02, s3-07. base..end names: none changes rust-toolchain*, .cargo/config*, build.rs or Cargo.toml/lock; tests/ changes exist in passing s3 tasks too. Network experiment (logs/step11/exp-net.mjs: round 2's lines, end made offline then with Docker's default network; exit codes and seconds only) started.
+Network experiment (exp-net.lines): s3-02 end make exit 101 in 4 s offline and 3 s with network → not a fetch, not a timeout (compile/script class at the end; base passes). s3-07 exit 0 offline (341 s) and with network; s3-01 exit 0 offline (168 s) and with network → their round-2 failures were transient.
+Ruling: s3-01's and s3-07's round-2 candidates (the agents' own lines, parsed by parseRebuild, nothing written by the controller) go into rebuild.json and are validated again by `rebuild`'s no-round path (R, base then end, sealed logs); a failure removes the file — the controlled rerun shows the same lines pass offline at the end — cost if wrong: two extra makes per task. Listed as a deviation (a candidate validated twice).
+User 2026-11-09: speed-up options declined ("cứ để như vậy"): one Docker job at a time, Docker 7.6 GB.
+Ruling (s3-02, the user not answering the three options): option (1) — one extra sealed rebuild round for s3-02 only (budget 3), the prompt adding the content-free fact "the end make fails within seconds, with and without network (not a download, not a time limit)"; still failing → option (2) (end via --trusted, flagged; trial pair s1-02 + s2-01). Listed as a deviation — reversible if the user picks otherwise — cost if wrong: one sealed round.
+Task 12b: dispatched (sonnet), BASE ccb21dd
+Task 12: s3-01 and s3-07 revalidated through rebuild's no-round path: base ok, end ok (rebuild.json stands). 14/15 makes work; s3-02 waits for its extra round. Regrade driver restarted 2026-11-09 10:46 with s3-02's jobs moved last; the first run's lines kept as regrade-first.lines; its two no-result outputs removed.
+Task 12b: implementer done 0740648 (sonnet); suite 635 pass 62 skip 0 fail; review dispatched (sonnet)
+Task 12b: review (sonnet): spec ✅, approved.
+Task 12b: minor (deferred): one extra round per invocation, not per task (a second run grants another); the one-line check misses U+2028/2029/0085/\v/\f; test gaps (no-flag prompt lacks the note, extra column on a bad-reply row).
+Task 12b: complete (commits ccb21dd..0740648, review clean)
+Ruling: s3-02's extra round runs beside the regrade (two Docker jobs for ~15 min) so it is done before the regrade reaches s3-02's jobs, placed last — cost if wrong: a grade hit by memory pressure is rerun.
+Task 12: the s3-02 extra round beside the regrade failed before any round: S at the base did not build, BuildKit `ResourceExhausted` (readable base build log; cache 21.5 GB). The parallel ruling above is withdrawn: one Docker job at a time again. No round was spent (the build failed before the agent). Likely the same cause for s3-01's and s3-07's "transient" failures (the implementers' gated Docker tests ran beside the rebuild driver then).
+Plan: the regrade's s3-02 jobs (last) will read no result; after the regrade, `docker builder prune -f`, s3-02's extra round alone, then s3-02's grades again.
+Task 12: s1-01 in split mode changed every check (oracle 2, seeded 5: precondition at the end) — its runner needs the product's files in its own container; in grade-mode shared both kinds match the locks (2/2, 5/5). Ruling 5's route applied: s1-01 grade-mode shared.
+Driver v2 (logs/step11/regrade2.sh) started: per task split first, compare, on a change grade-mode shared and again; still changed → CHANGED, listed for the user; the driver goes on. The disk/ResourceExhausted retry kept.
+Task 12: v2's first start hit a stale grade worktree left by the earlier SIGTERM (/tmp/hstack-bench/s1-02-grade-98132c9): s1-02's grades refused at once and the fallback wrongly set grade-mode shared. Stopped; removed the stale worktrees (git worktree remove --force, never read) of s1-02 and s1-03 and one scratch export, removed s1-02's wrong grade-mode,  for both (0 names). Restarted. Rule for the operator: never SIGTERM the driver mid-grade without clearing /tmp/hstack-bench after.
+Task 12: s1 8/8 and s2 8/8 unchanged (shared: s1-01 s1-03 s1-05 s1-07 s2-01 s2-02 s2-05 s2-07 s2-08 s2-10; split: s1-02 s1-04 s1-06 s1-09 s2-03 s2-09). s3-01 CHANGED (its only mode, one container): oracle 2 of 6 (a3035cf-T5, -T6) now precondition, seeded 5/5 same — likely the agent's rebuild lines make cleanly but do not rebuild everything the end builds (rebuild validates make exit 0 only, not the product). Held for the user with the rest.
+Task 12: paused for the user's sleep (2026-11-09): driver loop stopped by SIGTERM between grades, the running grade (s3-03 seeded) left to finish; clean: no worktree in /tmp/hstack-bench (fx* fixtures aside), no container. Resume = start regrade2.sh again (skips outputs with junit=ok; s3-03's compare runs then).
+Task 12: s3-03 CHANGED too (oracle 1 of 3, seeded 5 of 5, at precondition) though its make used the recipe's default lines. Cause found content-free: git archive gives every file its commit time as mtime, older than the build outputs baked into S/R at image build time, so cargo saw the base's artifacts as fresh and never compiled the end's sources — the product graded as the base. Experiment (scratch copy of bench/ with the overlay touching the product files first, grade through a temp task file): s3-03 oracle 3/3 and seeded 5/5 equal to the locks.
+Ruling: Task 12c — the overlay touches every product file (mtime now) before copying it into /work, so mtime-based builds see the product as newer than the base's outputs. It changes oracle-run, so the whole regrade repeats after it (step 10 ruling 9). The rebuild.json files stand; a make that now behaves differently shows at the regrade.
+Task 12c: dispatched (sonnet), BASE 0740648
+Task 12c: implementer done 62179d4 (sonnet); gated 77 pass, suite 636 pass 63 skip 0 fail; review dispatched
+Task 12c: review (sonnet): spec ✅, approved.
+Task 12c: minor (deferred): afterAll's fixture loop stops at the first rejected fixture (orphaned names on a failed build); convoluted ovOnce; gated test needs the Alpine mirror (apk add make); unit test compares exact strings; import order.
+Task 12c: complete (commits 0740648..62179d4, review clean)
+Task 12: after Task 12c, `rebuild s3-02` (no extra round) → current default lines: base ok, end ok, result=ok. Its end failure was the same stale-mtime effect. The extra-round ruling for s3-02 is withdrawn (never used); Task 12b's flag stays, unused.
+Ruling: the grade-mode shared files set by the first regrade stand — those tasks failed split because their runner needs the product's files in its own container, not because of mtimes — cost if wrong: a task stays shared that could have been split (M3 open there).
+Full regrade restarted (step 10 ruling 9, after Task 12c changed oracle-run): previous outputs moved to logs/step11/regrade-v1/ and regrade-v1.lines.
+Task 12 (second regrade): s1 8/8 and s2-01, s2-02 unchanged; s2-03's make now fails at the end (product null; it passed before Task 12c): touching every file makes the Electron/pnpm build treat the whole tree as new and rebuild something that needs the network. Driver stopped between tasks; s2-03's wrongly set grade-mode removed.
+Ruling: Task 12d — the overlay touches only the paths that differ between the base and the commit (git diff --name-only -z, added/copied/modified/renamed/type-changed), not every file; unchanged files keep their export mtime, so builds skip them, and changed ones are newer than the base's outputs — the minimal correct form of Task 12c's fix — cost: one more oracle-run change, so the regrade restarts again.
+Task 12d: dispatched (sonnet), BASE 62179d4
+Task 12d: implementer done 1600090 (sonnet); gated 79 pass, suite 637 pass 64 skip 0 fail; review dispatched; real-data check of s2-03 and s3-03 by rebuild's no-round path meanwhile
+Task 12d: review (sonnet): spec ✅; 1 Important (a changed path missing from the export — export-ignore — aborts the make or makes an empty stray file: use touch -c). Fix round 1 dispatched (resume), FIX_BASE 1600090. Minor (deferred): no gated test of rename/mode/symlink in the changed list; README wording.
+Task 12d: fix round 1/5 (1 addressed, 0 open; commits 1600090..b6ac0fc; re-review sonnet)
+Task 12d: complete (commits 62179d4..b6ac0fc, review clean)
+Task 12: real-data check under Task 12d's overlay (rebuild's no-round path): s2-03, s3-03, s3-02 base ok, end ok. Third full regrade started 2026-11-09 20:48 on b6ac0fc; the second's partial outputs moved to regrade-v2/ and regrade-v2.lines.
+Task 12 (third regrade): s1 8/8, s2-01..s2-07 unchanged; s2-08 CHANGED (oracle 22278be-T4 fail, seeded 5/5 same; it matched in the first regrade in shared mode). Ruling, registered before any repeat: each task CHANGED in this regrade gets exactly one more grade of its changed kinds after the driver ends; matching the locks then → 'flaky (1 of 2)', listed for the user; still different → CHANGED — a single trusted end measured twice tells flakiness from a boundary effect — cost if wrong: one grade per such task.
+Task 12 (third regrade): s2-09, s2-10, s3-01, s3-03..s3-07 unchanged; s3-08 CHANGED (shared, its only mode): oracle 3 of 5 fail, seeded 5 of 5 precondition, each grade ~10 s — likely its agent-written rebuild lines make cleanly but do not rebuild the Python/Rust extension, so the product is the base's; s3-07 (same repo) unchanged.
+Task 12 (third regrade): p1, p2, p3, p4, p6a unchanged (containers with their own Postgres reproduce the host-graded locks). p8a CHANGED in split and in shared: one step check (d1ea76b-T13), oracle 8/8 and seeded 2/2 same. The driver's fallback wrote grade-mode shared for the shared private-set slug, which would have switched every later private task to one container: removed at once (split matched for p1–p6a; p8a changes in both modes, so the mode is not its cause). Any private task graded shared since is regraded split.
+Task 12 (third regrade): p8c, p8d unchanged; p8e changed in split (oracle eb2b016-T7, step a9c2377-T15); the fallback wrote the shared private-set grade-mode again — left in place until p8e's shared grades end (removing it mid-task would mix modes); p8b and p6c may then run shared and are regraded split after the driver, with the CHANGED repeats.
+Task 12: third regrade DONE, PGSNAP equal. Unchanged: s1 8/8, s2 7/8, s3 7/8, private set 9/11 (p1 p2 p3 p4 p6a p8b p8c p8d p6c), s3-02 included. CHANGED: s2-08 (oracle 1), s3-08 (oracle 3, seeded 5), p8a (step 1), p8e (oracle 1, step 1). The registered single repeat of those kinds started (logs/step11/repeat.sh).
+Task 12 repeats (repeat.lines; PGSNAP equal): s2-08 oracle 3/3 same → flaky (1 of 2), listed. s3-08 oracle 3 and seeded 5 changed again; p8a step d1ea76b-T13 again; p8e oracle eb2b016-T7 and step a9c2377-T15 again → stable differences.
+Ruling: s3-08 gets one extra sealed rebuild round (Task 12b's flag) with a content-free note derived from counts only ("the make passes but the product behaves as the base at the end: the changed sources are not rebuilt into what the tests import or run"), then its two kinds are regraded — the same route as ruling 4's rounds — cost: one round and two grades. Deviation listed (a fourth round beyond the budget of 2 for a cold task's repo).
+Ruling: p8a and p8e — a network experiment classifies the cause content-free: their changed kinds graded at the end with the app container on Docker's default network (a scratch copy of bench/ only switches P's --network; results compared, nothing read). Then the user decides on a classified list.
+Task 12: s3-08's rebuild.json moved aside to rebuild.json.round2 (its make passes, so the extra round would not run); the extra round now starts from the default lines.
+Task 12: s3-08's extra round failed (its candidate failed in S at the base: rounds=3 result=failed); the round-2 rebuild.json restored (it makes, but the product behaves as the base). s3-08 goes to the user.
+Network experiment (private set, app container on Docker's default network; PGSNAP equal): p8a step 14/14 same (T13 network-dependent), p8e oracle 8/8 same (T7 network-dependent), p8e step a9c2377-T15 still changed (not network: a container-vs-host difference). Classified list for the user: s2-08 flaky (1 of 2); p8a T13 and p8e T7 need the network at run time; p8e T15 differs in the container either way; s3-08's product cannot be rebuilt offline to match its end (3 rounds).
+User decision 2026-11-10 ("Theo đề xuất"): (A) p8a d1ea76b-T13, p8e eb2b016-T7 and p8e a9c2377-T15 leave the score by section 7.1 (a check must pass on the reference; under the step 11 grade environment they do not: two need the network at run time, one differs in the container) — recorded as a deviation with the reason, the hashed manifests and step.json ids updated with reasons in the amended stick lock. (B) s3-08 is marked not gradeable offline and leaves the H1–H4 set (its product cannot be rebuilt offline to match its end after 3 sealed rounds); H1's N drops to 19, so the s3 walk needs 3 tasks with step ids, s1 2. (C) M3 is recorded as closed only where split mode holds (6 external tasks: s1-02 s1-04 s1-06 s1-09 s2-03 s2-09, and the private set); open for the other 10 s1/s2 tasks (grade-mode shared) and all of s3.
+Handoff: the user asked for a prompt to continue in a new session (progress/step11/handoff.md). This session stops after committing it.
+Session 2026-11-10 (new controller): read handoff, ledger, plan, prereg 12. Advisor consulted on (A)/(B)/walk approach.
+Ruling: (B) is applied as s3-08/step.json ids → [] (old ids under dropped_ids, drop_reason) plus status dropped in tasks-step11.tsv — trial.mjs report counts H1's N from sample.tsv rows with step ids, so a task-list-only change would leave it at 20 — cost if wrong: one data file to restore from the stick hash.
+Ruling: the walk runs on logs/step11/groups-walk.json (perStack raised one accepted task at a time), cold_setup restored after each sample, serve verdicts appended to ext/step5-logs/serve.tsv (oracle write reads it), a second queue folder step11/queue-2 if needed — walk/sample stop at perStack 8 and sample recomputes cold — cost if wrong: one copy file, a column restored by script.
+Task 13a (register decisions A/B/C and walk rulings, docs only): dispatched (sonnet), BASE 7ba1b9e
+Task 13a: implementer done 1f5c712 (sonnet 68k, 0.5 min); diff checked by the controller (4 files, the brief's text verbatim, reasons.tsv 2 fields per line).
+Ruling: Task 13a gets no separate task review — it is the controller's own text transcribed verbatim and checked by diff; the whole-branch review at Task 14 covers it — cost if wrong: a wording defect found at the final review.
+Task 13a: complete (commits 7ba1b9e..1f5c712, checked by diff)
+Decisions (A)/(B) applied (controller, logs/step11/apply-decisions.mjs, .out): p8a step d1ea76b-T13 dropped (step ids 13), p8e oracle eb2b016-T7 dropped, p8e step a9c2377-T15 dropped (step ids 13), s3-08 step ids 2 → dropped_ids. Compare: changed 8, all with reasons, unexplained 0, missing 0. score works on p8a, p8e, s3-08 ends.
+Task 13: drivers written in <data>/logs/step11/: walk11.sh (walk on groups-walk.json perStack = ok+1, sample, cold-restore.mjs), pipe11.sh (task-env, serve + serve.tsv line, write, rebuild, validate, sheet, classify, split, box-env; one Docker job; prune >15 GB; pgsnap around serve and walk), chain11.sh (both). The step 5 drivers were not copied verbatim: their steps are in these (they named the step 5 worktree).
+Task 13: s3-09 = the-open-engine/zeroshot#944 (rank 16, accepted at step 5, out of the sample by perStack) added by sample; cold-restore restored 2 cold cells.
+Ruling: s3-09's task-env takes `--reply rounds/1.reply.md --sha <sha256>` (its repo's only recipe round): its meta.json predates recipeSha so --from-meta finds none — the step 5 originals took this form — cost if wrong: none, the reply is the only one its check could have used.
+Task 13: s3-09 pipeline done: write 1 entry; rebuild 0 rounds ok; validate 1 valid; sheet 13 names; classify 1 requirement, 0 disputed; box-env.
+Ruling: `oracle step` runs right after the pipeline for a walked task with no disputed classification (its labels are final; a later 7.1 `different` leaves step.json ids through apply71), and after the reader for the others — so the walk knows when a stack has 8 without walking needlessly — cost if wrong: one step rerun.
+Task 13: s3-09 step ids=0 (candidates 0; requirement only) → stays for H2–H4, the walk goes on. auto11.sh started 2026-11-10 (s3 then s1): walks one task at a time until ids>0 tasks + open ones (ids 0, disputed>0, waiting for the reader) reach 8; `step` after each pipeline.
+Task 13: s3 walk: pnpm/pnpm#14077 (rank 17) `error build` — check.err: no space left on device (its image 22.1 GB + build cache 34.8 GB); the walk stopped on its disk floor. Removed by recorded names (removeOut, ok=false: probe container, image) and `docker builder prune -f`: free 51.1 GB. Retried once with an empty cache (step 5's `recheck: disk` practice); a second disk failure goes to the user (resource-aware rule).
+Task 13: s3 walk retry: pnpm#14077 out `recipe failed`, sozu-proxy/sozu#1325 out `PR tests do not pass at end`, vercel/turborepo#13756 `error run` — check.err: no space left on device (two 10.3 GB images + 31.9 GB cache; Docker disk 61035 MiB, Mac 169 GB free). Removed by recorded names, cache pruned, free 51.1 GB. s3 held for the user (raise Docker's disk, or retry, or rule it out); s1 walk started meanwhile.
+User decision 2026-11-10: vercel/turborepo#13756 ruled out (deviation): walk.tsv row `out: docker disk too small` appended; registered in the prereg (commit after 1f5c712). s3 walk resumes after s1.
+Task 13: s1-10 = django-helpdesk/django-helpdesk#1453 (rank 15): serve 1 round, rebuild 1 round ok, 5 checks (absent-at-base 5), classify requirement 3, disputed 2, step ids 0 → open (maybe) until the reader. fossasia/eventyay#6384 out (PR tests do not pass at end).
+Ruling: antiwork/gumroad#6391 (rank 16) is `out: issue not found` in walk.tsv — its linked issue 6185 does not exist (GitHub NOT_FOUND for any issue or PR of that number), a permanent condition the tool reads as `error issue`, which stopped the walk after 2 errors; 4.2 needs the issue as the input — cost if wrong: one candidate excluded whose issue a later query could read.
+Task 13: s1-11 = WeblateOrg/weblate#21513 (rank 17): serve 1 round, write 24 entries, rebuild 0 rounds ok, validate NOT JUDGED: 24 errors (end: junit ok, readiness `not ready` in split mode; base: junit missing); sheet ok; classify refused (no scored check). Walk auto stopped there.
+Ruling: s1-11 gets ruling 5's route as at the regrade — grade-mode shared for its slug, then validate again (content-free: readiness state and junit presence only); validated in shared → listed shared (M3 open there); still not judged → classified content-free and the task goes to the user or out as `no valid check` like s1-08 — cost: one validation run.
+Task 13: s1-11 shared rerun reused the end grade (reuse keys ignore grade-mode); base junit missing again (no app/grade container after the make, no readiness line). Its two grade files moved unread to logs/step11/walked/s1-11-aside/ and validate run again in shared mode.
+Task 13: s1-11 shared revalidation: end and base junit missing; docker events: both product makes exit 1 after ~28 s (exec), while rebuild's current-1 make passed base and end an hour earlier, and the first validate's end make passed (app not ready in split). No dependency file changed. Next: rebuild s1-11 again (ruling 4's route: current lines first, sealed rounds only if they fail).
+Task 13: s1-11 rebuild again: current lines failed, 1 sealed round passed (rebuild.json written; the earlier current-1 pass was not reproducible). Validate (shared): all ready, 24 checks absent-at-base after 1 fixer round; classify requirement 21, partly 3 → split 6 (build 2, requirement 4); step candidates 1, ids 1. s1 now 7 with ids + s1-10 open → s1 walk stops for the reader.
+Ruling: s1-11 stays grade-mode shared (set before the make was fixed; split was not retried after) and is listed with the shared tasks, M3 open there — a split retry costs a full validation with reuse defeated — cost if wrong: M3 open on one task that split might have held.
+Deps: s1-10, s1-11, s3-09 change 0 dependency files (logs/step11 deps rule of Task 12).
+User decision 2026-11-10 (general rule): an s3 candidate that runs out of Docker disk again after removal by recorded names and `docker builder prune -f` is `out: docker disk too small` (registered 900233e). walk11.sh does it (disk-retried.txt marks the first prune-retry). aaif-goose/goose#12006 (rank 20) error build (disk) with 6.3 GB cache at start: removed, pruned (free 51.1 GB), marked, retried by the walk.
+Task 13: goose#12006 retry: out `end build failed` (a rule out). s3-10 = moonrepo/moon#2745 (rank 21): task-env input-check hits=19, serve 0 rounds, write 4, rebuild 0 rounds, validate valid 2 weak 2, classify build 2, step ids 2. s3: 6 with ids.
+Ruling: databendlabs/databend#20352 (rank 22) `out: base tree not exportable on this host` — `error recipe-agent` twice (walk stopped): sealed-agent's `git archive | tar -x` of the base fails (tar: a path under tests/data/delta/... `Failed to restore metadata: File exists`, a case-insensitive APFS collision), deterministic, so no recipe agent can read the base; registered in the prereg next to the user's disk rule and told to the user — cost if wrong: one candidate excluded by the host, not by 4.2.
+Task 13: s3-11 = maplibre/martin#3365 (rank 23; one disk error, retried ok): 14 checks absent-at-base, classify build 3 req 3 partly 5 disputed 3, split restored 5; step ids 2. s3-12 = jtroo/kanata#2117 (rank 24): 1 check build, step ids 1. s3 reached 8 (s3-02..06, s3-10, s3-11, s3-12; s3-07 0 ids, s3-08 out, s3-09 0). walked.txt: s1-10 s1-11 s3-09 s3-10 s3-11 s3-12. input-check hits at task-env: s3-10 19, s3-11 2, s3-12 27 (the input is the issue verbatim, step 9 ruling).
+Task 13 reader (queue step11/queue: classify 5, sample-7.1 20; proxy task file env/real-estate.json as step 9; 7.1 at --chunk 5, the default chunk was 1.08 MB over the 0.9 MB cap): classify 5 → build 1, requirement 4. oracle-7.1: same 17, different 2 (s1-11 57645e4-T13, -T29, not step ids), unclear 1; gate s1 8/10 STOP (n − 1 = 9), s3 9/10 pass. step rerun after the reader: s1-10 ids 1, s1-11 1, s3-09 0, s3-10 2, s3-11 2, s3-12 1 → s1 8, s3 8, H1's N 24. Stopped for the user on the s1 7.1 gate (ruling 10).
+User decision 2026-11-10: s1 7.1 gate stop accepted as a deviation (2 drops stay, s1-11 stays); registered. seed11.sh started (seed, kills per walked task).
+Task 13: seed/kills (seed11.out): every walked task kept 3 bugs (s3-10 refused 1 candidate; s1-10 fixer 2, broken 2); kills fix= s1-10 2/3, s1-11 3/3, s3-09 1/3, s3-10 2/3, s3-11 3/3, s3-12 0/3; step=none on all. pgsnap equal on every walk (11) and serve; no non-fixture bench name left in Docker (bench-ext-other predates); /tmp/hstack-bench holds fixtures only. Suite tests-1.out 637 pass 64 skip 0 fail, pristine.
+Task 13: complete (H1's N 24: s1 8, s2 8, s3 8; walked s1-10 s1-11 s3-09 s3-10 s3-11 s3-12; out: fossasia/eventyay#6384, antiwork/gumroad#6391 (issue not found), pnpm#14077, sozu#1325, turborepo#13756 (disk), goose#12006, databend#20352 (not exportable))
+Task 14: hash (24,911 files, manifest sha 0b3c8277…5355), compare 12 changed / 0 unexplained / 0 missing, tasks-step11.tsv written; lock writer dispatched (sonnet), BASE 39dace4
+```

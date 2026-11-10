@@ -1,0 +1,50 @@
+set	task	stack	ref	base	end	status	canary	cold	h1_ids	scored	seeded	reason	walked	trusted
+external	s1-01	s1	django-commons/django-debug-toolbar#2502	a9158b7a1889eb639002694d663802bbad767e70	144a40de2faf73898dd92d387ec5e442761b1c31	scored	canary		0	2	3			
+external	s1-02	s1	fossasia/eventyay#4689	2c3fcdc42b2e95a50d004cafe73c0fa0bf1cdb44	98132c97e3ab731c965cfce5c64545bc7f931f81	scored	canary		1	1	3			
+external	s1-03	s1	openfoodfoundation/openfoodnetwork#14719	b944a31ad296b782608e446529b699a96c143df9	3ddc164239058dafc3af515b665f09e3d104d890	scored	extension		10	25	3			
+external	s1-04	s1	Open-Source-Legal/OpenContracts#2124	d2a312deece121574d9f114061ab744a17dc882e	ed732357d9d0f89cac76d6429e2a345479903170	scored	extension		5	29	3			
+external	s1-05	s1	netbox-community/netbox#23175	9fcd744c90bb27e8e2ba683a0075ef864eb4b4bc	321a2fbf26ebcba1beb3bcbaf110351e0f0ecd04	scored	extension		1	4	3			
+external	s1-06	s1	paperless-ngx/paperless-ngx#13486	bbdf2cbd06a700e9eb19da0e67aaeac1e6ed6292	a5645392a5a993d60acc5bce8920087c001bd576	scored	extension		0	3	3			
+external	s1-07	s1	netbox-community/netbox#23277	5a9a9d2a25318ff68fdd567959a2d4f1f7080b21	fcf1aceaa42504432db91bed8b28b9b14ad37eda	scored	extension		2	3	3			
+external	s1-09	s1	we-promise/sure#4246	ac80cb81c6209296ad98887a8e1590231eabac75	e913d1d71da861f57fa8dd0371e7c56b3852e556	scored		cold	4	4	3			
+external	s1-10	s1	django-helpdesk/django-helpdesk#1453	f5f005e00147a75c4b3918038d3ac1fc6e1a0f39	184003f7ebe3e2d717781c3173e726db47f67630	scored			1	5	3		walked	
+external	s1-11	s1	WeblateOrg/weblate#21513	9a7c3e33caf106754ae5d925f7ce1d3361fbe8f0	57645e4f19995a5b58496e24db0b469bd5318249	scored			1	25	3		walked	
+external	s2-01	s2	RunMaestro/Maestro#1783	87753b18c07eca1b24b0605c429beee96ed121b1	fb56f5ac76afdd67f664419cc3ee5caa59a221eb	scored	canary		3	10	3			
+external	s2-02	s2	coder/xum#7059	e329bc9f29f9448200c91cc34089b57e5a2d32dc	11e478f8b64119cb8ced751373dee06874b5fdd0	scored	canary		1	1	3			
+external	s2-03	s2	CherryHQ/cherry-studio#19874	765f5b4522c49ff55b15125409951e9e271ce263	2771419778cbf6b165fc1042638728880475bb58	scored	extension		1	1	3			
+external	s2-05	s2	CherryHQ/cherry-studio#18688	ffffba6598964e07ec866fb32386979bc6b9c706	9f88dd48b594f2fa4c5f6cd8415e1f7d79b1fb01	scored	extension		1	2	3			
+external	s2-07	s2	IsmaelMartinez/teams-for-linux#2778	e54c9d474504e60799f720fd4c5cd517df527c65	0248b63c6c8f3e4a39b2ef444992482030a4a559	scored	extension		5	7	3			
+external	s2-08	s2	super-productivity/super-productivity#11313	e3f3938293814a7c8b38cbef741949ba779ac223	22278be3782d2c7d57bdd88f6718070f7c9502c9	scored	extension		1	3	3			
+external	s2-09	s2	kizuna-ai-lab/sokuji#361	c0eaebb7bd3498331a747503bb11cf779d946eb7	11bb3ba5c1199551b2266cd24e8f4e06be3d056c	scored		cold	2	17	3			
+external	s2-10	s2	coder/xum#6616	271c751d9697f19fd3eb139df9ed8bf12e9a3518	cbab90aaf8ee7dab2b43dc1ff3c7e3d5d567ed17	scored	extension		2	6	3			
+external	s3-01	s3	voidzero-dev/vite-plus#2667	ce940e3d3d9ce21632b2d08dd35ce784e7c918a2	a3035cf78a106beb55189936d6f10892a3dc2331	scored	canary		0	6	3			
+external	s3-02	s3	tokio-rs/toasty#1238	32bc3d4cc28440e36f782fdd2a08501d615eb2f4	14a1780d539d31561c197544d424ef1de2e28018	scored	canary		5	5	3			
+external	s3-03	s3	rust-lang/cargo#17562	58e1dfdd157a7b58956f3112a886b16fcb36cdec	9d5a15d175a3073a185cb344fa476ab81cf82554	scored	extension		1	1	3			
+external	s3-04	s3	chakra-ui/panda#3925	30465d3964523814b9fe9060e3f14decacd0047a	22ba83d6e139ae13f121a2adcf208dbe64549dc3	scored	extension		1	2	3			
+external	s3-05	s3	lancedb/lancedb#4486	982b2a1229ecbce435ed10a24bd0e54d1228f7ca	180eaaf68eae595e0948f3bb2f02974d4cf0535e	scored	extension		1	9	3			
+external	s3-06	s3	nautechsystems/nautilus_trader#4813	3c9305e2acbef67445d00fb0269dee9e07488b3c	73d4686f816c893cda24d61fe6b67bdbf0746131	scored	extension		4	13	3			
+external	s3-07	s3	pola-rs/polars#30060	e46ebbb1536985df1e908951462683df38dccff8	c5468d51674cdeb0ee0c418267e6dad1a9d2bca3	scored		cold	0	1	3			
+external	s3-08	s3	pola-rs/polars#29923	6d6f8b89ec42a33d9d9938fb4b6cbfea92fbab9f	d30f6c87d8016d8d7b086892b4e5273c977cda86	dropped		cold	0	3	3	not gradeable offline: its product cannot be rebuilt offline to match its end (the user's decision (B) of 2026-11-10)		
+external	s3-09	s3	the-open-engine/zeroshot#944	766b79324666fc530db8adc9f33c1495dff65761	ec989d89162944cde84920824fda8b41f4987df9	scored			0	1	3		walked	
+external	s3-10	s3	moonrepo/moon#2745	8948f6ebf0cc4440799464b48172bd207dc10ab7	3b9f8391f235f4853b3203844277993fcb4cc1c5	scored			2	2	3		walked	
+external	s3-11	s3	maplibre/martin#3365	2cd5135f6c068b40b428cdd7b2e5055f3692dadf	0608519b5c847b3bdbf6e5604d501bf237d60daa	scored			2	14	3		walked	
+external	s3-12	s3	jtroo/kanata#2117	44cded3effa867d0ed93b975705afbd3d6f2bca5	941a60e5bc5ae9487fffabef4ced5426f4daad6f	scored			1	1	3		walked	
+external	s1-08	s1	Open-Source-Legal/OpenContracts#2371	d2bfa314bec8c607ab353e84294a7ab257b2530b	3f2c3381d5653ee10daf37b5fd6f39260e14c669	retired			-	-	-	no valid check		
+external	s2-04	s2	coder/xum#5191	4ec7fdf20cba717f8fc4cadbcd2f6c7ff8f77b69	483fce9da70d617272bcb2052ac5863ae2e1d2ab	retired			-	-	-	no valid check		
+external	s2-06	s2	OpenWhispr/openwhispr#2643	98fc45459c91fc8d8903bd9fbc1c8d8e991432f8	021d8eee55fdc85ef2718ce2283a7a219a07c2fe	retired			-	-	-	not servable		
+real-estate	p1	re	2026-10-09-foundation.md	691a723	7adfd47	scored			0	15	1			
+real-estate	p2	re	2026-10-09-properties.md	7adfd47	5eced48	scored			0	39	1			
+real-estate	p3	re	2026-10-10-articles-pages.md	5eced48	be6c20b	scored			0	13	1			
+real-estate	p4	re	2026-10-11-surveys.md	be6c20b	9bb39ab	scored			0	20	1			
+real-estate	p5	re	2026-10-12-matching.md	8906318	31fcab0	dropped			0	0	0	rule (b) 0 < 3		
+real-estate	p6a	re	2026-10-13-requests-leads.md	31fcab0	d7f2fd3	scored			7	11	1			
+real-estate	p6b	re	2026-10-13-notifications-sales-view.md	d7f2fd3	885c4c2	dropped			4	2	0	rule (b) 2 < 3		
+real-estate	p6c	re	2026-10-14-admin-polish.md	885c4c2	c8db5b7	dropped			8	2	0	rule (b) 2 < 3		
+real-estate	p7b	re	2026-10-16-carried-fixes-and-limits.md	9354f4d	3137149	dropped			2	0	0	rule (b) 0 < 3		
+real-estate	p7c	re	2026-10-17-launch-readiness.md	3137149	0b02f41	dropped			1	0	0	rule (b) 0 < 3		
+real-estate	p8a	re	2026-10-18-brand-and-shell.md	0b02f41	d1ea76b	scored			13	5	1			
+real-estate	p8b	re	2026-10-19-listings.md	d1ea76b	1846450	trial-only			12	9	0	the prereg author read its oracle (section 12 step 10): step 11 trial only, never scored		
+real-estate	p8b1	re	2026-10-19-showcase-seed.md	1846450	3e630e8	dropped			0	0	0	needs outside data (rule (c))		
+real-estate	p8c	re	2026-10-19-detail-and-consultants.md	bf2eea3	bee1c22	scored			12	7	1			
+real-estate	p8d	re	2026-10-20-home-and-journey.md	bee1c22	d7695d6	scored			13	5	1			
+real-estate	p8e	re	2026-10-21-admin-theme.md	d7695d6	a9c2377	scored			13	5	1			

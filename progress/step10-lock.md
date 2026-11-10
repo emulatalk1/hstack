@@ -179,3 +179,13 @@ Counts only; hashed in the manifest except the outputs written after the hash.
 ## Approval, 2026-11-08
 
 The user approved the build on 2026-11-08 ("Duyệt build, và cho phép merge push"). The plan `docs/plans/2026-11-08-bench-stick-v1.md` is `stable`. The branch `bench-step10` is merged into `main` by fast-forward and pushed. Still open: everything under "Blocks Part 2", the step 11 walk and the flaky test, for step 11's plan.
+
+## Amended at step 11 (2026-11-10)
+
+Step 11 Phase A amended stick v1; everything above is unchanged. Details: `progress/step11a-lock.md`.
+
+- **New manifest:** `progress/stick-v1-step11.sha256`, 24,911 files, sha256 `0b3c82776a00c462eb3c679d561c79f338ff3bf532d5e89cbbdcdf34efc55355`. Left out: link 47, node_modules 1, store 1,314, secret 8, transcript 203, rewritten 88, special 0. Self-compare: hashed 24,911, equal 24,911. `progress/stick-v1.sha256` stays as the step 10 manifest.
+- **Compare** of `progress/stick-v1.sha256` with `progress/step11/reasons.tsv`: hashed 20,789, equal 20,777, changed 12, missing 0, unexplained 0; 4,122 new files (24,911 − 20,789). The 12 changed: `arm/proof-s1-01.json`, `arms.json`, `ext/repos/fossasia__eventyay/shallow`, `ext/sample.tsv`, `ext/step5-logs/serve.tsv`, `ext/walk.tsv`, `p8a/step.json`, `p8a/step/oracle/manifest.json`, `p8e/oracle/manifest.json`, `p8e/step.json`, `p8e/step/oracle/manifest.json`, `s3-08/step.json`.
+- **Walked tasks:** s1-10 (django-helpdesk/django-helpdesk#1453), s1-11 (WeblateOrg/weblate#21513), s3-09 (the-open-engine/zeroshot#944), s3-10 (moonrepo/moon#2745), s3-11 (maplibre/martin#3365), s3-12 (jtroo/kanata#2117). The task list is `progress/stick-v1/tasks-step11.tsv` (external 33: scored 29, dropped 1, retired 3, walked 6; real-estate 16: scored 9, dropped 6, trial-only 1).
+- **H1's N is 24** (s1 8, s2 8, s3 8), up from 20.
+- **The user's decisions (A) and (B) of 2026-11-10 change the task list:** (A) p8a `d1ea76b-T13`, p8e `eb2b016-T7` and p8e `a9c2377-T15` leave the score by 7.1 (step ids p8a 14 to 13, p8e 14 to 13; p8e scored fix-commit checks 6 to 5); (B) s3-08 is `dropped` (not gradeable offline) and leaves H1–H4, so its `step.json` ids moved to `dropped_ids`. The "Task lists" and "Blocks Part 2" parts above describe the state before this step: M3 is now closed only where split mode holds (decision (C)).
