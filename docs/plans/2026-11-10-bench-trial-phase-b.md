@@ -5,7 +5,7 @@ description: "Prereg step 11, Phase B: the plugin commit the designer handed ove
 status: draft
 generated: { by: claude-code/2.1.318, at: "2026-11-10T22:24:19+07:00" }
 verified:
-  - { by: claude-code-advisor/2.1.318, at: "2026-11-10T22:24:19+07:00" }
+  - { by: claude-code-advisor/2.1.318, at: "2026-11-10T23:13:47+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
@@ -51,7 +51,7 @@ The controller listed the export's files, read `hooks/hooks.json` and counted ru
    - A P OOM in split mode reads as O's timeout: a trial grade of p8b or p6c whose result is `noresult` or a timeout is told to the user (task, arm, kind, exit state; no check id) before the lock, and listed in it.
    - `--extra-round` grants one round per invocation: Phase B runs no rebuild round unless B3 walks; there it is invoked at most once per task and each call is counted in the ledger.
    (b) Fix them first: each fix with its test, then the regrade of Phase A's Task 12 again, before B2.
-2. **The fact in `handover.md`.** Decision 4 (a) bars the controller from passing it to the designer, and keeping it out of this repository keeps that true after a merge. If you want the designer to know before the trial, that is a change of decision 4 only you can make; the plugin may then change before B2, and B1 starts again with the new commit. **(a) Recommended:** run as handed over; the step 11 lock names the note by path and states it only once step 12 has locked the plugin.
+2. **The fact in `handover.md`.** Decision 4 (a) bars the controller from passing it to the designer, and keeping it out of this repository keeps that true after a merge. If you want the designer to know before the trial, that is a change of decision 4 only you can make; the plugin may then change before B2, and B1 starts again with the new commit. **(a) Recommended:** run as handed over; B4's lock (`progress/step11-lock.md`) names `logs/step11b/handover.md` by path only; its content is stated in the step 12 lock, after the plugin is locked.
 3. **A pin for the commit.** `653af83` is reachable only through the branch `plugin-design`; if the designer rewrites it before step 12 locks the plugin, the commit `arms.json` records can be lost to `git gc`. **(a) Recommended:** the controller writes `refs/bench/plugins/hstack-653af83` in the shared `.git` (a ref only, no branch, nothing pushed). (b) No pin; the designer is asked, through you, not to rewrite the branch.
 
 **Needs you:** approve this plan before B1's probes (they spend the token); answer decisions 1–3; and, if the token of 2026-11-09 no longer works (B1 step 4 shows it as a probe failure), a new one as decision 3 (a).
