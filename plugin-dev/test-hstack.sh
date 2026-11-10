@@ -3,6 +3,7 @@
 set -u
 H="${HSTACK_SH:-$(cd "$(dirname "$0")/.." && pwd)/scripts/hstack.sh}"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+export HSTACK_STATE="$T/state"
 fails=0
 ok() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi; }
 stop() { printf '{"hook_event_name":"Stop","stop_hook_active":false}' | CLAUDE_PROJECT_DIR="$T/r" sh "$H" hook-stop; }
@@ -10,7 +11,7 @@ start() { printf '{"session_id":"x","source":"%s"}' "$1" | CLAUDE_PROJECT_DIR="$
 
 mkdir -p "$T/r/tests" "$T/r/src" && cd "$T/r" && git init -q && git config user.email t@t && git config user.name t
 echo 'assert a' > tests/old_test.txt; echo 'x = 1' > src/a.txt; git add -A; git commit -qm base
-S="$(git rev-parse --absolute-git-dir)/hstack"
+S=$(sh "$H" dir)
 
 # no repo
 ok 'stop allows outside a git repo' '[ -z "$(printf {} | CLAUDE_PROJECT_DIR=/ sh "$H" hook-stop)" ]'
@@ -77,7 +78,7 @@ ok 'elapsed prints minutes' '[ "$(sh "$H" elapsed)" = 0 ]'
 # a second run keeps the first
 sh "$H" start >/dev/null
 ok 'start moves the earlier run to old/' '[ -f "$S/old/"*/base ] && [ ! -f "$S/done" ] && [ -f "$S/session-head" ]'
-ok 'state is never in the work tree' '[ -z "$(git status --porcelain)" ]'
+ok 'state is never in the work tree or .git' '[ -z "$(git status --porcelain)" ] && [ ! -e .git/hstack ] && case $S in "$T/state/"*) true;; *) false;; esac'
 
 echo "$fails failure(s)"
 [ $fails -eq 0 ]

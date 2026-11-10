@@ -20,7 +20,7 @@ Goals: finish in the first turn with the reply the task asks for; no question to
 
 Non-goals: tool or stack knowledge in the plugin (the agent picks tools at setup and writes them down); the old Docker/port safety layer (frozen, see below); a W build (designed for, not built).
 
-Anti-goals: a run that times out because of the plugin's layers; a plugin file that needs a runtime the box lacks; harness files in the product (state stays in `.git/hstack/`); a gate that loops forever.
+Anti-goals: a run that times out because of the plugin's layers; a plugin file that needs a runtime the box lacks; harness files in the product (state stays under `~/.hstack/`); a gate that loops forever.
 
 ## Parts
 
@@ -39,7 +39,7 @@ Development files (`plugin-dev/`): this design and `test-hstack.sh`, the sh test
 
 ### Run state
 
-`S = $(git rev-parse --absolute-git-dir)/hstack`. Never committed, never in the product, private to a worktree. Files: `base` (commit at start), `started` (epoch seconds), `requirement.md` (the task text, verbatim), `capabilities.md`, `test-paths` (git pathspecs of the project's tests), `oracle.lock` (`<blob> <path>`), `oracle-report.md`, `spec.md`, `decisions.md`, `phases`, `review-<n>.md`, `explore.md`, `mutants.md`, `summary.md`, `done` (HEAD at the final check), `session-head`, `stop-blocks`.
+`S = ${HSTACK_STATE:-$HOME/.hstack}/<cksum of the absolute git dir>`. Never committed, never in the product, private to a worktree. Not inside `.git`: the first end-to-end run (2026-11-10) showed Claude Code refusing Write-tool writes there, and the agent stopped to ask. Files: `base` (commit at start), `started` (epoch seconds), `requirement.md` (the task text, verbatim), `capabilities.md`, `test-paths` (git pathspecs of the project's tests), `oracle.lock` (`<blob> <path>`), `oracle-report.md`, `spec.md`, `decisions.md`, `phases`, `review-<n>.md`, `explore.md`, `mutants.md`, `summary.md`, `done` (HEAD at the final check), `session-head`, `stop-blocks`.
 
 `hstack.sh start` moves an earlier run's folder to `S/old/<time>/` and begins a new one.
 

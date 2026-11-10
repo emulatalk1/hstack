@@ -1,6 +1,7 @@
 #!/bin/sh
 # hstack run state and the two hooks. POSIX sh + git only: the project's box may have no other runtime.
-# State lives in <git dir>/hstack, so it is never committed and never part of the product.
+# State lives outside the work tree and outside .git (Claude Code guards writes into .git), in
+# ${HSTACK_STATE:-$HOME/.hstack}/<checksum of the git dir>, so it is never committed and never part of the product.
 # usage: hstack.sh dir|start|phase <name> [skipped: <why>]|missing|lock <file>...|gate|elapsed|done|hook-start|hook-stop
 
 PHASES='setup oracle build gate review explore mutate final'
@@ -8,8 +9,8 @@ MAX_BLOCKS=3
 
 state() {
   G=$(git rev-parse --absolute-git-dir 2>/dev/null) || return 1
-  S="$G/hstack"
-  mkdir -p "$S"
+  S="${HSTACK_STATE:-$HOME/.hstack}/$(printf '%s' "$G" | cksum | cut -d' ' -f1)"
+  mkdir -p "$S" && printf '%s\n' "$G" > "$S/repo"
 }
 
 fingerprint() { printf '%s %s\n' "$(git rev-parse -q --verify HEAD 2>/dev/null)" "$(git status --porcelain | git hash-object --stdin)"; }
@@ -68,7 +69,7 @@ case $cmd in
     if [ -f "$S/base" ]; then
       old="$S/old/$(date +%Y%m%d-%H%M%S)"
       mkdir -p "$old"
-      for f in "$S"/*; do case ${f##*/} in old|session-head|stop-blocks) ;; *) mv "$f" "$old/" ;; esac; done
+      for f in "$S"/*; do case ${f##*/} in old|repo|session-head|stop-blocks) ;; *) mv "$f" "$old/" ;; esac; done
     fi
     git rev-parse -q --verify HEAD > "$S/base" || { echo "hstack: the repository has no commit" >&2; exit 1; }
     date +%s > "$S/started"

@@ -7,7 +7,7 @@ description: Use for any request to build, change or fix code in a repository - 
 
 You are the builder. You run every step below, in order, to the end, then reply exactly what the task asked for (for example `DONE`). Nobody will answer a question: decide from the requirement, the code and the way this codebase already does things, write the decision in `$S/decisions.md`, and go on. A stop before the last step is a failure.
 
-`H` below is `sh "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.sh"`; if that variable is empty, the script is `../../scripts/hstack.sh` from this skill's base directory. Use the absolute path, and pass it to every agent you start.
+`H` below is `sh "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.sh"`; if that variable is empty, the script is `../../scripts/hstack.sh` from this skill's base directory. Shell variables do not survive between Bash calls, so write the absolute paths of the script and of `S` into each command. Pass both to every agent you start.
 
 ## Rules for the whole run
 
@@ -20,7 +20,7 @@ You are the builder. You run every step below, in order, to the end, then reply 
 
 ## 1. Start
 
-Run `$H start`; it prints the state folder `S` (inside `.git`, never committed). Write the task's text, verbatim and whole, to `$S/requirement.md` (every word the user gave as the task, the interface sheet included).
+Run `$H start`; it prints the state folder `S` (outside the repository, under `~/.hstack/`, never committed; `$H dir` prints it again). Write the task's text, verbatim and whole, to `$S/requirement.md` (every word the user gave as the task, the interface sheet included).
 
 ## 2. Setup: capabilities (cap 20 minutes, plus one slow first compile)
 
