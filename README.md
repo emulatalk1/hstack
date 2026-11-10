@@ -2,7 +2,9 @@
 
 A Claude Code plugin for an evidence-led build loop: review, mutation testing and blind evaluators, run per project.
 
-**Status: foundation (v0.1.0).** This version sets up a project and guards it. `init` detects the project's stack and writes its manifest. The safety checks answer "may an agent do this?" before it touches Docker, a port, a database or a data folder. The review loop, the evaluators and mutation testing come in later plans (see [Roadmap](#roadmap)).
+**Status: v0.2.0.** `hstack:build` is an autonomous build loop for any stack: it finds how to test and run the project (each capability proven by a probe and a canary), has an independent oracle write acceptance tests from the requirement before any code, builds, gates against weakened tests, then runs a reviewer, an exploratory tester and a mutation check, each in its own context. Two hooks keep it going: a session-start nudge and a stop gate that refuses to end an unfinished run (at most 3 times per process). Everything it runs is POSIX `sh` and `git`; its run state lives in `.git/hstack/`, never in the work tree. Design: [`plugin-dev/2026-11-10-hstack-plugin-design.md`](plugin-dev/2026-11-10-hstack-plugin-design.md); hook tests: `sh plugin-dev/test-hstack.sh`.
+
+The older stack A/B tools below (`init`, the safety checks) are kept as they were; their skills are user-invoked only (`disable-model-invocation`), because they need Bun and a manifest.
 
 ## Requirements
 
@@ -23,6 +25,7 @@ The repo is private, so your git login must be able to read it. You can also add
 
 | Skill | Use it |
 |---|---|
+| `build` | Any request to build, change or fix code. Runs to the end without asking. Loop agents: `oracle`, `reviewer`, `explorer`, `mutator`. |
 | `hstack-init` | Once per project, and again after the project folder is copied or moved. |
 | `hstack-safety` | Before any Docker command, port stop, database drop or folder wipe. |
 
