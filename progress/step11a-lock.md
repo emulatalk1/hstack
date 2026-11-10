@@ -27,7 +27,7 @@ Every number here comes from the tools' count lines archived in `<data>/logs/ste
 
 Closed **only where split mode holds** (the user's decision (C) of 2026-11-10):
 
-- **Closed:** s1-02, s1-04, s1-06, s1-09, s2-03, s2-09, and the private set (the 9 scored tasks plus p8b and p6c).
+- **Closed:** s1-10 (graded split, no `grade-mode`), s1-02, s1-04, s1-06, s1-09, s2-03, s2-09, and the private set (the 9 scored tasks plus p8b and p6c).
 - **Open (`grade-mode` = `shared`, one container):** s1-01, s1-03, s1-05, s1-07, s2-01, s2-02, s2-05, s2-07, s2-08, s2-10, and the walked s1-11. s1-01's runner needs the product's files in its own container (every check changed in split mode, matched in shared); the others failed split at the regrade the same way or by ruling 5's route.
 - **Open (no served interface, one container):** all of s3, the walked s3 tasks included.
 - The driver's fallback twice wrote `grade-mode` shared for the shared private-set slug, which would have switched every later private task to one container; it was removed at once (and kept only until p8e's shared grades ended), and any private task graded shared in between was regraded split. p8a and p8e change in both modes, so the mode is not their cause.
@@ -70,7 +70,7 @@ p8b oracle (`nolock`, 20): trial-only, no lock grade to compare.
 **Classification** (content-free: exit codes, file names, one repeat, a networked repeat of a trusted end):
 
 - s2-08: one repeat (registered before it ran) matched the locks, 3/3 → flaky, 1 of 2. Changes nothing.
-- s3-08: oracle 3 and seeded 5 changed again on the repeat; 3 sealed rebuild rounds; the make passes but the product is the base's. Cannot be rebuilt offline to match its end.
+- s3-08: oracle 3 and seeded 5 changed again on the repeat; 2 sealed rebuild rounds plus 1 extra (3 in all); the make passes but the product is the base's. Cannot be rebuilt offline to match its end.
 - p8a d1ea76b-T13 and p8e eb2b016-T7: pass with the app container on Docker's default network (network experiment: p8a step 14/14 same, p8e oracle 8/8 same) → need the network at run time.
 - p8e a9c2377-T15: still changed with the network → differs in the container either way.
 
@@ -176,7 +176,7 @@ Every ledger line that starts with `Ruling` (51), in order, with three inline ru
 | 23 | The `oracleRun` change (private-set products made with the pinned registry) is accepted before Task 12 and gets a unit test | none |
 | 24 | Task 8's fix round 1 also takes the security minors (outside proxy check, proxy `StartedAt` in `alive()`, server started after its rules, earlier image ids kept, file mode in the plugin sha lines, export folder removed on every path, stale 'skipped' state) | a larger fix round |
 | 25 | The plugin sha line records only git's mode (755 if any exec bit, else 644), not the machine's umask | none |
-| 26 | Plan defect: Task 12a builds `ext rebuild <task>` (sealed rounds, at most 2 per repo key, base make log readable, end sealed), because ruling 4 registered rounds but no task built the tool | one tool and up to 2 sealed rounds per failing repo |
+| 26 | Plan defect: Task 12a builds `ext rebuild <task>` (sealed rounds, base make log readable, end sealed), because ruling 4 registered rounds but no task built the tool; rebuild rounds: at most 2 per task slug (ruling 4 said per repo; ledger line of Task 12a's dispatch) | one tool and up to 2 sealed rounds per failing task |
 | 27 | A `USER` line in the rebuild lines naming the image's final user is a no-op; any other `USER` stays refused | none |
 | 28 | When the default lines are refused (no make ran), `rebuild` sends the agent the refusal message in place of the base log | none |
 | 29 | When the base make fails, the end make is skipped (`end=skipped`) | none |
@@ -192,7 +192,7 @@ Every ledger line that starts with `Ruling` (51), in order, with three inline ru
 | 39 | The `grade-mode` shared files set by the first regrade stand (those tasks failed split because their runner needs the product's files in its own container) | a task stays shared that could have been split (M3 open there) |
 | 40 | Task 12d: the overlay touches only the paths that differ between the base and the commit; replaces 12c's fix (it broke s2-03) | one more `oracle-run` change; the regrade restarts |
 | 41 | Each task CHANGED in the third regrade gets exactly one more grade of its changed kinds after the driver ends; matching the locks → flaky (1 of 2), still different → CHANGED | one grade per such task |
-| 42 | s3-08 gets one extra sealed rebuild round with a content-free note; it failed (rounds=3); the round-2 `rebuild.json` was restored; s3-08 goes to the user | one round and two grades |
+| 42 | s3-08 gets one extra sealed rebuild round with a content-free note; it failed (2 rounds plus 1 extra, 3 in all, rounds=3); the round-2 `rebuild.json` was restored; s3-08 goes to the user | one round and two grades |
 | 43 | p8a and p8e: a network experiment classifies the cause content-free (a scratch copy of `bench/` only switches `P`'s `--network`) | none stated |
 | 44 | (B) is applied as `s3-08/step.json` ids → [] (old ids under `dropped_ids`) plus status `dropped`, because `trial.mjs report` counts H1's N from sample rows with step ids | one data file to restore from the stick hash |
 | 45 | The walk runs on `groups-walk.json`, `cold_setup` restored after each sample, serve verdicts in `serve.tsv`, a second queue folder if needed | one copy file, a column restored by script |
@@ -236,11 +236,13 @@ Named by the ledger:
 16. **antiwork/gumroad#6391** excluded as `out: issue not found` (controller ruling).
 17. **`PRIVATE_SET` and `registry.npmjs.org`** named in `bench/ext.mjs`, against "bench/ names no stack, customer or task".
 18. **Candidates validated twice:** s3-01's and s3-07's round-2 lines were validated again (ruling 35).
-19. **A fourth rebuild round** for s3-08 beyond the budget of 2; s3-02's extra round was ruled and never used.
+19. **A third rebuild round** for s3-08 (2 + 1 extra), beyond the budget of 2; s3-02's extra round was ruled and never used.
 20. **The rebuild tool** (Task 12a) and the overlay fixes of Tasks 12c and 12d were not in the plan; the regrade ran three times.
 21. **The walk drivers** were written new in `logs/step11/` instead of copied from the step 5 drivers (Task 13 step 1).
 22. **7.1 at `--chunk 5`** for the walked set (the default chunk was over the 0.9 MB cap).
 23. **Task 13a** had no task review (ruling 46); **s1-11 stays shared** though split was not retried (ruling 51).
+24. **Rebuild rounds were budgeted per task slug, not per repo as ruling 4 registered:** pola-rs/polars (a cold-setup repo) spent 4 sealed rounds (s3-07 2, s3-08 2) plus s3-08's extra round, 5 against a registered 2.
+25. **`arm/proof-s1-01.json` was rewritten** by the Task 4 and Task 11 proofs and its reason line was added on 2026-11-10 (1f5c712), after the fact. It widens ruling 11's expected list, as ruling 4's stores did.
 
 ## Deferred minors
 
@@ -275,13 +277,18 @@ From the ledger (`minor (deferred)` lines); the final review triages them. By ta
 - **s1-11 is shared:** M3 stays open there; split was not retried.
 - **The stick is not validated;** the section 7.3 trigger candidate stays open for step 14 (step 10 lock).
 - **The 2 cold-task disputes** carried from step 10 are not touched by this step's ledger.
+- **Before Phase B's first run,** the Phase B follow-on plan must fix, or explicitly accept, the ledger items `listens()` (no retry on a transient docker error), P OOM hidden behind O's timeout, and `--extra-round` granting one round per invocation.
+- The timing-dependent tests named by the final review (bench-env, bench-proc, bench-agent, bench-score) are flaky candidates, not changed (ruling 14).
 - **Merge and push wait for the user.** The plan stays `draft` until the user approves Phase A, after the whole-branch review.
 
 ## Known limits
 
-- **M3 stays open for in-process interfaces and for shared-mode tasks:** all of s3 (s3-09 to s3-12 included), and s1-01, s1-03, s1-05, s1-07, s1-11, s2-01, s2-02, s2-05, s2-07, s2-08, s2-10 (`grade-mode` = `shared`); closed for s1-02, s1-04, s1-06, s1-09, s2-03, s2-09 and the private set (decision (C)).
+- **M3 stays open for in-process interfaces and for shared-mode tasks:** all of s3 (s3-09 to s3-12 included), and s1-01, s1-03, s1-05, s1-07, s1-11, s2-01, s2-02, s2-05, s2-07, s2-08, s2-10 (`grade-mode` = `shared`); closed for s1-10, s1-02, s1-04, s1-06, s1-09, s2-03, s2-09 and the private set (decision (C)). s3-01 and s3-08 have a `grade-mode` file written by the regrade driver's fallback, but s3 is graded in one container either way.
+- **`grade --reuse` keys on commit, oracle sha and junit only,** not on `ext/tasks/<slug>/grade-mode`, `rebuild.json`, the private set's outside runner or the `oracle-run` code: a rerun can keep a grade made under another mode or other rebuild lines. It happened once (s1-11's shared rerun reused its split end grade; the controller moved the grade files aside unread). Phase A's regrade ran without `--reuse`. Step 13's plan should add the grade mode, the rebuild.json sha and the runner sha to the grade file and the reuse key.
+- **The proxy forwards the client's `anthropic-beta` header unfiltered;** the body denylist covers every server feature known today, so a future beta that fetches through a new body field would pass.
+- **The registry is pinned by its IP addresses and port 443, not by host name:** if those addresses are shared CDN addresses, a private-set box or make container can reach other sites served there. This applies equally to every arm, and decision 6 (a)'s reason covers it. 'Only the registry answers' means only those addresses answer.
 - **I2 closed by the proxy (form A);** no fallback. The token is visible to `docker inspect` on the host (the host is trusted).
-- **`O` shares `P`'s `/etc/hosts`, `resolv.conf` and loopback ports** in split mode: `P` can redirect what `O` connects to (not `/out`).
+- **`O` shares `P`'s `/etc/hosts`, `resolv.conf`, loopback ports and abstract unix sockets** in split mode: `P` can redirect what `O` connects to (not `/out`).
 - **A product that needs a new dependency cannot build** (external; real-estate under decision 6 (b)), as in the box; it reads `noresult`, equally for every arm.
 - **The real-estate box runs Postgres, the dev server and browsers under `--memory 6g`;** a kill is `machine memory`, told to the user.
 - **Registry addresses are pinned when a box is made** (decision 6 (a)); a box lives up to 56 hours, and an address that rotates fails every arm alike.

@@ -31,6 +31,7 @@ export function probeOk(arm, info, expectedPlugins, userSkills) {
   if (got.join('\n') !== want.join('\n')) return `plugins at init [${got}] differ from the arm's [${want}]`
   const web = info.tools.filter((t) => WEB_OFF.includes(t))
   if (web.length) return `arm ${arm} has a web tool at init: ${web.join(', ')}`
+  if (info.tools.includes('AskUserQuestion')) return `arm ${arm} has AskUserQuestion at init`
   if (arm !== 'B' && arm !== 'B-') return null
   const bad = info.commands.filter((c) => c.includes(':') || userSkills.includes(c))
   return bad.length ? `arm ${arm} loads a plugin command or user skill: ${bad.join(', ')}` : null

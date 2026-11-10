@@ -442,6 +442,10 @@ test('probeOk refuses a web tool at init, for every arm', () => {
   expect(probeOk('H', initInfo(init({ tools: ['Bash'] })), [], [])).toBeNull()
 })
 
+test('probeOk refuses AskUserQuestion at init, for every arm', () => {
+  for (const arm of ['B', 'B-', 'H', 'W']) expect(probeOk(arm, initInfo(init({ tools: ['Bash', 'AskUserQuestion'] })), [], [])).toContain('AskUserQuestion')
+})
+
 const hosts = [{ host: 'api.example', ip: '10.0.0.1' }, { host: 'claude.example', ip: '10.0.0.2' }]
 const box = { name: 'bench-ext-x-arm-t-B-1', image: 'img:1-arm', platform: 'linux/arm64', hosts, limitSec: 90000, memoryGB: 6, env: ['ANTHROPIC_AUTH_TOKEN=bench-placeholder'] }
 test('boxArgs mounts nothing and asks for no capability', () => {

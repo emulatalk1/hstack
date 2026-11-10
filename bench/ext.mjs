@@ -1343,7 +1343,7 @@ export function parseRebuild(text) {
 // each give candidate lines, kept in rebuild.json once both makes pass with them. A make the agent may read runs FROM S (no runner
 // layer, whose output must never reach it); the grade's makes run FROM R, their logs sealed. What it builds is removed when it ends.
 // inj.maker(image, commit, lines, log) -> boolean stands in for building S and R and for productImage
-// --extra-round <note> (controller ruling s3-02): this run's budget is the rounds spent + 1, whatever the budget, and its one round's
+// --extra-round <note> (a controller ruling of the step 11 regrade): this run's budget is the rounds spent + 1, whatever the budget, and its one round's
 // prompt ends with `Also known: <note>`; the note is one line of at most 300 characters
 export async function rebuild(args, inj = {}, print = (s) => console.log(s)) {
   const at = args.indexOf('--extra-round'), note = at < 0 ? null : args[at + 1]

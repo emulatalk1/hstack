@@ -307,7 +307,7 @@ Sketched here so the trial's shape is fixed now; the follow-on plan adds only th
 
 ## Known limits
 
-- **M3 stays open for in-process interfaces and for shared-mode tasks:** all of s3, and s1-01, s1-03, s1-05, s1-07, s2-01, s2-02, s2-05, s2-07, s2-08, s2-10 (`grade-mode` = `shared`); closed for s1-02, s1-04, s1-06, s1-09, s2-03, s2-09 and the private set (the user's decision (C) of 2026-11-10).
+- **M3 stays open for in-process interfaces and for shared-mode tasks:** all of s3, and s1-01, s1-03, s1-05, s1-07, s2-01, s2-02, s2-05, s2-07, s2-08, s2-10, s1-11 (`grade-mode` = `shared`); closed for s1-10, s1-02, s1-04, s1-06, s1-09, s2-03, s2-09 and the private set (the user's decision (C) of 2026-11-10).
 - **I2 depends on the probe** (ruling 6): with the fallback, the nested route stays open and is only counted.
 - **A product that needs a new dependency cannot build** (external; real-estate under decision 6 (b)), as in the box; it reads `noresult`, equally for every arm.
 - **The real-estate box runs Postgres, the dev server and browsers under `--memory 6g`;** a kill is `machine memory`, told to the user.

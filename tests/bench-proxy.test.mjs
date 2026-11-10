@@ -9,6 +9,8 @@ const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-proxy-')))
 afterAll(() => rmSync(tmp, { recursive: true, force: true }))
 
 const seen = []
+let firstRead // resolved by the streaming test once the client has read the first chunk
+const gate = new Promise((r) => { firstRead = r })
 const upstream = Bun.serve({
   port: 0,
   async fetch(req) {
@@ -23,7 +25,9 @@ const upstream = Bun.serve({
       const enc = new TextEncoder()
       const body = new ReadableStream({
         async start(c) {
-          for (const s of ['one', 'two', 'three']) { c.enqueue(enc.encode(`data: ${s}\n\n`)); await Bun.sleep(60) }
+          c.enqueue(enc.encode('data: one\n\n'))
+          await gate // the rest goes out only after the client has read the first chunk, so a buffering proxy hangs
+          c.enqueue(enc.encode('data: two\n\n')); c.enqueue(enc.encode('data: three\n\n'))
           c.close()
         },
       })
@@ -108,7 +112,7 @@ test('the proxy streams the answer', async () => {
   const p = start({ upstream: `http://localhost:${up.port}` })
   const res = await post(p.url, '/v1/messages', { messages: [] })
   const got = []
-  for await (const chunk of res.body) got.push(new TextDecoder().decode(chunk))
+  for await (const chunk of res.body) { got.push(new TextDecoder().decode(chunk)); firstRead() }
   expect(got.join('')).toBe('data: one\n\ndata: two\n\ndata: three\n\n')
   expect(got.length).toBeGreaterThan(1) // not buffered into one piece
 })
