@@ -46,6 +46,8 @@ The controller listed the export's files, read `hooks/hooks.json` and counted ru
 
 ## Decisions for the user (asked with this plan)
 
+**Decided by the user on 2026-11-11** ("Theo advisor suggestions"): the plan approved, and (a) of decisions 1–3: the three minors accepted, the handover note not relayed, the commit pinned by `refs/bench/plugins/hstack-653af83` (written 2026-11-11, nothing pushed).
+
 1. **The three deferred minors of the Phase A lock** (open point: "before Phase B's first run, the Phase B follow-on plan must fix, or explicitly accept"). `listens()` lives in `bench/box.mjs` and the P OOM in `oracle-run` (`bench/ext.mjs`); ruling 1 makes any change to the box or `oracle-run` after Task 12 repeat the whole regrade (about 75 grades, three full runs in Phase A). **(a) Accept all three (recommended):**
    - `listens()` has no retry on a transient Docker error: a false negative kills the box, the run ends `machine killed` (`bench/run-arm.mjs`), and by step 8 ruling 11 it takes the next number. Cost: one rerun of that arm (up to 8 hours on a real-estate task). Every such run is counted in the lock.
    - A P OOM in split mode reads as O's timeout: a trial grade of p8b or p6c whose result is `noresult` or a timeout is told to the user (task, arm, kind, exit state; no check id) before the lock, and listed in it.

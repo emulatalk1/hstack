@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-11-11
+* **Update**: The user approved the [trial run plan, Phase B](/plans/2026-11-10-bench-trial-phase-b.md) and (a) of its decisions 1–3; the plugin commit is pinned by `refs/bench/plugins/hstack-653af83`.
+
 ## 2026-11-10
 * **Creation**: Added the [trial run plan, Phase B](/plans/2026-11-10-bench-trial-phase-b.md) (draft): the plugin commit handed over (hstack, `653af83`, no dependencies) for `arms.json` `plugins.H`, CLI 2.1.318 unchanged, Tasks B1–B4 under the rules of the [trial run plan](/plans/2026-11-08-bench-trial.md), and three decisions for the user (the three deferred minors accepted rather than fixed, which would repeat the regrade; a handover fact kept in a gitignored note under decision 4; a ref that pins the plugin commit). `arms.json` `plugins.H` records the export's sha256 and `trial/tasks.txt` names s2-01, s3-02, p8b, p6c.
 * **Approve**: The user approved Phase A of step 11; the [trial run plan](/plans/2026-11-08-bench-trial.md) is `stable`. The lock `progress/step11a-lock.md` gains the post-fix checks and s1-11's nondeterministic make as a known limit. Phase B waits for a plugin commit; the token in `arm/box.env` is kept for it.
