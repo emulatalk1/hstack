@@ -45,7 +45,7 @@ Development files (`plugin-dev/`): this design and `test-hstack.sh`, the sh test
 
 ### Hooks
 
-- **SessionStart** writes `session-head` (HEAD and a hash of `git status --porcelain`) only when its input says `"source":"startup"` (a resume must not reset what "nothing changed" compares with), resets `stop-blocks` to 0, and prints: hstack is installed; for any request to build, change or fix code here, invoke `hstack:build` first and follow it to the end; no human answers questions, so decide from the requirement and the code and record the decision.
+- **SessionStart** writes `session-head` (HEAD and a hash of `git status --porcelain`) only when its input says `"source":"startup"` (a resume must not reset what "nothing changed" compares with), resets `stop-blocks` to 0 on `startup` and `resume` only (a compaction inside a process keeps the count), and prints: hstack is installed; for any request to build, change or fix code here, invoke `hstack:build` first and follow it to the end; no human answers questions, so decide from the requirement and the code and record the decision.
 - **Stop** allows the stop when: not a git repo; or `done` equals HEAD and the tree is clean; or no run was started and HEAD and the status hash equal `session-head` (nothing was changed: a probe or a question). Otherwise it blocks with a reason naming the missing phases (or "changed after the final check"), at most 3 times per process (`stop-blocks`), then allows. The reason always ends: when finished, end with exactly the reply the task asked for. A block is the harness's own reminder, not an intervention (prereg 9.3).
 
 ### The loop (`hstack:build`)

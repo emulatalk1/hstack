@@ -27,6 +27,8 @@ ok 'block output is JSON with decision block' 'stop | grep -q "^{\"decision\":\"
 # 2 blocks used above... count is per process: reset by start
 start resume; stop >/dev/null; stop >/dev/null; stop >/dev/null
 ok 'stop allows after 3 blocks in one process' '[ -z "$(stop)" ]'
+start compact
+ok 'a compaction does not give the blocks back' '[ -z "$(stop)" ]'
 start resume
 ok 'a new process gets its blocks back' 'stop | grep -q block'
 git checkout -q -- src/a.txt

@@ -31,7 +31,8 @@ case $cmd in
   hook-start)
     input=$(cat)
     if cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && state; then
-      echo 0 > "$S/stop-blocks"
+      # a new process gets its blocks back; a compaction inside one does not
+      case $input in *'"source":"startup"'*|*'"source":"resume"'*) echo 0 > "$S/stop-blocks" ;; esac
       # only a new session sets the reference; a resume must keep it
       case $input in *'"source":"startup"'*) fingerprint > "$S/session-head" ;; esac
     fi
