@@ -3358,3 +3358,10 @@ Final fix wave: sonnet 92.8k, 4.7 min, commit 7611de2; re-review sonnet 97.9k, 0
 After the fix wave: BENCH_EXT_DOCKER=1 tests/bench-box.test.mjs 47 pass 0 fail (1024 s, logs/step11/tests-box-docker-final.out); bun test ./tests 638 pass 64 skip 0 fail, pristine (tests-2.out); stick compare of progress/stick-v1-step11.sha256 equal 24,911, changed 0; Docker bench-ext- containers 328, images 162 (unchanged); git status bench tests empty.
 Task 14: complete (commits 39dace4..7611de2 + ledger copy); waiting for the user's approval of Phase A.
 ```
+
+## Step 11 Phase B
+
+Plan `docs/plans/2026-11-10-bench-trial-phase-b.md` (draft), branch `bench-step11b` from main (5211cfb).
+
+- 2026-11-10, B1 steps 1–3 (controller): export of hstack `653af835fd613e3eb25feb48e4ccc9bfb534ae6e` (`.claude-plugin agents hooks scripts skills`): files 21, sha256 `727d67815bf9445672d37a52738f7729a04cee1e0383256c107f60130c271843` (`logs/step11b/plugin-export.out`). `arms.json` `plugins.H` = that entry, `repo` `../..`; `plugins.W` `[]`; nothing else changed (`logs/step11b/arms-before.json`). `loadArms` accepts it and the export of the loaded entry matches the sha256 (`arms-check.out`). `trial/tasks.txt`: s2-01, s3-02, p8b, p6c; each has `env/box/<task>.json`, step ids (3, 5, 12, 8), is not cold and not walked.
+- B1 step 4 (the probes) waits for the user's approval of the plan and decisions 1–2.
