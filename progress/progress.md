@@ -3104,7 +3104,7 @@ Sealed agent runs of step 11 (`logs/step11/lock-usage.mjs`; run records started 
 
 Wall clock: the walk 2026-11-09T22:31Z (s3-09) to 2026-11-10T11:47Z (last kills). Tests: `tests-1.out` 637 pass, 64 skip, 0 fail. The full regrade ran three times (the third started 2026-11-09 20:48); the total hours are not recorded in the ledger.
 
-## Step 11 SDD ledger (copied before the final review)
+## Step 11 SDD ledger (copied after the final review)
 
 ```text
 # SDD ledger — plan: docs/plans/2026-11-08-bench-trial.md
@@ -3350,4 +3350,11 @@ User decision 2026-11-10: s1 7.1 gate stop accepted as a deviation (2 drops stay
 Task 13: seed/kills (seed11.out): every walked task kept 3 bugs (s3-10 refused 1 candidate; s1-10 fixer 2, broken 2); kills fix= s1-10 2/3, s1-11 3/3, s3-09 1/3, s3-10 2/3, s3-11 3/3, s3-12 0/3; step=none on all. pgsnap equal on every walk (11) and serve; no non-fixture bench name left in Docker (bench-ext-other predates); /tmp/hstack-bench holds fixtures only. Suite tests-1.out 637 pass 64 skip 0 fail, pristine.
 Task 13: complete (H1's N 24: s1 8, s2 8, s3 8; walked s1-10 s1-11 s3-09 s3-10 s3-11 s3-12; out: fossasia/eventyay#6384, antiwork/gumroad#6391 (issue not found), pnpm#14077, sozu#1325, turborepo#13756 (disk), goose#12006, databend#20352 (not exportable))
 Task 14: hash (24,911 files, manifest sha 0b3c8277…5355), compare 12 changed / 0 unexplained / 0 missing, tasks-step11.tsv written; lock writer dispatched (sonnet), BASE 39dace4
+Task 14: lock writer done b72aa6a (sonnet 164k, 5 min; DONE_WITH_CONCERNS: ledger copy as of dispatch, usage figures partly not recorded). Final review dispatched (opus).
+Final review (opus 321k, 15.8 min): with fixes — Critical 0, Important 3 (I-1 task name s3-02 in a bench comment/README; I-2 rebuild budget per slug not per repo misstated and unlisted, polars 5 rounds; I-3 --reuse key ignores grade-mode/rebuild.json/runner), Minor 10; deferred minors: none before merge; 3 before Phase B (listens retry, P OOM behind O timeout, --extra-round per invocation).
+Ruling: the fix wave takes I-1..I-3, M-1 (AskUserQuestion refused in probeOk, ruling 12), M-2, M-3, M-4, M-5, M-8 as lock lines, M-6 for the new proxy test only (others are ruling 14 candidates, not changed blind), and the 3 pre-Phase-B minors as open points; M-7 (gated box suite) and M-10 (ledger copy) are the controller's — cost: a slightly larger fix wave.
+Final fix wave dispatched (sonnet), FIX_BASE b72aa6a
+Final fix wave: sonnet 92.8k, 4.7 min, commit 7611de2; re-review sonnet 97.9k, 0.8 min: 11/11 addressed, new breakage 0 Critical / 0 Important / 1 Minor (an Open points bullet not bold, cosmetic; parked — Ruling: left as is, cosmetic — cost: none).
+After the fix wave: BENCH_EXT_DOCKER=1 tests/bench-box.test.mjs 47 pass 0 fail (1024 s, logs/step11/tests-box-docker-final.out); bun test ./tests 638 pass 64 skip 0 fail, pristine (tests-2.out); stick compare of progress/stick-v1-step11.sha256 equal 24,911, changed 0; Docker bench-ext- containers 328, images 162 (unchanged); git status bench tests empty.
+Task 14: complete (commits 39dace4..7611de2 + ledger copy); waiting for the user's approval of Phase A.
 ```
