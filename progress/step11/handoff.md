@@ -1,3 +1,5 @@
+> **Done (2026-11-10).** Phase A is locked and approved: see `progress/step11a-lock.md`. This handoff is kept as the record of the 2026-11-10 session start; do not resume from it.
+
 # Step 11 Phase A: handoff (2026-11-10)
 
 Continue building `docs/plans/2026-11-08-bench-trial.md` (Phase A) in this worktree, branch `bench-step11`, subagent-driven. Do not merge or push.

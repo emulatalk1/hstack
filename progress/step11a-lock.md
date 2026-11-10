@@ -267,6 +267,7 @@ From the ledger (`minor (deferred)` lines); the final review triages them. By ta
 - `git status --short bench tests` empty. `/tmp/hstack-bench` holds only test fixtures (`fx*`).
 - **Docker:** `bench-ext-` containers 328 and `bench-ext/` images 162, equal to the step 10 lock's counts (fixtures and earlier steps). No `-serve`, `-runner-*`, `-product-*`, `-app-*`, `-grade-*` or `-make-*` name of this step left (`bench-ext-other` predates this step and is not ours). Docker images 6.1 GB, build cache 10.0 GB.
 - **pgsnap:** equal around every walk, serve and real-estate lane.
+- **After the final fix wave (2026-11-10, head 7611de2 and the ledger copy):** `bun test ./tests` teed to `logs/step11/tests-2.out`: 638 pass, 64 skip, 0 fail, pristine (the fix wave added one test); `BENCH_EXT_DOCKER=1 bun test tests/bench-box.test.mjs` teed to `logs/step11/tests-box-docker-final.out`: 47 pass, 0 fail (1,024 s); `stick compare progress/stick-v1-step11.sha256`: equal 24,911, changed 0; Docker counts unchanged (328, 162).
 - **Sealing:** the controller read count lines, `step.json` id lengths, `kills.json` numbers and file names; the one exception is the `Record:` note above. It opened no oracle, check, seeded bug, reply, page, answer or transcript, and wrote no plugin content.
 
 ## Open points
@@ -282,6 +283,8 @@ From the ledger (`minor (deferred)` lines); the final review triages them. By ta
 - **Merge and push wait for the user.** The plan stays `draft` until the user approves Phase A, after the whole-branch review.
 
 ## Known limits
+
+- **s1-11's make is nondeterministic:** its default make lines passed once (rebuild `current-1`, base and end), then failed twice in validate (exit 1 after about 28 s, base and end), and a sealed round's lines then passed and are its `rebuild.json`. Every product of s1-11 is built from those lines; if the cause is in the environment rather than the lines, an arm's `noresult` on s1-11 may come from the make, not the arm. Step 13's plan should check s1-11's end make again before its runs.
 
 - **M3 stays open for in-process interfaces and for shared-mode tasks:** all of s3 (s3-09 to s3-12 included), and s1-01, s1-03, s1-05, s1-07, s1-11, s2-01, s2-02, s2-05, s2-07, s2-08, s2-10 (`grade-mode` = `shared`); closed for s1-10, s1-02, s1-04, s1-06, s1-09, s2-03, s2-09 and the private set (decision (C)). s3-01 and s3-08 have a `grade-mode` file written by the regrade driver's fallback, but s3 is graded in one container either way.
 - **`grade --reuse` keys on commit, oracle sha and junit only,** not on `ext/tasks/<slug>/grade-mode`, `rebuild.json`, the private set's outside runner or the `oracle-run` code: a rerun can keep a grade made under another mode or other rebuild lines. It happened once (s1-11's shared rerun reused its split end grade; the controller moved the grade files aside unread). Phase A's regrade ran without `--reuse`. Step 13's plan should add the grade mode, the rebuild.json sha and the runner sha to the grade file and the reuse key.
@@ -322,3 +325,7 @@ Counts only; not hashed into the repo; listed by name:
 `deps.sh`, `make-survey.mjs`, `rebuild.sh`, `regrade.sh`, `regrade2.sh`, `repeat.sh`, `regrade-compare.mjs`, `exp-net.mjs`, `apply-decisions.mjs`, `walk11.sh`, `pipe11.sh`, `chain11.sh`, `auto11.sh`, `count11.mjs`, `cold-restore.mjs`, `seed11.sh`, `tasks11.mjs`, `lock-usage.mjs`.
 
 Outputs named above: `regrade-compare.out`, `apply-decisions.out`, `seed11.out`, `tests-1.out`, `flaky.lines`, `deps.txt`, `make-survey.lines` (and `-2.lines`), `repeat.lines`, `exp-net.lines`, `regrade-v1/`, `regrade-v2/`, `groups-walk.json`, `walked/`.
+
+## Approval, 2026-11-10
+
+The user approved Phase A on 2026-11-10 ("Duyệt"). The plan `docs/plans/2026-11-08-bench-trial.md` is `stable`. The branch `bench-step11` is not merged or pushed (not asked). Still open: Phase B (a plugin commit), the token in `arm/box.env` until the step 11 lock, the three deferred minors before Phase B's first run, and step 13's reuse key.

@@ -2,7 +2,7 @@
 type: plan
 title: "Trial run plan"
 description: "Prereg step 11: close the five boundary carry-overs of the step 10 lock, move real-estate grading and arms into containers with their own Postgres, regrade every end unchanged, walk external tasks until H1 has 24, build the trial driver and register the trial's rules; the trial itself (H and B, k = 1, 4 tasks, the N rule) runs in a short follow-on plan once a plugin commit exists."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.318, at: "2026-11-08T18:51:17+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.318, at: "2026-11-08T19:03:39+07:00" }
