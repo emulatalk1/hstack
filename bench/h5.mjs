@@ -2,14 +2,16 @@
 // H5 (step 13 ruling 9): do the test files an arm's run wrote catch the task's kept seeded bugs, ported onto its product P? Per bug: its check
 // at P; on a pass, one sealed porter writes the bug's edit for P, committed in the sealed repo under refs/h5/<arm>-<run>/<bug> and kept only
 // when the check fails there; then P's own test files run at P and at P + edit. Prints one count line; never a grade, a bug or a reply.
+// Standing step 13 runs only; each bug in one class of the prereg's "Amended at step 13 (H5)"; only the machine's failure stops it.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { dataOf, suiteRun, taskOf } from './ext.mjs'
+import { daemon, dataOf, DISK_FLOOR_GB, dockerDiskFree, suiteRun, taskOf } from './ext.mjs'
 import { resolveCommit } from './grade.mjs'
 import { readJunit } from './lib/junit.mjs'
 import { caseId } from './lib/oracle.mjs'
 import { loadTask } from './lib/task.mjs'
 import { editCommit, hasResults, notReadyOf, once, resultIn, testFile } from './oracle.mjs'
+import { floorOf } from './scored.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
 const USAGE = 'usage: bun bench/h5.mjs <task> <arm> <run>'
@@ -43,6 +45,13 @@ export async function portEdit({ data, task, bug, product, run, work, agent = se
   return c.why ? { refused: c.why } : { edit: port, commit: c.commit }
 }
 
+// the machine's failure (prereg, amended at step 13 (H5)): the daemon does not answer or the disk is under its floor; only this stops h5
+const machineDownOf = async () => {
+  try { await daemon() } catch { return true }
+  const free = await dockerDiskFree().catch(() => null)
+  return free !== null && free < DISK_FLOOR_GB
+}
+
 // grade.mjs in its own process: its stdout (a count line) is not this tool's; its exit code
 const gradeCmd = async (args) => {
   const p = Bun.spawn([process.execPath, join(import.meta.dir, 'grade.mjs'), ...args], { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' })
@@ -52,74 +61,89 @@ const gradeCmd = async (args) => {
 export async function h5(args, inj = {}) {
   const [task, arm, run] = args
   if (args.length !== 3 || !/^[a-z0-9][a-z0-9_-]*$/.test(task) || !/^[A-Za-z]+-?$/.test(arm) || !/^\d+$/.test(run)) throw new Error(USAGE)
-  const { grade = gradeCmd, agent = sealedAgent, suite = (a) => suiteRun(a, { data: inj.data }), brief } = inj
+  const { grade = gradeCmd, agent = sealedAgent, suite = (a) => suiteRun(a, { data: inj.data }), machineDown = machineDownOf, brief } = inj
   const data = dataOf(inj.data), t = taskOf(join(data, 'ext'), task), evDir = join(data, task, 'seeded'), work = join(evDir, 'h5', `${arm}-${run}`)
   const box = boxFile(data, task), seededBox = boxFile(data, task, 'env/box-seeded')
   if (!existsSync(seededBox)) throw new Error(`${task}: ${seededBox} is missing (ext box-env ${task} --seeded)`)
   const rec = readJson(join(data, 'results', `${task}-${arm}-${run}.json`))
   if (!rec?.branch) throw new Error(`${task} ${arm} ${run}: no record with a branch`)
+  // only standing step 13 runs: no machine run, nothing at or under the task's step 13 floor (none for the task: nothing stands)
+  if (rec.machine != null) throw new Error(`${task} ${arm} ${run}: a machine run is not read`)
+  if (Number(run) <= (floorOf(data, task)[arm] ?? Infinity)) throw new Error(`${task} ${arm} ${run}: at or under the task's step 13 floor`)
   const bugs = readJson(join(evDir, 'bugs.json'))
   if (!Array.isArray(bugs)) throw new Error(`${task}: no seeded/bugs.json`)
   const { repo } = await loadTask(box), product = await resolveCommit(repo, `refs/heads/${rec.branch}`)
-  // the suite the harness wrote: the test files the product added or changed since the base (a deleted one is not there to run)
-  const diff = Bun.spawnSync(['git', '-C', repo, 'diff', '--name-only', '-z', '--no-renames', '--diff-filter=ACMRT', t.base, product], { stdout: 'pipe', stderr: 'pipe' })
-  if (diff.exitCode !== 0) throw new Error(`${task}: git diff of the base and the product failed (exit ${diff.exitCode})`)
+  // the suite the harness wrote: the test files the product added or changed since the commit the arm started from (the record's envCommit,
+  // else the base; a deleted one is not there to run)
+  const diff = Bun.spawnSync(['git', '-C', repo, 'diff', '--name-only', '-z', '--no-renames', '--diff-filter=ACMRT', rec.envCommit ?? t.base, product], { stdout: 'pipe', stderr: 'pipe' })
+  if (diff.exitCode !== 0) throw new Error(`${task}: git diff of the start and the product failed (exit ${diff.exitCode})`)
   const testPaths = testPathsOf(data, t), files = diff.stdout.toString().split('\0').filter((f) => f && !f.includes('\n') && testFile(f, testPaths))
   for (const d of ['grades', 'suites']) mkdirSync(join(work, d), { recursive: true })
   const filesList = join(work, 'suite-files.txt')
   writeFileSync(filesList, files.map((f) => `${f}\n`).join(''))
 
-  // the seeded oracle's grade at sha, through env; a grade that did not run, or (at P) gave no result at all, is no grade: a throw
+  // the seeded oracle's grade at sha, through env: the grade when good(g), else, graded once more, null (its file removed so --reuse cannot
+  // keep it). A grade that cannot run (exit 2) or a machine failure after a bad grade stops h5
   const gradeOut = (sha) => join(work, 'grades', `${sha.slice(0, 7)}.json`)
-  const gradeAt = async (env, sha, needResults) => {
+  const gradeAt = async (env, sha, good) => {
     const out = gradeOut(sha)
-    const code = await grade([env, join(evDir, 'oracle'), '--at', sha, '--sealed', '--reuse', '--out', out]), g = readJson(out)
-    if (code !== 0 || g?.commit !== sha || (needResults && !hasResults(g))) {
-      rmSync(out, { force: true }) // --reuse would keep a grade with no result
-      throw new Error(`${task} ${arm} ${run}: no result at ${sha.slice(0, 7)}`)
+    for (let i = 0; i < 2; i++) {
+      const code = await grade([env, join(evDir, 'oracle'), '--at', sha, '--sealed', '--reuse', '--out', out]), g = readJson(out)
+      if (code === 2) throw new Error(`${task} ${arm} ${run}: grade failed at ${sha.slice(0, 7)}`)
+      if (code === 0 && g?.commit === sha && good(g)) return g
+      rmSync(out, { force: true })
+      if (await machineDown()) throw new Error(`${task} ${arm} ${run}: the machine failed at ${sha.slice(0, 7)}`)
     }
-    return g
+    return null
   }
   // oracle-run's readiness line of this commit and oracle reads `not ready` or `timeout` (as oracle.mjs gradeAt reads it)
   const notReady = (sha) => notReadyOf(join(data, task), join(evDir, 'oracle'), [sha]).length > 0
-  // the suite at sha: { status, cases }, no case when it wrote no JUnit. A run killed for memory or time is the machine's: a throw
-  const suiteAt = async (env, sha) => {
-    const out = join(work, 'suites', `${sha.slice(0, 7)}.xml`), status = await suite([env, '--at', sha, '--files', filesList, '--out', out])
-    if (status === 'memory' || status === 'timeout') throw new Error(`${task} ${arm} ${run}: the suite at ${sha.slice(0, 7)} ended: ${status}`)
-    return { status: existsSync(out) ? 'ok' : 'missing', cases: existsSync(out) ? readJunit(readFileSync(out, 'utf8')) : [] }
+  // the suite at sha: { status: ok|missing|timeout|memory, cases } (no case unless ok). A timeout runs once more when again; a machine failure
+  // after a run that is not ok stops h5
+  const suiteAt = async (env, sha, again = []) => {
+    const out = join(work, 'suites', `${sha.slice(0, 7)}.xml`)
+    for (let i = 0; ; i++) {
+      const s = await suite([env, '--at', sha, '--files', filesList, '--out', out]), status = s === 'ok' && !existsSync(out) ? 'missing' : s
+      if (status !== 'ok' && status !== 'missing' && (await machineDown())) throw new Error(`${task} ${arm} ${run}: the machine failed at ${sha.slice(0, 7)}`)
+      if (i === 0 && again.includes(status)) continue
+      return { status, cases: status === 'ok' ? readJunit(readFileSync(out, 'utf8')) : [] }
+    }
   }
-  const atP = await gradeAt(box, product, true)
+  // P's grade with no result twice: every check `error`, so every bug is not applicable
+  const atP = await gradeAt(box, product, hasResults)
   let suiteP = null // P's suite, run once when the first ported bug needs it: { status, pass: the ids of its passing cases }
   const rows = []
   for (const bug of bugs.filter((b) => b.state === 'kept')) {
-    // suite: 'ok', 'missing' (P's suite wrote no JUnit), 'missing-at-edit' (P's did, P + edit's did not), null while not needed for this bug
+    // suite: P's suite state ok|missing|timeout|memory, or P + edit's when P's was ok and that one was not (missing-at-edit, memory-at-edit,
+    // timeout-at-edit); null while no suite was needed for this bug
     const row = { bug: bug.id, at: resultIn(atP, bug.check), port: null, testFiles: files.length, suite: null, caught: null }
     rows.push(row)
     if (row.at === 'fail') row.caught = false
     if (row.at !== 'pass') continue
     const p = await portEdit({ data, task, bug, product, run: `${arm}-${run}`, work, agent, ...(brief ? { brief } : {}) })
     if (p.refused) { row.port = 'refused'; continue }
-    // a never-ready grade at P + edit (all `error`, kept by --reuse) is graded once more; still not ready, the port is not judged
-    let gE = await gradeAt(seededBox, p.commit, false)
-    if (notReady(p.commit)) { rmSync(gradeOut(p.commit), { force: true }); gE = await gradeAt(seededBox, p.commit, false) }
-    if (notReady(p.commit)) { rmSync(gradeOut(p.commit), { force: true }); row.port = 'notready'; continue }
+    // a not-ready grade at P + edit (all `error`, kept by --reuse) is graded once more; still not ready, the port is not judged
+    const gE = await gradeAt(seededBox, p.commit, () => !notReady(p.commit))
+    if (!gE && notReady(p.commit)) { row.port = 'notready'; continue }
     if (resultIn(gE, bug.check) !== 'fail') { row.port = 'not-applicable'; continue }
     row.port = 'ported'
     row.caught = false // a product with no test file misses it
     if (!files.length) continue
-    if (!suiteP) { const r = await suiteAt(box, product); suiteP = { status: r.status, pass: new Set(r.cases.filter((c) => c.status === 'pass').map(caseId)) } }
+    if (!suiteP) { const r = await suiteAt(box, product, ['timeout', 'memory']); suiteP = { status: r.status, pass: new Set(r.cases.filter((c) => c.status === 'pass').map(caseId)) } }
     row.suite = suiteP.status
-    if (suiteP.status === 'missing') { row.caught = null; continue } // no result at P: counted under nosuite, never a miss
-    const atE = await suiteAt(seededBox, p.commit)
-    if (atE.status === 'missing') { row.suite = 'missing-at-edit'; row.caught = null; continue } // no result at P + edit: nosuite as well
-    row.caught = atE.cases.some((c) => c.status === 'fail' && suiteP.pass.has(caseId(c)))
+    if (suiteP.status !== 'ok') { row.caught = null; continue } // no JUnit at P, or a timeout or memory kill twice: nosuite, never a miss
+    const atE = await suiteAt(seededBox, p.commit, ['timeout'])
+    if (atE.status !== 'ok') { row.suite = `${atE.status}-at-edit`; row.caught = atE.status === 'timeout' ? true : null; continue } // a hang twice is a red build
+    // caught: a case passing at P fails at P + edit or is absent there (its file no longer collects: a red build)
+    const statusE = new Map(atE.cases.map((c) => [caseId(c), c.status]))
+    row.caught = [...suiteP.pass].some((id) => !statusE.has(id) || statusE.get(id) === 'fail')
   }
   writeFileSync(join(evDir, 'h5', `${arm}-${run}.json`), JSON.stringify(rows, null, 2) + '\n')
   const n = (f) => rows.filter(f).length
   // each bug is exactly one of: caught, miss, na, refused, notready, nosuite (the README says what each means)
   console.log(`h5 ${task} ${arm} ${run} bugs=${rows.length} miss=${n((r) => r.caught === false)} ported=${n((r) => r.port === 'ported')} caught=${n((r) => r.caught === true)}`
     + ` na=${n((r) => r.at === 'precondition' || r.at === 'error' || r.port === 'not-applicable')} refused=${n((r) => r.port === 'refused')} notready=${n((r) => r.port === 'notready')}`
-    + ` nosuite=${n((r) => r.suite === 'missing' || r.suite === 'missing-at-edit')}`)
+    + ` nosuite=${n((r) => r.port === 'ported' && r.caught === null)}`)
   return 0
 }
 

@@ -26,7 +26,7 @@ const kindsOf = (data, task) => {
 }
 // ruling 2: the highest run number per arm when `run` first touched the task; without one, no record counts
 const floorFile = (data) => join(data, 'step13/floor.json')
-const floorOf = (data, task) => readJson(floorFile(data))?.[task] ?? { H: Infinity, B: Infinity, W: Infinity }
+export const floorOf = (data, task) => readJson(floorFile(data))?.[task] ?? { H: Infinity, B: Infinity, W: Infinity }
 function setFloor(data, task) {
   const f = readJson(floorFile(data)) ?? {}
   if (f[task]) return // never overwritten
@@ -53,21 +53,20 @@ async function report(c) {
   for (const task of tasksOf(c.data)) {
     const set = setOf(c.data, task), recs = aboveFloor(records(c.data, task), floorOf(c.data, task)), stands = standingOf(c, task, cfg)
     for (const arm of armsOf(c.data, task)) {
-      const row = (rows[`${set} ${arm}`] ??= { standing: 0, machine: {}, noresult: 0, versions: {}, tokens: 0, minutes: 0, interventions: 0 })
+      const row = (rows[`${set} ${arm}`] ??= { standing: 0, machine: {}, noresult: 0, versions: {}, tokens: 0, minutes: 0 })
       for (const r of recs.filter((x) => x.arm === arm && x.machine !== null)) row.machine[r.machine] = (row.machine[r.machine] ?? 0) + 1
       for (const r of stands.filter((x) => x.arm === arm)) {
         row.standing++
         row.versions[r.version ?? 'none'] = (row.versions[r.version ?? 'none'] ?? 0) + 1
         row.tokens += (r.usage?.input ?? 0) + (r.usage?.output ?? 0)
         row.minutes += (Date.parse(r.end) - Date.parse(r.start)) / 60000
-        row.interventions += r.interventions ?? 0
         const sha = r.branch ? await c.sha(task, r.branch) : null
         if (sha && finalKinds(c, task, sha).some((x) => !x.ok && x.tries >= ATTEMPTS)) row.noresult++
       }
     }
   }
   for (const [key, r] of Object.entries(rows)) {
-    console.log(`${key} standing=${r.standing} machine=${Object.entries(r.machine).map(([k, n]) => `${k}:${n}`).join(',') || 'none'} noresult=${r.noresult} versions=${Object.entries(r.versions).map(([k, n]) => `${k}:${n}`).join(',') || 'none'} tokens=${r.tokens} minutes=${r.minutes.toFixed(1)} interventions=${r.interventions}`)
+    console.log(`${key} standing=${r.standing} machine=${Object.entries(r.machine).map(([k, n]) => `${k}:${n}`).join(',') || 'none'} noresult=${r.noresult} versions=${Object.entries(r.versions).map(([k, n]) => `${k}:${n}`).join(',') || 'none'} tokens=${r.tokens} minutes=${r.minutes.toFixed(1)}`) // no interventions: H3's measure waits for step 14 (M-2)
   }
   return 0
 }

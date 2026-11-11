@@ -175,8 +175,9 @@ test('the report prints counts and no score', async () => {
   writeFileSync(join(d, 'step13/attempts.json'), JSON.stringify({ [sha]: 2 }))
   const r = await go(d, ['report'], fakes(d))
   expect(r.code).toBe(0)
-  expect(r.out).toContain('external H standing=1 machine=none noresult=0 versions=2.1.318:1 tokens=15 minutes=30.0 interventions=2')
-  expect(r.out).toContain('external B standing=2 machine=api:2 noresult=1 versions=2.1.318:2 tokens=300 minutes=60.0 interventions=0')
+  expect(r.out).toContain('external H standing=1 machine=none noresult=0 versions=2.1.318:1 tokens=15 minutes=30.0')
+  expect(r.out).toContain('external B standing=2 machine=api:2 noresult=1 versions=2.1.318:2 tokens=300 minutes=60.0')
+  expect(r.out).not.toContain('interventions') // H3's measure: none until step 14
   expect(r.out).toContain('external W standing=0')
   expect(r.out).toContain('real-estate H standing=1')
   expect(r.out).not.toContain('real-estate W')
