@@ -3366,3 +3366,19 @@ Plan `docs/plans/2026-11-10-bench-trial-phase-b.md` (draft), branch `bench-step1
 - 2026-11-10, B1 steps 1–3 (controller): export of hstack `653af835fd613e3eb25feb48e4ccc9bfb534ae6e` (`.claude-plugin agents hooks scripts skills`): files 21, sha256 `727d67815bf9445672d37a52738f7729a04cee1e0383256c107f60130c271843` (`logs/step11b/plugin-export.out`). `arms.json` `plugins.H` = that entry, `repo` `../..`; `plugins.W` `[]`; nothing else changed (`logs/step11b/arms-before.json`). `loadArms` accepts it and the export of the loaded entry matches the sha256 (`arms-check.out`). `trial/tasks.txt`: s2-01, s3-02, p8b, p6c; each has `env/box/<task>.json`, step ids (3, 5, 12, 8), is not cold and not walked.
 - B1 step 4 (the probes) waits for the user's approval of the plan and decisions 1–2.
 - 2026-11-11, B1 step 4 (controller, `logs/step11b/b1.sh`, `plugin-probe-h.mjs`): one H box per trial task, one `Reply OK.` turn under `bypassPermissions`, web tools off, 1800 s limit, `probeOk('H', …)`. `b1.out`: s2-01, s3-02, p8b, p6c each `turn exit 0 plugins ["hstack"] web 0 askUser 0 probe ok`; PGSNAP equal around p8b and p6c; `b1.err` empty; no probe container, proxy or image left. The token of 2026-11-09 still answers. B1 done.
+
+- 2026-11-11, B2 (controller, `logs/step11b/b2.sh`): the trial ran 2026-11-10T21:42Z to 2026-11-11T05:30Z (7 h 48 min), one task at a time (s2-01, s3-02, p8b, p6c), every task exit 0; 8 runs `done`, each `grade=ok`; no machine run, no refusal, no `noresult` or timeout grade; PGSNAP equal around p8b and p6c. Run numbers: H 1 on each task; B 3 on s2-01 and s3-02 (the canary's 1–2 are under the floor), B 1 on p8b and p6c. `report.out`:
+
+```
+s2-01 B build=1.00 requirement=0.91 passed=yes tokens=13296 cache=3671556 minutes=9.8 interventions=0 end=done
+s2-01 H build=1.00 requirement=0.91 passed=yes tokens=39801 cache=15698137 minutes=41.5 interventions=0 end=done
+s3-02 B build=1.00 requirement=1.00 passed=yes tokens=3919 cache=334528 minutes=0.9 interventions=2 end=done
+s3-02 H build=1.00 requirement=1.00 passed=yes tokens=15405 cache=1880829 minutes=22.5 interventions=0 end=done
+p8b B build=0.43 requirement=0.00 passed=no tokens=81287 cache=23037350 minutes=38.7 interventions=1 end=done
+p8b H build=0.43 requirement=0.21 passed=no tokens=95207 cache=28440526 minutes=118.4 interventions=0 end=done
+p6c B build=1.00 requirement=0.50 passed=yes tokens=120821 cache=34662095 minutes=92.1 interventions=0 end=done
+p6c H build=0.83 requirement=0.50 passed=no tokens=146149 cache=46609659 minutes=74.6 interventions=0 end=done
+trial sigma_d=0.083 sigma_d_ext=0.000 n=4 N=24 h1_n=24 walk=no
+```
+
+- B3: `walk=no` (σ_d 0.083 ≤ 0.25, N 24, H1's N 24): no walk.

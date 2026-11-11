@@ -87,16 +87,16 @@ As the trial run plan's, with these names: build on `bench-step11b` from `main` 
 **Files:**
 - Create (gitignored): `<data>/trial/` (written by `trial.mjs`), `<data>/logs/step11b/trial-<task>.out`, `report.out`
 
-- [ ] **Step 1:** Per task, in this plan's order: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/trial.mjs run <task> 2>&1 | tee <data>/logs/step11b/trial-<task>.out` (resumes on rerun). pgsnap before and after p8b and p6c.
-- [ ] **Step 2: After each task:** the count lines only. A run ended by the machine takes the next number (step 8 ruling 11) and is counted; a `noresult` or timeout grade on p8b or p6c is told to the user (decision 1 (a)); a refusal or anything else stops for the user.
-- [ ] **Step 3:** `bun bench/trial.mjs report | tee <data>/logs/step11b/report.out`. Expected: no `not judged`; the last line `trial sigma_d=<s> sigma_d_ext=<s> n=4 N=<N> h1_n=24 walk=<yes|no>`.
-- [ ] **Step 4: To the designer, through the user** (decision 4 (a), ruling 3 of this plan): the 8 per-task and per-arm lines of `report.out` (build, requirement, passed, tokens, cache, minutes, interventions, end) and nothing else.
-- [ ] **Step 5:** Record in `progress/progress.md`. Commit `git commit -m "Run the step 11 trial and record its report"`.
+- [x] **Step 1:** Per task, in this plan's order: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/trial.mjs run <task> 2>&1 | tee <data>/logs/step11b/trial-<task>.out` (resumes on rerun). pgsnap before and after p8b and p6c.
+- [x] **Step 2: After each task:** the count lines only. A run ended by the machine takes the next number (step 8 ruling 11) and is counted; a `noresult` or timeout grade on p8b or p6c is told to the user (decision 1 (a)); a refusal or anything else stops for the user.
+- [x] **Step 3:** `bun bench/trial.mjs report | tee <data>/logs/step11b/report.out`. Expected: no `not judged`; the last line `trial sigma_d=<s> sigma_d_ext=<s> n=4 N=<N> h1_n=24 walk=<yes|no>`.
+- [x] **Step 4: To the designer, through the user** (decision 4 (a), ruling 3 of this plan): the 8 per-task and per-arm lines of `report.out` (build, requirement, passed, tokens, cache, minutes, interventions, end) and nothing else.
+- [x] **Step 5:** Record in `progress/progress.md`. Commit `git commit -m "Run the step 11 trial and record its report"`.
 
 ### Task B3: More walk if N asks
 
-- [ ] **Step 1:** If `walk=no`, skip to B4. If `walk=yes`, Phase A's Task 13 with `ceil(N / 3)` kept tasks with step ids per stack, under the same rulings (10, the reader of decision 5, the disk rule, `groups-walk.json`, `cold_setup` restored), drivers copied to `logs/step11b/`.
-- [ ] **Step 2:** Then ruling 11's hash and compare again (`stick hash --out <scratchpad>/stick-v1-step11b.sha256`, copied to `progress/`; `compare progress/stick-v1-step11.sha256 --reasons progress/step11/reasons.tsv`, widened for `arms.json` and `trial/` first, committed before the hash). Any `unexplained` or `missing` stops.
+- [x] **Step 1:** If `walk=no`, skip to B4. If `walk=yes`, Phase A's Task 13 with `ceil(N / 3)` kept tasks with step ids per stack, under the same rulings (10, the reader of decision 5, the disk rule, `groups-walk.json`, `cold_setup` restored), drivers copied to `logs/step11b/`.
+- [x] **Step 2:** Then ruling 11's hash and compare again (`stick hash --out <scratchpad>/stick-v1-step11b.sha256`, copied to `progress/`; `compare progress/stick-v1-step11.sha256 --reasons progress/step11/reasons.tsv`, widened for `arms.json` and `trial/` first, committed before the hash). Any `unexplained` or `missing` stops.
 
 ### Task B4: The step 11 lock
 
