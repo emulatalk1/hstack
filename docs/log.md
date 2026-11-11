@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-11
+* **Creation**: Drafted the step 11 lock `progress/step11-lock.md` after Phase B of the [trial run plan, Phase B](/plans/2026-11-10-bench-trial-phase-b.md): the hstack plugin (`653af83`) probed in each trial box, the trial (8 runs, all done and graded), σ_d 0.083, N 24, no walk; the Phase A plan gains the `human:` verified entry its `stable` status needs. Token revocation and approval pending.
 * **Update**: The user approved the [trial run plan, Phase B](/plans/2026-11-10-bench-trial-phase-b.md) and (a) of its decisions 1–3; the plugin commit is pinned by `refs/bench/plugins/hstack-653af83`.
 
 ## 2026-11-10

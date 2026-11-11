@@ -42,7 +42,7 @@ Totals (`report.json`): B tokens 219,323, cache read 61,705,529, cache write 1,3
 
 ## What went to the designer
 
-The 8 per-task and per-arm lines of `report.out` (build, requirement, passed, tokens, cache, minutes, interventions, end), through the user, after the report was judged (decision 4 (a), controller ruling 3). Not σ_d, N, a transcript, a product, a check id or a probe reason. One fact about the export's run-time needs is kept in `<data>/logs/step11b/handover.md` (gitignored), not relayed (decision 2 (a)); its content is stated in the step 12 lock, after the plugin is locked.
+The 8 per-task and per-arm lines of `report.out` (build, requirement, passed, tokens, cache, minutes, interventions, end), handed to the user on 2026-11-11 for the designer, after the report was judged; the controller did not reach the designer itself (decision 4 (a), controller ruling 3). Not σ_d, N, a transcript, a product, a check id or a probe reason. One fact about the export's run-time needs is kept in `<data>/logs/step11b/handover.md` (gitignored), not relayed (decision 2 (a)); its content is stated in the step 12 lock, after the plugin is locked.
 
 ## B3: the walk
 
@@ -65,7 +65,7 @@ The 8 per-task and per-arm lines of `report.out` (build, requirement, passed, to
 
 1. The standalone H probe of B1 used a 1800 s turn limit, a controller parameter of the probe only; the runs kept the set's `turnTimeoutSec`.
 2. A fact about the plugin was withheld from this repository and kept in a gitignored note, so that decision 4 holds after a merge (decision 2 (a)).
-3. The Phase A plan's missing `human:` verified entry was added in this branch (a fix to `main`'s state, not a rule).
+3. The Phase A plan's missing `human:` verified entry was added in this branch (a fix to `main`'s state, not a rule). The user approved Phase A in chat on 2026-11-10 ("Duyệt", recorded in `progress/step11a-lock.md`); the entry records that approval at the time of its commit.
 
 ## Open points for step 12
 
@@ -79,7 +79,12 @@ The 8 per-task and per-arm lines of `report.out` (build, requirement, passed, to
 - **σ_d from 4 tasks at k = 1 is a rough estimate;** three of the four d_t are 0, so σ_d rests on p6c alone. N never drops below 24.
 - **M3 open on s2-01** (`grade-mode` = `shared`) **and s3-02** (no served interface); closed on p8b and p6c.
 - **Interventions are resume turns** (step 8): s3-02 B 2, p8b B 1.
+- **s3-02 B, a note for steps 12–13 (record fields only, no judgement):** 52 s from start to end; turns probe, main, resume-1, resume-2, each exit 0, none timed out; both resumes `other`; tool uses Bash 10 and no other tool; output tokens 3,889; build 1.00, requirement 1.00. Why it ended so fast is not readable under the sealing rule; the record is the measurement.
 - The Phase A lock's limits stand.
+
+## Review
+
+The branch changes docs and progress files only (no `bench/` or `tests/` file), so no whole-branch subagent review ran: the advisor reviewed the plan before B1 and this lock before approval, and a sealing grep over `git diff main..HEAD` for the handover note's file names, its runtime line and check ids (`-T<n>`) found 0 lines.
 
 ## Usage
 

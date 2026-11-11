@@ -3382,3 +3382,4 @@ trial sigma_d=0.083 sigma_d_ext=0.000 n=4 N=24 h1_n=24 walk=no
 ```
 
 - B3: `walk=no` (σ_d 0.083 ≤ 0.25, N 24, H1's N 24): no walk.
+- 2026-11-11, B4 steps 2–3 (controller): `stick compare progress/stick-v1-step11.sha256` (`compare.out`): equal 24,910, changed 1 (`arms.json`), missing 0, as the plan expected. Suite `tests-1.out`: 636 pass, 64 skip, 2 fail (`tests/okf.test.mjs`: the Phase A plan `stable` since 5211cfb without a `human:` verified entry); fixed in e9490d3; `tests-2.out`: 638 pass, 64 skip, 0 fail; `git status --short bench tests` empty. Docker: no trial container left, `bench-arm/proxy:1` and `fw:1` kept. Lock drafted (`progress/step11-lock.md`); advisor review; sealing grep over the branch 0 lines. s3-02 B record fields noted in the lock (52 s, 2 resumes, Bash 10). Waiting: token revocation (step 1) and the user's approval (step 4).

@@ -288,7 +288,7 @@ Each has a recommended default; the prereg is silent on all six.
 
 ## Phase B (the follow-on plan, when a plugin commit exists)
 
-Sketched here so the trial's shape is fixed now; the follow-on plan adds only the plugin's commit, its dependencies and the CLI version of that day.
+Sketched here so the trial's shape is fixed now; the follow-on plan adds only the plugin's commit, its dependencies and the CLI version of that day. **The follow-on plan is [`2026-11-10-bench-trial-phase-b.md`](2026-11-10-bench-trial-phase-b.md)** (run 2026-11-11; lock `progress/step11-lock.md`).
 
 - **B1. The plugin in the box.** Record the commit and its dependencies in `arms.json` `plugins.H` (ruling 2), `pluginExport` each, record `sha256`. H's probe on each trial task's box: plugins at init equal `arms.json`'s, no web tool, no `AskUserQuestion`. Write `<data>/trial/tasks.txt` (decisions 1 and 2).
 - **B2. The trial.** `bun bench/trial.mjs run <task>` for the 4 tasks, external first, pgsnap around the real-estate runs; `bun bench/trial.mjs report`. The designer gets only decision 4's fields, through the user.
