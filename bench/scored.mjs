@@ -5,7 +5,7 @@
 // Nothing here names a task, a stack or a model.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { aboveFloor, ATTEMPTS, attemptsOf, attemptKey, context, good, readJson, records, runStopped, Stop, standing } from './canary.mjs'
+import { aboveFloor, ATTEMPTS, attemptsOf, attemptKey, context, good, gradeFile, readJson, records, runStopped, Stop, standing } from './canary.mjs'
 import { dataOf, PRIVATE_SET, taskOf } from './ext.mjs'
 import { queuePick } from './lib/oracle.mjs'
 import { ScoreMissing, scoreAt, seedOf } from './oracle.mjs'
@@ -16,7 +16,7 @@ const lines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split(/\r?\n/).map
 const tasksOf = (data) => lines(join(data, 'step13/tasks.txt'))
 const boxFile = (data, task) => join(data, 'env/box', `${task}.json`)
 const armsOf = (data, task) => (taskOf(join(data, 'ext'), task).stack === PRIVATE_SET.stack ? ['H', 'B'] : ['H', 'B', 'W'])
-const setOf = (data, task) => (taskOf(join(data, 'ext'), task).stack === PRIVATE_SET.stack ? 'real-estate' : 'external')
+const setOf = (data, task) => (taskOf(join(data, 'ext'), task).stack === PRIVATE_SET.stack ? PRIVATE_SET.key : 'external')
 
 // the oracle kinds of a task, as scoreAt reads them: step/oracle only when step.json names it and has ids
 const kindsOf = (data, task) => {
@@ -36,27 +36,28 @@ function setFloor(data, task) {
 }
 const opts = (data, task) => ({ slots: armsOf(data, task).flatMap((a) => Array.from({ length: K }, (_, i) => `${a}:${i + 1}`)), k: K, envDir: 'env/box', taskFile: boxFile, kinds: kindsOf, attempts: ATTEMPTS_FILE, floor: floorOf })
 
-// ruling 3: the CLI version of the first standing record of the set; a later record with another one stops the driver
-function checkVersion(data, task, arm, n) {
-  const mine = records(data, task).find((r) => r.arm === arm && r.run === n)
-  const first = tasksOf(data).flatMap((t) => aboveFloor(records(data, t), floorOf(data, t))).filter((r) => r.machine === null && !(r.task === task && r.arm === arm && r.run === n))
-    .sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0]
-  if (mine && first && mine.version !== first.version) throw new Stop('version')
+// ruling 3: the CLI version of the earliest machine-null record of the set (any task of tasks.txt, above its floor); a record of this task
+// with another one stops the driver, before a run and after it, so a resume does not count a mismatched run. A machine run is not judged by it.
+function checkVersion(data, task) {
+  const live = (t) => aboveFloor(records(data, t), floorOf(data, t)).filter((r) => r.machine === null)
+  const first = tasksOf(data).flatMap(live).sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0]
+  if (first && live(task).some((r) => r.version !== first.version)) throw new Stop('version')
 }
 
 // the standing runs of the set, per task and arm
 const standingOf = (c, task, cfg) => armsOf(c.data, task).flatMap((arm) => standing(aboveFloor(records(c.data, task), floorOf(c.data, task)), arm, cfg, K))
-const finalKinds = (c, task, sha) => kindsOf(c.data, task).map((k) => ({ k, ok: good(c.data, task, sha, k.grades), tries: attemptsOf(c.data, ATTEMPTS_FILE)[attemptKey(k, sha)] ?? 0 }))
+const finalKinds = (c, task, sha) => kindsOf(c.data, task).map((k) => ({ k, own: readJson(gradeFile(c.data, task, sha, k.grades))?.commit === sha, ok: good(c.data, task, sha, k.grades), tries: attemptsOf(c.data, ATTEMPTS_FILE)[attemptKey(k, sha)] ?? 0 }))
 
 async function report(c) {
   const cfg = readJson(join(c.data, 'arms.json')), rows = {}
   for (const task of tasksOf(c.data)) {
     const set = setOf(c.data, task), recs = aboveFloor(records(c.data, task), floorOf(c.data, task)), stands = standingOf(c, task, cfg)
     for (const arm of armsOf(c.data, task)) {
-      const row = (rows[`${set} ${arm}`] ??= { standing: 0, machine: {}, noresult: 0, tokens: 0, minutes: 0, interventions: 0 })
+      const row = (rows[`${set} ${arm}`] ??= { standing: 0, machine: {}, noresult: 0, versions: {}, tokens: 0, minutes: 0, interventions: 0 })
       for (const r of recs.filter((x) => x.arm === arm && x.machine !== null)) row.machine[r.machine] = (row.machine[r.machine] ?? 0) + 1
       for (const r of stands.filter((x) => x.arm === arm)) {
         row.standing++
+        row.versions[r.version ?? 'none'] = (row.versions[r.version ?? 'none'] ?? 0) + 1
         row.tokens += (r.usage?.input ?? 0) + (r.usage?.output ?? 0)
         row.minutes += (Date.parse(r.end) - Date.parse(r.start)) / 60000
         row.interventions += r.interventions ?? 0
@@ -66,7 +67,7 @@ async function report(c) {
     }
   }
   for (const [key, r] of Object.entries(rows)) {
-    console.log(`${key} standing=${r.standing} machine=${Object.entries(r.machine).map(([k, n]) => `${k}:${n}`).join(',') || 'none'} noresult=${r.noresult} tokens=${r.tokens} minutes=${r.minutes.toFixed(1)} interventions=${r.interventions}`)
+    console.log(`${key} standing=${r.standing} machine=${Object.entries(r.machine).map(([k, n]) => `${k}:${n}`).join(',') || 'none'} noresult=${r.noresult} versions=${Object.entries(r.versions).map(([k, n]) => `${k}:${n}`).join(',') || 'none'} tokens=${r.tokens} minutes=${r.minutes.toFixed(1)} interventions=${r.interventions}`)
   }
   return 0
 }
@@ -81,7 +82,7 @@ async function table(c) {
       const sha = await c.sha(task, r.branch)
       let s = null
       // a score only from a final grade: every kind good, or at its second attempt
-      if (finalKinds(c, task, sha).every((x) => x.ok || x.tries >= ATTEMPTS)) {
+      if (finalKinds(c, task, sha).every((x) => x.own && (x.ok || x.tries >= ATTEMPTS))) {
         try { s = scoreAt(c.data, task, sha) } catch (e) { if (!(e instanceof ScoreMissing)) throw e }
       }
       runs.push({ task, set: setOf(c.data, task), arm: r.arm, run: r.run, build: s?.build ?? null, requirement: s?.requirement ?? null, passed: s?.passed ?? null,
@@ -106,8 +107,13 @@ export async function scored(args, inj = {}) {
     const runArm = c.runArm
     c.runArm = async (a) => { // the version is read once the run's record is written
       const code = await runArm(a)
-      checkVersion(data, task, a[1], Number(a[2]))
+      checkVersion(data, task)
       return code
+    }
+    try { checkVersion(data, task) } catch (e) {
+      if (!(e instanceof Stop)) throw e
+      console.log(`${task} stopped: ${e.message}`)
+      return 3
     }
     return runStopped(c, task, opts(data, task))
   }

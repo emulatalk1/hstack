@@ -152,6 +152,11 @@ test('a version change stops the driver', async () => {
   expect(r.code).toBe(3)
   expect(r.out).toContain('t1 stopped: version')
   expect(ran(f).length).toBe(1)
+  // a rerun stops again at once: the mismatched record stands but is neither graded nor followed by a run
+  const again = fakes(d), r2 = await go(d, ['run', 't1'], again)
+  expect(r2.code).toBe(3)
+  expect(r2.out).toContain('t1 stopped: version')
+  expect(again.calls).toEqual([])
   // the same version goes on
   const g = fakes(d), ok = await go(d, ['run', 'p1'], g)
   expect(ok.code).toBe(0)
@@ -170,8 +175,8 @@ test('the report prints counts and no score', async () => {
   writeFileSync(join(d, 'step13/attempts.json'), JSON.stringify({ [sha]: 2 }))
   const r = await go(d, ['report'], fakes(d))
   expect(r.code).toBe(0)
-  expect(r.out).toContain('external H standing=1 machine=none noresult=0 tokens=15 minutes=30.0 interventions=2')
-  expect(r.out).toContain('external B standing=2 machine=api:2 noresult=1 tokens=300 minutes=60.0 interventions=0')
+  expect(r.out).toContain('external H standing=1 machine=none noresult=0 versions=2.1.318:1 tokens=15 minutes=30.0 interventions=2')
+  expect(r.out).toContain('external B standing=2 machine=api:2 noresult=1 versions=2.1.318:2 tokens=300 minutes=60.0 interventions=0')
   expect(r.out).toContain('external W standing=0')
   expect(r.out).toContain('real-estate H standing=1')
   expect(r.out).not.toContain('real-estate W')
@@ -191,4 +196,19 @@ test('the table is refused before step 14 registers, and written after', async (
   const ok = await go(d, ['table'], fakes(d))
   expect(ok.code).toBe(0)
   expect(json(join(d, 'step13/table.json')).runs.map((x) => [x.task, x.arm, x.run, x.build])).toEqual([['t1', 'H', 1, 1]])
+})
+
+test('a machine run with another version is the machine\'s stop, not a version stop', async () => {
+  const d = world('versionmachine')
+  putRun(d, 't2', 'H', 1, { rec: { start: '2026-11-11T10:00:00.000Z' } })
+  const f = fakes(d, { version: '2.1.999', mach: () => 'api' }), r = await go(d, ['run', 't1'], f)
+  expect(r.code).toBe(3)
+  expect(r.out).toContain('t1 stopped: api')
+})
+
+test('the report shows a mixed set by its versions', async () => {
+  const d = world('mixed')
+  putRun(d, 't1', 'H', 1)
+  putRun(d, 't1', 'H', 2, { rec: { version: '2.1.999' } })
+  expect((await go(d, ['report'], fakes(d))).out).toContain('external H standing=2 machine=none noresult=0 versions=2.1.318:1,2.1.999:1')
 })
