@@ -710,6 +710,8 @@ Deviations (for step 14): three checks dropped after the stick v1 lock because o
 
 Registered before any change to `bench/` for step 13 and before any step 13 run; `bench/scored.mjs` and the H5 tool do not exist.
 
+**Amended at step 13 (2026-11-11), before Docker is changed or any lane runs** (the user: "Ok bắt đầu đi"): step 8 ruling 13's "one Docker job at a time" becomes, for step 13 only, **two lanes**, each one task at a time, as the [scored runs plan](/plans/2026-11-11-bench-scored-runs.md)'s "Amendment: two lanes" states. Reason: about 205 h of runs plus the H5 lane on one lane, on a 32 GB machine whose Docker had 7.7 GB. Docker goes to 16 GB of memory (20 GB if the pilot's peak exceeds 13 GB) and a 120 GB disk. Both lanes claim tasks from one queue in decision 1's order; never two private-set tasks at once (their grade containers have no memory cap) and never two of s2-08, s2-09, s2-10 at once; floor and attempts are per task; no prune while a lane works. A pilot must pass first: four ends graded two at a time (s2-01 beside p8e, s3-02 beside p8c) with `--out`, every result equal to Phase A's third regrade; two probe boxes at once, both `probe ok`; no `machine memory`; peak Docker memory below 13 GB and free disk above 30 GB, sampled every 30 s. A missed criterion, or more machine runs or `noresult` grades than the trial's after the first 24 hours, returns step 13 to one lane, which loses nothing. Known limit: run minutes under two lanes are not comparable with single-lane minutes; tokens, interventions and scores are unaffected. Listed for step 14.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.

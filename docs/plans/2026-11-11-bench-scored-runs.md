@@ -79,6 +79,19 @@ As the earlier steps': branch `bench-step13` from `main` (6fbbf1e); `<data>` = `
 3. A porter that sees the check, or a port committed into the arm's store. Test: Task 2 'the porter's prompt holds no check' and 'a port lands only in the sealed repo'.
 4. A suite run with network, or a suite that picks up the oracle's files. Test: Task 2 'the suite runs offline and only the product's test files'.
 
+## Amendment: two lanes (the user's decision of 2026-11-11, "Ok bắt đầu đi")
+
+Registered in the prereg ("Amended at step 13") before Docker is changed or any lane runs. Step 8 ruling 13's "one Docker job at a time" becomes, for step 13 only, **two lanes**, each running one task at a time. Reason: about 205 h of runs and 2–3 days of H5 on one lane, on a 32 GB, 8-CPU machine whose Docker has 7.7 GB and a 58 GB disk (13.2 GB free on 2026-11-11). Nothing of the measure changes: tasks, arms, k, slots, the order within a task, grading and scoring are as registered.
+
+- **Resources (the user, in Docker Desktop, only when the controller says no job runs):** memory 16 GB (20 GB if the pilot's peak exceeds 13 GB), virtual disk limit 120 GB. Before that, with no job running: `docker builder prune -f`.
+- **One queue:** both lanes claim the next task of `scored.mjs order` (decision 1's order) from one queue under a lock, so the global order is kept. Exclusions: never two private-set tasks at once (their P and O containers carry no memory cap; this rule is load-bearing); never two of s2-08, s2-09, s2-10 at once (shared dummy ports, step 7 ruling 13). A lane that meets an excluded task leaves it for the next claim and takes the next allowed one.
+- **No shared read-modify-write:** the floor and the attempts move to one file per task (`step13/floor/<task>.json`, `step13/attempts/<task>.json`); `ext/removed.txt` is append-only already.
+- **Prune:** the driver's own prune is off in step 13; each lane checks `<data>/step13/pause` between tasks; the controller creates it, waits for both lanes to stop at a task boundary, runs `docker builder prune -f`, removes it. The 15 GB disk floor stays as the stop.
+- **The pilot (before any scored run), pass criteria registered now:** (1) four ends graded two at a time — an external and a private-set end side by side, twice (s2-01 and p8e, then s3-02 and p8c), each kind with `--sealed --out <data>/logs/step13/pilot/<task>-<kind>.json` (never a hashed grade file), compared by check id with the same task and kind of Phase A's third regrade (`<data>/logs/step11/regrade/<task>-<kind>.json`, made under this grade environment; the locks differ for p8e by decision (A)): every result equal; (2) then one H probe box of an external task and one of a private-set task at the same time: both `probe ok`; (3) no `machine memory` anywhere; (4) Docker memory sampled every 30 s (`docker stats --no-stream`), peak below 13 GB; disk free sampled every 30 s (`df` in `bench-arm/fw:1`), minimum above 30 GB. Any criterion missed: one lane, nothing lost.
+- **During the runs:** after the first 24 hours, machine runs and `noresult` grades are counted against the step 11 trial's (0 and 0); a rise sends step 13 back to one lane. Going back to one lane loses nothing: the driver resumes.
+- **H5 (Task 6)** runs in the same two lanes with the same exclusions.
+- **Known limit:** run `minutes` under two lanes are not comparable with the trial's single-lane minutes; tokens, interventions and scores are unaffected.
+
 ---
 
 ### Task 0: Register the rulings
@@ -114,6 +127,16 @@ As the earlier steps': branch `bench-step13` from `main` (6fbbf1e); `<data>` = `
 - [ ] **Step 1: Write the failing tests:** 'a fail at the product is a miss with no porter'; 'the porter's prompt holds no check'; 'a port lands only in the sealed repo'; 'a port that does not flip the check is not applicable'; 'caught needs a test that passes at P and fails at P + edit'; 'the suite runs offline and only the product's test files' (gated `BENCH_EXT_DOCKER=1`, a fixture recipe whose test opens a socket: no result); 'a product with no test file is a miss'; 'box-env --seeded changes only repo'.
 - [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4:** Suites teed (and the gated one) — pass. Commit `git commit -m "Add the H5 port and the product suite run"`.
 
+### Task 2b: Two lanes (the amendment)
+
+**Files:** Modify `bench/scored.mjs`, `tests/bench-scored.test.mjs`, `bench/README.md`. No change to `bench/canary.mjs` or any other file.
+
+**Interfaces:**
+- `scored.mjs run <task>` passes `runTask` a per-task config: `floor` from `step13/floor/<task>.json`, `attempts: step13/attempts/<task>.json`; the context's `prune` is a no-op.
+- `bun bench/scored.mjs claim <lane>`: under a lock (`mkdir <data>/step13/queue.lock`, removed in `finally`; a stale lock older than 10 minutes with no live pid is reclaimed), reads `step13/queue.json` (`{ done: [], running: { <lane>: <task> } }`, created from `order` on first use), clears the lane's previous task into `done` only when its `run` exited 0 (the lane passes `--done <task>`), and prints the next task of the order not done, not running, and not excluded by the amendment (a private-set task while another private-set task runs; s2-08, s2-09, s2-10 while one of them runs), or `none` when nothing is allowed now, or `empty` when all are done. A lane that stops on a non-zero exit keeps its task in `running` until the controller clears it (`claim <lane> --release`).
+- [ ] **Step 1: Write the failing tests:** 'two tasks in parallel touch disjoint floor and attempts files'; 'claim keeps the global order'; 'claim never gives two private-set tasks at once'; 'claim never gives two of the shared-port tasks at once'; 'a stopped lane keeps its task until released'; 'prune is never called by run'.
+- [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4:** Suite teed — pass. Commit `git commit -m "Run the scored set in two lanes"`.
+
 ### Task 3: The real-estate suite (decision 3 (a) only; controller)
 
 - [ ] **Step 1:** Write `ext/tasks/real-estate/suite.sh` (ruling 9's contract: given files, JUnit to `/out`, services up first, no network); the recipe stays byte-equal.
@@ -126,9 +149,14 @@ As the earlier steps': branch `bench-step13` from `main` (6fbbf1e); `<data>` = `
 - [ ] **Step 2b:** `box-env <task> --seeded` for the 38 tasks. `suite-run` at each of the 29 external ends with the end's own changed test files: every case passing is expected (step 4 accepted each task on "PR tests pass at end"); a stack whose script cannot run offline in the product image stops for the user now, not after Task 5.
 - [ ] **Step 3:** One H probe on one external and one real-estate box (step 12's script): `probe ok`; the token answers. Docker: no leftover name of an earlier step; build cache under 15 GB.
 
+### Task 4b: The two-lane pilot (controller)
+
+- [ ] **Step 1:** With no job running: `docker builder prune -f`; the user sets Docker memory 16 GB and disk 120 GB; `docker info` confirms.
+- [ ] **Step 2:** The pilot of the amendment, with the samplers; results to `logs/step13/pilot/`. All four criteria met: two lanes. Any missed: one lane (`runs.sh` with one lane), recorded.
+
 ### Task 5: The runs (controller)
 
-- [ ] **Step 1:** `logs/step13/runs.sh`: per task of `order.out`, `bun bench/scored.mjs run <task>` teed to `logs/step13/run-<task>.out`, its status lines to `runs.out`, pgsnap around real-estate tasks, stop at the first exit that is not 0 (ruling 7). Started detached; resumable (a rerun picks up at the first slot without a standing run).
+- [ ] **Step 1:** `logs/step13/runs.sh <lane>` (two lanes, or one if the pilot failed): loop `claim <lane>` → `bun bench/scored.mjs run <task>`, sleeping 5 minutes on `none`, ending on `empty`, waiting while `step13/pause` exists; teed to `logs/step13/run-<task>.out`, its status lines to `runs.out`, pgsnap around real-estate tasks, stop at the first exit that is not 0 (ruling 7). Started detached; resumable (a rerun picks up at the first slot without a standing run).
 - [ ] **Step 2:** On each stop: the user is told the task, arm, run and the stop word, never a grade's content; the first move on `refused` or `api` is the host check of step 12 (a usage limit read as a probe refusal is how step 12 met it); the driver resumes after the user's answer.
 - [ ] **Step 3:** At the end, `bun bench/scored.mjs report` to `logs/step13/report.out`. Record per day in `progress/progress.md`: tasks done, runs, machine runs, `noresult` grades.
 

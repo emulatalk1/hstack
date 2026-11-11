@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-11
+* **Update**: Amended step 13 of the [scored runs plan](/plans/2026-11-11-bench-scored-runs.md) and registered it in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Amended at step 13"): two lanes instead of one Docker job at a time, Docker 16 GB and a 120 GB disk, a pilot with registered pass criteria first, and exclusions for the private set and the shared-port tasks.
 * **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 12, "Applied at step 13") the rulings of the [scored runs plan](/plans/2026-11-11-bench-scored-runs.md), approved by the user with (a) of its six decisions, before any step 13 code or run.
 * **Creation**: Added the [scored runs plan](/plans/2026-11-11-bench-scored-runs.md) (draft) for prereg step 13: 315 runs (H, B, W on 29 external tasks; H, B on 9 real-estate), a driver with its own floor, the H5 port and suite run, six decisions for the user.
 * **Approve**: The user approved the step 12 lock (`progress/step12-lock.md`); the [plugin lock plan](/plans/2026-11-11-bench-plugin-lock.md) is `stable`. H `653af83`, W `9c4b267`, the models, CLI 2.1.318 and N 24 are locked with `progress/stick-v1-step12.sha256`. Merged into main and pushed.
