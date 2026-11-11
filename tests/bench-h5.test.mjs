@@ -68,8 +68,8 @@ function world(name, { owner = 'o' } = {}) {
   writeFileSync(join(d, 'ext/sample.tsv'), `task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend\tmethod\tf2p\tedit_history\tplatform\tcold_setup\n${TASK}\ts1\t1\t1\t${owner}/r#7\tu\t7\t3\t${base}\t${base}\tmerge\t1\t\t${platform}\tno\n`)
   writeFileSync(join(d, 'ext/groups.json'), JSON.stringify({ seed: 'x', groups: [{ id: 's1', testPaths: ['(^|/)checks/'] }] }))
   for (const n of [1, 2]) writeFileSync(join(d, 'results', `${TASK}-H-${n}.json`), JSON.stringify({ arm: 'H', run: n, branch: `bench/s1-01-h-${n}`, machine: null, ...(n === 1 ? { envCommit: env1 } : {}) }))
-  mkdirSync(join(d, 'step13'), { recursive: true })
-  writeFileSync(join(d, 'step13/floor.json'), JSON.stringify({ [TASK]: { H: 0, B: 0, W: 0 } }))
+  mkdirSync(join(d, 'step13/floor'), { recursive: true })
+  writeFileSync(join(d, `step13/floor/${TASK}.json`), JSON.stringify({ H: 0, B: 0, W: 0 }))
   writeFileSync(join(d, 'briefs/porter.md'), 'PORTER BRIEF\n')
   const bug = (n, check, find, replace, state = 'kept') => ({ id: `sb-s1-01-${n}`, task: TASK, base, end: null, fix: base, check, edge: 'boundary', severity: 'high',
     description: `DESC-${n} the total is off`, behaviour: `BEHAVIOUR-${n}`, hunk: null, edit: { file: 'src/app.js', find, replace }, state, why: null })
@@ -344,10 +344,10 @@ test('a machine run or a run at or under the step 13 floor is refused', async ()
   writeFileSync(rec, JSON.stringify({ ...json(rec), machine: 'api' }))
   await expect(run(w, [TASK, 'H', '1'], f(w))).rejects.toThrow('machine run')
   const v = world('refuse-floor')
-  writeFileSync(join(v.d, 'step13/floor.json'), JSON.stringify({ [TASK]: { H: 1, B: 0, W: 0 } }))
+  writeFileSync(join(v.d, `step13/floor/${TASK}.json`), JSON.stringify({ H: 1, B: 0, W: 0 }))
   await expect(run(v, [TASK, 'H', '1'], f(v))).rejects.toThrow('floor')
   expect((await run(v, [TASK, 'H', '2'], f(v))).code).toBe(0) // above it
-  rmSync(join(v.d, 'step13/floor.json')) // no floor for the task: nothing stands
+  rmSync(join(v.d, `step13/floor/${TASK}.json`)) // no floor for the task: nothing stands
   await expect(run(v, [TASK, 'H', '2'], f(v))).rejects.toThrow('floor')
   for (const x of [w, v]) expect(existsSync(join(x.d, TASK, 'seeded/h5/H-1.json'))).toBe(false)
 })

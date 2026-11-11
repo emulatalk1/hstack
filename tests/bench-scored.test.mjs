@@ -1,9 +1,9 @@
 import { test, expect, spyOn, afterAll } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { scored } from '../bench/scored.mjs'
+import { floorOf, scored } from '../bench/scored.mjs'
 import { queuePick } from '../bench/lib/oracle.mjs'
 
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'bench-scored-')))
@@ -32,7 +32,7 @@ const go = async (d, args, inj) => {
 function world(name, { tasks = ALL, floor = true } = {}) {
   const d = join(tmp, name)
   for (const t of ALL) for (const x of ['grades', 'step/grades', 'build']) mkdirSync(join(d, t, x), { recursive: true })
-  for (const x of ['ext', 'env/box', 'results', 'step13']) mkdirSync(join(d, x), { recursive: true })
+  for (const x of ['ext', 'env/box', 'results', 'step13/floor']) mkdirSync(join(d, x), { recursive: true })
   const head = 'task\tstack\ttier\trank\tid\turl\tpr\tissue\tbase\tend\tcold_setup'
   writeFileSync(join(d, 'ext/sample.tsv'), [head, ...EXT.map((t) => `${t}\ts1\t1\t1\town/${t}#1\tu\t1\t1\tbase-${t}\tend-${t}\tno`), ''].join('\n'))
   writeFileSync(join(d, 'tasks.json'), JSON.stringify(Object.fromEntries(PRIV.map((t) => [t, { base: `base-${t}`, end: `end-${t}` }]))))
@@ -40,7 +40,7 @@ function world(name, { tasks = ALL, floor = true } = {}) {
   writeFileSync(join(d, 'arms.json'), JSON.stringify({ model: 'M', smallModel: 'S', cli: 'x', plugins: { H: [], W: [] } }))
   writeFileSync(join(d, 'machine.json'), JSON.stringify({ forbid: { paths: [] } }))
   writeFileSync(join(d, 'step13/tasks.txt'), tasks.join('\n') + '\n')
-  if (floor) writeFileSync(join(d, 'step13/floor.json'), JSON.stringify(Object.fromEntries(ALL.map((t) => [t, { H: 0, B: 0, W: 0 }]))))
+  if (floor) for (const t of ALL) writeFileSync(join(d, 'step13/floor', `${t}.json`), JSON.stringify({ H: 0, B: 0, W: 0 }))
   for (const t of ALL) {
     writeFileSync(join(d, 'env/box', `${t}.json`), JSON.stringify({ name: t, repo: join(d, 'repo'), db: null, port: 4000, start: null, ready: null, setup: [], teardown: [], oracle: 'x', junit: 'out/junit.xml', timeoutSec: 60 }))
     writeFileSync(join(d, t, 'step.json'), JSON.stringify(PRIV.includes(t) ? { oracle: 'step/oracle', ids: ['a1', 'a2'], candidates: 1, seed: 's' } : { oracle: 'oracle', ids: ['a1', 'a2'], candidates: 1, seed: 's' }))
@@ -95,8 +95,7 @@ test('the run refuses a task not in tasks.txt and one with no box file', async (
   rmSync(join(d, 'env/box/p1.json'))
   expect((await go(d, ['run', 'p1'], f)).error).toContain('p1.json is missing')
   expect(f.calls).toEqual([])
-  expect(existsSync(join(d, 'step13/floor.json'))).toBe(true) // fixture's own; a refused task wrote nothing more
-  expect(Object.keys(json(join(d, 'step13/floor.json')))).toEqual(ALL)
+  expect(readdirSync(join(d, 'step13/floor')).sort()).toEqual(ALL.map((t) => `${t}.json`).sort()) // fixture's own; a refused task wrote nothing more
 })
 
 test('only runs above the step 13 floor stand: canary and trial records are neither taken nor regraded', async () => {
@@ -110,12 +109,12 @@ test('only runs above the step 13 floor stand: canary and trial records are neit
   expect(r.code).toBe(0)
   expect(ran(f).sort()).toEqual(['t1-B-3', 't1-B-4', 't1-B-5', 't1-H-2', 't1-H-3', 't1-H-4', 't1-W-1', 't1-W-2', 't1-W-3'])
   for (const [file, text] of olds) expect(readFileSync(file, 'utf8')).toBe(text)
-  expect(json(join(d, 'step13/floor.json'))).toEqual({ t1: { H: 1, B: 2, W: 0 } })
+  expect(json(join(d, 'step13/floor/t1.json'))).toEqual({ H: 1, B: 2, W: 0 })
   const f2 = fakes(d)
   expect((await go(d, ['run', 't1'], f2)).code).toBe(0)
   expect(f2.calls).toEqual([]) // a rerun neither moves the floor nor repeats a run
-  expect(json(join(d, 'step13/floor.json'))).toEqual({ t1: { H: 1, B: 2, W: 0 } })
-  expect(json(join(d, 'step13/attempts.json'))[shaOf('bench/t1-W-1')]).toBe(1)
+  expect(json(join(d, 'step13/floor/t1.json'))).toEqual({ H: 1, B: 2, W: 0 })
+  expect(json(join(d, 'step13/attempts/t1.json'))[shaOf('bench/t1-W-1')]).toBe(1)
 })
 
 test('slots follow the set: 9 for an external task, 6 and no W for a real-estate one', async () => {
@@ -172,7 +171,8 @@ test('the report prints counts and no score', async () => {
   putRun(d, 'p1', 'H', 1)
   const sha = shaOf('bench/t1-B-2')
   writeFileSync(join(d, 't1/grades', `${sha.slice(0, 7)}.json`), JSON.stringify({ commit: sha, junit: 'ok', checks: [{ id: 'a9', result: 'error' }] })) // never good
-  writeFileSync(join(d, 'step13/attempts.json'), JSON.stringify({ [sha]: 2 }))
+  mkdirSync(join(d, 'step13/attempts'), { recursive: true })
+  writeFileSync(join(d, 'step13/attempts/t1.json'), JSON.stringify({ [sha]: 2 }))
   const r = await go(d, ['report'], fakes(d))
   expect(r.code).toBe(0)
   expect(r.out).toContain('external H standing=1 machine=none noresult=0 versions=2.1.318:1 tokens=15 minutes=30.0')
@@ -212,4 +212,120 @@ test('the report shows a mixed set by its versions', async () => {
   putRun(d, 't1', 'H', 1)
   putRun(d, 't1', 'H', 2, { rec: { version: '2.1.999' } })
   expect((await go(d, ['report'], fakes(d))).out).toContain('external H standing=2 machine=none noresult=0 versions=2.1.318:1,2.1.999:1')
+})
+
+test('two tasks in parallel touch disjoint floor and attempts files', async () => {
+  const d = world('parallel', { floor: false }), f = fakes(d), g = fakes(d)
+  process.env.HSTACK_BENCH_MACHINE = join(d, 'machine.json')
+  try {
+    const [a, b] = await Promise.all([quiet(() => scored(['run', 't1'], f)), quiet(() => scored(['run', 'p1'], g))])
+    expect([a.code, b.code]).toEqual([0, 0])
+  } finally { delete process.env.HSTACK_BENCH_MACHINE }
+  expect(existsSync(join(d, 'step13/floor.json')) || existsSync(join(d, 'step13/attempts.json'))).toBe(false)
+  expect(readdirSync(join(d, 'step13/floor')).sort()).toEqual(['p1.json', 't1.json'])
+  expect(readdirSync(join(d, 'step13/attempts')).sort()).toEqual(['p1.json', 't1.json'])
+  const keys = (t) => [...new Set(Object.keys(json(join(d, `step13/attempts/${t}.json`))).map((k) => k.replace(/^.*:/, '')))] // a private-set sha also has a step: key
+  expect(keys('t1').sort()).toEqual(['B', 'H', 'W'].flatMap((x) => [1, 2, 3].map((n) => shaOf(`bench/${nameOf('t1', x, n)}`))).sort())
+  expect(keys('p1').sort()).toEqual(['B', 'H'].flatMap((x) => [1, 2, 3].map((n) => shaOf(`bench/${nameOf('p1', x, n)}`))).sort())
+  expect(floorOf(d, 'p1')).toEqual({ H: 0, B: 0, W: 0 })
+  expect(floorOf(d, 'nowhere')).toEqual({ H: Infinity, B: Infinity, W: Infinity })
+})
+
+test('prune is never called by run', async () => {
+  const d = world('noprune'), f = fakes(d)
+  let pruned = 0
+  f.cacheBytes = async () => 1e15
+  f.prune = async () => { pruned++ }
+  expect((await go(d, ['run', 't1'], f)).code).toBe(0)
+  expect(pruned).toBe(0)
+  expect(ran(f).length).toBe(9)
+})
+
+const claim = async (d, lane, ...flags) => (await go(d, ['claim', lane, ...flags], {})).out
+const queueOf = (d) => json(join(d, 'step13/queue.json'))
+const orderOf = (tasks) => queuePick(tasks, tasks.length, SEED)
+const setExclusive = (d, groups) => writeFileSync(join(d, 'step13/exclusive.json'), JSON.stringify(groups))
+
+test('claim keeps the global order', async () => {
+  const d = world('claim-order', { tasks: EXT })
+  const O = orderOf(['t1', 't2'])
+  expect(await claim(d, 'a')).toBe(O[0])
+  expect(await claim(d, 'b')).toBe(O[1])
+  expect(await claim(d, 'a')).toBe('none') // its task is still running
+  expect(await claim(d, 'a', '--done', O[0])).toBe('none') // nothing left to give, a lane still runs
+  expect(await claim(d, 'b', '--done', O[1])).toBe('empty')
+  expect(queueOf(d)).toEqual({ done: [O[0], O[1]], running: {} })
+  expect(existsSync(join(d, 'step13/queue.lock'))).toBe(false)
+  // the order with four tasks and one lane is the order of `order`
+  const e = world('claim-seq'), P = orderOf(ALL), got = []
+  for (let prev; ; prev = got.at(-1)) {
+    const t = await claim(e, 'a', ...(prev ? ['--done', prev] : []))
+    if (t === 'empty') break
+    got.push(t)
+  }
+  expect(got).toEqual(P)
+})
+
+test('claim never gives two private-set tasks at once', async () => {
+  const d = world('claim-private', { tasks: PRIV })
+  const O = orderOf(PRIV)
+  expect(await claim(d, 'a')).toBe(O[0])
+  expect(await claim(d, 'b')).toBe('none')
+  expect(await claim(d, 'a', '--done', O[0])).toBe(O[1])
+  expect(await claim(d, 'b')).toBe('none')
+  expect(await claim(d, 'a', '--done', O[1])).toBe('empty')
+  // an external task is taken past a blocked private one
+  const e = world('claim-private-skip')
+  const A = await claim(e, 'a'), B = await claim(e, 'b'), C = await claim(e, 'c')
+  for (const [x, y] of [[A, B], [A, C], [B, C]]) expect(PRIV.includes(x) && PRIV.includes(y)).toBe(false)
+  expect([A, B, C].filter((t) => t !== 'none').length).toBeGreaterThanOrEqual(2)
+})
+
+test('claim never gives two of the shared-port tasks at once', async () => {
+  const d = world('claim-group', { tasks: ['t1', 't2', 'p1'] })
+  setExclusive(d, [['t1', 't2']])
+  const A = await claim(d, 'a'), B = await claim(d, 'b'), C = await claim(d, 'c')
+  const ext = [A, B, C].filter((t) => t === 't1' || t === 't2')
+  expect(ext.length).toBe(1)
+  expect([A, B, C].filter((t) => t === 'p1').length).toBe(1)
+  expect([A, B, C].filter((t) => t === 'none').length).toBe(1)
+  const e = world('claim-nogroup', { tasks: ['t1', 't2'] }) // no exclusive.json: no groups
+  expect(await claim(e, 'a')).not.toBe('none')
+  expect(await claim(e, 'b')).not.toBe('none')
+})
+
+test('a stopped lane keeps its task until released', async () => {
+  const d = world('claim-stop', { tasks: ['t1', 't2'] })
+  const O = orderOf(['t1', 't2'])
+  expect(await claim(d, 'a')).toBe(O[0])
+  expect(await claim(d, 'b')).toBe(O[1])
+  expect(await claim(d, 'b', '--done', O[1])).toBe('none') // a's task is neither done nor free
+  expect(await claim(d, 'a')).toBe('none') // a stopped without --done
+  expect(queueOf(d)).toEqual({ done: [O[1]], running: { a: O[0] } })
+  expect(await claim(d, 'a', '--release')).toBe('none') // released, not done; nothing claimed
+  expect(queueOf(d)).toEqual({ done: [O[1]], running: {} })
+  expect(await claim(d, 'b')).toBe(O[0])
+  expect((await go(d, ['claim', 'b', '--done', 'nope'])).error).toContain('b is not running nope')
+  expect(existsSync(join(d, 'step13/queue.lock'))).toBe(false) // removed after an error too
+})
+
+test('the claim lock is reclaimed when stale and respected when live', async () => {
+  const d = world('claim-lock', { tasks: ['t1'] }), lock = join(d, 'step13/queue.lock')
+  const hold = (pid, ageMin) => {
+    mkdirSync(lock, { recursive: true })
+    writeFileSync(join(lock, 'pid'), String(pid))
+    const t = new Date(Date.now() - ageMin * 60000)
+    utimesSync(lock, t, t)
+  }
+  hold(2 ** 30, 11) // no such process, older than 10 minutes
+  expect(await claim(d, 'a')).toBe('t1')
+  expect(existsSync(lock)).toBe(false)
+  await claim(d, 'a', '--done', 't1')
+  rmSync(join(d, 'step13/queue.json'))
+  hold(process.pid, 11) // old but alive
+  expect((await go(d, ['claim', 'a'], { lockWaitMs: 100 })).error).toContain('queue.lock')
+  rmSync(lock, { recursive: true })
+  hold(2 ** 30, 1) // dead but fresh
+  expect((await go(d, ['claim', 'a'], { lockWaitMs: 100 })).error).toContain('queue.lock')
+  expect(existsSync(join(d, 'step13/queue.json'))).toBe(false)
 })
