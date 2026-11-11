@@ -37,10 +37,10 @@ git checkout -q -- src/a.txt
 start startup
 sh "$H" start >/dev/null
 ok 'start records the base' '[ "$(cat "$S/base")" = "$(git rev-parse HEAD)" ]'
-ok 'missing lists every phase at first' '[ "$(sh "$H" missing)" = "setup oracle build gate review explore mutate final" ]'
-ok 'stop blocks a started run and names the missing steps' 'stop | grep -q "steps not recorded: setup oracle"'
-sh "$H" phase setup; sh "$H" phase oracle; sh "$H" phase explore skipped: no way to run it
-ok 'a skipped phase counts' '[ "$(sh "$H" missing)" = "build gate review mutate final" ]'
+ok 'missing lists every phase at first' '[ "$(sh "$H" missing)" = "setup build review explore mutate final" ]'
+ok 'stop blocks a started run and names the missing steps' 'stop | grep -q "steps not recorded: setup build"'
+sh "$H" phase setup; sh "$H" phase explore skipped: no way to run it
+ok 'a skipped phase counts' '[ "$(sh "$H" missing)" = "build review mutate final" ]'
 ok 'phase refuses a bad line' '! sh "$H" phase "explore skipped:" 2>/dev/null && ! sh "$H" phase "Build" 2>/dev/null'
 ok 'a bare word skipped does not count' 'sh "$H" phase "mutatex" && sh "$H" missing | grep -q mutate'
 
@@ -66,7 +66,7 @@ echo 'assert new' > tests/new_test.txt
 
 # done
 ok 'done refuses while steps are missing' '! sh "$H" done 2>/dev/null'
-for p in build gate review mutate final; do sh "$H" phase $p; done
+for p in build review mutate final; do sh "$H" phase $p; done
 ok 'done refuses an uncommitted change' '! sh "$H" done 2>/dev/null'
 git add -A; git commit -qm feature
 ok 'done records HEAD' 'sh "$H" done >/dev/null && [ "$(cat "$S/done")" = "$(git rev-parse HEAD)" ]'

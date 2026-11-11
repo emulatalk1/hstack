@@ -1,5 +1,5 @@
 {
   "name": "hstack",
-  "version": "0.2.0",
-  "description": "An autonomous build loop: capabilities with probe and canary, an independent oracle written before the code, a gate against weakened tests, review, exploratory testing and mutation."
+  "version": "0.2.0-w",
+  "description": "An autonomous build loop: capabilities with probe and canary, the builder's own review, exploratory testing and mutation. The weak variant W of hstack 0.2.0."
 }

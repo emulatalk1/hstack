@@ -4,7 +4,7 @@
 # ${HSTACK_STATE:-$HOME/.hstack} (or /tmp/.hstack without HOME)/<checksum of the git dir>, so it is never committed and never part of the product.
 # usage: hstack.sh dir|start|phase <name> [skipped: <why>]|missing|lock <file>...|gate|elapsed|done|hook-start|hook-stop
 
-PHASES='setup oracle build gate review explore mutate final'
+PHASES='setup build review explore mutate final'
 MAX_BLOCKS=3
 
 state() {
