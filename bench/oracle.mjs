@@ -258,7 +258,7 @@ async function runWriter(agent, { taskFile, label, at, prompt, text, out, dir, s
 }
 
 // one sealed run whose record is reused only when today's prompt is the one it ran with (its sha256 in the record)
-async function once(agent, { prompt, text, out, prepare }, args) {
+export async function once(agent, { prompt, text, out, prepare }, args) {
   const rec = `${out}.run.json`
   if (existsSync(rec)) { const r = readJson(rec); return r?.promptSha === sha256(text) ? { how: 'reused', code: r.code } : { how: 'reused', stale: true } }
   prepare?.()
@@ -925,7 +925,7 @@ export async function seedRepo(data, taskFile) {
   return env
 }
 
-const testFile = (file, testPaths) => isTestPath(file) || testPaths.some((r) => new RegExp(r).test(file))
+export const testFile = (file, testPaths) => isTestPath(file) || testPaths.some((r) => new RegExp(r).test(file))
 // not a plain path from the repo's root: git would refuse it, quoting it, or `ls-tree` and `show` would read it differently
 const badPath = (file) => file.startsWith(':') || file.split('/').some((s) => ['', '.', '..'].includes(s))
 
@@ -936,33 +936,42 @@ function plumb(repo, args, { env, input } = {}) {
   return p.stdout.toString()
 }
 
-// the commit `refs/seeded/<id>` of one edit on `end`, or { why } with the first gate that refuses it (ruling 4). Gates `hunks` and
-// `outside` need the commit, so a refusal there deletes the ref. A non-UTF-8 file decodes lossily and shows as a big diff: `hunks` refuses it
-export async function seedCommit(repo, end, { file, find, replace, edge }, id, { base, testPaths = [] }) {
-  if (!EDGES.includes(edge)) return { why: 'edge' }
+// the commit of one edit on `at` under `ref` (its parent `at`, a fixed author and date), or { why } with the first gate that refuses it:
+// a test file, no file, `find` not there exactly once, or not one hunk (`hunks` needs the commit, so a refusal there deletes the ref).
+// A non-UTF-8 file decodes lossily and shows as a big diff: `hunks` refuses it
+export async function editCommit(repo, at, { file, find, replace }, ref, { testPaths = [], message = 'seeded' } = {}) {
   if (testFile(file, testPaths)) return { why: 'test file' }
   if (badPath(file)) return { why: 'no file' }
-  const entry = plumb(repo, ['ls-tree', end, '--', file]).split('\t')[0].split(' ')
+  const entry = plumb(repo, ['ls-tree', at, '--', file]).split('\t')[0].split(' ')
   if (entry[1] !== 'blob') return { why: 'no file' }
-  const text = applyEdit(plumb(repo, ['show', `${end}:${file}`]), find, replace)
+  const text = applyEdit(plumb(repo, ['show', `${at}:${file}`]), find, replace)
   if (text === null) return { why: 'find' }
-  const index = join(repo, `seed-index-${process.pid}-${id}`), ref = `refs/seeded/${id}`, stamp = '2026-10-27T00:00:00Z'
+  const index = join(repo, `seed-index-${process.pid}-${ref.replaceAll('/', '-')}`), stamp = '2026-10-27T00:00:00Z'
   let commit
   try {
     const env = { GIT_INDEX_FILE: index }
     const blob = plumb(repo, ['hash-object', '-w', '--stdin'], { input: text }).trim()
-    plumb(repo, ['read-tree', end], { env })
+    plumb(repo, ['read-tree', at], { env })
     plumb(repo, ['update-index', '--cacheinfo', `${entry[0]},${blob},${file}`], { env })
     const tree = plumb(repo, ['write-tree'], { env }).trim()
-    commit = plumb(repo, ['-c', 'commit.gpgsign=false', 'commit-tree', tree, '-p', end, '-m', 'seeded'], { env: {
+    commit = plumb(repo, ['-c', 'commit.gpgsign=false', 'commit-tree', tree, '-p', at, '-m', message], { env: {
       GIT_AUTHOR_NAME: 'bench', GIT_AUTHOR_EMAIL: 'bench@localhost', GIT_AUTHOR_DATE: stamp,
       GIT_COMMITTER_NAME: 'bench', GIT_COMMITTER_EMAIL: 'bench@localhost', GIT_COMMITTER_DATE: stamp } }).trim()
     plumb(repo, ['update-ref', ref, commit])
   } finally { rmSync(index, { force: true }) }
-  const hunks = diffHunks(await gitOut(repo, 'diff', '-U0', '--no-renames', end, commit))
-  const why = hunks.length !== 1 ? 'hunks' : inChanged(hunks[0], changedRanges(await gitOut(repo, 'diff', '-U0', '--no-renames', base, end))) ? null : 'outside'
-  if (why) { plumb(repo, ['update-ref', '-d', ref]); return { why } }
+  const hunks = diffHunks(await gitOut(repo, 'diff', '-U0', '--no-renames', at, commit))
+  if (hunks.length !== 1) { plumb(repo, ['update-ref', '-d', ref]); return { why: 'hunks' } }
   return { commit, hunk: hunks[0] }
+}
+
+// the commit `refs/seeded/<id>` of one edit on `end`, or { why } with the first gate that refuses it (ruling 4): the edge, then
+// editCommit's, then `outside` (the hunk not in a range the base..end diff changed), which deletes the ref
+export async function seedCommit(repo, end, { file, find, replace, edge }, id, { base, testPaths = [] }) {
+  if (!EDGES.includes(edge)) return { why: 'edge' }
+  const ref = `refs/seeded/${id}`, r = await editCommit(repo, end, { file, find, replace }, ref, { testPaths })
+  if (r.why) return r
+  if (!inChanged(r.hunk, changedRanges(await gitOut(repo, 'diff', '-U0', '--no-renames', base, end)))) { plumb(repo, ['update-ref', '-d', ref]); return { why: 'outside' } }
+  return r
 }
 
 // one sealed splitter for an agreed partly check; the two new entries (judged by the writer rules) or null
@@ -1416,8 +1425,8 @@ async function gradeAt(grade, env, oracleDir, sha, taskDir) {
   const g = stage === null ? readJson(f) : null
   return g?.junit === 'ok' ? { g } : { stage: stage ?? `junit ${g?.junit}` }
 }
-const resultIn = (g, id) => g?.checks?.find((x) => x.id === id)?.result ?? 'error'
-const hasResults = (g) => !!g?.checks?.some((x) => x.result !== 'error')
+export const resultIn = (g, id) => g?.checks?.find((x) => x.id === id)?.result ?? 'error'
+export const hasResults = (g) => !!g?.checks?.some((x) => x.result !== 'error')
 const gradeFile = (oracleDir, sha) => join(dirname(oracleDir), 'grades', `${sha.slice(0, 7)}.json`)
 
 // stages 1 and 2: one sealed seeder, its candidates judged, each an edit committed in the sealed repo

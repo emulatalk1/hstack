@@ -4,7 +4,7 @@
 // before it is parsed, and a rerun reuses a saved one (resume). Prints counts only: never a PR title, body, path or issue.
 import { appendFileSync, closeSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fwImage, netCheck, pinHosts, rulesCommand } from './box.mjs'
 import { withExport } from './env.mjs'
 import { oracleFiles } from './grade.mjs'
@@ -13,6 +13,7 @@ import { CAP_DROPS, fwScript } from './lib/arm.mjs'
 import { baseOf, coldSetup, exists, extraProbe, failToPass, keptIds, nextToCheck, repoOut, sampleOf, sortKey, stackOf, staticOut } from './lib/ext.mjs'
 import { readJunit } from './lib/junit.mjs'
 import { oracleSha } from './lib/oracle.mjs'
+import { loadTask } from './lib/task.mjs'
 import { runGroup } from './lib/proc.mjs'
 
 const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
@@ -20,9 +21,10 @@ const USAGE = `usage: bun bench/ext.mjs list <groups.json> --tier <1|2>
        bun bench/ext.mjs walk <groups.json> <stack> [--tier <1|2>] [--remove-out]
        bun bench/ext.mjs sample <groups.json> [--tier <1|2>]
        bun bench/ext.mjs task-env <groups.json> <task> (--reply <reply file> --sha <sha256> | --from-meta)
-       bun bench/ext.mjs box-env <task>
+       bun bench/ext.mjs box-env <task> [--seeded]
        bun bench/ext.mjs serve <groups.json> <task>
        bun bench/ext.mjs oracle-run <task>   (grade's oracle command: BENCH_DIR, BENCH_ORACLE, BENCH_JUNIT, BENCH_TRUSTED)
+       bun bench/ext.mjs suite-run <task file> --at <commit> --files <file of paths, one per line> --out <junit>
        bun bench/ext.mjs rebuild <task> [--extra-round <note>]   (sealed rounds that write tasks/<slug>/rebuild.json when the product make fails offline)
        bun bench/ext.mjs remove <task>`
 const sha = (s) => new Bun.CryptoHasher('sha256').update(s).digest('hex')
@@ -445,6 +447,9 @@ export async function buildImage({ scratch, dockerfile, test, platform, commit, 
   })
 }
 
+// the container's command for the test script with files (after deleting del), from /work, its JUnit to /out
+const testRun = (files, del = []) => ['rm -f /out/junit.xml', 'cd /work', 'mkdir -p /out', ...del.map((f) => `rm -f -- ${word(f)}`), `exec sh /work/.bench-test.sh ${files.map(word).join(' ')}`, ''].join('\n')
+
 // one run in a new container `name` of image with no network (or net) and a static command: files(dir) writes what goes in to
 // dest (/work) by docker cp; created() records the name as soon as it exists. { how, timedOut, exitCode, oom } (how: runEnd);
 // a throw when Docker fails, the run is killed from outside, or it prints a disk-full message while the disk is low
@@ -549,7 +554,7 @@ export async function check(row, cfg, { gh = realGh, remote = (repo) => `https:/
       files: async (dir) => {
         if (copy) await archive(files, dir)
         writeFileSync(join(dir, '.bench-test.sh'), recipe.test) // also here: a repo's .dockerignore may have kept it out of the image
-        writeFileSync(join(dir, '.bench-run.sh'), ['rm -f /out/junit.xml', 'cd /work', 'mkdir -p /out', ...del.map((f) => `rm -f -- ${word(f)}`), `exec sh /work/.bench-test.sh ${files.map(word).join(' ')}`, ''].join('\n'))
+        writeFileSync(join(dir, '.bench-run.sh'), testRun(files, del))
       } })
     if (how === 'oom') { // the repo does not fit this machine: null, and the log says so (a probe's goes to the next round)
       appendFileSync(log, '\nbench: the container was killed for memory (OOMKilled)\n')
@@ -890,11 +895,31 @@ const taskFileText = (ext, t, extra = {}) => JSON.stringify({ name: t.task, repo
 // `box-env <task>` (step 11 ruling 9): the task file every step 11 grade uses, written from this checkout (its oracle command is this
 // checkout's) to env/box/<task>.json and nowhere else. A private-set task also names its runner, held outside the hashed oracle folders
 export function boxEnv(args, inj = {}) {
-  const { pos: [task] } = parseArgs(args, 1, false)
+  const seeded = args.includes('--seeded'), { pos: [task] } = parseArgs(args.filter((a) => a !== '--seeded'), 1, false)
   const data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
+  if (seeded) return seededBoxEnv(data, t, task)
   mkdirSync(join(data, 'env/box'), { recursive: true })
   writeFileSync(join(data, 'env/box', `${task}.json`), taskFileText(ext, t, t.key === PRIVATE_SET.key ? { runner: join(data, 'env', PRIVATE_SET.key, 'runner.json') } : {}))
   return `${task} box-env written`
+}
+
+// `box-env <task> --seeded` (step 13 ruling 9): env/box-seeded/<task>.json, the box task file with only `repo` changed to the task's sealed
+// repo (<data>/seeded/repos/<key>.git, made by `oracle seed`, else here, bare and empty), which gets an alternates line to the box file's store when it has none, so a
+// product commit only the store holds is read there. Its other lines stay: the seeded bugs' commits read through them
+const gitSync = (argv) => { // a sync git call: its stdout, trimmed
+  const p = Bun.spawnSync(argv, { stdout: 'pipe', stderr: 'pipe' })
+  if (p.exitCode !== 0) throw new Error(`${argv.slice(0, 4).join(' ')} failed (exit ${p.exitCode})`)
+  return p.stdout.toString().trim()
+}
+function seededBoxEnv(data, t, task) {
+  const box = JSON.parse(readFileSync(join(data, 'env/box', `${task}.json`), 'utf8')), sealed = join(data, 'seeded/repos', `${t.key}.git`)
+  if (!existsSync(join(sealed, 'objects'))) { mkdirSync(dirname(sealed), { recursive: true }); gitSync(['git', 'init', '-q', '--bare', sealed]) }
+  const objects = resolve(box.repo, gitSync(['git', '-C', box.repo, 'rev-parse', '--git-path', 'objects'])), alt = join(sealed, 'objects/info/alternates')
+  const have = existsSync(alt) ? readFileSync(alt, 'utf8') : ''
+  if (!have.split('\n').includes(objects)) { mkdirSync(dirname(alt), { recursive: true }); writeFileSync(alt, `${have}${have && !have.endsWith('\n') ? '\n' : ''}${objects}\n`) }
+  mkdirSync(join(data, 'env/box-seeded'), { recursive: true })
+  writeFileSync(join(data, 'env/box-seeded', `${task}.json`), JSON.stringify({ ...box, repo: sealed }, null, 2) + '\n')
+  return `${task} box-env seeded written`
 }
 
 export const SERVE_EMPTY = { layer: [], start: '', ready: 'true', notes: '' }
@@ -1330,6 +1355,78 @@ export async function oracleRun(args, inj = {}) {
   }
 }
 
+// `suite-run` (step 13 ruling 9): the task's test script with the given files in one offline container of the commit's product image,
+// made as oracle-run makes it (productImage, the task's make network) but from S, the serve image: no runner layer and no /oracle. The
+// script is ext/tasks/<slug>/suite.sh when it exists, else the recipe's `test`, written in at run time. Its JUnit goes to out; none
+// is written when the run left none. 'ok', 'missing', 'timeout' or 'memory'; a throw when Docker, the disk or the make fails.
+// Its logs are sealed, and every name it records is removed when it ends
+export async function suiteRun(args, inj = {}) {
+  const pos = [], o = {}
+  for (let i = 0; i < args.length; i++) {
+    if (['--at', '--files', '--out'].includes(args[i]) && args[i + 1] !== undefined && !(args[i].slice(2) in o)) o[args[i].slice(2)] = args[++i]
+    else if (args[i].startsWith('--')) throw new Error(USAGE)
+    else pos.push(args[i])
+  }
+  if (pos.length !== 1 || !o.at || !o.files || !o.out) throw new Error(USAGE)
+  const { name: task, repo } = await loadTask(pos[0]), data = dataOf(inj.data), ext = join(data, 'ext'), t = taskOf(ext, task)
+  // shortcut: one path per line, so a path with a newline cannot be named; a NUL-separated list if a repo has one
+  const files = readFileSync(o.files, 'utf8').split('\n').filter(Boolean)
+  if (!files.length) throw new Error('suite-run: no test file') // never call the test script with none
+  const { recipe, serveDockerfile, sv } = serveRecipe(ext, t), saved = savedRebuild(ext, t)
+  rebuildLines(recipe, sv, saved, null) // refused before any Docker call; a USER waits for S's user
+  const own = join(ext, 'tasks', t.slug, 'suite.sh'), script = existsSync(own) ? readFileSync(own, 'utf8') : recipe.test
+  const commit = (await must(['git', '-C', repo, 'rev-parse', '--verify', `${o.at}^{commit}`], 'git rev-parse')).trim(), sha7 = commit.slice(0, 7)
+  const low = await diskFloor(task, inj)
+  if (low) throw new Error(low)
+
+  const diskFree = inj.diskFree ?? dockerDiskFree, build = join(data, task, 'build'), logs = join(ext, 'sealed', t.slug, 'logs')
+  for (const d of [build, logs]) mkdirSync(d, { recursive: true })
+  const record = (f) => recordDocker(join(data, task, 'docker.json'), f)
+  const pfx = `bench-ext/${t.slug}:`, at7 = t.base.slice(0, 7), serveTag = `${pfx}${at7}-serve`
+  // n as oracle-run counts it, so its logs and names never meet one of oracle-run's
+  const recorded = record(() => {}).images.map((i) => i.name)
+  const n = recorded.filter((i) => i === `${pfx}${sha7}-serve` || i.startsWith(`${pfx}${sha7}-product-`)).length + 1
+  const serveLog = join(build, `${at7}-${recorded.filter((i) => i === serveTag).length + 1}.serve.build.log`)
+  const name = `bench-ext-${t.slug}-suite-${sha7}-${n}`, sealed = (what) => join(logs, `suite-${sha7}-${n}.${what}`)
+  let seq = 0
+  const scratch = (what, c, fn) => withExport({ name: t.key, repo }, c, `${what}-${t.slug}-${process.pid}-${seq++}`, fn)
+  const image = imageBuilder({ record, scratch, recipe, diskFree })
+  const boxes = []
+  const stop = async () => {
+    for (const b of boxes) await sp(['docker', 'kill', b]) // this run created it
+    await removeRecorded(data, task, t.slug)
+    process.exit(143)
+  }
+  process.on('SIGTERM', stop)
+  process.on('SIGINT', stop)
+  try {
+    rmSync(o.out, { force: true }) // a stale file must not stand for this run
+    await image(serveTag, serveDockerfile, t.base, serveLog) // the base's: its build log is readable
+    const network = await productNetwork(t, inj.registryHosts && (async () => inj.registryHosts))
+    const lines = rebuildLines(recipe, sv, saved, await imageUser(serveTag))
+    const product = await productImage({ t, commit, baseImage: serveTag, network, lines, repo, osha8: 'suite', n, platform: recipe.platform, record, scratch, log: sealed('make.log'), diskFree })
+    if (!product) throw new Error(`${sha7}: the product image was not made (the make failed: its log is sealed)`)
+    const r = await runContainer({ scratch, name, image: product, platform: recipe.platform, cmd: ['sh', '/work/.bench-run.sh'], log: sealed('log'), timeoutSec: 1800, diskFree,
+      stage: () => {}, created: () => { boxes.push(name); record((d) => d.containers.push(name)) },
+      files: (into) => { writeFileSync(join(into, '.bench-test.sh'), script); writeFileSync(join(into, '.bench-run.sh'), testRun(files)) } })
+    if (r.timedOut) return 'timeout'
+    if (r.how === 'oom') return 'memory'
+    return await scratch('out', null, async (dir) => {
+      const got = await sp(['docker', 'cp', `${name}:/out`, dir])
+      if (got.code) { await daemon(); return 'missing' }
+      // docker cp keeps a link, and the container's link must not be followed on the host
+      const out = join(dir, 'out'), xml = join(out, 'junit.xml')
+      if (!lstatSync(out).isDirectory() || !existsSync(xml) || !lstatSync(xml).isFile()) return 'missing'
+      copyFileSync(xml, o.out)
+      return 'ok'
+    })
+  } finally {
+    process.off('SIGTERM', stop)
+    process.off('SIGINT', stop)
+    await removeRecorded(data, task, t.slug)
+  }
+}
+
 // a rebuild round's reply is data: its shape is checked before a line reaches docker (the make runs offline, so no further check)
 export function parseRebuild(text) {
   const r = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
@@ -1484,6 +1581,11 @@ export async function main(argv, inj = {}) {
     else if (cmd === 'sample') console.log(`sample.tsv: ${await sample(rest, inj)} rows`)
     else if (cmd === 'task-env') console.log(await taskEnv(rest, inj))
     else if (cmd === 'box-env') console.log(boxEnv(rest, inj))
+    else if (cmd === 'suite-run') { // the status only: the JUnit and the logs are the product's
+      const r = await suiteRun(rest, inj)
+      console.log(`suite-run junit=${r}`)
+      return r === 'ok' ? 0 : 1
+    }
     else if (cmd === 'serve') {
       const r = await serve(rest, inj)
       console.log(r.line)
