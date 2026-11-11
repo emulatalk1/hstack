@@ -50,7 +50,7 @@ The 8 per-task and per-arm lines of `report.out` (build, requirement, passed, to
 
 ## B4: checks at the lock
 
-- **The token:** <!-- TOKEN: filled in when the user has revoked it and box.env is removed -->pending: the user revokes it, then `rm <data>/arm/box.env`, unread.
+- **The token:** not revoked, by the user's decision of 2026-11-11 ("không cần thu hồi"; prereg section 12, "Decided by the user on 2026-11-11, at the step 11 lock"), against ruling 13. `<data>/arm/box.env` exists (mode 600), unread; it is never given to a subagent or a box. Which token a later step uses is that step's plan's to register.
 - **The stick:** `stick compare progress/stick-v1-step11.sha256` (`compare.out`): hashed 24,911, equal 24,910, changed 1 (`arms.json`, B1's entry), missing 0. The compare ran with no reasons file, so the tool prints that one line `unexplained` and exits 1; it is the change the plan expected. The trial's records, grades, product refs and `trial/` are new files; transcripts and `*/docker.json` are left out by `stick hash`.
 - **Tests:** `bun test ./tests` (`tests-1.out`): 636 pass, 64 skip, 2 fail, both in `tests/okf.test.mjs`, one cause: `5211cfb` (on `main`) set the Phase A plan `stable` without a `human:` verified entry, which the docs bundle check requires. Fixed by adding `{ by: human:emulatalk1, at: "2026-11-10T21:05:02+07:00" }` (the time of the approval commit; the user approved Phase A on 2026-11-10) in `e9490d3`. Rerun (`tests-2.out`): 638 pass, 64 skip, 0 fail. `git status --short bench tests` empty.
 - **Docker:** no trial container or proxy left; the two `bench-arm/` images (`proxy:1`, `fw:1`) are Phase A's, kept. PGSNAP equal around B1 and B2.
@@ -66,6 +66,7 @@ The 8 per-task and per-arm lines of `report.out` (build, requirement, passed, to
 1. The standalone H probe of B1 used a 1800 s turn limit, a controller parameter of the probe only; the runs kept the set's `turnTimeoutSec`.
 2. A fact about the plugin was withheld from this repository and kept in a gitignored note, so that decision 4 holds after a merge (decision 2 (a)).
 3. The Phase A plan's missing `human:` verified entry was added in this branch (a fix to `main`'s state, not a rule). The user approved Phase A in chat on 2026-11-10 ("Duyệt", recorded in `progress/step11a-lock.md`); the entry records that approval at the time of its commit.
+4. **The token is not revoked** at the step 11 lock (the user's decision of 2026-11-11, against ruling 13 and decision 3 (a)); `box.env` is kept.
 
 ## Open points for step 12
 
@@ -85,6 +86,10 @@ The 8 per-task and per-arm lines of `report.out` (build, requirement, passed, to
 ## Review
 
 The branch changes docs and progress files only (no `bench/` or `tests/` file), so no whole-branch subagent review ran: the advisor reviewed the plan before B1 and this lock before approval, and a sealing grep over `git diff main..HEAD` for the handover note's file names, its runtime line and check ids (`-T<n>`) found 0 lines.
+
+## Approval, 2026-11-11
+
+The user approved the step 11 lock (advisor review, then "Theo advisor suggestions": σ_d not relayed; merge and push), with the token kept ("không cần thu hồi"). The Phase B plan is `stable`; `bench-step11b` is merged into `main` (fast-forward) and pushed with `main`. The pin ref `refs/bench/plugins/hstack-653af83` stays local.
 
 ## Usage
 

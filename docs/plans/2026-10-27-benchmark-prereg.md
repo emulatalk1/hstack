@@ -679,6 +679,8 @@ Deviations (for step 14): three checks dropped after the stick v1 lock because o
 
 **Decided by the user on 2026-11-10, after the walked tasks' reads:** the 7.1 gate of the walked s1 checks stopped at 8 of 10 `same` (at least n − 1 = 9 needed; both `different` answers are checks of s1-11, WeblateOrg/weblate#21513, and neither is a step id); s3 passed 9 of 10. The two checks stay dropped (step 9 ruling 6), s1-11 stays in the sample with its step id, and the stopped gate is a deviation for step 14, as step 9 recorded its stopped gates. After the reader and `step`, H1's N is 24 (s1 8, s2 8, s3 8).
 
+**Decided by the user on 2026-11-11, at the step 11 lock** ("không cần thu hồi"): the setup-token of 2026-11-09 is **not revoked** at the step 11 lock, against ruling 13 of "Applied at step 11" (and decision 3 (a), which said step 13 gets a new one). `<data>/arm/box.env` stays (mode 600, never printed, left out of `stick hash` as a secret) and is never given to a subagent or a box (ruling 6). Which token a later step uses, and when it is revoked, is that step's plan's to register. Listed for step 14 as a deviation. Also on 2026-11-11 ("Theo advisor suggestions"): Phase B's plan (`docs/plans/2026-11-10-bench-trial-phase-b.md`) approved with (a) of its decisions 1–3; and the trial's per-task lines went to the plugin-design session directly, by a message from the controller session, at the user's request, σ_d withheld (decision 4 (a)).
+
 **Part 2: measuring the plugin (needs the plugin)**
 
 11. Trial run: 2 `real-estate` tasks (p8b and one other) and 2 external tasks (the first of the sorted list), arms H and B, k = 1. Measure tokens, hours, σ_d; apply the N rule of 10.2. Not analysed.

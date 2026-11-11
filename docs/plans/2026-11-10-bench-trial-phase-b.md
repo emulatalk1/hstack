@@ -2,10 +2,11 @@
 type: plan
 title: "Trial run plan, Phase B"
 description: "Prereg step 11, Phase B: the plugin commit the designer handed over (hstack, 653af83, no dependencies) recorded in arms.json and probed in each trial box, the trial of arms H and B with k = 1 on s2-01, s3-02, p8b and p6c, σ_d and the N rule, more walk if N asks, and the step 11 lock. Adds the commit, its dependencies and the CLI of the day to the Phase A plan; changes no registered rule."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.318, at: "2026-11-10T22:24:19+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.318, at: "2026-11-10T23:13:47+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-11T19:46:37+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
@@ -104,10 +105,10 @@ As the trial run plan's, with these names: build on `bench-step11b` from `main` 
 - Create: `progress/step11-lock.md`
 - Modify: `docs/plans/2026-11-08-bench-trial.md` (Phase B points at this plan), `docs/log.md`, `progress/progress.md`
 
-- [ ] **Step 1: The token** (ruling 13): the user revokes it; then `rm <data>/arm/box.env`, unread. Check the file is gone.
+- [x] **Step 1: The token** (ruling 13): not revoked, by the user's decision of 2026-11-11 (prereg section 12); `box.env` kept, unread.
 - [x] **Step 2: The stick check** (when B3 did not walk): `stick compare progress/stick-v1-step11.sha256`. Expected: `changed 1` (`arms.json`), `missing 0`; the trial's records, grades, product refs and `trial/` files are new, transcripts and `*/docker.json` are left out by `stick hash`. Any other changed file stops for the user. No new manifest is written; step 12 locks the plugin.
 - [x] **Step 3:** Suite teed, pristine; `git status --short bench tests` empty; Docker: no `-serve`, `-runner-*`, `-product-*`, `-app-*`, `-grade-*`, `-make-*`, `-arm-` or `bench-arm-proxy-` name of this phase left; pgsnap equal.
-- [ ] **Step 4:** Write `progress/step11-lock.md`: the plugin entry (name, commit, paths, sha256, dependencies none), the B1 probes, the 8 runs (CLI, models, tokens with cache apart, minutes, interventions, end, machine reruns), σ_d and σ_d over the 2 external tasks, N, `h1_n`, the walk if any, cost against section 11, what went to the designer, the accepted minors and what they cost, deviations, open points for step 12, known limits. Commit, final review of the branch, the user's approval; then this plan `stable`.
+- [x] **Step 4:** Write `progress/step11-lock.md`: the plugin entry (name, commit, paths, sha256, dependencies none), the B1 probes, the 8 runs (CLI, models, tokens with cache apart, minutes, interventions, end, machine reruns), σ_d and σ_d over the 2 external tasks, N, `h1_n`, the walk if any, cost against section 11, what went to the designer, the accepted minors and what they cost, deviations, open points for step 12, known limits. Commit, final review of the branch, the user's approval; then this plan `stable`.
 
 ## Known limits
 
