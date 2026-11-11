@@ -3,7 +3,7 @@
 // <data>/step13/tasks.txt. It is the trial's driver (bench/trial.mjs) with other slots and its own floor and attempts files under
 // <data>/step13/. `report` prints counts only; `table` (the per-run scores) is step 14's and is refused until it registers.
 // Nothing here names a task, a stack or a model.
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { aboveFloor, ATTEMPTS, attemptsOf, attemptKey, context, good, gradeFile, readJson, records, runStopped, Stop, standing } from './canary.mjs'
 import { dataOf, PRIVATE_SET, taskOf } from './ext.mjs'
@@ -15,6 +15,16 @@ const K = 3, STALE_MS = 10 * 60000
 const lines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [])
 const tasksOf = (data) => lines(join(data, 'step13/tasks.txt'))
 const boxFile = (data, task) => join(data, 'env/box', `${task}.json`)
+// a file the lanes share is written whole or not at all: a temp file in the same folder, then a rename (a leftover temp file is never read)
+const writeAtomic = (f, text) => { writeFileSync(`${f}.tmp`, text); renameSync(`${f}.tmp`, f) }
+// a file the controller or a lane wrote must parse: missing is `fallback`, present but unreadable stops the command (exit 2)
+const strictJson = (f, fallback, ok, what) => {
+  if (!existsSync(f)) return fallback
+  let v
+  try { v = JSON.parse(readFileSync(f, 'utf8')) } catch { throw new Error(`${f} is not valid JSON`) }
+  if (!ok(v)) throw new Error(`${f} is not ${what}`)
+  return v
+}
 const isPrivate = (data, task) => taskOf(join(data, 'ext'), task).stack === PRIVATE_SET.stack
 const armsOf = (data, task) => (isPrivate(data, task) ? ['H', 'B'] : ['H', 'B', 'W'])
 const setOf = (data, task) => (isPrivate(data, task) ? PRIVATE_SET.key : 'external')
@@ -34,7 +44,7 @@ function setFloor(data, task) {
   if (existsSync(floorFile(data, task))) return // never overwritten
   const top = (arm) => Math.max(0, ...records(data, task).filter((r) => r.arm === arm).map((r) => r.run))
   mkdirSync(join(data, 'step13/floor'), { recursive: true })
-  writeFileSync(floorFile(data, task), JSON.stringify({ H: top('H'), B: top('B'), W: top('W') }, null, 2) + '\n')
+  writeAtomic(floorFile(data, task), JSON.stringify({ H: top('H'), B: top('B'), W: top('W') }, null, 2) + '\n')
 }
 const opts = (data, task) => ({ slots: armsOf(data, task).flatMap((a) => Array.from({ length: K }, (_, i) => `${a}:${i + 1}`)), k: K, envDir: 'env/box', taskFile: boxFile, kinds: kindsOf, attempts: attemptsFile(task), floor: floorOf })
 
@@ -118,9 +128,9 @@ async function locked(data, waitMs, fn) {
 // --done <task> first moves the lane's task to done; --release clears it without that and claims nothing.
 // Exclusions: never two private-set tasks at once; never two tasks of a group of <data>/step13/exclusive.json (a missing file: no groups).
 async function claim(data, lane, flag, arg, waitMs) {
-  const order = queuePick(tasksOf(data), tasksOf(data).length, seedOf(data)), groups = readJson(join(data, 'step13/exclusive.json')) ?? []
+  const order = queuePick(tasksOf(data), tasksOf(data).length, seedOf(data)), groups = strictJson(join(data, 'step13/exclusive.json'), [], (v) => Array.isArray(v) && v.every((g) => Array.isArray(g) && g.every((t) => typeof t === 'string')), 'an array of arrays of task ids')
   return locked(data, waitMs, async () => {
-    const f = join(data, 'step13/queue.json'), q = { done: [], running: {}, ...readJson(f) }
+    const f = join(data, 'step13/queue.json'), q = { done: [], running: {}, ...strictJson(f, {}, (v) => v && typeof v === 'object' && !Array.isArray(v) && Array.isArray(v.done ?? []) && typeof (v.running ?? {}) === 'object', '{ done: [], running: {} }') }
     const idle = () => (order.every((t) => q.done.includes(t)) ? 'empty' : 'none')
     let out
     if (flag === '--release') { delete q.running[lane]; out = idle() }
@@ -131,12 +141,12 @@ async function claim(data, lane, flag, arg, waitMs) {
         q.done.push(arg)
       }
       const run = Object.values(q.running)
-      const blocked = (t) => (run.length && isPrivate(data, t) && run.some((x) => isPrivate(data, x))) || groups.some((g) => g.includes(t) && g.some((x) => run.includes(x)))
+      const blocked = (t) => (isPrivate(data, t) && run.some((x) => isPrivate(data, x))) || groups.some((g) => g.includes(t) && g.some((x) => run.includes(x)))
       const next = q.running[lane] ? null : order.find((t) => !q.done.includes(t) && !run.includes(t) && !blocked(t))
       if (next) q.running[lane] = next
       out = next ?? idle()
     }
-    writeFileSync(f, JSON.stringify(q, null, 2) + '\n')
+    writeAtomic(f, JSON.stringify(q, null, 2) + '\n')
     return out
   })
 }

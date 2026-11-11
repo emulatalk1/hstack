@@ -329,3 +329,34 @@ test('the claim lock is reclaimed when stale and respected when live', async () 
   expect((await go(d, ['claim', 'a'], { lockWaitMs: 100 })).error).toContain('queue.lock')
   expect(existsSync(join(d, 'step13/queue.json'))).toBe(false)
 })
+
+test('a malformed exclusive.json stops the claim; a missing one means no groups', async () => {
+  const d = world('claim-badgroups', { tasks: ['t1', 't2'] })
+  for (const bad of ['{"a":', '{"t1":["t2"]}', '["t1","t2"]', '[["t1",2]]']) {
+    writeFileSync(join(d, 'step13/exclusive.json'), bad)
+    const r = await go(d, ['claim', 'a'])
+    expect(r.code).toBe('threw')
+    expect(r.error).toContain('exclusive.json is not')
+    expect(existsSync(join(d, 'step13/queue.json'))).toBe(false) // nothing claimed
+    expect(existsSync(join(d, 'step13/queue.lock'))).toBe(false)
+  }
+  setExclusive(d, [])
+  expect(await claim(d, 'a')).not.toBe('none')
+})
+
+test('queue.json and the floor are written by rename; a stale temp file is ignored; a truncated queue stops the claim', async () => {
+  const d = world('atomic', { tasks: ['t1', 't2'], floor: false })
+  writeFileSync(join(d, 'step13/queue.json.tmp'), '{"done":["t1","t2"') // a crashed writer's leftover
+  writeFileSync(join(d, 'step13/floor/t1.json.tmp'), 'junk')
+  const O = orderOf(['t1', 't2'])
+  expect(await claim(d, 'a')).toBe(O[0])
+  expect(queueOf(d)).toEqual({ done: [], running: { a: O[0] } })
+  expect(existsSync(join(d, 'step13/queue.json.tmp'))).toBe(false)
+  expect((await go(d, ['run', 't1'], fakes(d))).code).toBe(0)
+  expect(json(join(d, 'step13/floor/t1.json'))).toEqual({ H: 0, B: 0, W: 0 })
+  expect(floorOf(d, 't1')).toEqual({ H: 0, B: 0, W: 0 })
+  writeFileSync(join(d, 'step13/queue.json'), '{"done":["t1"') // truncated: never read as an empty queue
+  const r = await go(d, ['claim', 'b'])
+  expect(r.error).toContain('queue.json is not valid JSON')
+  expect(readFileSync(join(d, 'step13/queue.json'), 'utf8')).toBe('{"done":["t1"')
+})
