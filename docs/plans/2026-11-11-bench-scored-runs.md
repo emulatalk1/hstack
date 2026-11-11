@@ -44,6 +44,8 @@ Unchanged: the box (proxy form A, plugins as allowlist exports, real-estate serv
 
 ## Decisions for the user (asked with this plan)
 
+**Decided by the user on 2026-11-11** ("theo advisor"): the plan approved, (a) of decisions 1–6.
+
 1. **The order of tasks.** Section 10.1 shuffles arms within a task; step 13 says "the shuffled order". **(a) Recommended:** one list of the 38 tasks ordered by `queuePick(tasks, 38, seed)` (seed of `ext/groups.json`), external and real-estate mixed, so neither set nor stack sits at one end of the 8–9 days; within a task, `queuePick` over its slots (`H:1..3`, `B:1..3`, `W:1..3` or the 6 of real-estate), as the canary and the trial did. (b) External in `sample.tsv` order, then real-estate in `tasks.json` order (step 8 ruling 12's task order).
 2. **Whose products H5 reads.** H5 is "the test suite the harness writes guards", threshold on H alone. **(a) Recommended:** H's 3 runs per task (about 96 bugs × 3 products). (b) H and B, B as a reference rate (twice the lane, about 4–5 days).
 3. **The real-estate suite.** The real-estate recipe has no test script (`ext/tasks/real-estate/task-recipe.json` `test` exits 2: "runs no PR test script"), so a product's own tests cannot run there today. The recipe's `test` is baked into the images Phase A's regrade validated (`buildImage` writes it as `.bench-test.sh`), so the recipe stays byte-equal. **(a) Recommended:** the controller writes a separate script `ext/tasks/real-estate/suite.sh` (unit and e2e runner of the copy's `package.json`, Postgres and the SMTP sink from `services`, given files, JUnit to `/out`) as data before the runs, which `suite-run` copies in at run time; validated on the 9 tasks' ends (each end's own changed test files run and give a JUnit; at most 2 sealed rounds per failure, as ruling 4's rebuild rounds); if it cannot be made to run offline, real-estate leaves H5 and the lock says so. (b) H5 on external tasks only (87 bugs); a listed deviation from "external tasks + `real-estate`".
@@ -83,7 +85,7 @@ As the earlier steps': branch `bench-step13` from `main` (6fbbf1e); `<data>` = `
 
 **Files:** Modify `docs/plans/2026-10-27-benchmark-prereg.md` (section 12, "Applied at step 13 (<date>)" after "Applied at step 12"), `docs/log.md`.
 
-- [ ] **Step 1:** Write the paragraph: the decisions as answered and rulings 1–12; end "Registered before any change to `bench/` for step 13 and before any step 13 run; `bench/scored.mjs` and the H5 tool do not exist." Commit.
+- [x] **Step 1:** Write the paragraph: the decisions as answered and rulings 1–12; end "Registered before any change to `bench/` for step 13 and before any step 13 run; `bench/scored.mjs` and the H5 tool do not exist." Commit.
 
 ### Task 1: The driver for the scored set
 

@@ -3401,3 +3401,9 @@ Plan `docs/plans/2026-11-11-bench-plugin-lock.md` (approved 2026-11-11 with (a) 
 - Git housekeeping at the user's request ("cái gì không cần thì xoá hết"), local and remote, none of it bench data: deleted the merged branches `bench-step9`, `bench-step10`, `bench-step11`, `bench-step11b` (also on origin), `plugin-design`, `worktree-bridge-cse_01JxVNAKgEy9Am22QEj9TuPi`, `worktree-bridge-cse_01LckcHdPjiRPz5DvPEJXEaJ`, and removed the clean worktrees `bridge-cse_01JxVNAL2…` and `bridge-cse_01LckcHd…` (ignored files only: an empty SDD folder, a lock file, `node_modules`). Kept: `main`, `bench-step12`, `plugin-w` (W), `worktree-bridge-cse_01JxVNAL2Dkzabg9QuuNaY5E` (18 step 7 commits not in `main`), and both pin refs. Scripts in `<data>/logs/step11/` that import `bench/` from the removed Phase A worktree no longer run as written; they are records.
 - Task 3 steps 1–4 (controller): `reasons.tsv`; manifest `progress/stick-v1-step12.sha256` (25,171 files, sha256 1220a5ff…6349; a first hash that wrote its own output into `<data>` was discarded); self-compare equal; against step 11 changed 1 (`arms.json`, explained), missing 0, unexplained 0; suite 638 pass 0 fail; lock drafted. Waiting: advisor review, then the user's approval (step 5).
 - 2026-11-11T20:31:27+07:00, Task 3 step 5: the user approved the lock ("Theo advisor suggestions"); plan `stable`; merged into main (fast-forward) and pushed; `bench-step12` deleted locally, never pushed.
+
+## Step 13
+
+Plan `docs/plans/2026-11-11-bench-scored-runs.md`, approved 2026-11-11 with (a) of decisions 1–6; branch `bench-step13` from `main` 6fbbf1e.
+
+- Task 0: rulings registered in the prereg ("Applied at step 13"), before any step 13 code or run.

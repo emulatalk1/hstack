@@ -697,6 +697,19 @@ Deviations (for step 14): three checks dropped after the stick v1 lock because o
 13. Run in the shuffled order, H and B in the same time window with the same model and CLI version (B runs of step 8 are not reused, because the model and CLI may have changed). Record every run, failed ones included.
 14. Grade and analyse exactly per sections 9–10; report every deviation from this plan.
 
+**Applied at step 13 (2026-11-11).** The [scored runs plan](/plans/2026-11-11-bench-scored-runs.md) registers here, before any change to `bench/` for step 13 and before any step 13 run, the user's answers of 2026-11-11 ("theo advisor": (a) of decisions 1–6) and its rulings 1–12, as the plan states them. In short:
+
+- **Runs:** H, B and W with k = 3 on the 29 `scored` external tasks of `progress/stick-v1/tasks-step11.tsv`; H and B with k = 3 on p1, p2, p3, p4, p6a, p8a, p8c, p8d, p8e. 315 runs. A run with `machine` set takes the next number (step 8 ruling 11). Nothing below the step 13 floor (`<data>/step13/floor.json`) counts, so no canary, trial or probe run is reused.
+- **Order (decision 1 (a)):** the 38 tasks by `queuePick(tasks, 38, seed)` (seed of `ext/groups.json`); within a task `queuePick` over its slots. One task and one Docker job at a time; pgsnap around every real-estate task.
+- **Same model and CLI:** records must read `version` 2.1.318 and the `arms.json` models; another `version` stops the driver. `arms.json` is not edited.
+- **Grading:** each product right after its run, every oracle kind of the task, through `env/box/<task>.json`, `--sealed`, never `--reuse`. s1-11's end is graded once before its runs; a difference from its lock grade stops for the user.
+- **H5 (section 8.3 option 1; decision 2 (a), H's products only):** the check of each kept bug at the product: `precondition`/`error` not applicable, `fail` a miss, `pass` a sealed porter writes one edit on the product (seeder's gates), committed only in the task's sealed repo under `refs/h5/<run>/<bug>`, graded and suite-run through `env/box-seeded/<task>.json`; the port counts when the check passes at P and fails at P + edit. "The suite the harness writes" is read as the test files the run added or changed (`git diff --name-only <base> P`, test paths only), run with the stack's test script (real-estate: `ext/tasks/real-estate/suite.sh`, decision 3 (a); the recipe stays byte-equal) in the product image with no network; caught when a test passing at P fails at P + edit; no test file is a miss.
+- **Not in step 13:** H5's mutation score (decision 4 (a), reported by step 14 only where H's run recorded one, a deviation); the per-layer measures and discovery replays of 8.4, which moves 8.3 ruling 11's "the change to `agent-replay` belongs to the plan of step 13" to a later plan (decision 5 (a), a deviation). The three accepted minors of step 11 stay accepted (decision 6 (a)).
+- **Sealing and reporting:** the controller reads counts, status lines and record fields; `scored.mjs report` prints counts only; the per-run score table is step 14's first act after its plan is registered. Nothing goes to a designer.
+- **The lock:** `stick hash` and `compare progress/stick-v1-step12.sha256 --reasons progress/step13/reasons.tsv`, expected changed 0.
+
+Registered before any change to `bench/` for step 13 and before any step 13 run; `bench/scored.mjs` and the H5 tool do not exist.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
