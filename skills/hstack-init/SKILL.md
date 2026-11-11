@@ -2,6 +2,7 @@
 name: hstack-init
 description: Use when you set up hstack in a project, or after the project folder was copied or moved. It writes the project's hstack manifest and reports problems such as ports written in code.
 compatibility: Requires Bun 1.4.4 or later
+disable-model-invocation: true
 ---
 
 # hstack init

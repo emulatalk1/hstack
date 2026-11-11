@@ -2,6 +2,7 @@
 name: hstack-safety
 description: Use before any Docker command, before stopping a process on a port, before dropping a database and before wiping a folder in a project that has an hstack manifest. It tells you which check to run and what to do when it says no.
 compatibility: Requires Bun 1.4.4 or later
+disable-model-invocation: true
 ---
 
 # hstack safety

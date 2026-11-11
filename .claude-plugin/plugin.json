@@ -1,5 +1,5 @@
 {
   "name": "hstack",
-  "version": "0.1.0",
-  "description": "Evidence-led build loop: review, mutation and blind evaluators, per project."
+  "version": "0.2.0",
+  "description": "An autonomous build loop: capabilities with probe and canary, an independent oracle written before the code, a gate against weakened tests, review, exploratory testing and mutation."
 }
