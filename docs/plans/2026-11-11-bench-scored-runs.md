@@ -1,0 +1,152 @@
+---
+type: plan
+title: "Scored runs plan"
+description: "Prereg step 13: run arms H, B and W with k = 3 on the 29 scored external tasks and H and B on the 9 scored real-estate tasks, in a seeded order, each product graded right after its run with every oracle kind; then port each seeded bug to H's products and run their own suites (H5). Records every run, failed ones included; analyses nothing (step 14)."
+status: draft
+generated: { by: claude-code/2.1.318, at: "2026-11-11T20:37:16+07:00" }
+sources:
+  - id: prereg
+    resource: /plans/2026-10-27-benchmark-prereg.md
+  - id: trial
+    resource: /plans/2026-11-08-bench-trial.md
+  - id: lock
+    resource: /plans/2026-11-11-bench-plugin-lock.md
+---
+
+# Scored Runs Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development for the code tasks (1 and 2); every run on real data, the token and the box is the controller's. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Prereg section 12 step 13: "Run in the shuffled order, H and B in the same time window with the same model and CLI version (B runs of step 8 are not reused, because the model and CLI may have changed). Record every run, failed ones included." With W for H4 (section 3, section 2) and the seeded-bug port for H5 (section 8.3, the user's option 1 of 2026-11-06). Step 14 grades nothing new and analyses per sections 9–10.
+
+**Architecture:** The trial's driver shape (`bench/canary.mjs` `runTask` with slots, a floor, an attempts file and the task's oracle kinds) runs every scored task with its own slot list and floor; each product is graded right after its run through `env/box/<task>.json`. The H5 lane reads only H's products after all runs: it grades each kept bug's seeded check at the product, has a sealed porter write the bug onto the product when the check passes there, commits that edit in a sealed repo, and runs the product's own test files at the product and at the ported commit in the product image with no network.
+
+**Tech Stack:** Bun 1.4.4+, `bun:test`, Docker through the existing box and `oracle-run`, `bench/canary.mjs`, `bench/trial.mjs`, `bench/run-arm.mjs`, `bench/box.mjs`, `bench/ext.mjs`, `bench/oracle.mjs` (`score`, `seed`'s sealed repos), `bench/sealed-agent.mjs`.
+
+**Spec:** prereg sections 2 (H1–H5, the floor rule, "Applied at step 6" ruling 7), 3, 8.3 ("Applied at step 7" rulings 5–12 and the user's decisions of 2026-11-06), 8.4, 9, 10.1, 12 steps 13–14, "Applied at step 8" rulings 10–13 (machine runs, order, Docker), "Applied at step 11" rulings 4–8 and 12, "Applied at step 12" (the lock and "no change from here"); `progress/step12-lock.md` (open points for step 13), `progress/step11a-lock.md` (open points, known limits), `progress/step11-lock.md`.
+
+## What runs
+
+| set | tasks | arms | k | runs |
+|---|---|---|---|---|
+| external | the 29 `scored` rows of `progress/stick-v1/tasks-step11.tsv` (24 with step ids, H1's N; s1-01, s1-06, s3-01, s3-07, s3-09 have none and score H2–H4) | H, B, W | 3 | 261 |
+| real-estate | p1, p2, p3, p4, p6a, p8a, p8c, p8d, p8e (`scored`) | H, B | 3 | 54 |
+
+Not run: s3-08 (dropped, decision (B) of 2026-11-10), the retired s1-08, s2-04, s2-06, the dropped real-estate tasks and the trial-only p8b. W runs only on external tasks: H4 is an external-set hypothesis and section 11 budgets W there only.
+
+**Expected wall clock**, from the step 11 trial (one Docker job at a time, the user's decision of 2026-11-09): external about 4.3 h per task (H about 32 min, B 5, W assumed as H, 9 grades of about 6.5 min), about 125 h; real-estate about 8.8 h per task (H about 96 min, B 65, 6 grades of about 7 min), about 79 h; the runs about **205 h (8–9 days)**, then the H5 lane (Task 6) about 2–3 days. A turn may run to 4 h (external) or 8 h (real-estate) and a run to 5 resumes, so single tasks can take much longer.
+
+## What is reused
+
+Unchanged: the box (proxy form A, plugins as allowlist exports, real-estate services, the registry), `run-arm` (probe before every run, `probeOk`, records with `plugins`, `version`, `models`, `usage`, `interventions`, `machine`), the grade (product image, split or shared mode, readiness per oracle) through `env/box/<task>.json`, `gradeProduct` (attempts, `noresult`, never `--reuse`), `runTask` (slots by `queuePick`, machine runs take the next number, `MACHINE_RUNS`, an `api` machine stop), `kindsOf` (oracle kinds per `step.json`), `oracle score`, the seeded sealed repos and `seedRepo`, `sealed-agent.mjs`. Missing, and built here: a driver for the scored set (Task 1) and the H5 port and suite run (Task 2).
+
+## Decisions for the user (asked with this plan)
+
+1. **The order of tasks.** Section 10.1 shuffles arms within a task; step 13 says "the shuffled order". **(a) Recommended:** one list of the 38 tasks ordered by `queuePick(tasks, 38, seed)` (seed of `ext/groups.json`), external and real-estate mixed, so neither set nor stack sits at one end of the 8–9 days; within a task, `queuePick` over its slots (`H:1..3`, `B:1..3`, `W:1..3` or the 6 of real-estate), as the canary and the trial did. (b) External in `sample.tsv` order, then real-estate in `tasks.json` order (step 8 ruling 12's task order).
+2. **Whose products H5 reads.** H5 is "the test suite the harness writes guards", threshold on H alone. **(a) Recommended:** H's 3 runs per task (about 96 bugs × 3 products). (b) H and B, B as a reference rate (twice the lane, about 4–5 days).
+3. **The real-estate suite.** The real-estate recipe has no test script (`ext/tasks/real-estate/task-recipe.json` `test` exits 2: "runs no PR test script"), so a product's own tests cannot run there today. **(a) Recommended:** the controller writes one (unit and e2e runner of the copy's `package.json`, Postgres and the SMTP sink from `services`, given files, JUnit to `/out`) as data before the runs, validated on the 9 tasks' ends (each end's own changed test files run and give a JUnit; at most 2 sealed rounds per failure, as ruling 4's rebuild rounds); if it cannot be made to run offline, real-estate leaves H5 and the lock says so. (b) H5 on external tasks only (87 bugs); a listed deviation from "external tasks + `real-estate`".
+4. **H5's mutation score on changed lines.** Section 2 names it next to the catch rate; no threshold rides on it, and no bench tool measures mutation for three stacks. **(a) Recommended:** not measured in step 13; step 14 reports it only where H's own run recorded one, as a listed deviation. (b) A per-stack mutation runner as data (Stryker, mutmut or cargo-mutants per stack), run on H's products' changed lines; a new instrument, about 3 days to build and validate.
+5. **The per-layer measures (8.4).** They need H−layer variants (H without one layer) and replays of the plugin's discovery layers (review, audit, exploration) on held-out and seeded bugs. Step 12 locked only H and W, and "no change from here" holds. **(a) Recommended:** out of step 13; a later plan, once step 14 has analysed H1–H5, with the user deciding whether the designer builds the variants (new commits, the step 12 lock amended); step 14 reports H1–H5 without them and lists it. The run transcripts kept by Task 5 are their evidence. (b) In step 13: the user reopens the designer for the variants before Task 5; the plugin lock is amended first.
+6. **The three accepted minors of step 11** (`listens()` without a retry, a P OOM read as O's timeout, `--extra-round` per invocation). A fix to the box or `oracle-run` now means the Phase A regrade again (about 75 grades). **(a) Recommended:** accepted again, with the same counting (machine reruns, `noresult` or timeout grades told to the user). (b) Fix and regrade before Task 5.
+
+## Rulings (Task 0 registers them in prereg section 12 as "Applied at step 13" before any change)
+
+1. **The set and the arms:** as "What runs". k = 3 standing runs per arm and task: a run whose record has `machine` set takes the next number (step 8 ruling 11).
+2. **Nothing earlier counts.** Each task gets a floor in `<data>/step13/floor.json` the first time the driver touches it (the highest run number per arm then); only runs above it count, so no canary, trial or probe run is reused ("B runs of step 8 are not reused"). Its own attempts file `<data>/step13/attempts.json`.
+3. **Same model and CLI.** Every run's record must read `version` 2.1.318 and `models` only `claude-opus-5-5` (and `claude-sonnet-5-5` where the CLI calls its small model); `arms.json` is not edited (step 12 ruling 6). A run whose model fell back is `machine model` already; a record with another `version` stops the driver for the user.
+4. **Grading:** each product right after its run, every oracle kind of the task (`oracle/`, and `step/oracle/` where `step.json` names it), through `env/box/<task>.json`, `--sealed`, never `--reuse` (so the reuse-key limit of the Phase A lock does not arise). `noresult` after 2 attempts stands and is counted.
+5. **s1-11's make** (Phase A known limit): before s1-11's first run, its end is graded once with `--out <data>/logs/step13/s1-11-end.json`; a result that differs from its lock grade stops for the user.
+6. **Order:** decision 1. One task at a time; one Docker job at a time; pgsnap before and after every real-estate task; `docker builder prune -f` when the cache is above 15 GB (the driver's rule).
+7. **Stops:** the driver stops for the user on a refusal, an `api` machine run, `MACHINE_RUNS` machine runs in a row, a `version` change, or a pgsnap change; a `noresult` or timeout grade on a real-estate product is told to the user (decision 6).
+8. **Evidence kept:** every record, run folder (transcripts) and product ref stays until step 14 locks; nothing is removed by name except Docker objects the tools recorded.
+9. **H5 (section 8.3, option 1), per decision 2's products:** for product P and kept bug b with check c: grade `<task>/seeded/oracle` at P (`env/box/<task>.json`, `--sealed`). `precondition` or `error` for c: not applicable, counted. `fail`: a miss. `pass`: one sealed porter (sees b's `description` and `edit` and P's files, never c, the oracle or another bug) writes one edit `{ file, find, replace }` on P, refused by the seeder's gates (`find` once, not a test path, one hunk); the edit is committed on P in `<data>/seeded/repos/<key>.git` under `refs/h5/<run>/<bug>` (never in the arm's store); the port counts only when c passes at P and fails at P + edit, else not applicable, counted. Then P's suite (the test files `git diff --name-only <base> P` lists that `isTestPath` or the stack's `testPaths` accept) runs at P and at P + edit through the recipe's `test` script in the product image with no network: caught when a test that passes at P fails at P + edit. A suite with no test file is a miss. Results to `<task>/seeded/h5/<arm>-<run>.json`; the H5 lane runs after all of Task 5. The rate and its interval are step 14's.
+10. **Sealing:** the controller reads count lines, status lines, record fields and the report; no transcript, product, grade output, check, bug file or porter reply by hand. Scores are printed only by `scored.mjs report` after Task 5 and are analysed by nobody before step 14.
+11. **No designer:** the plugin-design session is closed and the plugin is locked; nothing of step 13 goes to a designer.
+12. **The manifest at the lock:** `stick hash` and `compare progress/stick-v1-step12.sha256 --reasons progress/step13/reasons.tsv`; expected changed 0 (step 13 adds files, it rewrites none that the step 12 manifest holds) unless decision 3 (a) adds the real-estate recipe's `test` (then changed 1, `ext/tasks/real-estate/task-recipe.json`, with its reason).
+
+## Global Constraints
+
+As the earlier steps': branch `bench-step13` from `main` (6fbbf1e); `<data>` = `/Users/hbchuc/Documents/programing/vibe-code/hstack/.evidence/bench`; `HSTACK_BENCH_MACHINE=<data>/machine.json`; Bun only, no new dependency, `bench/` names no stack, customer or task; every full test run teed to `<data>/logs/step13/tests-<n>.out`, pristine; Docker removal only by recorded names, never `-f`, no prune but `docker builder prune -f`; never touch `real_estate*` databases or `outsourcing/`; implementers work on fixtures only; docs and logs in English; push with `git -c http.postBuffer=524288000 push` when asked.
+
+## Review Focus
+
+1. A run below the floor counted, or a canary or trial run reused. Test: Task 1 'only runs above the step 13 floor stand'.
+2. An arm graded with the wrong oracle kinds, or W run on a real-estate task. Test: Task 1 'slots follow the set'.
+3. A porter that sees the check, or a port committed into the arm's store. Test: Task 2 'the porter's prompt holds no check' and 'a port lands only in the sealed repo'.
+4. A suite run with network, or a suite that picks up the oracle's files. Test: Task 2 'the suite runs offline and only the product's test files'.
+
+---
+
+### Task 0: Register the rulings
+
+**Files:** Modify `docs/plans/2026-10-27-benchmark-prereg.md` (section 12, "Applied at step 13 (<date>)" after "Applied at step 12"), `docs/log.md`.
+
+- [ ] **Step 1:** Write the paragraph: the decisions as answered and rulings 1–12; end "Registered before any change to `bench/` for step 13 and before any step 13 run; `bench/scored.mjs` and the H5 tool do not exist." Commit.
+
+### Task 1: The driver for the scored set
+
+**Files:** Create `bench/scored.mjs`, `tests/bench-scored.test.mjs`; modify `bench/README.md`.
+
+**Interfaces:**
+- Consumes: `runTask`, `runStopped`, `context`, `gradeProduct`, `records`, `standing`, `aboveFloor` (`bench/canary.mjs`); `kindsOf`-like reading of `step.json` (as `bench/trial.mjs`); `taskOf` (`bench/ext.mjs`).
+- Produces:
+  - `bun bench/scored.mjs run <task>`: refuses a task not in `<data>/step13/tasks.txt`; sets the floor once (ruling 2); slots `H:1..3`, `B:1..3`, `W:1..3` for an external task and `H:1..3`, `B:1..3` for a real-estate one (`taskOf(...).stack`); `k` 3; `envDir` `env/box`; kinds per `step.json`; attempts `step13/attempts.json`; stops on a record whose `version` differs from the first standing record's (ruling 3).
+  - `bun bench/scored.mjs order`: prints the task order of decision 1 (one task per line).
+  - `bun bench/scored.mjs report`: writes `<data>/step13/report.json`; prints per task, arm and run `build= requirement= passed= tokens= cache= minutes= interventions= end= machine=`, then per arm the count of standing runs, `noresult` grades and machine runs; no mean, no interval (step 14).
+
+- [ ] **Step 1: Write the failing tests:** 'the run refuses a task not in tasks.txt'; 'only runs above the step 13 floor stand' (a fixture with trial and canary records under the floor); 'slots follow the set' (external 9, real-estate 6, no W slot there); 'the order is queuePick over the tasks' (decision 1 (a)); 'a version change stops the driver'; 'the report prints no mean'.
+- [ ] **Step 2: Run** — FAIL. **Step 3: Implement** reusing `canary.mjs`; no change to `canary.mjs`, `trial.mjs`, `run-arm.mjs` or the box. **Step 4:** Suite teed — pass. Commit `git commit -m "Add the driver for the scored runs"`.
+
+### Task 2: The H5 port and suite run
+
+**Files:** Create `bench/h5.mjs`, `tests/bench-h5.test.mjs`, `briefs/porter.md` (in `<data>`, written by the controller from ruling 9); modify `bench/ext.mjs` (a `suite-run` command beside `oracle-run`, which is not changed), `bench/README.md`.
+
+**Interfaces:**
+- Produces:
+  - `bun bench/ext.mjs suite-run <task-file> --at <commit> --files <list> --out <junit>`: builds the commit's product image as `oracle-run` does (the same `productImage`, the arm's network rules), runs the recipe's `test` with the files, copies `/out/junit.xml` out; no runner layer, no `/oracle`; names recorded and removed.
+  - `portEdit({ data, task, bug, product }) -> { edit } | { refused: <reason> }`: one sealed agent run with `briefs/porter.md`, the bug's `description` and `edit`, `--at <product>`; the seeder's edit gates.
+  - `bun bench/h5.mjs <task> <arm> <run>`: ruling 9 end to end; writes `<task>/seeded/h5/<arm>-<run>.json` = `[{ bug, at: 'pass'|'fail'|'precondition'|'error', port: 'ported'|'not-applicable'|'refused'|null, suite: <n test files>, caught: true|false|null }]`; prints one count line `h5 <task> <arm> <run> bugs=<n> miss=<m> ported=<p> caught=<c> na=<k>`.
+- [ ] **Step 1: Write the failing tests:** 'a fail at the product is a miss with no porter'; 'the porter's prompt holds no check'; 'a port lands only in the sealed repo'; 'a port that does not flip the check is not applicable'; 'caught needs a test that passes at P and fails at P + edit'; 'the suite runs offline and only the product's test files' (gated `BENCH_EXT_DOCKER=1`, a fixture recipe whose test opens a socket: no result); 'a product with no test file is a miss'.
+- [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4:** Suites teed (and the gated one) — pass. Commit `git commit -m "Add the H5 port and the product suite run"`.
+
+### Task 3: The real-estate suite (decision 3 (a) only; controller)
+
+- [ ] **Step 1:** Write the real-estate recipe's `test` (ruling 9's contract: given files, JUnit to `/out`, services up first, no network), recorded with its reason in `progress/step13/reasons.tsv`.
+- [ ] **Step 2:** For each of the 9 tasks, `suite-run` at the end with the end's own changed test files: a JUnit with every case passing is expected. A failure gets at most 2 sealed rounds (the script's lines only, the base's log readable, the end's sealed); still failing, real-estate leaves H5 for that task and the lock lists it.
+
+### Task 4: Pre-flight (controller)
+
+- [ ] **Step 1:** `<data>/step13/tasks.txt` = the 38 tasks; `bun bench/scored.mjs order` to `logs/step13/order.out`.
+- [ ] **Step 2:** s1-11's end check (ruling 5).
+- [ ] **Step 3:** One H probe on one external and one real-estate box (step 12's script): `probe ok`; the token answers. Docker: no leftover name of an earlier step; build cache under 15 GB.
+
+### Task 5: The runs (controller)
+
+- [ ] **Step 1:** `logs/step13/runs.sh`: per task of `order.out`, `bun bench/scored.mjs run <task>` teed to `logs/step13/run-<task>.out`, its status lines to `runs.out`, pgsnap around real-estate tasks, stop at the first exit that is not 0 (ruling 7). Started detached; resumable (a rerun picks up at the first slot without a standing run).
+- [ ] **Step 2:** On each stop: the user is told the task, arm, run and the stop word, never a grade's content; the driver resumes after the user's answer.
+- [ ] **Step 3:** At the end, `bun bench/scored.mjs report` to `logs/step13/report.out`. Record per day in `progress/progress.md`: tasks done, runs, machine runs, `noresult` grades.
+
+### Task 6: The H5 lane (controller)
+
+- [ ] **Step 1:** `briefs/porter.md` written; for every H run of Task 5 (decision 2), `bun bench/h5.mjs <task> H <run>`, external then real-estate (pgsnap around), count lines to `logs/step13/h5.out`.
+- [ ] **Step 2:** Count: bugs read, misses, ported, caught, not applicable, refused. No rate (step 14).
+
+### Task 7: The step 13 lock
+
+**Files:** Create `progress/step13/reasons.tsv`, `progress/stick-v1-step13.sha256`, `progress/step13-lock.md`; modify `docs/log.md`, `progress/progress.md`.
+
+- [ ] **Step 1:** Ruling 12's hash (outputs outside `<data>`) and compare; any unexplained or missing stops.
+- [ ] **Step 2:** Suite teed; `git status --short bench tests` empty; Docker as earlier steps; pgsnap equal.
+- [ ] **Step 3:** `progress/step13-lock.md`: the runs per set and arm (standing, machine, `noresult`), CLI and models read from the records, the stops and their answers, the H5 counts, the manifest, deviations, open points for step 14 (the analysis per sections 9–10, H4 first; 13.3's rerun; 13.4's cold setup read from H's transcripts on s1-09, s2-09 and s3-07; 13.5's blind rating; the per-layer measures of decision 5). Advisor review; the user's approval; this plan `stable`.
+
+## Known limits
+
+- **One Docker job at a time:** about 8–9 days of runs, then the H5 lane; a long turn or a resume chain can add a day.
+- **W and H share the plugin's name** (`hstack`); records tell them apart by commit and sha256.
+- **The trial tasks** (s2-01, s3-02, p6c is not in the set, p8b is not) were seen by the designer through scores; s2-01 and s3-02 run here like any task.
+- **H5 reads only ported bugs** on products that pass the check; the not-applicable count is reported beside the rate.
+- **The phase A and step 11 limits stand** (M3 open on the shared and in-process tasks, the proxy's beta header, registry addresses, the real-estate `--memory 6g`).
+
+## Not in this plan
+
+The analysis (step 14: H4 first, then H1–H3 with Holm, H5, pass^k, autonomy); 13.3's rerun on another machine, 13.4's cold-setup read, 13.5's blind rating; the per-layer measures and discovery replays (decision 5); any change to the plugin, `arms.json`, an oracle, a seeded bug or a score rule.
