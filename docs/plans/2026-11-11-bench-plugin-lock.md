@@ -40,6 +40,7 @@ W's name equals H's (`hstack`), so `probeOk` checks W's init the same way; the r
 - The trial's results request came from a session named "Hstack benchmark step 7 plan" (socket `34956`); W's handover from a session named `bridge-cse-01jxvnal2dkzabg9quunay5e-de` (socket `69613`), both saying they are the plugin-design session.
 - `git worktree list`, 2026-11-11: the worktree `.claude/worktrees/bridge-cse_01JxVNAL2Dkzabg9QuuNaY5E` (the one step 11 Phase A's controller ran in: its scripts import `bench/` from there) now has branch `plugin-design` checked out at `d859667`.
 - `plugin-design` moved past `653af83` by 2 commits (`9a91143`, `d859667`) that change no exported path; H stays `653af83`.
+- Later on 2026-11-11 the user said the plugin-design session is closed and its branch merged: `main` = `dfdbe0a` ("Merge the hstack plugin v0.2 (H, 653af83) and its design records", pushed; `plugin-design` is in `main`, so `653af83` is reachable from `main`). It adds the plugin folders, `plugin-dev/` and a README change, and touches no `bench/`, `tests/`, `progress/` or prereg file. `plugin-w` (`2b14f26`, holding `9c4b267`) is on `origin` and not merged; W stays pinned by its local ref.
 
 ## Decisions for the user (asked with this plan)
 
@@ -49,7 +50,7 @@ W's name equals H's (`hstack`), so `probeOk` checks W's init the same way; the r
 
 ## Global Constraints
 
-As the Phase B plan's: branch `bench-step12` from `main` (8954c11); `<data>` = `/Users/hbchuc/Documents/programing/vibe-code/hstack/.evidence/bench`; logs in `<data>/logs/step12/`; every full test run teed to `<data>/logs/step12/tests-<n>.out`; sealing as step 11 (count lines, record fields, no transcript, product, grade output, oracle or check); Docker removal only by recorded names, never `-f`; pgsnap around every real-estate box. This session takes no design request, writes no plugin content and sends the designer only decision 4's fields and the one-line answers it already gives (recorded or not, a sha256).
+As the Phase B plan's: branch `bench-step12` from `main` (`dfdbe0a`, rebased from 8954c11); `<data>` = `/Users/hbchuc/Documents/programing/vibe-code/hstack/.evidence/bench`; logs in `<data>/logs/step12/`; every full test run teed to `<data>/logs/step12/tests-<n>.out`; sealing as step 11 (count lines, record fields, no transcript, product, grade output, oracle or check); Docker removal only by recorded names, never `-f`; pgsnap around every real-estate box. This session takes no design request and writes no plugin content; the designer session is closed, and nothing is sent to a designer in this step.
 
 ---
 
@@ -68,7 +69,7 @@ As the Phase B plan's: branch `bench-step12` from `main` (8954c11); `<data>` = `
 
 - [ ] **Step 1:** Export W through `pluginExport` outside `<data>`: expect files 19 and the sha256 above; a different value stops for the user.
 - [ ] **Step 2:** Copy `arms.json` to `logs/step12/arms-before.json`; set `plugins.W` to `[{ "name": "hstack", "repo": "../..", "commit": "9c4b267a11f9553533ad2fa882acc2e6bdebd0b8", "paths": [".claude-plugin", "agents", "hooks", "scripts", "skills"], "sha256": "03b4fd12…" }]` (full hex); nothing else changes. `loadArms` accepts it; each arm's loaded entry exports to its recorded sha256 (H's unchanged).
-- [ ] **Step 3:** Tell the designer, through the cross-session channel the user opened: `recorded`, with the sha256. Record in `progress/progress.md` ("Step 12"). Commit.
+- [ ] **Step 3:** The designer session is closed, so nothing is sent; the lock states that W is recorded, with the sha256. Record in `progress/progress.md` ("Step 12"). Commit.
 
 ### Task 2: W's probe
 
