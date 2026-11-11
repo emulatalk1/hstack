@@ -1,10 +1,12 @@
 import { test, expect, spyOn, afterAll } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { boxEnv, removeRecorded, SERVE_EMPTY, suiteRun } from '../bench/ext.mjs'
 import { h5, portEdit } from '../bench/h5.mjs'
 import { editCommit } from '../bench/oracle.mjs'
+import { oracleFiles } from '../bench/grade.mjs'
+import { oracleSha } from '../bench/lib/oracle.mjs'
 import { releaseRoot } from './bench-root.mjs'
 
 // H5 (step 13 ruling 9) on a fixture data folder: a store with the base and two products, a sealed repo that reaches another repo
@@ -89,12 +91,18 @@ const arg = (a, k) => a[a.indexOf(k) + 1]
 const bugAt = (w, sha) => git(w.sealed, 'for-each-ref', '--points-at', sha, '--format=%(refname:lstrip=2)', 'refs/h5/')
 // fakes: grade writes the grade --out names (results at P, else at the port), the porter replies the bug's own edit (or reply(bug)),
 // the suite writes a JUnit per commit (cases at P, else per bug)
-function fakes(w, { atP, atE = {}, reply, suiteP = [], suiteE = {}, agentCode = 0, suiteStatus = 'ok' }) {
+// notReady: per port, how many grades there leave a `not ready` readiness line first; suitePStatus 'missing': P's suite writes no JUnit
+function fakes(w, { atP, atE = {}, reply, suiteP = [], suiteE = {}, agentCode = 0, suiteStatus = 'ok', notReady = {}, suitePStatus = 'ok' }) {
   const calls = { grade: [], agent: [], prompts: [], suite: [] }
   const grade = async (a) => {
     const sha = arg(a, '--at')
     calls.grade.push({ env: a[0], oracle: a[1], sha, args: a })
-    const res = sha === w.p1 || sha === w.p2 ? atP : atE[bugAt(w, sha)] ?? {}
+    const isP = sha === w.p1 || sha === w.p2, key = bugAt(w, sha), never = !isP && (notReady[key] ?? 0) > 0
+    if (never) notReady[key]--
+    const res = isP ? atP : never ? {} : atE[key] ?? {}
+    // oracle-run's readiness line of this commit and oracle, as the real grade leaves it
+    mkdirSync(join(w.d, TASK, 'build'), { recursive: true })
+    appendFileSync(join(w.d, TASK, 'build/readiness.tsv'), `${sha.slice(0, 7)}\t${oracleSha(oracleFiles(a[1])).slice(0, 8)}\t${never ? 'not ready' : 'ready'}\n`)
     writeFileSync(arg(a, '--out'), JSON.stringify({ commit: sha, junit: 'ok', checks: Object.entries(res).map(([id, result]) => ({ id, result })) }))
     return 0
   }
@@ -110,6 +118,7 @@ function fakes(w, { atP, atE = {}, reply, suiteP = [], suiteE = {}, agentCode = 
     const sha = arg(a, '--at'), files = readFileSync(arg(a, '--files'), 'utf8').split('\n').filter(Boolean)
     calls.suite.push({ env: a[0], sha, files })
     if (suiteStatus !== 'ok') return suiteStatus
+    if (suitePStatus === 'missing' && (sha === w.p1 || sha === w.p2)) return 'missing'
     const cases = sha === w.p1 || sha === w.p2 ? suiteP : suiteE[bugAt(w, sha)] ?? []
     writeFileSync(arg(a, '--out'), `<testsuite>${cases.map(([n, s]) => `<testcase classname="fx" name="${n}">${s === 'fail' ? '<failure/>' : ''}</testcase>`).join('')}</testsuite>`)
     return 'ok'
@@ -144,8 +153,8 @@ test('box-env --seeded changes only repo', () => {
 test('a fail at the product is a miss with no porter', async () => {
   const w = world('miss'), f = fakes(w, { atP: { [CHECK1]: 'fail', [CHECK2]: 'precondition' } })
   const r = await run(w, [TASK, 'H', '1'], f.inj)
-  expect(r).toEqual({ code: 0, out: [`h5 ${TASK} H 1 bugs=2 miss=1 ported=0 caught=0 na=1`] })
-  expect(rows(w)).toEqual([{ bug: BUG1, at: 'fail', port: null, suite: 2, caught: false }, { bug: BUG2, at: 'precondition', port: null, suite: 2, caught: null }])
+  expect(r).toEqual({ code: 0, out: [`h5 ${TASK} H 1 bugs=2 miss=1 ported=0 caught=0 na=1 refused=0 notready=0 nosuite=0`] })
+  expect(rows(w)).toEqual([{ bug: BUG1, at: 'fail', port: null, testFiles: 2, suite: null, caught: false }, { bug: BUG2, at: 'precondition', port: null, testFiles: 2, suite: null, caught: null }])
   expect(f.calls.agent).toEqual([])
   expect(f.calls.suite).toEqual([])
   // one grade, at P, of the seeded oracle through the box task file
@@ -154,7 +163,7 @@ test('a fail at the product is a miss with no porter', async () => {
 })
 
 test('the porter\'s prompt holds no check', async () => {
-  const w = world('prompt'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'fail' }, atE: { [`1/${BUG1}`]: { [CHECK1]: 'fail' } } })
+  const w = world('prompt'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'fail' }, atE: { [`H-1/${BUG1}`]: { [CHECK1]: 'fail' } } })
   await run(w, [TASK, 'H', '1'], f.inj)
   expect(f.calls.prompts.length).toBe(1)
   const p = f.calls.prompts[0], bug = json(join(w.d, TASK, 'seeded/bugs.json'))[0]
@@ -170,10 +179,10 @@ test('the porter\'s prompt holds no check', async () => {
 })
 
 test('a port lands only in the sealed repo', async () => {
-  const w = world('lands'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, atE: { [`1/${BUG1}`]: { [CHECK1]: 'fail' }, [`1/${BUG2}`]: { [CHECK2]: 'fail' } } })
+  const w = world('lands'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, atE: { [`H-1/${BUG1}`]: { [CHECK1]: 'fail' }, [`H-1/${BUG2}`]: { [CHECK2]: 'fail' } } })
   const storeRefs = git(w.store, 'for-each-ref')
   await run(w, [TASK, 'H', '1'], f.inj)
-  const e = git(w.sealed, 'rev-parse', `refs/h5/1/${BUG1}`)
+  const e = git(w.sealed, 'rev-parse', `refs/h5/H-1/${BUG1}`)
   expect(git(w.sealed, 'rev-parse', `${e}^`)).toBe(w.p1)
   expect(git(w.sealed, 'diff', '--name-only', w.p1, e)).toBe('src/app.js')
   expect(git(w.sealed, 'show', `${e}:src/app.js`)).toContain('const l12 = 13')
@@ -186,10 +195,10 @@ test('a port lands only in the sealed repo', async () => {
 })
 
 test('a port that does not flip the check is not applicable', async () => {
-  const w = world('flip'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, atE: { [`1/${BUG1}`]: { [CHECK1]: 'pass' }, [`1/${BUG2}`]: { [CHECK2]: 'error' } } })
+  const w = world('flip'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, atE: { [`H-1/${BUG1}`]: { [CHECK1]: 'pass' }, [`H-1/${BUG2}`]: { [CHECK2]: 'error' } } })
   const r = await run(w, [TASK, 'H', '1'], f.inj)
-  expect(r.out).toEqual([`h5 ${TASK} H 1 bugs=2 miss=0 ported=0 caught=0 na=2`])
-  expect(rows(w)).toEqual([BUG1, BUG2].map((bug) => ({ bug, at: 'pass', port: 'not-applicable', suite: 2, caught: null })))
+  expect(r.out).toEqual([`h5 ${TASK} H 1 bugs=2 miss=0 ported=0 caught=0 na=2 refused=0 notready=0 nosuite=0`])
+  expect(rows(w)).toEqual([BUG1, BUG2].map((bug) => ({ bug, at: 'pass', port: 'not-applicable', testFiles: 2, suite: null, caught: null })))
   expect(f.calls.suite).toEqual([])
 })
 
@@ -197,7 +206,7 @@ test('a port the gates refuse is refused and leaves no ref', async () => {
   const replies = { 1: { file: 'tests/new.test.js', find: 'new', replace: 'old' }, 2: { file: 'src/app.js', find: 'const l1', replace: 'x' } } // a test file; find twice
   const w = world('refused'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, reply: (n) => JSON.stringify(replies[n]) })
   const r = await run(w, [TASK, 'H', '1'], f.inj)
-  expect(r.out).toEqual([`h5 ${TASK} H 1 bugs=2 miss=0 ported=0 caught=0 na=0`]) // refused is neither
+  expect(r.out).toEqual([`h5 ${TASK} H 1 bugs=2 miss=0 ported=0 caught=0 na=0 refused=2 notready=0 nosuite=0`]) // refused apart from na
   expect(rows(w).map((x) => [x.port, x.caught])).toEqual([['refused', null], ['refused', null]])
   expect(git(w.sealed, 'for-each-ref', 'refs/h5/')).toBe('')
   const bug = json(join(w.d, TASK, 'seeded/bugs.json'))[0], work = join(w.d, TASK, 'seeded/h5/x')
@@ -211,11 +220,11 @@ test('a port the gates refuse is refused and leaves no ref', async () => {
 
 test('caught needs a test that passes at P and fails at P + edit', async () => {
   // a fails at P; b passes at P and is missing at the first port; c passes at P and fails at the second
-  const w = world('caught'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, atE: { [`1/${BUG1}`]: { [CHECK1]: 'fail' }, [`1/${BUG2}`]: { [CHECK2]: 'fail' } },
-    suiteP: [['a', 'fail'], ['b', 'pass'], ['c', 'pass']], suiteE: { [`1/${BUG1}`]: [['a', 'fail'], ['c', 'pass']], [`1/${BUG2}`]: [['a', 'pass'], ['b', 'pass'], ['c', 'fail']] } })
+  const w = world('caught'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, atE: { [`H-1/${BUG1}`]: { [CHECK1]: 'fail' }, [`H-1/${BUG2}`]: { [CHECK2]: 'fail' } },
+    suiteP: [['a', 'fail'], ['b', 'pass'], ['c', 'pass']], suiteE: { [`H-1/${BUG1}`]: [['a', 'fail'], ['c', 'pass']], [`H-1/${BUG2}`]: [['a', 'pass'], ['b', 'pass'], ['c', 'fail']] } })
   const r = await run(w, [TASK, 'H', '1'], f.inj)
-  expect(r).toEqual({ code: 0, out: [`h5 ${TASK} H 1 bugs=2 miss=1 ported=2 caught=1 na=0`] })
-  expect(rows(w)).toEqual([{ bug: BUG1, at: 'pass', port: 'ported', suite: 2, caught: false }, { bug: BUG2, at: 'pass', port: 'ported', suite: 2, caught: true }])
+  expect(r).toEqual({ code: 0, out: [`h5 ${TASK} H 1 bugs=2 miss=1 ported=2 caught=1 na=0 refused=0 notready=0 nosuite=0`] })
+  expect(rows(w)).toEqual([{ bug: BUG1, at: 'pass', port: 'ported', testFiles: 2, suite: 'ok', caught: false }, { bug: BUG2, at: 'pass', port: 'ported', testFiles: 2, suite: 'ok', caught: true }])
   // the product's own test files: added or changed since the base under a test path, a deleted one and the base's untouched one left out; P's suite once
   expect(f.calls.suite.map((s) => s.files)).toEqual([['checks/extra.sh', 'tests/new.test.js'], ['checks/extra.sh', 'tests/new.test.js'], ['checks/extra.sh', 'tests/new.test.js']])
   expect(f.calls.suite.map((s) => s.sha === w.p1)).toEqual([true, false, false])
@@ -225,11 +234,31 @@ test('caught needs a test that passes at P and fails at P + edit', async () => {
 })
 
 test('a product with no test file is a miss', async () => {
-  const w = world('nofile'), f = fakes(w, { atP: { [CHECK1]: 'pass' }, atE: { [`2/${BUG1}`]: { [CHECK1]: 'fail' } } })
+  const w = world('nofile'), f = fakes(w, { atP: { [CHECK1]: 'pass' }, atE: { [`H-2/${BUG1}`]: { [CHECK1]: 'fail' } } })
   const r = await run(w, [TASK, 'H', '2'], f.inj)
-  expect(r.out).toEqual([`h5 ${TASK} H 2 bugs=2 miss=1 ported=1 caught=0 na=1`])
-  expect(rows(w, 2)).toEqual([{ bug: BUG1, at: 'pass', port: 'ported', suite: 0, caught: false }, { bug: BUG2, at: 'error', port: null, suite: 0, caught: null }])
+  expect(r.out).toEqual([`h5 ${TASK} H 2 bugs=2 miss=1 ported=1 caught=0 na=1 refused=0 notready=0 nosuite=0`])
+  expect(rows(w, 2)).toEqual([{ bug: BUG1, at: 'pass', port: 'ported', testFiles: 0, suite: null, caught: false }, { bug: BUG2, at: 'error', port: null, testFiles: 0, suite: null, caught: null }])
   expect(f.calls.suite).toEqual([])
+})
+
+test('a suite at P with no JUnit is counted under nosuite, never a miss', async () => {
+  const w = world('nosuite'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, atE: { [`H-1/${BUG1}`]: { [CHECK1]: 'fail' }, [`H-1/${BUG2}`]: { [CHECK2]: 'fail' } }, suitePStatus: 'missing' })
+  const r = await run(w, [TASK, 'H', '1'], f.inj)
+  expect(r).toEqual({ code: 0, out: [`h5 ${TASK} H 1 bugs=2 miss=0 ported=2 caught=0 na=0 refused=0 notready=0 nosuite=2`] })
+  expect(rows(w)).toEqual([BUG1, BUG2].map((bug) => ({ bug, at: 'pass', port: 'ported', testFiles: 2, suite: 'missing', caught: null })))
+  expect(f.calls.suite.map((s) => s.sha)).toEqual([w.p1]) // P's suite once, and no suite at a port it cannot be compared with
+})
+
+test('a never-ready grade at the port is graded once more, then counted under notready', async () => {
+  // the first port is not ready once, then ready; the second stays not ready
+  const w = world('notready'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, atE: { [`H-1/${BUG1}`]: { [CHECK1]: 'fail' }, [`H-1/${BUG2}`]: { [CHECK2]: 'fail' } },
+    notReady: { [`H-1/${BUG1}`]: 1, [`H-1/${BUG2}`]: 5 } })
+  const r = await run(w, [TASK, 'H', '1'], f.inj)
+  expect(r.out).toEqual([`h5 ${TASK} H 1 bugs=2 miss=1 ported=1 caught=0 na=0 refused=0 notready=1 nosuite=0`])
+  expect(rows(w).map((x) => [x.port, x.caught])).toEqual([['ported', false], ['notready', null]])
+  const e2 = git(w.sealed, 'rev-parse', `refs/h5/H-1/${BUG2}`)
+  expect(f.calls.grade.map((g) => g.sha)).toEqual([w.p1, git(w.sealed, 'rev-parse', `refs/h5/H-1/${BUG1}`), git(w.sealed, 'rev-parse', `refs/h5/H-1/${BUG1}`), e2, e2])
+  expect(existsSync(join(w.d, TASK, 'seeded/h5/H-1/grades', `${e2.slice(0, 7)}.json`))).toBe(false) // --reuse must not keep it
 })
 
 test('a grade at P with no result writes nothing and exits non-zero', async () => {
@@ -245,7 +274,7 @@ test('a porter run that did not end or a suite killed for memory stops it, with 
   await expect(run(w, [TASK, 'H', '1'], f.inj)).rejects.toThrow('exited 1') // its record stands: no second run, no refusal
   expect(f.calls.agent.length).toBe(1)
   for (const status of ['memory', 'timeout']) {
-    const v = world(`stops-${status}`), g = fakes(v, { atP: both, atE: { [`1/${BUG1}`]: { [CHECK1]: 'fail' } }, suiteStatus: status })
+    const v = world(`stops-${status}`), g = fakes(v, { atP: both, atE: { [`H-1/${BUG1}`]: { [CHECK1]: 'fail' } }, suiteStatus: status })
     await expect(run(v, [TASK, 'H', '1'], g.inj)).rejects.toThrow(`ended: ${status}`)
     expect(existsSync(join(v.d, TASK, 'seeded/h5/H-1.json'))).toBe(false)
   }
@@ -274,9 +303,9 @@ dtest('the suite runs offline and only the product\'s test files (needs BENCH_EX
   expect(d1.containers).toEqual([`bench-ext-${slug}-make-${w.p1.slice(0, 7)}-1`, `bench-ext-${slug}-suite-${w.p1.slice(0, 7)}-1`])
   expect(d1.images.map((i) => i.name)).toEqual([`bench-ext/${slug}:${w.base.slice(0, 7)}-serve`, `bench-ext/${slug}:${w.p1.slice(0, 7)}-product-suite`])
   // a port commit only the sealed repo holds, through the seeded box file: the same files, its own edit in the image
-  const e = (await editCommit(w.sealed, w.p1, { file: 'tests/new.test.js', find: 'new', replace: 'ported' }, 'refs/h5/1/x', { testPaths: [] }))
+  const e = (await editCommit(w.sealed, w.p1, { file: 'tests/new.test.js', find: 'new', replace: 'ported' }, 'refs/h5/H-1/x', { testPaths: [] }))
   expect(e.why).toBe('test file') // the gates hold here too
-  const { commit } = await editCommit(w.sealed, w.p1, { file: 'src/app.js', find: 'const l12 = 12', replace: 'const l12 = 13' }, 'refs/h5/1/x')
+  const { commit } = await editCommit(w.sealed, w.p1, { file: 'src/app.js', find: 'const l12 = 12', replace: 'const l12 = 13' }, 'refs/h5/H-1/x')
   expect(gitIn(w.store, 'cat-file', '-e', commit).code).not.toBe(0)
   expect(await withMachine(w, () => suiteRun([seededBox(w), '--at', commit, '--files', files, '--out', out], { data: w.d, diskFree: async () => 100 }))).toBe('ok')
   expect(readFileSync(out, 'utf8').match(/ name="[^"]+"/g)).toEqual([' name="checks/extra.sh"', ' name="tests/new.test.js"', ' name="no-oracle"'])

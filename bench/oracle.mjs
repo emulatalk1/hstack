@@ -552,7 +552,7 @@ async function groupsOf(c, refs) {
 }
 
 // the sha7s of these commits whose last run of this oracle in build/readiness.tsv (oracle-run appends one line a run) did not get ready
-function notReadyOf(evDir, oracleDir, commits) {
+export function notReadyOf(evDir, oracleDir, commits) {
   const f = join(evDir, 'build', 'readiness.tsv'), osha8 = oracleSha(oracleFiles(oracleDir)).slice(0, 8)
   return [...new Set(commits.map((x) => x.slice(0, 7)))].filter((s) => ['not ready', 'timeout'].includes(readinessOf(f, s, osha8)))
 }

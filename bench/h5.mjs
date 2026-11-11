@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // H5 (step 13 ruling 9): do the test files an arm's run wrote catch the task's kept seeded bugs, ported onto its product P? Per bug: its check
-// at P; on a pass, one sealed porter writes the bug's edit for P, committed in the sealed repo under refs/h5/<run>/<bug> and kept only
+// at P; on a pass, one sealed porter writes the bug's edit for P, committed in the sealed repo under refs/h5/<arm>-<run>/<bug> and kept only
 // when the check fails there; then P's own test files run at P and at P + edit. Prints one count line; never a grade, a bug or a reply.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -9,7 +9,7 @@ import { resolveCommit } from './grade.mjs'
 import { readJunit } from './lib/junit.mjs'
 import { caseId } from './lib/oracle.mjs'
 import { loadTask } from './lib/task.mjs'
-import { editCommit, hasResults, once, resultIn, testFile } from './oracle.mjs'
+import { editCommit, hasResults, notReadyOf, once, resultIn, testFile } from './oracle.mjs'
 import { sealedAgent } from './sealed-agent.mjs'
 
 const USAGE = 'usage: bun bench/h5.mjs <task> <arm> <run>'
@@ -19,7 +19,8 @@ const boxFile = (data, task, dir = 'env/box') => join(data, dir, `${task}.json`)
 const testPathsOf = (data, t) => readJson(join(data, 'ext/groups.json'))?.groups?.find((g) => g.id === t.stack)?.testPaths ?? []
 
 // one sealed porter on P's files (the store's task file, read tools only) given the bug's description and edit and nothing else of it;
-// its reply's edit through the seeder's gates, committed on P in the sealed repo (env/box-seeded's repo) under refs/h5/<run>/<bug>.
+// its reply's edit through the seeder's gates, committed on P in the sealed repo (env/box-seeded's repo) under refs/h5/<run>/<bug>
+// (h5 passes `<arm>-<run>` as run, so two arms never share a ref).
 // work holds the prompt and the reply: a rerun with the same prompt reuses them
 export async function portEdit({ data, task, bug, product, run, work, agent = sealedAgent, brief = join(data, 'briefs/porter.md') }) {
   const t = taskOf(join(data, 'ext'), task), sealed = JSON.parse(readFileSync(boxFile(data, task, 'env/box-seeded'), 'utf8')).repo
@@ -69,8 +70,9 @@ export async function h5(args, inj = {}) {
   writeFileSync(filesList, files.map((f) => `${f}\n`).join(''))
 
   // the seeded oracle's grade at sha, through env; a grade that did not run, or (at P) gave no result at all, is no grade: a throw
+  const gradeOut = (sha) => join(work, 'grades', `${sha.slice(0, 7)}.json`)
   const gradeAt = async (env, sha, needResults) => {
-    const out = join(work, 'grades', `${sha.slice(0, 7)}.json`)
+    const out = gradeOut(sha)
     const code = await grade([env, join(evDir, 'oracle'), '--at', sha, '--sealed', '--reuse', '--out', out]), g = readJson(out)
     if (code !== 0 || g?.commit !== sha || (needResults && !hasResults(g))) {
       rmSync(out, { force: true }) // --reuse would keep a grade with no result
@@ -78,34 +80,44 @@ export async function h5(args, inj = {}) {
     }
     return g
   }
-  // the suite's cases at sha; none when it wrote no JUnit. A run killed for memory or time is the machine's: a throw
+  // oracle-run's readiness line of this commit and oracle reads `not ready` or `timeout` (as oracle.mjs gradeAt reads it)
+  const notReady = (sha) => notReadyOf(join(data, task), join(evDir, 'oracle'), [sha]).length > 0
+  // the suite at sha: { status, cases }, no case when it wrote no JUnit. A run killed for memory or time is the machine's: a throw
   const suiteAt = async (env, sha) => {
     const out = join(work, 'suites', `${sha.slice(0, 7)}.xml`), status = await suite([env, '--at', sha, '--files', filesList, '--out', out])
     if (status === 'memory' || status === 'timeout') throw new Error(`${task} ${arm} ${run}: the suite at ${sha.slice(0, 7)} ended: ${status}`)
-    return existsSync(out) ? readJunit(readFileSync(out, 'utf8')) : []
+    return { status: existsSync(out) ? 'ok' : 'missing', cases: existsSync(out) ? readJunit(readFileSync(out, 'utf8')) : [] }
   }
   const atP = await gradeAt(box, product, true)
-  let suiteP = null
+  let suiteP = null // P's suite, run once when the first ported bug needs it: { status, pass: the ids of its passing cases }
   const rows = []
   for (const bug of bugs.filter((b) => b.state === 'kept')) {
-    const row = { bug: bug.id, at: resultIn(atP, bug.check), port: null, suite: files.length, caught: null }
+    // suite: P's suite state, 'ok' or 'missing' (no JUnit), null while it was not needed for this bug
+    const row = { bug: bug.id, at: resultIn(atP, bug.check), port: null, testFiles: files.length, suite: null, caught: null }
     rows.push(row)
     if (row.at === 'fail') row.caught = false
     if (row.at !== 'pass') continue
-    const p = await portEdit({ data, task, bug, product, run, work, agent, ...(brief ? { brief } : {}) })
+    const p = await portEdit({ data, task, bug, product, run: `${arm}-${run}`, work, agent, ...(brief ? { brief } : {}) })
     if (p.refused) { row.port = 'refused'; continue }
-    if (resultIn(await gradeAt(seededBox, p.commit, false), bug.check) !== 'fail') { row.port = 'not-applicable'; continue }
+    // a never-ready grade at P + edit (all `error`, kept by --reuse) is graded once more; still not ready, the port is not judged
+    let gE = await gradeAt(seededBox, p.commit, false)
+    if (notReady(p.commit)) { rmSync(gradeOut(p.commit), { force: true }); gE = await gradeAt(seededBox, p.commit, false) }
+    if (notReady(p.commit)) { rmSync(gradeOut(p.commit), { force: true }); row.port = 'notready'; continue }
+    if (resultIn(gE, bug.check) !== 'fail') { row.port = 'not-applicable'; continue }
     row.port = 'ported'
     row.caught = false // a product with no test file misses it
     if (!files.length) continue
-    suiteP ??= new Set((await suiteAt(box, product)).filter((c) => c.status === 'pass').map(caseId))
-    row.caught = (await suiteAt(seededBox, p.commit)).some((c) => c.status === 'fail' && suiteP.has(caseId(c)))
+    if (!suiteP) { const r = await suiteAt(box, product); suiteP = { status: r.status, pass: new Set(r.cases.filter((c) => c.status === 'pass').map(caseId)) } }
+    row.suite = suiteP.status
+    if (suiteP.status === 'missing') { row.caught = null; continue } // no result at P: counted under nosuite, never a miss
+    row.caught = (await suiteAt(seededBox, p.commit)).cases.some((c) => c.status === 'fail' && suiteP.pass.has(caseId(c)))
   }
   writeFileSync(join(evDir, 'h5', `${arm}-${run}.json`), JSON.stringify(rows, null, 2) + '\n')
   const n = (f) => rows.filter(f).length
-  // each bug is caught, a miss (the check fails at P, or the port is not caught), not applicable (precondition or error at P, or a port
-  // that does not fail the check) or refused (counted from the file)
-  console.log(`h5 ${task} ${arm} ${run} bugs=${rows.length} miss=${n((r) => r.caught === false)} ported=${n((r) => r.port === 'ported')} caught=${n((r) => r.caught === true)} na=${n((r) => r.at === 'precondition' || r.at === 'error' || r.port === 'not-applicable')}`)
+  // each bug is exactly one of: caught, miss, na, refused, notready, nosuite (the README says what each means)
+  console.log(`h5 ${task} ${arm} ${run} bugs=${rows.length} miss=${n((r) => r.caught === false)} ported=${n((r) => r.port === 'ported')} caught=${n((r) => r.caught === true)}`
+    + ` na=${n((r) => r.at === 'precondition' || r.at === 'error' || r.port === 'not-applicable')} refused=${n((r) => r.port === 'refused')} notready=${n((r) => r.port === 'notready')}`
+    + ` nosuite=${n((r) => r.suite === 'missing')}`)
   return 0
 }
 
