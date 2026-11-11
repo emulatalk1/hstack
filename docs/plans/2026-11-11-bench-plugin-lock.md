@@ -44,7 +44,7 @@ W's name equals H's (`hstack`), so `probeOk` checks W's init the same way; the r
 
 ## Decisions for the user (asked with this plan)
 
-**Answered by the user on 2026-11-11:** decision 1: the plugin-design session was a new session the user started (in that worktree), not the Phase A controller's conversation continued ("session desgin kia là tôi chạy ở session mới"). The roles stayed apart; nothing is listed for step 14 on this. Decisions 2 and 3 wait for the user.
+**Answered by the user on 2026-11-11:** decision 1: the plugin-design session was a new session the user started (in that worktree), not the Phase A controller's conversation continued ("session desgin kia là tôi chạy ở session mới"). The roles stayed apart; nothing is listed for step 14 on this. Decisions 2 and 3: (a) each, by the user's "Theo advisor suggestions" of 2026-11-11, which also approved this plan.
 
 1. **Who designed the plugin.** Section 12 step 10 and ruling 3 of step 11 keep the controller and the designer apart. The plugin-design session runs in the worktree step 11 Phase A's controller used. Only you know whether it is a new conversation started in that folder or the Phase A controller's conversation continued. **(a) Recommended:** you say which; the lock records the observation and your answer, and the plugin lock does not close (Task 3) until the answer is in. If it is the same conversation, it is listed for step 14; this plan redoes nothing.
 2. **How much W runs before the lock.** W has never run end to end (the designer's local smoke run was refused by its own permission classifier). The prereg's step 12 runs nothing. **(a) Recommended:** the probe of Task 2 only (init loads `hstack`, no web tool, no `AskUserQuestion`, under the box's `bypassPermissions`), on the 4 trial boxes as step 11 B1 did; W's first full runs are step 13's. (b) As (a) plus one W run on s3-02 (the shortest trial task, about 25 minutes) as a smoke test of the Stop gate in the box. Cost: it leaves `results/s3-02-W-1.json` and a `bench/s3-02-W-1` branch, and `trial/floor.json` covers only H and B, so step 13's plan must add a W floor or that run counts as W's first scored run on a seen task; a listed deviation. (a) is recommended because a W that fails in the box shows in step 13 as W's score, which is what H4 reads anyway.
@@ -61,7 +61,7 @@ As the Phase B plan's: branch `bench-step12` from `main` (`dfdbe0a`, rebased fro
 **Files:**
 - Modify: `docs/plans/2026-10-27-benchmark-prereg.md` (section 12, "Applied at step 12 (<date>)" after "Decided by the user on 2026-11-11, at the step 11 lock"), `docs/log.md`
 
-- [ ] **Step 1:** Write the paragraph: the decisions as answered; W's entry (commit, paths, sha256, pinned by a local ref); the probe of Task 2 (and the run of decision 2 (b) if chosen); the manifest and compare of Task 3 with `progress/step12/reasons.tsv`; "no change from here" as Task 3 step 4 states it; and that `arms.json` `plugins.W` is set only after this paragraph is committed. Commit before any write to `arms.json`.
+- [x] **Step 1:** Write the paragraph: the decisions as answered; W's entry (commit, paths, sha256, pinned by a local ref); the probe of Task 2 (and the run of decision 2 (b) if chosen); the manifest and compare of Task 3 with `progress/step12/reasons.tsv`; "no change from here" as Task 3 step 4 states it; and that `arms.json` `plugins.W` is set only after this paragraph is committed. Commit before any write to `arms.json`.
 
 ### Task 1: W in arms.json
 
