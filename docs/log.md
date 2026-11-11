@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-11
+* **Creation**: Added the [plugin lock plan](/plans/2026-11-11-bench-plugin-lock.md) (draft) for prereg step 12: W = hstack `9c4b267` (pinned locally), H stays `653af83`, models `claude-opus-5-5` and `claude-sonnet-5-5`, CLI 2.1.318, N 24; three decisions for the user (which conversation designed the plugin, how much W runs before the lock, the token).
 * **Approve**: The user approved the step 11 lock (`progress/step11-lock.md`); the [trial run plan, Phase B](/plans/2026-11-10-bench-trial-phase-b.md) is `stable`. Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 12, "Decided by the user on 2026-11-11, at the step 11 lock"): the token is not revoked and `box.env` is kept. Merged into main and pushed.
 * **Creation**: Drafted the step 11 lock `progress/step11-lock.md` after Phase B of the [trial run plan, Phase B](/plans/2026-11-10-bench-trial-phase-b.md): the hstack plugin (`653af83`) probed in each trial box, the trial (8 runs, all done and graded), σ_d 0.083, N 24, no walk; the Phase A plan gains the `human:` verified entry its `stable` status needs. Token revocation and approval pending.
 * **Update**: The user approved the [trial run plan, Phase B](/plans/2026-11-10-bench-trial-phase-b.md) and (a) of its decisions 1–3; the plugin commit is pinned by `refs/bench/plugins/hstack-653af83`.
