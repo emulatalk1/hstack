@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-11
+* **Approve**: The user approved the step 12 lock (`progress/step12-lock.md`); the [plugin lock plan](/plans/2026-11-11-bench-plugin-lock.md) is `stable`. H `653af83`, W `9c4b267`, the models, CLI 2.1.318 and N 24 are locked with `progress/stick-v1-step12.sha256`. Merged into main and pushed.
 * **Creation**: Drafted the step 12 lock `progress/step12-lock.md` of the [plugin lock plan](/plans/2026-11-11-bench-plugin-lock.md): H `653af83` and W `9c4b267` in `arms.json`, W probed ok in the 4 trial boxes after a new token (the old one hit its weekly limit), models, CLI 2.1.318 and N 24 locked, manifest `progress/stick-v1-step12.sha256` (25,171 files; against step 11: `arms.json` changed, explained). Waiting for the user's approval.
 * **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 12, "Applied at step 12") the rulings of the [plugin lock plan](/plans/2026-11-11-bench-plugin-lock.md), approved by the user with (a) of its decisions 2 and 3, before W enters `arms.json`.
 * **Creation**: Added the [plugin lock plan](/plans/2026-11-11-bench-plugin-lock.md) (draft) for prereg step 12: W = hstack `9c4b267` (pinned locally), H stays `653af83`, models `claude-opus-5-5` and `claude-sonnet-5-5`, CLI 2.1.318, N 24; three decisions for the user (which conversation designed the plugin, how much W runs before the lock, the token). Rebased on `main` `dfdbe0a` after the user merged the plugin-design branch (H, `653af83`, and its design records).

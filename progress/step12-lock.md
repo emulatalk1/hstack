@@ -1,6 +1,6 @@
 # Step 12 lock: the plugin
 
-Written 2026-11-11 by Task 3 of `docs/plans/2026-11-11-bench-plugin-lock.md` (status `draft` until the user approves). Rulings: prereg section 12, "Applied at step 12" (rulings 1–6, ruling 4 changed for the new token). Branch `bench-step12` from `main` (`dfdbe0a`); nothing pushed. `<data>` = `.evidence/bench`.
+Written 2026-11-11 by Task 3 of `docs/plans/2026-11-11-bench-plugin-lock.md` (`stable` since the user's approval). Rulings: prereg section 12, "Applied at step 12" (rulings 1–6, ruling 4 changed for the new token). Branch `bench-step12` from `main` (`dfdbe0a`); nothing pushed. `<data>` = `.evidence/bench`.
 
 Every number comes from count lines in `<data>/logs/step12/` (`plugin-export-w.out`, `arms-check.out`, `p.out`, `attempt-1/p.out`, `control.out`, `control-2.out`, `hash.out`, `self.out`, `compare.out`, `tests-1.out`), from run record fields, or from `trial/report.json`. No transcript, product, grade output, oracle or check was opened, and no plugin content was read beyond file lists, `hooks/hooks.json` and the counts below.
 
@@ -63,3 +63,7 @@ Recheck: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/stick.mjs compare p
 - σ_d from 4 tasks at k = 1 is rough; N never drops below 24.
 - The tokens are not revoked (the user's decisions of 2026-11-11).
 - The step 11 and Phase A limits stand.
+
+## Approval, 2026-11-11
+
+The user approved the step 12 lock ("Theo advisor suggestions", after the advisor's review). The plan is `stable`; `bench-step12` is merged into `main` by fast-forward and `main` is pushed; the branch is deleted locally and never pushed. From here, no change to `arms.json`, the pinned commits or the manifest's files outside step 13's outputs without the user (ruling 6).

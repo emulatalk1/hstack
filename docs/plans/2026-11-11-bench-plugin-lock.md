@@ -2,10 +2,11 @@
 type: plan
 title: "Plugin lock plan"
 description: "Prereg step 12: record arm W's plugin (hstack 9c4b267, the designer's removal-only variant of H 653af83) in arms.json, probe it in the trial boxes, and lock the plugin commits of H and W, the model IDs, the CLI and N = 24 with an amended manifest; no change from here."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.318, at: "2026-11-11T19:55:33+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.318, at: "2026-11-11T20:28:15+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-11T20:31:27+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
@@ -93,7 +94,7 @@ As the Phase B plan's: branch `bench-step12` from `main` (`dfdbe0a`, rebased fro
 - [x] **Step 2:** `bun bench/stick.mjs hash --out <scratchpad>/stick-v1-step12.sha256`, copied to `progress/`; `compare progress/stick-v1-step11.sha256 --reasons progress/step12/reasons.tsv`. Expected: changed 1 (`arms.json`), missing 0, unexplained 0; the trial's and the probes' files new. Anything else stops for the user.
 - [x] **Step 3:** Suite teed, pristine; `git status --short bench tests` empty.
 - [x] **Step 4:** `progress/step12-lock.md`: the table above as locked (H, W, models with their source, CLI, N), the manifest's sha256 and counts, W's probes, the content of `<data>/logs/step11b/handover.md` (now stated, since the plugin is locked), decision 1's observation and answer, the token's state, and step 13's carry-overs: the `grade --reuse` key (grade mode, `rebuild.json` sha, runner sha), s1-11's make, the three accepted minors of step 11, M3's open tasks, a CLI or model change between step 12 and step 13 (prereg step 13: "same model and CLI version"; a change is recorded and B is not reused). "No change from here": any later change to an `arms.json` entry, a pinned commit or the manifest's files outside step 13's outputs stops for the user.
-- [ ] **Step 5:** Advisor review, then the user's approval; this plan `stable` with a `human:` verified entry in the same commit; merge and push as the user asks.
+- [x] **Step 5:** Advisor review, then the user's approval; this plan `stable` with a `human:` verified entry in the same commit; merge and push as the user asks.
 
 ## Known limits
 
