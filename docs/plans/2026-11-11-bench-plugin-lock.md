@@ -69,9 +69,9 @@ As the Phase B plan's: branch `bench-step12` from `main` (`dfdbe0a`, rebased fro
 - Modify (gitignored): `<data>/arms.json` (`plugins.W`)
 - Create (gitignored): `<data>/logs/step12/arms-before.json`, `plugin-export-w.out`, `arms-check.out`
 
-- [ ] **Step 1:** Export W through `pluginExport` outside `<data>`: expect files 19 and the sha256 above; a different value stops for the user.
-- [ ] **Step 2:** Copy `arms.json` to `logs/step12/arms-before.json`; set `plugins.W` to `[{ "name": "hstack", "repo": "../..", "commit": "9c4b267a11f9553533ad2fa882acc2e6bdebd0b8", "paths": [".claude-plugin", "agents", "hooks", "scripts", "skills"], "sha256": "03b4fd12…" }]` (full hex); nothing else changes. `loadArms` accepts it; each arm's loaded entry exports to its recorded sha256 (H's unchanged).
-- [ ] **Step 3:** The designer session is closed, so nothing is sent; the lock states that W is recorded, with the sha256. Record in `progress/progress.md` ("Step 12"). Commit.
+- [x] **Step 1:** Export W through `pluginExport` outside `<data>`: expect files 19 and the sha256 above; a different value stops for the user.
+- [x] **Step 2:** Copy `arms.json` to `logs/step12/arms-before.json`; set `plugins.W` to `[{ "name": "hstack", "repo": "../..", "commit": "9c4b267a11f9553533ad2fa882acc2e6bdebd0b8", "paths": [".claude-plugin", "agents", "hooks", "scripts", "skills"], "sha256": "03b4fd12…" }]` (full hex); nothing else changes. `loadArms` accepts it; each arm's loaded entry exports to its recorded sha256 (H's unchanged).
+- [x] **Step 3:** The designer session is closed, so nothing is sent; the lock states that W is recorded, with the sha256. Record in `progress/progress.md` ("Step 12"). Commit.
 
 ### Task 2: W's probe
 

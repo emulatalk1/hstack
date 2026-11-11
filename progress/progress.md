@@ -3384,3 +3384,10 @@ trial sigma_d=0.083 sigma_d_ext=0.000 n=4 N=24 h1_n=24 walk=no
 - B3: `walk=no` (σ_d 0.083 ≤ 0.25, N 24, H1's N 24): no walk.
 - 2026-11-11, B4 steps 2–3 (controller): `stick compare progress/stick-v1-step11.sha256` (`compare.out`): equal 24,910, changed 1 (`arms.json`), missing 0, as the plan expected. Suite `tests-1.out`: 636 pass, 64 skip, 2 fail (`tests/okf.test.mjs`: the Phase A plan `stable` since 5211cfb without a `human:` verified entry); fixed in e9490d3; `tests-2.out`: 638 pass, 64 skip, 0 fail; `git status --short bench tests` empty. Docker: no trial container left, `bench-arm/proxy:1` and `fw:1` kept. Lock drafted (`progress/step11-lock.md`); advisor review; sealing grep over the branch 0 lines. s3-02 B record fields noted in the lock (52 s, 2 resumes, Bash 10). Waiting: token revocation (step 1) and the user's approval (step 4).
 - 2026-11-11T19:46:37+07:00, B4 steps 1 and 4: the user approved the lock ("Theo advisor suggestions": σ_d not relayed; merge and push) and decided the token is not revoked ("không cần thu hồi"), registered in the prereg; `box.env` kept, unread. Plan `stable`. Merged into main (fast-forward) and pushed.
+
+## Step 12
+
+Plan `docs/plans/2026-11-11-bench-plugin-lock.md` (approved 2026-11-11 with (a) of decisions 2 and 3; decision 1 answered: the plugin-design session was a new session), branch `bench-step12` from `main` `dfdbe0a`. W pinned by `refs/bench/plugins/hstack-9c4b267` (local).
+
+- Task 0: rulings registered in the prereg (section 12, "Applied at step 12"), db91c33, before any write to `arms.json`.
+- Task 1 (controller): W's export (`logs/step12/plugin-export-w.out`): files 19, sha256 `03b4fd1233b202fcb2047ea0c872ebe748b658d68b71f31d1e33b2061e1b1bae`, as computed at the handover. `arms.json` `plugins.W` set (`logs/step12/arms-before.json`); `loadArms` accepts it; each arm's export matches its recorded sha256 (H 653af83 21 files, W 9c4b267 19 files; `arms-check.out`). Nothing sent: the designer session is closed.
