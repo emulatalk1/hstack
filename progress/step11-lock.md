@@ -42,7 +42,7 @@ Totals (`report.json`): B tokens 219,323, cache read 61,705,529, cache write 1,3
 
 ## What went to the designer
 
-The 8 per-task and per-arm lines of `report.out` (build, requirement, passed, tokens, cache, minutes, interventions, end), handed to the user on 2026-11-11 for the designer, after the report was judged; the controller did not reach the designer itself (decision 4 (a), controller ruling 3). Not σ_d, N, a transcript, a product, a check id or a probe reason. One fact about the export's run-time needs is kept in `<data>/logs/step11b/handover.md` (gitignored), not relayed (decision 2 (a)); its content is stated in the step 12 lock, after the plugin is locked.
+The 8 per-task and per-arm lines of `report.out` (build, requirement, passed, tokens, cache, minutes, interventions, end), with cache write per run added, sent on 2026-11-11 after the report was judged, at the user's request ("Không tự chuyển qua được à?"), by a cross-session message from this session to the plugin-design session, which had asked for them with the σ_d line; the σ_d line was withheld (decision 4 (a), controller ruling 3). Not σ_d, N, a transcript, a product, a check id or a probe reason. One fact about the export's run-time needs is kept in `<data>/logs/step11b/handover.md` (gitignored), not relayed (decision 2 (a)); its content is stated in the step 12 lock, after the plugin is locked.
 
 ## B3: the walk
 
