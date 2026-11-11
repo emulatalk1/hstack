@@ -79,6 +79,7 @@ As the Phase B plan's: branch `bench-step12` from `main` (`dfdbe0a`, rebased fro
 - Create (gitignored): `<data>/logs/step12/plugin-probe-w.mjs` (step 11's `plugin-probe-h.mjs` with the arm a parameter), `p.sh`, `p.out`
 
 - [ ] **Step 1:** One W box per trial task (s2-01, s3-02, p8b, p6c), one `Reply OK.` turn under `bypassPermissions`, web tools off, 1800 s, `probeOk('W', initInfo(out), ['hstack'], [])`; one count line per task. pgsnap around p8b and p6c. Expected: every line `turn exit 0 plugins ["hstack"] web 0 askUser 0 probe ok`; anything else stops for the user, and its reason (a run reason, not a score) goes to the user, not the designer.
+- **2026-11-11, first attempt:** s2-01, s3-02 and p8b exited 1 with `hstack` loaded; an H control on s3-02 exited 1 the same way; a host check found the token's account at its weekly usage limit. W is not implicated. Step 1 runs again after the reset, preceded by one H control probe.
 - [ ] **Step 2 (decision 2 (b) only):** `run-arm` with arm W on s3-02 through `env/box/s3-02.json`, its number above the trial floor; its record's `status`, `machine` and turn codes to the user; no grade read.
 - [ ] **Step 3:** No probe container, proxy or image left. Record; commit.
 
