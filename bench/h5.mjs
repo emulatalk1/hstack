@@ -92,7 +92,7 @@ export async function h5(args, inj = {}) {
   let suiteP = null // P's suite, run once when the first ported bug needs it: { status, pass: the ids of its passing cases }
   const rows = []
   for (const bug of bugs.filter((b) => b.state === 'kept')) {
-    // suite: P's suite state, 'ok' or 'missing' (no JUnit), null while it was not needed for this bug
+    // suite: 'ok', 'missing' (P's suite wrote no JUnit), 'missing-at-edit' (P's did, P + edit's did not), null while not needed for this bug
     const row = { bug: bug.id, at: resultIn(atP, bug.check), port: null, testFiles: files.length, suite: null, caught: null }
     rows.push(row)
     if (row.at === 'fail') row.caught = false
@@ -110,14 +110,16 @@ export async function h5(args, inj = {}) {
     if (!suiteP) { const r = await suiteAt(box, product); suiteP = { status: r.status, pass: new Set(r.cases.filter((c) => c.status === 'pass').map(caseId)) } }
     row.suite = suiteP.status
     if (suiteP.status === 'missing') { row.caught = null; continue } // no result at P: counted under nosuite, never a miss
-    row.caught = (await suiteAt(seededBox, p.commit)).cases.some((c) => c.status === 'fail' && suiteP.pass.has(caseId(c)))
+    const atE = await suiteAt(seededBox, p.commit)
+    if (atE.status === 'missing') { row.suite = 'missing-at-edit'; row.caught = null; continue } // no result at P + edit: nosuite as well
+    row.caught = atE.cases.some((c) => c.status === 'fail' && suiteP.pass.has(caseId(c)))
   }
   writeFileSync(join(evDir, 'h5', `${arm}-${run}.json`), JSON.stringify(rows, null, 2) + '\n')
   const n = (f) => rows.filter(f).length
   // each bug is exactly one of: caught, miss, na, refused, notready, nosuite (the README says what each means)
   console.log(`h5 ${task} ${arm} ${run} bugs=${rows.length} miss=${n((r) => r.caught === false)} ported=${n((r) => r.port === 'ported')} caught=${n((r) => r.caught === true)}`
     + ` na=${n((r) => r.at === 'precondition' || r.at === 'error' || r.port === 'not-applicable')} refused=${n((r) => r.port === 'refused')} notready=${n((r) => r.port === 'notready')}`
-    + ` nosuite=${n((r) => r.suite === 'missing')}`)
+    + ` nosuite=${n((r) => r.suite === 'missing' || r.suite === 'missing-at-edit')}`)
   return 0
 }
 

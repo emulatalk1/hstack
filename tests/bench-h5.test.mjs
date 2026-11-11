@@ -92,7 +92,8 @@ const bugAt = (w, sha) => git(w.sealed, 'for-each-ref', '--points-at', sha, '--f
 // fakes: grade writes the grade --out names (results at P, else at the port), the porter replies the bug's own edit (or reply(bug)),
 // the suite writes a JUnit per commit (cases at P, else per bug)
 // notReady: per port, how many grades there leave a `not ready` readiness line first; suitePStatus 'missing': P's suite writes no JUnit
-function fakes(w, { atP, atE = {}, reply, suiteP = [], suiteE = {}, agentCode = 0, suiteStatus = 'ok', notReady = {}, suitePStatus = 'ok' }) {
+// suiteEMissing: the ports (by `<arm>-<run>/<bug>`) whose suite writes no JUnit
+function fakes(w, { atP, atE = {}, reply, suiteP = [], suiteE = {}, agentCode = 0, suiteStatus = 'ok', notReady = {}, suitePStatus = 'ok', suiteEMissing = [] }) {
   const calls = { grade: [], agent: [], prompts: [], suite: [] }
   const grade = async (a) => {
     const sha = arg(a, '--at')
@@ -119,6 +120,7 @@ function fakes(w, { atP, atE = {}, reply, suiteP = [], suiteE = {}, agentCode = 
     calls.suite.push({ env: a[0], sha, files })
     if (suiteStatus !== 'ok') return suiteStatus
     if (suitePStatus === 'missing' && (sha === w.p1 || sha === w.p2)) return 'missing'
+    if (suiteEMissing.includes(bugAt(w, sha))) return 'missing'
     const cases = sha === w.p1 || sha === w.p2 ? suiteP : suiteE[bugAt(w, sha)] ?? []
     writeFileSync(arg(a, '--out'), `<testsuite>${cases.map(([n, s]) => `<testcase classname="fx" name="${n}">${s === 'fail' ? '<failure/>' : ''}</testcase>`).join('')}</testsuite>`)
     return 'ok'
@@ -247,6 +249,14 @@ test('a suite at P with no JUnit is counted under nosuite, never a miss', async 
   expect(r).toEqual({ code: 0, out: [`h5 ${TASK} H 1 bugs=2 miss=0 ported=2 caught=0 na=0 refused=0 notready=0 nosuite=2`] })
   expect(rows(w)).toEqual([BUG1, BUG2].map((bug) => ({ bug, at: 'pass', port: 'ported', testFiles: 2, suite: 'missing', caught: null })))
   expect(f.calls.suite.map((s) => s.sha)).toEqual([w.p1]) // P's suite once, and no suite at a port it cannot be compared with
+})
+
+test('a suite at P + edit with no JUnit after a good one at P is counted under nosuite, never a miss', async () => {
+  const w = world('nosuite-edit'), f = fakes(w, { atP: { [CHECK1]: 'pass', [CHECK2]: 'pass' }, atE: { [`H-1/${BUG1}`]: { [CHECK1]: 'fail' }, [`H-1/${BUG2}`]: { [CHECK2]: 'fail' } },
+    suiteP: [['a', 'pass']], suiteE: { [`H-1/${BUG2}`]: [['a', 'fail']] }, suiteEMissing: [`H-1/${BUG1}`] })
+  const r = await run(w, [TASK, 'H', '1'], f.inj)
+  expect(r.out).toEqual([`h5 ${TASK} H 1 bugs=2 miss=0 ported=2 caught=1 na=0 refused=0 notready=0 nosuite=1`])
+  expect(rows(w)).toEqual([{ bug: BUG1, at: 'pass', port: 'ported', testFiles: 2, suite: 'missing-at-edit', caught: null }, { bug: BUG2, at: 'pass', port: 'ported', testFiles: 2, suite: 'ok', caught: true }])
 })
 
 test('a never-ready grade at the port is graded once more, then counted under notready', async () => {
