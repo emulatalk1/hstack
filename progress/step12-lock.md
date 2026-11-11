@@ -39,6 +39,7 @@ Recheck: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/stick.mjs compare p
 ## Checks at the lock
 
 - Suite `tests-1.out`: 638 pass, 64 skip, 0 fail, pristine; `git status --short bench tests` empty.
+- Sealing grep over `git diff main..HEAD` for check ids (`-T<n>`): 0 outside the manifest; the manifest's 3,426 matches are file paths, the same set as `progress/stick-v1-step11.sha256` already in `main` (0 new).
 - Docker: no probe container or proxy left; `bench-arm/proxy:1` and `bench-arm/fw:1` kept.
 - Git housekeeping at the user's request: merged branches and two clean worktrees removed (see `progress/progress.md`); kept `main`, `bench-step12`, `plugin-w`, the step 7 branch `worktree-bridge-cse_01JxVNAL2Dkzabg9QuuNaY5E` (18 commits not in `main`) and both pin refs. Scripts in `<data>/logs/step11/` that import `bench/` from the removed Phase A worktree are records and no longer run as written.
 
