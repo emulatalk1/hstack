@@ -715,6 +715,26 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
 
 **Amended at step 13 (H5), 2026-11-11, before any step 13 run**, after the final code review of the step 13 tools: how `bench/h5.mjs` classes each kept bug of a product, so H5's denominator is fixed before any count is seen. Classes, each bug in exactly one: `caught` (ported, and a case that passes in P's suite fails or is absent at P + edit, or P + edit's suite times out twice after P's ran); `miss` (applicable and not caught: the check fails at P, or P has no test file, or no passing case of P's suite fails at P + edit); `na` (the check is `precondition` or `error` at P, P's seeded grade has no result twice, or the port does not make the check fail); `refused` (the porter's edit fails the seeder's gates, or holds no edit); `notready` (the grade at P + edit is not ready twice); `nosuite` (ported, but a suite gave no JUnit, or ran out of memory, or P's suite timed out twice). The H5 rate is `caught / (caught + miss)`; the other classes are reported beside it. P's test files are the test paths `git diff --name-only <envCommit or base> P` lists. Ports live only in the task's sealed repo, `refs/h5/<arm>-<run>/<bug>`. Only standing runs above the step 13 floor are read. Listed for step 14.
 
+**Amended at step 13 (pre-flight), 2026-11-12, before any scored run**, from the scored runs plan's Tasks 4 and 4b:
+- **The grade path.** Every grade task file (`env/box`, `env/canary`, `env/seeded`, `env/s*.json`) runs `oracle-run` from the Phase A worktree `.claude/worktrees/bridge-cse_01JxVNAL2Dkzabg9QuuNaY5E`, which step 12's branch housekeeping removed. It is recreated at that path, detached at `main` 6fbbf1e (its `bench/` tree equals 7611de2, Phase A's final), and kept until step 14 locks. No data file changes. Checks: s1-11's end against its lock, 25 of 25 equal (ruling 5), and the pilot below.
+- **The pilot passed:** two lanes.
+  - Ten grades. Every check of the current oracle is equal to Phase A's third regrade. p8e lacks exactly the two checks decision (A) dropped after that regrade.
+  - Two H probes at once (s3-02, p8e) read `probe ok`. They also stand for Task 4's probe.
+  - No OOM event. Peak Docker memory 9,150 MiB; minimum free disk 60.2 GB.
+- **The external ends' suites.** Every one of the 29 external ends gives a JUnit offline.
+  - Four tasks fail a few cases at their own end: s3-11 1, s3-03 2, s2-10 3, s3-04 1.
+  - A case that fails at the reference never counts as a catch. As Task 3 ruled for real-estate, these cases are out for every product.
+  - Known limit: whatever fails them may also fail an arm's similar tests at P, which then read as misses.
+- **s1-02 (the user's answer of 2026-11-12).**
+  - The recipe's test script never creates the `pg_trgm` extension, so no database test ran. At the base, 22 of 22 cases failed in the migrate.
+  - `ext/tasks/fossasia__eventyay__4689/suite.sh` is the recipe's test plus one line that creates `pg_trgm` in `template1`. The recipe stays byte-equal.
+  - The migrate now passes. The same 22 cases fail at base and end in the file's own fixture (the file is stale against its code), so they never count.
+- **s1-02's product make, offline.** It passed only within about 10 minutes of a fresh serve build: uv's cached index for the build requirements goes stale, then the lookup fails.
+  - `ext rebuild s1-02` (step 11 ruling 4) ran with the serve image aged. The current lines failed; round 1 of 2 passed at base and end and wrote `rebuild.json`.
+  - s1-02's end, regraded with it, is equal to its lock.
+  - Another task whose make fails this way during the runs stops the driver (a machine stop, not a counted result) and gets the same tool.
+- Listed for step 14.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.

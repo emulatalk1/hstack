@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-11-12
+* **Update**: Registered step 13's pre-flight in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Amended at step 13 (pre-flight)"): the grade path recreated, the two-lane pilot passed, the external suites' failing cases, s1-02's `suite.sh` and its offline rebuild.
+
 ## 2026-11-11
 * **Update**: Amended step 13 of the [scored runs plan](/plans/2026-11-11-bench-scored-runs.md) and registered it in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Amended at step 13"): two lanes instead of one Docker job at a time, Docker 16 GB and a 120 GB disk, a pilot with registered pass criteria first, and exclusions for the private set and the shared-port tasks.
 * **Update**: Registered in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) (section 12, "Applied at step 13") the rulings of the [scored runs plan](/plans/2026-11-11-bench-scored-runs.md), approved by the user with (a) of its six decisions, before any step 13 code or run.

@@ -111,8 +111,8 @@ Registered in the prereg ("Amended at step 13") before Docker is changed or any 
   - `bun bench/scored.mjs order`: prints the task order of decision 1 (one task per line).
   - `bun bench/scored.mjs report`: prints per set and arm the count of standing runs, machine runs (by reason), `noresult` grades, tokens, minutes and interventions in sum; no score, mean or interval (ruling 10). `bun bench/scored.mjs table` (step 14's, refused unless `<data>/step14/registered` exists) writes the per-run scores.
 
-- [ ] **Step 1: Write the failing tests:** 'the run refuses a task not in tasks.txt'; 'only runs above the step 13 floor stand' (a fixture with trial and canary records under the floor); 'slots follow the set' (external 9, real-estate 6, no W slot there); 'the order is queuePick over the tasks' (decision 1 (a)); 'a version change stops the driver'; 'the report prints counts and no score'; 'the table is refused before step 14 registers'.
-- [ ] **Step 2: Run** — FAIL. **Step 3: Implement** reusing `canary.mjs`; no change to `canary.mjs`, `trial.mjs`, `run-arm.mjs` or the box. **Step 4:** Suite teed — pass. Commit `git commit -m "Add the driver for the scored runs"`.
+- [x] **Step 1: Write the failing tests:** 'the run refuses a task not in tasks.txt'; 'only runs above the step 13 floor stand' (a fixture with trial and canary records under the floor); 'slots follow the set' (external 9, real-estate 6, no W slot there); 'the order is queuePick over the tasks' (decision 1 (a)); 'a version change stops the driver'; 'the report prints counts and no score'; 'the table is refused before step 14 registers'.
+- [x] **Step 2: Run** — FAIL. **Step 3: Implement** reusing `canary.mjs`; no change to `canary.mjs`, `trial.mjs`, `run-arm.mjs` or the box. **Step 4:** Suite teed — pass. Commit `git commit -m "Add the driver for the scored runs"`.
 
 ### Task 2: The H5 port and suite run
 
@@ -124,8 +124,8 @@ Registered in the prereg ("Amended at step 13") before Docker is changed or any 
   - `bun bench/ext.mjs box-env <task> --seeded`: writes `env/box-seeded/<task>.json`, the box task file with `repo` = the task's sealed repo.
   - `portEdit({ data, task, bug, product }) -> { edit } | { refused: <reason> }`: one sealed agent run with `briefs/porter.md`, the bug's `description` and `edit`, `--at <product>`; the seeder's edit gates.
   - `bun bench/h5.mjs <task> <arm> <run>`: ruling 9 end to end; writes `<task>/seeded/h5/<arm>-<run>.json` = `[{ bug, at: 'pass'|'fail'|'precondition'|'error', port: 'ported'|'not-applicable'|'refused'|null, suite: <n test files>, caught: true|false|null }]`; prints one count line `h5 <task> <arm> <run> bugs=<n> miss=<m> ported=<p> caught=<c> na=<k>`.
-- [ ] **Step 1: Write the failing tests:** 'a fail at the product is a miss with no porter'; 'the porter's prompt holds no check'; 'a port lands only in the sealed repo'; 'a port that does not flip the check is not applicable'; 'caught needs a test that passes at P and fails at P + edit'; 'the suite runs offline and only the product's test files' (gated `BENCH_EXT_DOCKER=1`, a fixture recipe whose test opens a socket: no result); 'a product with no test file is a miss'; 'box-env --seeded changes only repo'.
-- [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4:** Suites teed (and the gated one) — pass. Commit `git commit -m "Add the H5 port and the product suite run"`.
+- [x] **Step 1: Write the failing tests:** 'a fail at the product is a miss with no porter'; 'the porter's prompt holds no check'; 'a port lands only in the sealed repo'; 'a port that does not flip the check is not applicable'; 'caught needs a test that passes at P and fails at P + edit'; 'the suite runs offline and only the product's test files' (gated `BENCH_EXT_DOCKER=1`, a fixture recipe whose test opens a socket: no result); 'a product with no test file is a miss'; 'box-env --seeded changes only repo'.
+- [x] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4:** Suites teed (and the gated one) — pass. Commit `git commit -m "Add the H5 port and the product suite run"`.
 
 ### Task 2b: Two lanes (the amendment)
 
@@ -134,25 +134,25 @@ Registered in the prereg ("Amended at step 13") before Docker is changed or any 
 **Interfaces:**
 - `scored.mjs run <task>` passes `runTask` a per-task config: `floor` from `step13/floor/<task>.json`, `attempts: step13/attempts/<task>.json`; the context's `prune` is a no-op.
 - `bun bench/scored.mjs claim <lane>`: under a lock (`mkdir <data>/step13/queue.lock`, removed in `finally`; a stale lock older than 10 minutes with no live pid is reclaimed), reads `step13/queue.json` (`{ done: [], running: { <lane>: <task> } }`, created from `order` on first use), clears the lane's previous task into `done` only when its `run` exited 0 (the lane passes `--done <task>`), and prints the next task of the order not done, not running, and not excluded by the amendment (a private-set task while another private-set task runs; s2-08, s2-09, s2-10 while one of them runs), or `none` when nothing is allowed now, or `empty` when all are done. A lane that stops on a non-zero exit keeps its task in `running` until the controller clears it (`claim <lane> --release`).
-- [ ] **Step 1: Write the failing tests:** 'two tasks in parallel touch disjoint floor and attempts files'; 'claim keeps the global order'; 'claim never gives two private-set tasks at once'; 'claim never gives two of the shared-port tasks at once'; 'a stopped lane keeps its task until released'; 'prune is never called by run'.
-- [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4:** Suite teed — pass. Commit `git commit -m "Run the scored set in two lanes"`.
+- [x] **Step 1: Write the failing tests:** 'two tasks in parallel touch disjoint floor and attempts files'; 'claim keeps the global order'; 'claim never gives two private-set tasks at once'; 'claim never gives two of the shared-port tasks at once'; 'a stopped lane keeps its task until released'; 'prune is never called by run'.
+- [x] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4:** Suite teed — pass. Commit `git commit -m "Run the scored set in two lanes"`.
 
 ### Task 3: The real-estate suite (decision 3 (a) only; controller)
 
-- [ ] **Step 1:** Write `ext/tasks/real-estate/suite.sh` (ruling 9's contract: given files, JUnit to `/out`, services up first, no network); the recipe stays byte-equal.
-- [ ] **Step 2:** For each of the 9 tasks, `suite-run` at the end with the end's own changed test files: a JUnit with every case passing is expected. A failure gets at most 2 sealed rounds (the script's lines only, the base's log readable, the end's sealed); still failing, real-estate leaves H5 for that task and the lock lists it.
+- [x] **Step 1:** Write `ext/tasks/real-estate/suite.sh` (ruling 9's contract: given files, JUnit to `/out`, services up first, no network); the recipe stays byte-equal.
+- [x] **Step 2:** For each of the 9 tasks, `suite-run` at the end with the end's own changed test files: a JUnit with every case passing is expected. A failure gets at most 2 sealed rounds (the script's lines only, the base's log readable, the end's sealed); still failing, real-estate leaves H5 for that task and the lock lists it.
 
 ### Task 4: Pre-flight (controller)
 
-- [ ] **Step 1:** `<data>/step13/tasks.txt` = the 38 tasks; `bun bench/scored.mjs order` to `logs/step13/order.out`.
-- [ ] **Step 2:** s1-11's end check (ruling 5).
-- [ ] **Step 2b:** `box-env <task> --seeded` for the 38 tasks. `suite-run` at each of the 29 external ends with the end's own changed test files: every case passing is expected (step 4 accepted each task on "PR tests pass at end"); a stack whose script cannot run offline in the product image stops for the user now, not after Task 5.
-- [ ] **Step 3:** One H probe on one external and one real-estate box (step 12's script): `probe ok`; the token answers. Docker: no leftover name of an earlier step; build cache under 15 GB.
+- [x] **Step 1:** `<data>/step13/tasks.txt` = the 38 tasks; `bun bench/scored.mjs order` to `logs/step13/order.out`.
+- [x] **Step 2:** s1-11's end check (ruling 5).
+- [x] **Step 2b:** `box-env <task> --seeded` for the 38 tasks. `suite-run` at each of the 29 external ends with the end's own changed test files: every case passing is expected (step 4 accepted each task on "PR tests pass at end"); a stack whose script cannot run offline in the product image stops for the user now, not after Task 5.
+- [x] **Step 3:** One H probe on one external and one real-estate box (step 12's script): `probe ok`; the token answers. Docker: no leftover name of an earlier step; build cache under 15 GB.
 
 ### Task 4b: The two-lane pilot (controller)
 
-- [ ] **Step 1:** With no job running: `docker builder prune -f`; the user sets Docker memory 16 GB and disk 120 GB; `docker info` confirms.
-- [ ] **Step 2:** The pilot of the amendment, with the samplers; results to `logs/step13/pilot/`. All four criteria met: two lanes. Any missed: one lane (`runs.sh` with one lane), recorded.
+- [x] **Step 1:** With no job running: `docker builder prune -f`; the user sets Docker memory 16 GB and disk 120 GB; `docker info` confirms.
+- [x] **Step 2:** The pilot of the amendment, with the samplers; results to `logs/step13/pilot/`. All four criteria met: two lanes. Any missed: one lane (`runs.sh` with one lane), recorded.
 
 ### Task 5: The runs (controller)
 
