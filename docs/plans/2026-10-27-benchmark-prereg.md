@@ -732,7 +732,7 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
 - **s1-02's product make, offline.** It passed only within about 10 minutes of a fresh serve build: uv's cached index for the build requirements goes stale, then the lookup fails.
   - `ext rebuild s1-02` (step 11 ruling 4) ran with the serve image aged. The current lines failed; round 1 of 2 passed at base and end and wrote `rebuild.json`.
   - s1-02's end, regraded with it, is equal to its lock.
-  - Another task whose make fails this way during the runs stops the driver (a machine stop, not a counted result) and gets the same tool.
+  - A make that fails during the runs does not stop the driver: the grade has no JUnit, a second attempt fails the same way, and the run stands as `noresult` (ruling 4). So before any scored run, every external task without `rebuild.json` makes its base and end again from a serve image built at least 15 minutes earlier (`ext rebuild <task>` twice, the second on a cached serve image). A task that fails there gets a round, and its end is regraded against its lock.
 - Listed for step 14.
 
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
