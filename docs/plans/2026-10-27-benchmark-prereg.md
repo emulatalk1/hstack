@@ -735,6 +735,18 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
   - A make that fails during the runs does not stop the driver: the grade has no JUnit, a second attempt fails the same way, and the run stands as `noresult` (ruling 4). So before any scored run, every external task without `rebuild.json` makes its base and end again from a serve image built at least 15 minutes earlier (`ext rebuild <task>` twice, the second on a cached serve image). A task that fails there gets a round, and its end is regraded against its lock. Done on 2026-11-12: all 16 such tasks (s3-02 was proven by the pilot) made base and end on an aged serve image with no round; s1-02 is the only task with the failure.
 - Listed for step 14.
 
+**Amended at step 13 (Task 5), 2026-11-12, after s3-11's first runs** (the user's answer: "Sửa make, chấm lại"):
+- **What happened.** s3-11's first five graded products (all three arms) stood as `noresult`: the product make failed.
+  - The recipe appends a `[profile.ci]` table to the tracked `.config/nextest.toml` after COPY. The box's `/work` already holds that edit, so every product commits it.
+  - The product make appends it again. The duplicate table breaks nextest, so the make fails.
+  - Shown without reading a sealed file: the end with only that edit fails the same way (no JUnit, a one-line log).
+  - s3-06's `rebuild.json` has the same kind of append (`[profile.ci.junit]`). No other recipe appends to a tracked file after COPY; s1-09's `Gemfile` append is tolerated (its nine grades are good).
+- **The fix, on the grade side only.** The append in s3-11's make (a new `ext/tasks/maplibre__martin__3365/rebuild.json`: the recipe's lines with the append guarded) and in s3-06's `rebuild.json` runs only when the table is absent.
+  - The box, the recipe, the oracles and the score rules are unchanged.
+  - The end and the end with the leaked edit, graded with `--out`, are equal to their locks: s3-11 14 of 14 each, s3-06 13 of 13 each.
+- **The regrade.** s3-11's attempts file is reset (its five products had two failed attempts each); the driver regrades every standing s3-11 product with the fixed make. s3-06 had not run.
+- Listed for step 14.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
