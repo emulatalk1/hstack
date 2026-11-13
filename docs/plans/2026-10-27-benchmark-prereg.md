@@ -747,6 +747,14 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
 - **The regrade.** s3-11's attempts file is reset (its five products had two failed attempts each); the driver regrades every standing s3-11 product with the fixed make. s3-06 had not run.
 - Listed for step 14.
 
+**Amended at step 13 (Task 5, the 24-hour check), 2026-11-13** (the user's answer: "Giữ 2 lane, ghi rõ"):
+- **The count** (`logs/step13/report-24h.out`, 14:46): 53 standing runs; `noresult` 0, since every s3-11 regrade gave a result; 2 machine runs, s3-11 H-2 and H-3 (`killed`).
+- **Both machine runs were the controller's.** Its diagnostic grades of s3-11, run while lane a held s3-11, ended by removing every recorded Docker object of the task, and that killed those two run boxes.
+  - No OOM event, no `memory` run, no lane-caused stop.
+  - The two-lane rule exists to catch contention between lanes, so these two runs are not counted against it, and step 13 stays on two lanes.
+  - From here, no controller grade touches a task a lane holds.
+- Listed for step 14.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
