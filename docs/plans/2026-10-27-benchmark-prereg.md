@@ -755,6 +755,20 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
   - From here, no controller grade touches a task a lane holds.
 - Listed for step 14.
 
+**Amended at step 13 (Task 5), 2026-11-14, after s2-05, before any extra grade** (the user's answer: "Luật chung, chấm thêm"):
+- **What happened.** s2-05 H-3 (ff89719) stands `noresult`: both of its grades, within one minute at 14:50, ended with oracle-run's "the product image was not made" line.
+  - Its make logs (sealed, sizes only) are 433–434 bytes; a make that succeeds on s2-05 writes about 350 KB.
+  - s2-05 B-3's first make failed the same way (433 bytes) and its second, 3 minutes later, made the image; s2-05's own end (9f88dd4, a trusted commit) failed the same way once on 2026-11-09.
+  - No s2-05 product changes a build or dependency file. So the failure is the make's environment, not the product, and two attempts a minute apart are not independent of it.
+- **The rule, for every arm and set alike, fixed before any extra grade is seen.** A standing scored product gets one more grade when all three hold:
+  1. its grade stands `noresult` after its two attempts;
+  2. each attempt's oracle-run log holds the "the product image was not made" line (counted with `grep -c`, the log not read);
+  3. its branch changes, from its root commit (`git diff --name-only`), no file named `package.json`, `Cargo.toml`, `pyproject.toml`, `setup.py`, `setup.cfg`, `go.mod`, `go.sum`, `Gemfile`, `pnpm-workspace.yaml`, `requirements*.txt`, `Dockerfile*`, `.npmrc`, `.yarnrc*`, any file with `lock` in its name, or any `.bench*` file.
+- **How.** After Task 5's last run, with both lanes stopped and before Task 6: each such product's attempt count goes from 2 to 1 in `step13/attempts/<task>.json`, and `bun bench/scored.mjs run <task>` regrades it once with the same make. That third result stands, whatever it is; nothing else of the task changes.
+- **Reported.** The step 13 lock lists each product the rule picks (task, arm, run) and its third label, and each `noresult` it does not pick, with the condition that failed.
+- **Known limit.** A product that edits a build file and meets the same environment fault gets no third grade; the third attempt may meet the fault again.
+- Listed for step 14.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
