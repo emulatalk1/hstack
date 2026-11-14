@@ -758,13 +758,19 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
 **Amended at step 13 (Task 5), 2026-11-14, after s2-05, before any extra grade** (the user's answer: "Luật chung, chấm thêm"):
 - **What happened.** s2-05 H-3 (ff89719) stands `noresult`: both of its grades, within one minute at 14:50, ended with oracle-run's "the product image was not made" line.
   - Its make logs (sealed, sizes only) are 433–434 bytes; a make that succeeds on s2-05 writes about 350 KB.
-  - s2-05 B-3's first make failed the same way (433 bytes) and its second, 3 minutes later, made the image; s2-05's own end (9f88dd4, a trusted commit) failed the same way once on 2026-11-09.
-  - No s2-05 product changes a build or dependency file. So the failure is the make's environment, not the product, and two attempts a minute apart are not independent of it.
+  - s2-05 B-3's first make log is also 433 bytes, and its second make, 3 minutes later, made the image.
+  - Neither H-3 nor B-3 changes a build or dependency file (condition 3 below).
+  - The evidence is sizes only, not the logs' text. It points to the make's environment, not the product, and two attempts a minute apart are not independent of such a fault.
+  - A 433-byte make log of s2-05's own end (9f88dd4) on 2026-11-09 is not used: it came during step 11's work on the product network, and whether a test caused it is not recorded.
 - **The rule, for every arm and set alike, fixed before any extra grade is seen.** A standing scored product gets one more grade when all three hold:
   1. its grade stands `noresult` after its two attempts;
   2. each attempt's oracle-run log holds the "the product image was not made" line (counted with `grep -c`, the log not read);
-  3. its branch changes, from its root commit (`git diff --name-only`), no file named `package.json`, `Cargo.toml`, `pyproject.toml`, `setup.py`, `setup.cfg`, `go.mod`, `go.sum`, `Gemfile`, `pnpm-workspace.yaml`, `requirements*.txt`, `Dockerfile*`, `.npmrc`, `.yarnrc*`, any file with `lock` in its name, or any `.bench*` file.
-- **How.** After Task 5's last run, with both lanes stopped and before Task 6: each such product's attempt count goes from 2 to 1 in `step13/attempts/<task>.json`, and `bun bench/scored.mjs run <task>` regrades it once with the same make. That third result stands, whatever it is; nothing else of the task changes.
+  3. `git diff --name-only <envCommit or base> <product>` (the commit the arm started from, as the H5 amendment reads it) lists no file whose basename, in any directory, is `package.json`, `Cargo.toml`, `pyproject.toml`, `setup.py`, `setup.cfg`, `go.mod`, `go.sum`, `Gemfile`, `pnpm-workspace.yaml`, `.npmrc`, or matches `requirements*.txt`, `Dockerfile*`, `.yarnrc*`, `*.lock`, `*-lock.json`, `*-lock.yaml`, `*.lockb`, `.bench*`.
+- **How.** After Task 5's last run, with both lanes stopped and before Task 6:
+  - `step13/attempts/<task>.json` is copied, then each such product's attempt count goes from 2 to 1.
+  - `bun bench/scored.mjs run <task>` regrades it once with the same make. Its output is appended to `logs/step13/run-<task>.out`, and only its `grade=` label is read; a good third grade reads `again`.
+  - That third result stands, whatever it is; nothing else of the task changes.
+  - `report` runs before and after, and both counts are kept.
 - **Reported.** The step 13 lock lists each product the rule picks (task, arm, run) and its third label, and each `noresult` it does not pick, with the condition that failed.
 - **Known limit.** A product that edits a build file and meets the same environment fault gets no third grade; the third attempt may meet the fault again.
 - Listed for step 14.
