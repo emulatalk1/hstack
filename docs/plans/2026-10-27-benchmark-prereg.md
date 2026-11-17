@@ -780,7 +780,10 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
 - **Its first scope.** The 27 external tasks other than s2-05 and s2-03. Each of these tasks has had all its runs and grades, and no product of them is picked by the third-grade rule, so nothing H5 reads there can change later.
 - **What waits.** s2-05 and s2-03 wait for the third grades. The real-estate tasks wait for p6a, since two private-set tasks never run at once. Then both lanes take the rest.
 - **The third grades.** These still come after Task 5's last run, with both scored lanes ended. They go before H5 on s2-05 and s2-03, not before H5 as a whole.
-- **Unchanged.** Which products are read (H's standing runs, listed once after the third grades); the classes; the porter brief; one task on one lane at a time (a grade's cleanup removes the task's Docker objects); the exclusions of the two-lane amendment.
+- **Which products, and when listed.** H's standing runs, from the records. The external list was taken on 2026-11-17: those records are final, since all of their tasks' runs are done. s2-05, s2-03 and the real-estate tasks are listed after the third grades and p6a.
+- **The brief.** `briefs/porter.md`, sha256 `c23994ed…94f87`, frozen before the first porter run.
+- **A canary first.** s1-01 runs alone first. Only a mechanical failure stops the launch: a non-zero exit, other than three count lines with `bugs=3`, a `refs/h5/` ref in the arm's store, Docker objects of s1-01 left behind, or p6a's box gone. Its counts, whatever they are, do not.
+- **Unchanged.** The classes; the porter brief; one task on one lane at a time (a grade's cleanup removes the task's Docker objects); the exclusions of the two-lane amendment.
 - Listed for step 14.
 
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
