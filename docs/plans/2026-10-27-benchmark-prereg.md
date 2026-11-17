@@ -775,6 +775,14 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
 - **Known limit.** A product that edits a build file and meets the same environment fault gets no third grade; the third attempt may meet the fault again.
 - Listed for step 14.
 
+**Amended at step 13 (Task 6, the order), 2026-11-17, before any H5 run** (the user: "tôi chỉ cần nhanh và chính xác", after "đừng lo về quota"):
+- **What changes.** H5 starts while Task 5's last task (p6a) still runs, on the lane the queue left idle. Two Docker jobs at a time, as before.
+- **Its first scope.** The 27 external tasks other than s2-05 and s2-03. Each of these tasks has had all its runs and grades, and no product of them is picked by the third-grade rule, so nothing H5 reads there can change later.
+- **What waits.** s2-05 and s2-03 wait for the third grades. The real-estate tasks wait for p6a, since two private-set tasks never run at once. Then both lanes take the rest.
+- **The third grades.** These still come after Task 5's last run, with both scored lanes ended. They go before H5 on s2-05 and s2-03, not before H5 as a whole.
+- **Unchanged.** Which products are read (H's standing runs, listed once after the third grades); the classes; the porter brief; one task on one lane at a time (a grade's cleanup removes the task's Docker objects); the exclusions of the two-lane amendment.
+- Listed for step 14.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
