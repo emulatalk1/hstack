@@ -1,5 +1,9 @@
 # Update Log
 
+## 2026-11-18
+* **Creation**: Drafted the step 13 lock `progress/step13-lock.md` of the [scored runs plan](/plans/2026-11-11-bench-scored-runs.md): 315 standing runs (claude-opus-5-5, CLI 2.1.318), machine 2 (the controller's), `noresult` 3 after three third grades; H5 on 114 H runs (288 bugs: caught 135, miss 54, not applicable 84, refused 15); manifest `progress/stick-v1-step13.sha256` (35,968 files; against step 12: changed 19, all explained). Four controller decisions and one H5 overlap (s2-02 and s2-10 on a shared store) wait for the user's approval.
+* **Update**: Recorded the step 13 amendments of the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) made during the runs: 2026-11-14, a third grade for a `noresult` product whose make failed twice and which touches no build file (the user's decision); 2026-11-17, H5 starts early on the settled external tasks with a frozen porter brief and an s1-01 canary.
+
 ## 2026-11-12
 * **Update**: Registered step 13's pre-flight in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Amended at step 13 (pre-flight)"): the grade path recreated, the two-lane pilot passed, the external suites' failing cases, s1-02's `suite.sh` and its offline rebuild.
 

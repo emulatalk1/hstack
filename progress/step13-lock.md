@@ -2,7 +2,7 @@
 
 Written 2026-11-18 by Task 7 of `docs/plans/2026-11-11-bench-scored-runs.md`. Rulings: prereg section 13 ("Applied at step 13") and its amendments at step 13 (H5; pre-flight; two lanes; Task 5, the third grade; Task 6, the order). Branch `bench-step13` from `main` (`6fbbf1e`); nothing pushed. `<data>` = `.evidence/bench`. Ledger: `.superpowers/sdd/2026-11-11-bench-scored-runs/progress.md`.
 
-Every number comes from status and count lines in `<data>/logs/step13/` (`runs.out`, the `grade=` labels of `run-<task>.out`, `report.out`, `report-24h.out`, `h5.out`, `h5-counts.out`, `h5/lane.out`, `third/third.lines`, `pilot/lines`, `pre/lines`, `suite-ends/lines`, `aged/lines`, `lock/{hash,compare,self}.out`, `tests-1.out`, `tests-3.out`), from run record fields, or from structural grade fields (junit, readiness, all-error). No transcript, product, oracle, check, seeded bug, grade output or porter reply was opened; the exceptions are listed under Deviations.
+Every number comes from status and count lines in `<data>/logs/step13/` (`runs.out`, the `grade=` labels of `run-<task>.out`, `report.out`, `report-24h.out`, `h5.out`, `h5-counts.out`, `h5/lane.out`, `third/third.lines`, `pilot/lines`, `pre/lines`, `suite-ends/lines`, `aged/lines`, `lock/{hash,compare,self,self-2}.out`, `tests-1.out`, `tests-3.out`), from run record fields, or from structural grade fields (junit, readiness, all-error). No transcript, product, oracle, check, seeded bug, grade output or porter reply was opened; the exceptions are listed under Deviations.
 
 ## The runs (Task 5)
 
@@ -18,10 +18,10 @@ Every number comes from status and count lines in `<data>/logs/step13/` (`runs.o
 | real-estate | H | 27 | none | 0 | 2.1.318 (27) | 2,657,920 | 2,657.9 |
 | real-estate | B | 27 | none | 1 | 2.1.318 (27) | 2,070,966 | 2,061.6 |
 
-- **315 standing runs**, every slot filled. The model read from every step 13 record (standing and machine) is `claude-opus-5-5`, CLI `version` 2.1.318 (M-1 check on the first standing record: `models` and `probeModels` `[claude-opus-5-5]`, `fallback` null). The `B-` records the loader also lists (52, Sonnet and Haiku) are files of 2026-11-06/07, an earlier step's; no step 13 slot reads them.
+- **315 standing runs**, every slot filled. Over all 317 step 13 records (H, B, W above the floor, standing and machine): `models` `["claude-opus-5-5"]` 315 and `[]` 2 (the two killed s3-11 runs, no turn finished), `probeModels` `["claude-opus-5-5"]` 317, `fallback` null 317, `version` 2.1.318 317. The `B-` records the loader also lists (52, Sonnet and Haiku) are files of 2026-11-06/07, an earlier step's; no step 13 slot reads them.
 - **Machine runs: 2**, both s3-11 H (H-2, H-3, `status=abandoned machine=killed`), killed by the controller's diagnostic grades (see Stops); H-4 and H-5 took their slots.
 - **`noresult`: 3**, all a readiness `timeout` on both grades, standing as registered (a timeout is graded once more; the second result stands, scores 0): s1-03 H-1 (`41df55b`), s1-03 W-3 (`93ca515`), p8e B-2 (`f63c791`, a 7 h run). The real-estate one was told to the user.
-- **The third grade** (amendment 2026-11-14): after the last run and before the remaining H5 tasks, every `noresult` was listed again; three met all three conditions (both attempts a failed make, counted by `grep -c` of oracle-run's "the product image was not made" line; no build or dependency file changed from the record's `envCommit`): s2-05 H-3 `ff89719`, s2-03 W-3 `6cb0a09`, s2-03 B-5 `fe132fe`. `third/third.sh` set each picked sha's attempts 2 → 1 and ran `scored.mjs run <task>`: all three `again` (good on the third grade). Not picked: the three timeouts above (not a failed make). `report-before.out` and the attempts files before are kept in `logs/step13/third/`.
+- **The third grade** (amendment 2026-11-14): after the last run and before the remaining H5 tasks, every `noresult` was listed again; three met all three conditions (both attempts a failed make, counted by `grep -c` of oracle-run's "the product image was not made" line; no build or dependency file changed from the record's `envCommit`): s2-05 H-3 `ff89719`, s2-03 W-3 `6cb0a09`, s2-03 B-5 `fe132fe`. `third/third.sh` set each picked sha's attempts 2 → 1 and ran `scored.mjs run <task>`: all three `again` (good on the third grade). Not picked: the three timeouts above (not a failed make). `report-before.out` and the attempts files before are kept in `logs/step13/third/`; `report-before.out` against `report.out` differs only in external `noresult` (H 2 → 1, W 2 → 1, B 1 → 0).
 - `again` labels (a good second or third attempt after a failed make) occur only on s2-05 and s2-03, the two cherry-studio tasks.
 
 ## Stops and their answers
@@ -30,7 +30,7 @@ Every number comes from status and count lines in `<data>/logs/step13/` (`runs.o
 |---|---|---|---|
 | 2026-11-12 21:32 | a, s3-11 | `exit 3`, `machine` | The controller's diagnostic grades on s3-11 ran while lane a held s3-11; oracle-run's cleanup removes every recorded Docker object of the task, which killed H-2 and H-3 mid-run. Cause of the first `noresult`s (fixed by the user's decision "fix the make, regrade"): the recipe's post-COPY nextest append was committed by every product and appended again by the product make. Guard added in `ext/tasks/maplibre__martin__3365/rebuild.json` (new) and line 12 of s3-06's `rebuild.json`; ends equal to their locks (14/14, 13/13); s3-11's attempts reset; lane a restarted 22:43. Every s3-11 product then graded `ok`. |
 
-No other stop: no `PGSNAP CHANGED`, no `refused` or `api`, no second `claim` failure. One pause (2026-11-15 15:18 to 19:27, the user's quota for this session), taken between tasks.
+No other stop: no `PGSNAP CHANGED`, no `refused` or `api`, no second `claim` failure. Two pauses (`step13/pause`), both taken between tasks: 2026-11-12 21:28 to 22:43 (the s3-11 stop, until the user's decision) and 2026-11-15 15:18 to 19:27 (the user's quota for this session).
 
 ## H5 (Task 6)
 
@@ -46,6 +46,10 @@ The porter brief `<data>/briefs/porter.md`, frozen before the first H5 run: sha2
 
 Each bug is exactly one of caught, miss, not applicable, refused, not ready, no suite; the sums hold in each set. No rate (step 14).
 
+No P grade in H5 was all `error` (the rows' `at` fields counted, 114 files): only s3-06 has one check `error` at P, the same in its three runs. 27 rows are wholly not applicable (`na` = bugs), none from an error at P.
+
+**The shared-store groups were not enforced in H5.** The plan has H5 run "with the same exclusions"; `h5/lane.sh` locked the private set and s2-08/09/10, but not the store groups of `step13/exclusive.json` ([s1-05, s1-07], [s2-02, s2-10], [s2-03, s2-05]). s1-05/s1-07 and s2-03/s2-05 ran one after the other. **s2-02 (h5b, 22:53 to 01:55) and s2-10 (h5a, 01:46 to 02:13) overlapped for 9 minutes** on the xum store; s2-10's H-1 and H-2 (rows written 01:50, 01:53) fall inside it. Mechanical evidence: both exit 0; no P grade all `error` in either; `refs/h5` in `seeded/repos/coder__xum.git` 3 per run of s2-02 and 3 for s2-10 H-3, 0 for s2-10 H-1/H-2, which matches their count lines (no port reached on a run whose 3 bugs were not applicable at P). s2-10 H-1 and H-2 read `na=3` (not `error`). Whether to accept them or rerun them alone is the user's (see Approval).
+
 ## The manifest
 
 `bun bench/stick.mjs hash --out <outside <data>>` (2026-11-18, after H5, before the lock's own logs): files 35,968 (left out: link 47, node_modules 1, store 2,108, secret 8, transcript 911, rewritten 88, special 0). Manifest `progress/stick-v1-step13.sha256`, sha256 `9e1d4dba06513be1d222614b1d2a8c41f73f1a81b7a25c8f9c7d5846f9aaf201`. Self-compare: hashed 35,968, equal 35,968. Against `progress/stick-v1-step12.sha256` with `progress/step13/reasons.tsv`: hashed 25,171, equal 25,152, **changed 19, missing 0, unexplained 0**:
@@ -54,7 +58,7 @@ Each bug is exactly one of caught, miss, not applicable, refused, not ready, no 
 - `ext/sealed/*/logs/rebuild-*-current-1.make.log` (17): rewritten by `ext rebuild` at Task 4 (s1-02's rebuild round and the aged-serve check, 2026-11-12);
 - `ext/tasks/nautechsystems__nautilus_trader__4813/rebuild.json` (1): s3-06's guarded nextest append (the s3-11 stop's answer).
 
-Ruling 12 expected `changed 0` beside the alternates line; the 18 others are a deviation, each traced to a ledger entry made when it happened. New files include the step 13 records, grades, attempts, `step13/`, `env/box-seeded/`, `briefs/porter.md`, `ext/tasks/real-estate/suite.sh`, s1-02's `suite.sh`, s3-11's `rebuild.json`, and `logs/step13/` (with `runs.sh`, `h5/gen.sh`, `h5/lane.sh`, `third/third.sh`). `logs/step13/lock/`, `tests-2-wrong-scope.out`, `tests-3.out` and `pg-lock.txt` were written after the hash and are new files to it.
+Ruling 12 expected `changed 0` beside the alternates line; the 18 others are a deviation, each traced to a ledger entry made when it happened (the 8 slugs of the 17 logs appear in `aged/lines` or are s1-02's rebuild; mtimes 2026-11-12 10:17 to 13:45; s3-06's file 21:48). The 17 logs were rewritten by the controller's own rulings (s1-02's rebuild round, the aged-serve check), not a user decision; step 12 ruling 6 says a change to a manifest file outside step 13's outputs stops for the user, and it did not stop: the user first sees it here. Their reasons were written into `reasons.tsv` after the first compare showed them unexplained. New files include the step 13 records, grades, attempts, `step13/`, `env/box-seeded/`, `briefs/porter.md`, `ext/tasks/real-estate/suite.sh`, s1-02's `suite.sh` and `rebuild.json` (its rebuild round), s3-11's `rebuild.json`, and `logs/step13/` (with `runs.sh`, `h5/gen.sh`, `h5/lane.sh`, `third/third.sh`). `logs/step13/lock/`, `tests-2-wrong-scope.out`, `tests-3.out` and `pg-lock.txt` were written after the hash and are new files to it; a second self-compare after them (`lock/self-2.out`): hashed 35,968, equal 35,968, changed 0.
 
 Recheck: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/stick.mjs compare progress/stick-v1-step13.sha256`.
 
@@ -75,10 +79,11 @@ Recheck: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/stick.mjs compare p
 6. **A read of s2-05's task recipe make lines** was refused by the permission classifier and not retried.
 7. **The pause file** was first created at `logs/step13/pause` by mistake and moved a minute later to `step13/pause`, the path `runs.sh` reads.
 8. **The third-grade rule** was registered during Task 5 (after s2-05, before any extra grade), on the user's decision; it moved three products from `noresult` to good.
-9. **H5 began before Task 5 ended** (amendment 2026-11-17, on the user's "fast and accurate"), on external tasks whose products were all settled; s2-05, s2-03 and the real-estate tasks ran after the third grades and p6a.
-10. **H5 make flake: no extra retry** (ruling): `h5.mjs` already grades P and P + edit once more when not ready; `notready` came out 0.
+9. **H5 began before Task 5 ended** (amendment 2026-11-17), on external tasks whose products were all settled; s2-05, s2-03 and the real-estate tasks ran after the third grades and p6a. The user's free-text answer to the question ("don't worry about quota, I only need fast and accurate") was read as consent; the user was told so.
+10. **H5 make flake: no extra retry** (a controller ruling; the plan had been to ask the user before s2-05 and s2-03): `h5.mjs` grades P twice and P + edit once more when not ready. A failed make at P would read all `error` and land in not applicable; no P grade in H5 was all `error`, and `notready` (P + edit) is 0.
 11. **`oracle.mjs` exports** `once`, `resultIn`, `hasResults`, `notReadyOf` for `h5.mjs` (Task 2), and the seeder's edit gates moved into a shared `editCommit` (`seedCommit` unchanged).
 12. **Run minutes under two lanes** are not comparable with the trial's single-lane minutes (known limit of the two-lane amendment).
+13. **H5 did not enforce the shared-store groups**; s2-02 and s2-10 overlapped 9 minutes (H5 section).
 
 ## Open points for step 14
 
@@ -94,3 +99,12 @@ Recheck: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/stick.mjs compare p
 - The token is the one given at step 12, not revoked (the user's decision).
 - `again` exists only on the two cherry-studio tasks: their product make is flaky offline; a third failure would have stood.
 - The step 12 limits stand.
+
+## Approval
+
+Pending. Decided without the user, for the user to accept or overturn:
+
+1. The early-H5 consent read from the user's free text (deviation 9).
+2. No extra H5 retry for a make flake (deviation 10), where the plan had been to ask.
+3. The 18 manifest changes beyond the predicted one, explained in `reasons.tsv` after the compare (the manifest).
+4. s2-10 H-1 and H-2, run during a 9-minute overlap with s2-02 on a shared store: accept, or rerun them alone (minutes; a porter is called only for a bug whose check passes at P).
