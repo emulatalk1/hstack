@@ -8,7 +8,7 @@ The step 14 report found H4 not met: H − W on build + requirement over the 29 
 
 ## Result in one paragraph
 
-**The outcome is "little room".** The three parts ran in every one of H's 87 standing runs, and in none of W's, so H4 did compare two arms that behaved differently. But 15 of the 29 tasks sit at the ceiling (13) or the floor (2) in both arms. Ruling 5 sets the bar for "little room" at 15, so this result meets it exactly. On 20 of the 29 tasks the arm means tie exactly. By the registered order, that names the outcome, and the later rules are not reached. **H4's verdict stands.** It is not met, and H1–H3 stay unreported. What this adds: H4's null result is largely a property of the task set as the stick scores it. Most tasks gave no room for any difference to show. It is not evidence that the parts are inert.
+**The outcome is "little room".** The three parts ran in every one of H's 87 standing runs, and in none of W's, so H4 did compare two arms that behaved differently. But 15 of the 29 tasks sit at the ceiling (13) or the floor (2) in both arms. Ruling 5 sets the bar for "little room" at 15, so this result meets it exactly. On 20 of the 29 tasks the arm means tie exactly. By the registered order, that names the outcome, and the later rules are not reached. **H4's verdict stands.** It is not met, and H1–H3 stay unreported. In ruling 5's words: the stick could not move on most tasks, whatever the parts did. Of the 14 tasks not at an edge, at least 5 also tie exactly (20 ties in all, at most 15 of them at an edge).
 
 ## How it ran
 
@@ -28,7 +28,7 @@ Command: `bun bench/scored.mjs diagnose progress/stick-v1/tasks-step11.tsv --con
 
 - `standing tasks=29`: every task has exactly 3 standing runs in H and in W.
 - `transcripts runs=178`: the 174 standing runs plus the 4 controls each have turn files.
-- `toolUses runs=178`: per run, the tool's Agent and Bash totals equal the record's `toolUses`. Every call has a `tool_result`: Agent 572/572, Bash 17,464/17,464. No run had zero Bash calls, so the check did not pass on 0 = 0.
+- `toolUses runs=178`: per run, the tool's Agent and Bash totals equal the record's `toolUses`. Every call has a `tool_result`: Agent 572/572, Bash 17,464/17,464. No run had zero Bash calls, so the Bash side of the check did not pass on 0 = 0; for Agent, only the total (572) is shown.
 - `W parts runs=178`: no non-error oracle, reviewer or gate call in any W run.
 - `H plugins runs=178`: every standing H run and every control carries the same plugin entry (653af83).
 - The task list for a maximum of 1 printed as `s1-01,s1-06,s3-01,s3-07,s3-09`, the five the plan names.
@@ -72,8 +72,8 @@ These are observations only. The registered order stops at "little room", so O2 
 ## What it means
 
 - **For H4:** the verdict stands, not met, as registered. This step does not reopen it. H1–H3 and every other H − B line stay unreported.
-- **For the R1/R2 question:** "little room" is a property of the stick on this task set. On half the tasks both arms score at the ceiling or the floor, so no harness change could show there. That is closer to R1 in its broad form (the stick cannot show a difference on these tasks) than to R2. But this step does not separate them. It shows only that the stick, as built, had too few tasks with room to move. O2's code line shows no difference in code beyond run-to-run noise. Its test line shows that the parts change the tests H writes. Neither is scored by the hidden oracle.
-- **For 13.3–13.5:** unchanged. They come next, each in its own registered plan.
+- **For the R1/R2 question:** this step does not separate them. On 15 of the 29 tasks both arms score at the ceiling or the floor, so no difference could show there. O2, printed but not reached by the outcome order, adds two observations. The code H and W wrote differs no more than runs of one arm. The tests differ more; the hidden oracle scores the product's behaviour, not the test files the arm wrote.
+- **For 13.3–13.5:** this step changes nothing in them. Whether they come next is an open point (below).
 - **For any later change to W, the stick or the task set** (for example a harder task set with room above the ceiling, or an independent quality measure of the products): each needs its own registered plan before any run. Nothing here changes a registered rule.
 
 ## Deviations
@@ -82,7 +82,7 @@ These are observations only. The registered order stops at "little room", so O2 
    - a `called` count is printed beside the registered non-error count, with an "unconfirmed" wording if the two disagree on "inactive";
    - the gate heads were widened from the six named forms to a superset (`"${H}" gate`, `'$H' gate`, `'${H}' gate` also count).
 
-   Neither changed the outcome: every count reads 87/87 both ways.
+   Neither could change the outcome: "inactive" needs all three parts under 44 runs, and the oracle and the reviewer, which the gate pattern does not touch, read 87/87, ran and called alike. The six heads alone were not measured.
 2. **Interfaces differ from the plan's Task 1 text:**
    - `activity` takes turn texts, not parsed objects;
    - `isTestPath` comes from `bench/lib/replay.mjs`, not `task.mjs`;
@@ -111,6 +111,13 @@ These are observations only. The registered order stops at "little room", so O2 
 - **Against `progress/stick-v1-step14.sha256`** with an empty `progress/step15/reasons.tsv`: hashed 36,147, equal 36,147, **changed 0, missing 0, unexplained 0**.
 - **New files:** `step15/` (registered, diagnosis, its copy), `logs/step15/` (tests, diagnose output, its copy and exit code) and `logs/step14/lock/`.
 - **Self-compare:** before the lock logs moved into `logs/step15/lock/` and again after, hashed 36,158, changed 0.
+
+## Open points
+
+- **What comes next is the user's call.** Section 13 acceptance cannot be reached (H4 not met). Candidates, each needing its own registered plan:
+  - 13.3–13.5, as step 14 set them;
+  - a task set with room above the ceiling, on which H and W could be compared again;
+  - an independent quality measure of H's and W's products.
 
 ## Approval
 
