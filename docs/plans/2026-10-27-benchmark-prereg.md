@@ -811,6 +811,15 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
 
 Registered before any change to `bench/` for step 14 and before `<data>/step14/registered` exists; no score of a step 13 run has been opened.
 
+**Amended at step 14 (the tool's readings), 2026-11-18, after the final code review, before `<data>/step14/registered` exists and before any score is opened.** The analysis tool (`bench/scored.mjs analyse`, `bench/lib/analysis.mjs`, commit e1d2bb1) decides these cases that the rulings above do not state; registered here as the tool reads them:
+- A scored run's null build or requirement term reads 0, on every line (as `canaryScore` reads it for H4); no scored run is expected to have one (every scored task has fix-commit checks; H1's tasks all have step ids).
+- Each task's difference is rounded to 1e-9 before the bootstrap (the canary's rounding, so float noise in a mean cannot turn a tie).
+- A line with no seed of its own takes its parent's: H4's build and requirement lines take `H4`'s, and each line without the `noresult` runs takes the seed of the line it sits beside.
+- End reasons are printed and written whatever H4 gives (they compare no arm against another).
+- A deciding line (H4, H1, H2, H3a, H3b) with no task that has runs in each arm it compares stops the analysis instead of deciding.
+- `analyse` refuses, besides a missing `registered` or `table.json`: a missing or malformed `h5-standing.out` line, a task and run listed twice, a task outside the scored sets, a missing H5 row file, a malformed `--expect`, and a `--h5-drop` bug that no H5 row holds.
+- pass^k's tasks are the scored tasks with `h1_ids` > 0 in the tasks file (the tasks with step ids; equal to `step.json`'s id count for all 38, checked structurally on 2026-11-18).
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
