@@ -2,16 +2,20 @@
 // The scored runs (step 13): arms H, B and W (W on external tasks only), k = 3 standing runs per arm and task, on the tasks named in
 // <data>/step13/tasks.txt. It is the trial's driver (bench/trial.mjs) with other slots and its own floor and attempts files under
 // <data>/step13/. `report` prints counts only; `table` (the per-run scores) is step 14's and is refused until it registers.
+// `diagnose` (H and W only, counts only) is step 15's and is refused until it registers.
 // Nothing here names a task, a stack or a model.
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { aboveFloor, ATTEMPTS, attemptsOf, attemptKey, context, fx, good, gradeFile, readJson, records, runStopped, SEED, Stop, standing } from './canary.mjs'
 import { dataOf, PRIVATE_SET, readTsv, taskOf } from './ext.mjs'
 import { analyse } from './lib/analysis.mjs'
+import { activity, hwRecord, numstatDistance, o2Line, outcome, PARTS, scoreShape, summary, taskDistance } from './lib/diagnose.mjs'
 import { queuePick } from './lib/oracle.mjs'
+import { isTestPath } from './lib/replay.mjs'
+import { loadTask } from './lib/task.mjs'
 import { ScoreMissing, scoreAt, seedOf } from './oracle.mjs'
 
-const USAGE = 'usage: bun bench/scored.mjs run <task> | order | claim <lane> [--done <task> | --release] | report | table | analyse <tasks.tsv> --h5-drop <bug> --expect <json>'
+const USAGE = 'usage: bun bench/scored.mjs run <task> | order | claim <lane> [--done <task> | --release] | report | table | analyse <tasks.tsv> --h5-drop <bug> --expect <json> | diagnose <tasks.tsv> --control <task>:<H|W>:<run>[,...]'
 const K = 3, STALE_MS = 10 * 60000
 const lines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [])
 const tasksOf = (data) => lines(join(data, 'step13/tasks.txt'))
@@ -173,6 +177,77 @@ export function analysisLines(r, expect) {
   return out
 }
 
+// step 15's diagnosis of H4 (bench/lib/diagnose.mjs), run once after the plan registers: H and W only, counts and names only. Reads the
+// standing H and W runs of the tsv's scored external tasks (only H- and W-named records are opened), the control runs, their turns (the
+// probe's is not the run's, as the record's toolUses), the products' numstat and table.json's H and W rows. The instrument checks print
+// first; any failure is exit 3 with no reading and no file. Writes step15/diagnosis.json
+async function diagnoseCmd(c, tsv, controlArg) {
+  const { data } = c, registered = join(data, 'step15/registered'), tableFile = join(data, 'step13/table.json'), dir = join(data, 'results')
+  if (!existsSync(registered)) throw new Error(`diagnose refused: ${registered} is missing (step 15 registers its plan first)`)
+  if (!existsSync(tableFile)) throw new Error(`diagnose refused: ${tableFile} is missing`)
+  const rows = readTsv(tsv)
+  if (!rows.length || !['set', 'task', 'status', 'h1_ids'].every((k) => k in rows[0])) throw new Error(`${tsv}: needs the columns set, task, status and h1_ids`)
+  const kept = rows.filter((r) => r.status === 'scored' && r.set === 'external'), tasks = kept.map((r) => r.task)
+  const maxOf = (t) => (Number(kept.find((r) => r.task === t).h1_ids) > 0 ? 2 : 1), cfg = readJson(join(data, 'arms.json'))
+  const files = existsSync(dir) ? readdirSync(dir) : [], name = (r) => `${r.task} ${r.arm}-${r.run}`
+  const hw = (task) => files.filter((f) => hwRecord(task, f)).map((f) => readJson(join(dir, f))).filter(Boolean)
+  const runs = tasks.flatMap((task) => ['H', 'W'].flatMap((arm) => standing(aboveFloor(hw(task), floorOf(data, task)), arm, cfg, K)))
+  const controls = controlArg.split(',').map((x) => {
+    const [task, arm, run] = x.split(':'), r = readJson(join(dir, `${task}-${arm}-${run}.json`))
+    if (r?.task !== task || r.arm !== arm || r.run !== Number(run)) throw new Error(`diagnose refused: control ${task} ${arm}-${run} has no record`)
+    if (aboveFloor([r], floorOf(data, task)).length) throw new Error(`diagnose refused: control ${task} ${arm}-${run} is above its floor (a standing run)`)
+    return r
+  })
+  // the run's turn files: <n>-<label>.jsonl as run-arm writes them, the probe left out
+  const turnsOf = (r) => {
+    const d = typeof r.transcripts === 'string' && existsSync(r.transcripts) ? r.transcripts : null
+    return d ? readdirSync(d).filter((f) => /^\d+-.+\.jsonl$/.test(f) && !/^\d+-probe\.jsonl$/.test(f)).map((f) => readFileSync(join(d, f), 'utf8')) : []
+  }
+  const all = [...runs.map((r) => ({ r })), ...controls.map((r) => ({ r, control: true }))].map((x) => { const t = turnsOf(x.r); return { ...x, turns: t.length, a: activity(t) } })
+  const hPlugins = runs.filter((r) => r.arm === 'H').map((r) => JSON.stringify(r.plugins ?? null))
+  const common = hPlugins.sort((a, b) => hPlugins.filter((x) => x === b).length - hPlugins.filter((x) => x === a).length)[0] // the most common value
+  const checks = Object.entries({
+    transcripts: all.filter((x) => !x.turns),
+    toolUses: all.filter((x) => x.a.agentTotal !== (x.r.toolUses?.Agent ?? 0) || x.a.bashTotal !== (x.r.toolUses?.Bash ?? 0)),
+    'W parts': all.filter((x) => x.r.arm === 'W' && PARTS.some((p) => x.a[p] > 0)),
+    'H plugins': all.filter((x) => x.r.arm === 'H' && JSON.stringify(x.r.plugins ?? null) !== common),
+  }).map(([what, bad]) => ({ what, runs: all.length, bad: bad.map((x) => name(x.r)) }))
+  for (const k of checks) console.log(`check ${k.what} runs=${k.runs} ${k.bad.length ? `differs ${k.bad.join(',')}` : 'ok'}`)
+  if (checks.some((k) => k.bad.length)) { console.log('diagnosis stopped: an instrument check failed'); return 3 }
+
+  const o1 = Object.fromEntries(['H', 'W'].map((arm) => [arm, summary(all.filter((x) => !x.control && x.r.arm === arm).map((x) => x.a))]))
+  const control = summary(all.filter((x) => x.control).map((x) => x.a)), found = PARTS.some((p) => control.ran[p] > 0)
+  const perTask = []
+  for (const task of tasks) {
+    const { repo } = await loadTask(join(data, 'env/box', `${task}.json`)), shas = {}
+    for (const arm of ['H', 'W']) { shas[arm] = []; for (const r of runs.filter((x) => x.task === task && x.arm === arm)) shas[arm].push(r.branch ? await c.sha(task, r.branch) : null) }
+    perTask.push({ task, ...(await taskDistance(shas, async (a, b) => numstatDistance(await numstat(repo, a, b), isTestPath))) })
+  }
+  const o2 = { code: o2Line(perTask, 'code', `${SEED}:step15:O2-code`), test: o2Line(perTask, 'test', `${SEED}:step15:O2-test`), perTask }
+  const { runs: trows } = strictJson(tableFile, null, (v) => Array.isArray(v?.runs), 'a table ({ runs: [...] })')
+  const o3 = { max1: tasks.filter((t) => maxOf(t) === 1), ...scoreShape(trows.filter((r) => tasks.includes(r.task) && (r.arm === 'H' || r.arm === 'W')), maxOf, tasks) }
+  const words = outcome({ ran: o1.H.ran, runs: o1.H.runs, edge: o3.edge, controlFound: found, codeLower: o2.code.lower, testLower: o2.test.lower })
+  writeFileSync(join(data, 'step15/diagnosis.json'), JSON.stringify({ at: new Date().toISOString(), args: { tasks: tsv, control: controlArg }, checks, o1, control: { ...control, found }, o2, o3, outcome: words }, null, 2) + '\n')
+  const hist = (h) => Object.keys(h).sort().map((k) => `${k}:${h[k]}`).join(',') || 'none', parts = (s, f) => PARTS.map((p) => `${p}=${f(s, p)}`).join(' ')
+  for (const [arm, s] of Object.entries(o1)) {
+    console.log(`O1 ${arm} runs=${s.runs} ${parts(s, (x, p) => `${x.ran[p]}/${x.runs}`)} calls ${parts(s, (x, p) => fx(x.calls[p]))}`)
+    console.log(`O1 ${arm} agentTypes ${hist(s.agentTypes)}`)
+    console.log(`O1 ${arm} scriptWords ${hist(s.scriptWords)}`)
+  }
+  console.log(`control runs=${control.runs} ${parts(control, (x, p) => x.ran[p])} found=${found ? 'yes' : 'no'}`)
+  for (const side of ['code', 'test']) console.log(`O2 ${side} tasks=${o2[side].tasks} out=${list(o2[side].out)} mean=${f4(o2[side].mean)} 95%=${iv(o2[side])}`)
+  console.log(`O3 tasks=${o3.tasks} out=${list(o3.out)} max1=${list(o3.max1)} ties=${o3.ties} ceiling=${o3.ceiling} floor=${o3.floor} sdH=${f4(o3.sdH)} sdW=${f4(o3.sdW)} sdD=${f4(o3.sdD)}`)
+  console.log(`outcome ${words}`)
+  return 0
+}
+// the products' distance: no external diff, no textconv, no rename lines; paths unquoted where git can; stderr is never told (it may name product paths)
+async function numstat(repo, a, b) {
+  const p = Bun.spawn(['git', '-C', repo, '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'diff', '--numstat', '--no-renames', '--no-ext-diff', '--no-textconv', '--no-color', a, b, '--'], { stdout: 'pipe', stderr: 'pipe' })
+  const [out, , code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited])
+  if (code !== 0) throw new Error(`git diff --numstat ${a} ${b} failed (exit ${code})`)
+  return out
+}
+
 // the one queue of the two lanes: `mkdir queue.lock` with a pid file, always removed; a lock older than 10 minutes whose pid is dead is reclaimed.
 // shortcut: two reclaimers racing on one stale lock can both win, needs a crashed holder and a same-instant claim; upgrade to rename-then-mkdir if seen.
 const alive = (pid) => { try { process.kill(pid, 0); return true } catch (e) { return e.code === 'EPERM' } }
@@ -229,6 +304,7 @@ export async function scored(args, inj = {}) {
   if (cmd === 'report' && args.length === 1) return report(c)
   if (cmd === 'table' && args.length === 1) return table(c)
   if (cmd === 'analyse' && args.length === 6 && rest[0] === '--h5-drop' && rest[1] && rest[2] === '--expect') return analyseCmd(data, task, rest[1], rest[3])
+  if (cmd === 'diagnose' && args.length === 4 && rest[0] === '--control' && /^[a-z0-9][a-z0-9_-]*:[HW]:\d+(,[a-z0-9][a-z0-9_-]*:[HW]:\d+)*$/.test(rest[1])) return diagnoseCmd(c, task, rest[1])
   if (cmd === 'run' && /^[a-z0-9][a-z0-9_-]*$/.test(task ?? '') && !rest.length) {
     if (!tasksOf(data).includes(task)) throw new Error(`${task} is not in step13/tasks.txt`)
     if (!existsSync(boxFile(data, task))) throw new Error(`${task}: ${boxFile(data, task)} is missing (ext box-env)`)
