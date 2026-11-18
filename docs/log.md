@@ -1,7 +1,8 @@
 # Update Log
 
 ## 2026-11-19
-* **Update**: Registered the rulings of the [H4 diagnosis plan](/plans/2026-11-18-bench-h4-diagnosis.md) in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Applied at step 15"), after the user approved the plan ("Duyệt") and before any change to `bench/` for step 15.
+* **Update**: Registered the step 15 diagnosis tool's readings ("Amended at step 15 (the tool's readings)") in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md), among them a `called` count beside the registered non-error count and gate heads wider than the six of the [H4 diagnosis plan](/plans/2026-11-18-bench-h4-diagnosis.md), before `registered` and before any value is seen.
+* **Update**: Registered the rulings of the [H4 diagnosis plan](/plans/2026-11-18-bench-h4-diagnosis.md) in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Applied at step 15"), after the user approved the plan (typed "Duyêth", i.e. "Duyệt") and before any change to `bench/` for step 15.
 
 ## 2026-11-18
 * **Update**: Added the plugin-design session's 15 prompts (`progress/step14/design-prompts.md`) and the advisor's ruling under the user's delegation to the step 14 report: approve, and make step 15 a registered diagnosis of H4 before 13.3–13.5. Approved by the user ("Duyệt"); the plan is `stable`.
