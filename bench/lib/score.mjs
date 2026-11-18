@@ -81,10 +81,14 @@ export function floorScore(fix, step, ids) {
   }
   const mine = ids.map((id) => byId.get(id) ?? { id, severity: 'high', result: 'error' })
   const out = new Set((fix.excluded ?? []).map((e) => e.id))
+  // ruling 9 of step 14: one result per scored id (the step ids' own, then the fix checks not excluded); an id counts once
+  const seen = new Map(fix.checks.filter((c) => !out.has(c.id)).map((c) => [c.id, c.result]))
+  for (const c of mine) seen.set(c.id, c.result)
   return {
     // H2 counts every non-excluded check whatever its bucket, `out` too (today only unlabelled or disputed, ruling 7); a future `out` label would be counted
     build: share(mine), requirement: share(fix.checks.filter((c) => !out.has(c.id))),
     passed: ids.length ? mine.every((c) => c.severity === 'low' || c.result === 'pass') : null,
+    featureMissing: seen.size ? [...seen.values()].filter((r) => r === 'precondition').length / seen.size : null,
   }
 }
 
@@ -131,15 +135,35 @@ export function canaryVerdict(rows) {
 
 // the interval rule of 10.1: 95% bootstrap over tasks (each task already holds its runs' mean), a PRNG seeded from sha256(seed)
 const mulberry32 = (a) => () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
-export function bootstrapMean(ds, seed, resamples = 10000) {
+// the sorted means of `resamples` draws with replacement; bootstrapMean and bootstrapP share it so a seed gives the same draws
+function resampleMeans(ds, seed, resamples) {
   const rnd = mulberry32(createHash('sha256').update(seed).digest().readUInt32BE(0)), means = []
   for (let i = 0; i < resamples; i++) {
     let sum = 0
     for (let j = 0; j < ds.length; j++) sum += ds[Math.floor(rnd() * ds.length)]
     means.push(sum / ds.length)
   }
-  means.sort((a, b) => a - b)
-  return { mean: r9(mean(ds)), lower: r9(means[Math.floor(0.025 * resamples)]), upper: r9(means[Math.floor(0.975 * resamples)]) }
+  return means.sort((a, b) => a - b)
+}
+const ends = (sorted, level) => ({ lower: r9(sorted[Math.floor((1 - level) / 2 * sorted.length)]), upper: r9(sorted[Math.floor((1 + level) / 2 * sorted.length)]) })
+export function bootstrapMean(ds, seed, resamples = 10000, level = 0.95) {
+  return { mean: r9(mean(ds)), ...ends(resampleMeans(ds, seed, resamples), level) }
+}
+// ruling 6 of step 14: the two-sided bootstrap p of a bound test. 'lower' tests mean > threshold, 'upper' tests mean <= threshold
+export function bootstrapP(ds, seed, threshold, side, resamples = 10000) {
+  const means = resampleMeans(ds, seed, resamples)
+  return Math.min(1, 2 * means.filter((m) => (side === 'lower' ? m <= threshold : m > threshold)).length / resamples)
+}
+// ruling 8 of step 14: pairs [num, den]; each resample draws pairs with replacement and takes the ratio of sums
+export function bootstrapRatio(pairs, seed, resamples = 10000, level = 0.95) {
+  const rnd = mulberry32(createHash('sha256').update(seed).digest().readUInt32BE(0)), rates = []
+  for (let i = 0; i < resamples; i++) {
+    let num = 0, den = 0
+    for (let j = 0; j < pairs.length; j++) { const p = pairs[Math.floor(rnd() * pairs.length)]; num += p[0]; den += p[1] }
+    rates.push(num / den)
+  }
+  const sum = (k) => pairs.reduce((n, p) => n + p[k], 0)
+  return { rate: sum(0) / sum(1), ...ends(rates.sort((a, b) => a - b), level) }
 }
 // Student's t, 0.975 quantile, 1..30 degrees of freedom; shortcut: past 30 the normal 1.96 (under 4% short), when a set that large is judged
 const T975 = [12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042]

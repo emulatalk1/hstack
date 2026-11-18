@@ -423,7 +423,7 @@ test('floorScore counts every scored fix check in requirement and only step ids 
     ['f-T4', 'pass', 'high', 'out'], ['f-T5', 'fail', 'high', 'build'], ['f-T6', 'pass', 'high', 'build']], [{ id: 'f-T6', verdict: 'weak' }])
   const step = g([['s-T1', 'pass', 'high'], ['s-T2', 'fail', 'medium'], ['s-T3', 'pass', 'low']])
   // requirement: f-T1 3 + f-T3 1 + f-T4 3 pass of 3+2+1+3+3 = 12 -> 7/12; the excluded f-T6 counts nowhere
-  expect(floorScore(fix, step, ['s-T1', 's-T2', 's-T3'])).toEqual({ build: 4 / 6, requirement: 7 / 12, passed: false })
+  expect(floorScore(fix, step, ['s-T1', 's-T2', 's-T3'])).toEqual({ build: 4 / 6, requirement: 7 / 12, passed: false, featureMissing: 0 })
   expect(floorScore(fix, step, ['s-T1', 's-T3']).build).toBe(1)
   // step null: the ids are read from the fix grade
   expect(floorScore(fix, null, ['f-T1', 'f-T5']).build).toBe(0.5)
@@ -433,7 +433,21 @@ test('floorScore counts every scored fix check in requirement and only step ids 
 })
 
 test('floorScore gives null build and passed for no step id', () => {
-  expect(floorScore(g([['a', 'pass']]), g([]), [])).toEqual({ build: null, requirement: 1, passed: null })
+  expect(floorScore(g([['a', 'pass']]), g([]), [])).toEqual({ build: null, requirement: 1, passed: null, featureMissing: 0 })
+})
+
+test('featureMissing counts precondition once per id over step ids and non-excluded fix checks', () => {
+  const fix = g([['f1', 'pass'], ['f2', 'precondition'], ['f3', 'precondition'], ['s1', 'precondition'], ['x1', 'precondition']], [{ id: 'x1', verdict: 'weak' }])
+  const step = g([['s1', 'precondition'], ['s2', 'pass'], ['s3', 'fail']])
+  // ids: s1 s2 s3 (step) + f1 f2 f3 (fix, s1 once, x1 excluded) = 6, preconditions s1 f2 f3 = 3
+  expect(floorScore(fix, step, ['s1', 's2', 's3']).featureMissing).toBe(3 / 6)
+  // step null: the ids are fix checks too, each once
+  expect(floorScore(fix, null, ['f2', 'f3']).featureMissing).toBe(3 / 4) // f1 f2 f3 s1, three of them precondition
+  // an absent step id is an error, not a missing feature; a step id that is excluded in the fix still counts
+  expect(floorScore(g([['a', 'pass']]), g([]), ['gone']).featureMissing).toBe(0)
+  expect(floorScore(g([['a', 'pass']], [{ id: 'a', verdict: 'weak' }]), g([['a', 'precondition']]), ['a']).featureMissing).toBe(1)
+  // no scored check at all
+  expect(floorScore(g([['a', 'pass']], [{ id: 'a', verdict: 'weak' }]), g([]), []).featureMissing).toBeNull()
 })
 
 test('passed needs every high and medium step check to pass', () => {

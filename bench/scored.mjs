@@ -92,11 +92,13 @@ async function table(c) {
     for (const r of standingOf(c, task, cfg)) {
       const sha = await c.sha(task, r.branch)
       let s = null
+      const kinds = finalKinds(c, task, sha)
       // a score only from a final grade: every kind good, or at its second attempt
-      if (finalKinds(c, task, sha).every((x) => x.own && (x.ok || x.tries >= ATTEMPTS))) {
+      if (kinds.every((x) => x.own && (x.ok || x.tries >= ATTEMPTS))) {
         try { s = scoreAt(c.data, task, sha) } catch (e) { if (!(e instanceof ScoreMissing)) throw e }
       }
-      runs.push({ task, set: setOf(c.data, task), arm: r.arm, run: r.run, build: s?.build ?? null, requirement: s?.requirement ?? null, passed: s?.passed ?? null,
+      runs.push({ task, set: setOf(c.data, task), arm: r.arm, run: r.run, build: s?.build ?? null, requirement: s?.requirement ?? null, passed: s?.passed ?? null, featureMissing: s?.featureMissing ?? null,
+        noresult: kinds.some((x) => !x.ok && x.tries >= ATTEMPTS), // as `report` counts it
         tokens: (r.usage?.input ?? 0) + (r.usage?.output ?? 0), minutes: (Date.parse(r.end) - Date.parse(r.start)) / 60000, interventions: r.interventions ?? 0, end: r.reason ?? r.status })
     }
   }

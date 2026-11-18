@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { canary, extendedTasks } from '../bench/canary.mjs'
 import { oracleCommand } from '../bench/ext.mjs'
-import { bootstrapMean, intervalVerdict, tInterval } from '../bench/lib/score.mjs'
+import { bootstrapMean, bootstrapP, bootstrapRatio, intervalVerdict, tInterval } from '../bench/lib/score.mjs'
 import { loadTask } from '../bench/lib/task.mjs'
 import { queuePick } from '../bench/lib/oracle.mjs'
 
@@ -449,6 +449,52 @@ test('bootstrapMean gives the same interval for the same seed', () => {
 test('bootstrapMean golden: the PRNG and the quantile index are the record', () => {
   // mulberry32 from the first 4 bytes (big-endian) of sha256(seed); sorted means at index 250 and 9750 of 10,000
   expect(bootstrapMean([0.5, 1, -0.25, 0.75, 0, 1.5, 0.25], SEED_X)).toEqual({ mean: 0.535714286, lower: 0.142857143, upper: 0.964285714 })
+})
+
+test('the 95% interval is unchanged at the default level', () => {
+  // values pasted from a run of the code before the level and the shared routine existed
+  expect(bootstrapMean([0.2, -0.1, 0.4, 0.05, 0.3, -0.25, 0.15, 0.6, 0, 0.35], 'hstack-bench-2026-10-27:step14:regression')).toEqual({ mean: 0.17, lower: 0.02, upper: 0.325 })
+  expect(bootstrapMean([0.2, -0.1, 0.4, 0.05, 0.3, -0.25, 0.15, 0.6, 0, 0.35], 'hstack-bench-2026-10-27:step14:regression', 10000, 0.95)).toEqual({ mean: 0.17, lower: 0.02, upper: 0.325 })
+})
+
+test('a wider level gives a wider interval', () => {
+  const ds = [0.2, -0.1, 0.4, 0.05, 0.3, -0.25, 0.15, 0.6, 0, 0.35]
+  const a = bootstrapMean(ds, SEED_X, 10000, 0.95), b = bootstrapMean(ds, SEED_X, 10000, 0.99), c = bootstrapMean(ds, SEED_X, 10000, 0.8)
+  expect(b.lower).toBeLessThan(a.lower)
+  expect(b.upper).toBeGreaterThan(a.upper)
+  expect(c.lower).toBeGreaterThan(a.lower)
+  expect(c.upper).toBeLessThan(a.upper)
+})
+
+test('bootstrapP is 0 when every resample clears and 1 when none does', () => {
+  expect(bootstrapP([1, 2, 3], SEED_X, 0, 'lower')).toBe(0) // every mean is above 0
+  expect(bootstrapP([1, 2, 3], SEED_X, 10, 'lower')).toBe(1) // every mean is at or below 10, 2 * 1 capped at 1
+  expect(bootstrapP([1, 2, 3], SEED_X, 10, 'upper')).toBe(0)
+  expect(bootstrapP([1, 2, 3], SEED_X, 0, 'upper')).toBe(1)
+})
+
+test('an upper test counts only means above the threshold', () => {
+  // all resamples of [1, 1] have mean 1: equal to the threshold clears an upper test and fails a lower one
+  expect(bootstrapP([1, 1], SEED_X, 1, 'upper')).toBe(0)
+  expect(bootstrapP([1, 1], SEED_X, 1, 'lower')).toBe(1)
+})
+
+test('bootstrapP draws the resample means bootstrapMean draws', () => {
+  const ds = [0.5, 1, -0.25, 0.75, 0, 1.5, 0.25], { lower, upper } = bootstrapMean(ds, SEED_X)
+  // (the interval ends are rounded to 1e-9, so the thresholds step 1e-9 up)
+  // the means at or under the 2.5th percentile are at least 251 of 10,000, those over the 97.5th at most 249
+  expect(bootstrapP(ds, SEED_X, lower + 1e-9, 'lower')).toBeGreaterThanOrEqual(2 * 251 / 10000)
+  expect(bootstrapP(ds, SEED_X, upper + 1e-9, 'upper')).toBeLessThanOrEqual(2 * 249 / 10000)
+})
+
+test('bootstrapRatio of sums', () => {
+  expect(bootstrapRatio([[1, 2], [3, 4]], SEED_X).rate).toBe(4 / 6)
+  const one = bootstrapRatio([[3, 4]], SEED_X)
+  expect(one).toEqual({ rate: 0.75, lower: 0.75, upper: 0.75 })
+  const r = bootstrapRatio([[1, 2], [3, 4], [0, 5], [4, 4]], SEED_X)
+  expect(r.lower).toBeLessThanOrEqual(r.rate)
+  expect(r.upper).toBeGreaterThanOrEqual(r.rate)
+  expect(r).toEqual(bootstrapRatio([[1, 2], [3, 4], [0, 5], [4, 4]], SEED_X))
 })
 
 test('all zeros do not pass', () => {

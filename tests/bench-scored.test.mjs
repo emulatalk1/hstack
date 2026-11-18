@@ -199,6 +199,24 @@ test('the table is refused before step 14 registers, and written after', async (
   expect(json(join(d, 'step13/table.json')).runs.map((x) => [x.task, x.arm, x.run, x.build])).toEqual([['t1', 'H', 1, 1]])
 })
 
+test('table writes featureMissing and marks a run noresult when a kind\'s final grade is not good', async () => {
+  const d = world('tablenr')
+  putRun(d, 't1', 'H', 1)
+  putRun(d, 't1', 'H', 2)
+  putRun(d, 't1', 'H', 3)
+  const put = (n, checks) => writeFileSync(join(d, 't1/grades', `${shaOf(`bench/t1-H-${n}`).slice(0, 7)}.json`), JSON.stringify({ commit: shaOf(`bench/t1-H-${n}`), junit: 'ok', excluded: [], oracleSha: OSHA.grades.padEnd(64, '0'), checks }))
+  put(1, [{ id: 'a1', bucket: 'requirement', severity: 'high', result: 'precondition' }, { id: 'a2', bucket: 'requirement', severity: 'high', result: 'pass' }, { id: 'a3', bucket: 'requirement', severity: 'high', result: 'pass' }, { id: 'a4', bucket: 'requirement', severity: 'high', result: 'pass' }])
+  put(2, [{ id: 'a1', severity: 'high', result: 'error' }, { id: 'a2', severity: 'high', result: 'error' }]) // never good, 2 attempts: noresult, scored from what it gave
+  mkdirSync(join(d, 'step13/attempts'), { recursive: true })
+  writeFileSync(join(d, 'step13/attempts/t1.json'), JSON.stringify({ [shaOf('bench/t1-H-2')]: 2 }))
+  mkdirSync(join(d, 'step14'), { recursive: true })
+  writeFileSync(join(d, 'step14/registered'), '')
+  expect((await go(d, ['table'], fakes(d))).code).toBe(0)
+  const runs = json(join(d, 'step13/table.json')).runs
+  expect(runs.map((x) => [x.run, x.featureMissing, x.noresult])).toEqual([[1, 1 / 4, false], [2, 0, true], [3, 0, false]])
+  expect(runs[1].build).toBe(0)
+})
+
 test('a machine run with another version is the machine\'s stop, not a version stop', async () => {
   const d = world('versionmachine')
   putRun(d, 't2', 'H', 1, { rec: { start: '2026-11-11T10:00:00.000Z' } })
