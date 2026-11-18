@@ -4,6 +4,8 @@ title: "Analysis plan"
 description: "Prereg step 14: register every analysis rule the prereg leaves open before any score is opened, build the analysis on synthetic fixtures, then open the per-run table once and compute H4 first, H1–H3 with Holm, H5, pass^k, autonomy, the feature-missing rate and cost exactly per sections 9–10; report every deviation from the plan."
 status: draft
 generated: { by: claude-code/2.1.318, at: "2026-11-18T20:37:12+07:00" }
+verified:
+  - { by: claude-code-advisor/2.1.318, at: "2026-11-18T20:37:20+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
