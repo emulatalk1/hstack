@@ -105,12 +105,12 @@ Recheck: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/stick.mjs compare p
 
 ## Approval
 
-Pending the user's sign-off. Asked to approve, the user answered "Advisor quyết" ("the advisor decides") on 2026-11-18. The advisor's ruling, for the user to confirm:
+Approved by the user ("Duyệt", 2026-11-18, after the advisor's ruling below). Asked to approve, the user answered "Advisor quyết" ("the advisor decides") on 2026-11-18. The advisor's ruling, confirmed by the user:
 
 1. The early-H5 consent read from the user's free text (deviation 9): accept; the user was told how the answer was read, saw it in two later reports and did not object, and the start was gated by the canary and limited to settled tasks.
 2. No extra H5 retry for a make flake (deviation 10), where the plan had been to ask: accept; the grade count at the lock found no all-`error` grade, so the ruling changed no count.
 3. The 18 manifest changes beyond the predicted one, explained in `reasons.tsv` after the compare (the manifest): accept as a recorded deviation; all 18 trace to ledger entries made when they happened, 17 are logs, and s3-06's file follows the user's answer at the s3-11 stop. The missed stop under step 12's ruling 6 stays disclosed.
 
-A last compare before this commit: hashed 36,128, equal 36,128, changed 0. The plan stays `draft` until the user's own verified entry.
+A last compare before this commit: hashed 36,128, equal 36,128, changed 0. The plan is `stable`.
 
 Decided by the user: the four H5 runs of the s2-02/s2-10 store overlap were rerun alone (2026-11-18; H5 section).

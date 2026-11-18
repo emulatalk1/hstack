@@ -2,10 +2,11 @@
 type: plan
 title: "Scored runs plan"
 description: "Prereg step 13: run arms H, B and W with k = 3 on the 29 scored external tasks and H and B on the 9 scored real-estate tasks, in a seeded order, each product graded right after its run with every oracle kind; then port each seeded bug to H's products and run their own suites (H5). Records every run, failed ones included; analyses nothing (step 14)."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.318, at: "2026-11-11T20:37:16+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.318, at: "2026-11-11T20:41:05+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-18T20:25:22+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
