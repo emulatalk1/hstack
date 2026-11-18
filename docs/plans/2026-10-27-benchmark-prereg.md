@@ -793,6 +793,24 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
 - **What stands.** The new count lines, whatever they show; the old count lines stay in `h5.out` and are marked superseded. The counts are made again from the standing lines.
 - Listed for step 14.
 
+**Applied at step 14 (2026-11-18).** The [analysis plan](/plans/2026-11-18-bench-analysis.md) registers here, before any change to `bench/` for step 14 and before `<data>/step14/registered` exists, the user's answers of 2026-11-18 (decision 1 (a), "Để bước 15"; the plan approved, "Duyệt") and its rulings 1–12, as the plan states them. In short:
+
+- **Scope (decision 1 (a)):** step 14 is the analysis of sections 9–10 and its report. Section 13 items 3–5 (the rerun of grading and of 3 tasks, the cold setup, the blind rating) go to a step 15 plan; until they are measured the report says section 13 acceptance is **not judged**.
+- **Sets:** H4, H2 and H3 on the 29 `scored` external tasks of `progress/stick-v1/tasks-step11.tsv` ("H2–H4 run on every kept task", the step 11 deviation, which replaces the step 10 lock's "24 tasks" for H4); H1 on the 24 of them with step ids; H5 pooled over the 38 tasks (H's 114 standing rows; the four superseded lines of the overlap rerun out); real-estate's H − B printed with no Holm and no verdict.
+- **A run's score:** `floorScore` from the run's final grades (`table`'s rule and the canary's: the product's own grade, good or at its second attempt, whatever it gave; step 13 ruling 4: `noresult` "stands and is counted", an `error` check not passed). The three `noresult` runs (s1-03 H-1, s1-03 W-3, p8e B-2) are scored so; a line without them is printed beside H1, H2 and H4, deciding nothing. A run without a final grade adds nothing; a task with no scored run in an arm leaves that comparison, named.
+- **Intervals:** `d_t` per task of the arms' means; the 95% percentile bootstrap over tasks (10,000 resamples, `bootstrapMean`'s PRNG, seeds `hstack-bench-2026-10-27:step14:<name>`) decides; the t interval is printed beside it.
+- **H4 first:** H − W over the 29, met when the lower bound > 0, with `d` on build and on requirement apart (section 7.3 ruling 9), deciding nothing. Not met: no H − B line (H1–H3, real-estate, pass^k, feature-missing) is printed or written. Two integrity lines come before it and stop the analysis when they differ from the step 13 lock (the `noresult` and unscored runs by name; H5's caught 137 and miss 54).
+- **Holm over H1–H3** at α = 0.05: ordered by a bootstrap p (lower test `2·#{m ≤ t}/R`, upper test `2·#{m > t}/R`, capped at 1; H3 the larger of its two), the i-th met when its two-sided (1 − α/(4 − i)) interval clears its threshold(s), stopping at the first not met; H1's point ≥ 0.10 applied after the step-down. H3 reads `interventions` and cost reads tokens and minutes over every standing run, scored or not.
+- **pass^k** per set and arm over tasks with step ids: C(c, j)/C(k, j) with k the runs that have `passed`, a task with k < j out of pass^j; bootstrap interval; decides nothing.
+- **H5:** Σcaught / Σ(caught + miss) over tasks with either, a bootstrap resampling those tasks; met when the lower bound ≥ 0.5 on the pooled set; external, real-estate and the rate without sb-s2-07-4 printed apart; the mutation score not measured.
+- **Also reported:** the feature-missing rate (the `precondition` share of a run's scored checks), tokens and minutes per run, end reasons.
+- **Order and sealing:** the tool is built and reviewed on synthetic rows; then `<data>/step14/registered` (`{ plan, tool, at }`), `table` once and `analyse` once. Nobody opens `table.json`, a grade or a score before `analyse` prints; a fault found after is fixed with a test and run again in the open, both outputs kept and listed. Transcripts, products and grades are not read by hand; nothing goes to a designer.
+- **Verdict:** each hypothesis met or not met as these rules give; the stick worded as the step 9 decision registers it ("not validated", agent-only reads, the 7.2 gate measured by one model against two raters of another).
+- **The lock:** `stick hash` and `compare progress/stick-v1-step13.sha256 --reasons progress/step14/reasons.tsv`, expected changed 0.
+- **Seen before these rules were written** (listed for the report): the H5 counts before the H5 interval rule; the three `noresult` runs, their arms and their grades' status counts before the score rule. The score rule restates step 13 ruling 4 and `table`; the H5 rule follows 10.1's resampling of tasks.
+
+Registered before any change to `bench/` for step 14 and before `<data>/step14/registered` exists; no score of a step 13 run has been opened.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
