@@ -1,1 +1,3 @@
 seeded/repos/*/objects/info/alternates	step 13 ruling 9, box-env --seeded adds the store an arm product lives in, so a port reaches its objects
+ext/sealed/*/logs/rebuild-*-current-1.make.log	step 13 Task 4 (2026-11-12), the s1-02 rebuild and the aged-serve check: ext rebuild remakes base and end and rewrites their current-1 make log (ledger: s1-02 rebuild 10:17, aged-serve check 10:35-13:5x)
+ext/tasks/nautechsystems__nautilus_trader__4813/rebuild.json	step 13 Task 5 (2026-11-12 21:48), user decision "fix the make, regrade": s3-06 line 12 nextest append guarded by grep -q; original kept at logs/step13/s3-11-exp/s3-06-rebuild.json.orig
