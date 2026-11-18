@@ -114,4 +114,4 @@ The user delegated the open points to the advisor ("Theo advisor", 2026-11-18). 
 - add the design-session prompts (done);
 - make step 15 the registered diagnosis of H4 above.
 
-The user's own sign-off ("Duyệt") is pending. The plan stays `draft` until then.
+Approved by the user ("Duyệt", 2026-11-18, asked directly after the advisor's ruling); the plan is `stable`.
