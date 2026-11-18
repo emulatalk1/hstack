@@ -15,7 +15,7 @@ import { isTestPath } from './lib/replay.mjs'
 import { loadTask } from './lib/task.mjs'
 import { ScoreMissing, scoreAt, seedOf } from './oracle.mjs'
 
-const USAGE = 'usage: bun bench/scored.mjs run <task> | order | claim <lane> [--done <task> | --release] | report | table | analyse <tasks.tsv> --h5-drop <bug> --expect <json> | diagnose <tasks.tsv> --control <task>:<H|W>:<run>[,...]'
+const USAGE = 'usage: bun bench/scored.mjs run <task> | order | claim <lane> [--done <task> | --release] | report | table | analyse <tasks.tsv> --h5-drop <bug> --expect <json> | diagnose <tasks.tsv> --control <task>:H:<run>[,...]'
 const K = 3, STALE_MS = 10 * 60000
 const lines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [])
 const tasksOf = (data) => lines(join(data, 'step13/tasks.txt'))
@@ -192,7 +192,9 @@ async function diagnoseCmd(c, tsv, controlArg) {
   const files = existsSync(dir) ? readdirSync(dir) : [], name = (r) => `${r.task} ${r.arm}-${r.run}`
   const hw = (task) => files.filter((f) => hwRecord(task, f)).map((f) => readJson(join(dir, f))).filter(Boolean)
   const runs = tasks.flatMap((task) => ['H', 'W'].flatMap((arm) => standing(aboveFloor(hw(task), floorOf(data, task)), arm, cfg, K)))
-  const controls = controlArg.split(',').map((x) => {
+  const named = controlArg.split(',')
+  for (const x of named.filter((x, i) => named.indexOf(x) !== i)) throw new Error(`diagnose refused: control ${x.replace(/:H:/, ' H-')} is named twice`)
+  const controls = named.map((x) => {
     const [task, arm, run] = x.split(':'), r = readJson(join(dir, `${task}-${arm}-${run}.json`))
     if (r?.task !== task || r.arm !== arm || r.run !== Number(run)) throw new Error(`diagnose refused: control ${task} ${arm}-${run} has no record`)
     if (aboveFloor([r], floorOf(data, task)).length) throw new Error(`diagnose refused: control ${task} ${arm}-${run} is above its floor (a standing run)`)
@@ -213,6 +215,8 @@ async function diagnoseCmd(c, tsv, controlArg) {
     'W parts': all.filter((x) => x.r.arm === 'W' && PARTS.some((p) => x.a[p] > 0)),
     'H plugins': all.filter((x) => x.r.arm === 'H' && JSON.stringify(x.r.plugins ?? null) !== common),
   }).map(([what, bad]) => ({ what, of: `runs=${all.length}`, bad: bad.map((x) => name(x.r)) }))]
+  const total = (k) => all.reduce((n, x) => n + x.a[k], 0) // the toolUses check also shows that results were matched and Bash read
+  checks.find((k) => k.what === 'toolUses').of += ` agent=${total('agentCalled')}/${total('agentTotal')} bash=${total('bashCalled')}/${total('bashTotal')} zeroBash=${all.filter((x) => !x.a.bashTotal).length}`
   for (const k of checks) console.log(`check ${k.what} ${k.of} ${k.bad.length ? `differs ${k.bad.join(',')}` : 'ok'}`)
   if (checks.some((k) => k.bad.length)) { console.log('diagnosis stopped: an instrument check failed'); return 3 }
 
@@ -232,10 +236,12 @@ async function diagnoseCmd(c, tsv, controlArg) {
   const hist = (h) => Object.keys(h).sort().map((k) => `${k}:${h[k]}`).join(',') || 'none', parts = (f) => PARTS.map((p) => `${p}=${f(p)}`).join(' ')
   for (const [arm, s] of Object.entries(o1)) {
     console.log(`O1 ${arm} runs=${s.runs} ${parts((p) => `${s.ran[p]}/${s.runs} called=${s.called.ran[p]}/${s.runs}`)} calls ${parts((p) => `${fx(s.calls[p])} called=${fx(s.called.calls[p])}`)}`)
+    console.log(`O1 ${arm} loose gate=${s.loose.gate}/${s.runs} calls=${s.loose.calls}`)
     console.log(`O1 ${arm} agentTypes ${hist(s.agentTypes)}`)
     console.log(`O1 ${arm} scriptWords ${hist(s.scriptWords)}`)
   }
   console.log(`control runs=${control.runs} ${parts((p) => `${control.ran[p]} called=${control.called.ran[p]}`)} found=${found ? 'yes' : 'no'}`)
+  console.log(`control loose gate=${control.loose.gate}/${control.runs} calls=${control.loose.calls}`)
   for (const side of ['code', 'test']) console.log(`O2 ${side} tasks=${o2[side].tasks} out=${list(o2[side].out)} mean=${f4(o2[side].mean)} 95%=${iv(o2[side])}`)
   console.log(`O3 tasks=${o3.tasks} out=${list(o3.out)} max1=${list(o3.max1)} ties=${o3.ties} ceiling=${o3.ceiling} floor=${o3.floor} sdH=${f4(o3.sdH)} sdW=${f4(o3.sdW)} sdD=${f4(o3.sdD)}`)
   console.log(`outcome ${words}`)
@@ -305,7 +311,7 @@ export async function scored(args, inj = {}) {
   if (cmd === 'report' && args.length === 1) return report(c)
   if (cmd === 'table' && args.length === 1) return table(c)
   if (cmd === 'analyse' && args.length === 6 && rest[0] === '--h5-drop' && rest[1] && rest[2] === '--expect') return analyseCmd(data, task, rest[1], rest[3])
-  if (cmd === 'diagnose' && args.length === 4 && rest[0] === '--control' && /^[a-z0-9][a-z0-9_-]*:[HW]:\d+(,[a-z0-9][a-z0-9_-]*:[HW]:\d+)*$/.test(rest[1])) return diagnoseCmd(c, task, rest[1])
+  if (cmd === 'diagnose' && args.length === 4 && rest[0] === '--control' && /^[a-z0-9][a-z0-9_-]*:H:\d+(,[a-z0-9][a-z0-9_-]*:H:\d+)*$/.test(rest[1])) return diagnoseCmd(c, task, rest[1])
   if (cmd === 'run' && /^[a-z0-9][a-z0-9_-]*$/.test(task ?? '') && !rest.length) {
     if (!tasksOf(data).includes(task)) throw new Error(`${task} is not in step13/tasks.txt`)
     if (!existsSync(boxFile(data, task))) throw new Error(`${task}: ${boxFile(data, task)} is missing (ext box-env)`)

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { scored } from '../bench/scored.mjs'
-import { activity, hwRecord, numstatDistance, outcome, scoreShape, taskDistance } from '../bench/lib/diagnose.mjs'
+import { activity, hwRecord, numstatDistance, outcome, scoreShape, summary, taskDistance } from '../bench/lib/diagnose.mjs'
 import { isTestPath } from '../bench/lib/replay.mjs'
 import { toolUses } from '../bench/lib/agent.mjs'
 
@@ -29,7 +29,7 @@ test('activity counts Agent calls by subagent_type and Bash calls by the gate pa
     turn([agent('hstack:reviewer'), bash('ls'), bash('$H gate', true), { name: 'Write', input: {} }, agent('not a name!')]),
   ])
   // ran: non-error calls; called: every call with a tool_result, errored included, as the histograms
-  expect(a).toEqual({ oracle: 2, reviewer: 1, gate: 1, called: { oracle: 2, reviewer: 2, gate: 2 }, agentTotal: 6, bashTotal: 4,
+  expect(a).toEqual({ oracle: 2, reviewer: 1, gate: 1, called: { oracle: 2, reviewer: 2, gate: 2 }, looseGate: 2, agentTotal: 6, bashTotal: 4, agentCalled: 6, bashCalled: 4,
     agentTypes: { 'hstack:oracle': 2, 'general-purpose': 1, 'hstack:reviewer': 2, '<other>': 1 }, scriptWords: { gate: 2, lock: 1, phase: 1 } })
 })
 
@@ -42,11 +42,27 @@ test('a call with no tool_result counts in the totals only, neither ran nor call
 test('only a command that runs the plugin script with gate counts, in each quoted form', () => {
   const gate = (c) => activity([turn([bash(c)])]).gate
   for (const c of ['sh /abs/scripts/hstack.sh gate', 'sh "/abs/scripts/hstack.sh" gate', "sh '/abs/scripts/hstack.sh' gate", '$H gate', '"$H" gate', '${H} gate',
+    '"${H}" gate', "'$H' gate", "'${H}' gate", '"$H"\tgate', // fix round 2: the heads widened
     '$H gate > "$S/gate.txt" 2>&1', 'cd /r && $H gate; echo $?', 'sh -c "$H gate"', '$H  gate|tee x', '$H lock t.js && $H gate']) expect([c, gate(c)]).toEqual([c, 1])
   for (const c of ['$HOME gate', 'cat gate.md', 'git commit -m "add the gate"', '$H gates', '$H gate-x', '$H gate.sh', '$H phase gate', 'hstack.sh lock gate', 'ls ./gate',
-    'echo $Hgate', '$H\tgatekeeper']) expect([c, gate(c)]).toEqual([c, 0])
+    'echo $Hgate', '$H\tgatekeeper', '$HX gate', '"$HOME" gate', "'$HOME' gate", '${HOME} gate']) expect([c, gate(c)]).toEqual([c, 0])
   expect(activity([turn([bash('$H gate && $H gate')])]).gate).toBe(1) // one call, counted once
-  expect(activity([turn([bash('$H start; "$H" elapsed; ${H} done; hstack.sh" ZQ; $H 9x')])]).scriptWords).toEqual({ start: 1, elapsed: 1, done: 1, '<other>': 2 })
+  expect(activity([turn([bash('$H start; "$H" elapsed; ${H} done; hstack.sh" ZQ; $H 9x; "${H}" lock')])]).scriptWords).toEqual({ start: 1, elapsed: 1, done: 1, lock: 1, '<other>': 2 })
+})
+
+test('the loose gate count takes the script or $H as a token and the word gate anywhere, on called calls', () => {
+  const loose = (c, error, cut) => activity([turn([bash(c, error, cut)])]).looseGate
+  for (const c of ['$H phase gate', '"${H}"x gate', 'cat /s/hstack.sh; echo gate', 'X=$H; gate', '${H} gate']) expect([c, loose(c)]).toEqual([c, 1])
+  for (const c of ['$HOME gate', 'echo gate', '$H gates', '$H gate.md', '$H gate-x', '$HX gate', 'hstack.sh lock']) expect([c, loose(c)]).toEqual([c, 0])
+  expect([loose('$H gate', true), loose('$H gate', false, true)]).toEqual([1, 0]) // an errored call counts; a call with no result does not
+  expect(summary([activity([turn([bash('$H phase gate'), bash('$H gate')])]), activity([])]).loose).toEqual({ gate: 1, calls: 2 })
+})
+
+test('histograms count a key such as constructor like any other', () => {
+  const a = activity([turn([agent('constructor'), agent('constructor'), agent('__proto__'), bash('$H constructor'), bash('$H __proto__')])])
+  expect([a.agentTypes.constructor, a.agentTypes.__proto__, a.scriptWords.constructor, a.scriptWords['<other>']]).toEqual([2, 1, 1, 1])
+  const s = summary([a, a])
+  expect([JSON.stringify(s.agentTypes), JSON.stringify(s.scriptWords)]).toEqual(['{"constructor":4,"__proto__":2}', '{"constructor":2,"<other>":2}']) // plain JSON
 })
 
 test('numstat splits test and code files and counts binary as 0', () => {
@@ -142,7 +158,7 @@ const git = (repo, ...a) => {
 }
 const PLUGINS = [{ name: 'hstack', commit: 'c0', sha256: 's0' }]
 const H_CALLS = [agent('hstack:oracle'), bash('sh "/p/scripts/hstack.sh" lock tests/x.test.js'), agent('hstack:reviewer'), bash('$H gate'), agent(`${MARK} free text`), bash(`hstack.sh ${MARK}`)]
-const W_CALLS = [agent('general-purpose'), bash('git commit -m "the gate"'), bash('$H gate', true)] // an errored gate: called, not ran
+const W_CALLS = [agent('general-purpose'), bash('git commit -m "the gate"'), bash('$H gate', true), bash('ls', false, true)] // an errored gate: called, not ran; a cut call
 
 // tasks t1 (h1_ids 2) and t2 (0) are external and scored; t3 is dropped; p1 is the private set's. c1 holds the control run, under its floor.
 function world(name, { wCalls = W_CALLS, controlCalls = [agent('hstack:oracle')], skipRegistered = false, skipTable = false } = {}) {
@@ -220,6 +236,11 @@ test('diagnose prints counts only', async () => {
   expect(lines).toContain('O1 H scriptWords <other>:6,gate:6,lock:6')
   expect(lines).toContain('O1 W scriptWords gate:6') // the errored gate shows in the histogram
   expect(lines).toContain('check standing tasks=2 ok')
+  // 6 H runs x (3 Agent, 3 Bash), 6 W runs x (1 Agent, 3 Bash, one with no result), 4 control runs (1 Agent in all, no Bash)
+  expect(lines).toContain('check toolUses runs=16 agent=25/25 bash=30/36 zeroBash=4 ok')
+  expect(lines).toContain('O1 H loose gate=6/6 calls=6')
+  expect(lines).toContain('O1 W loose gate=6/6 calls=6') // the errored gate: loose and called, never ran
+  expect(lines).toContain('control loose gate=0/4 calls=0')
   expect(lines).toContain('control runs=4 oracle=1 called=1 reviewer=0 called=0 gate=0 called=0 found=yes')
   const o2 = lines.find((l) => l.startsWith('O2 code')), r1 = Math.log((22 + 1) / (2 + 1)).toFixed(4)
   expect(o2).toBe(`O2 code tasks=2 out=none mean=${r1} 95%=[${r1}, ${r1}]`)
@@ -227,7 +248,7 @@ test('diagnose prints counts only', async () => {
   expect(lines.find((l) => l.startsWith('O3'))).toBe('O3 tasks=2 out=none max1=t2 ties=1 ceiling=1 floor=0 sdH=0.0000 sdW=0.0000 sdD=0.3536') // B and private-set rows left out
   expect(lines.at(-1)).toBe('outcome inactive') // 6 runs are fewer than the registered 44
   const j = JSON.parse(file)
-  expect([j.outcome, j.o1.H.ran, j.o1.W.called.ran, j.o2.code.tasks, j.o3.tasks]).toEqual(['inactive', { oracle: 6, reviewer: 6, gate: 6 }, { oracle: 0, reviewer: 0, gate: 6 }, 2, 2])
+  expect([j.outcome, j.o1.H.ran, j.o1.W.called.ran, j.o1.W.loose, j.control.loose, j.o2.code.tasks, j.o3.tasks]).toEqual(['inactive', { oracle: 6, reviewer: 6, gate: 6 }, { oracle: 0, reviewer: 0, gate: 6 }, { gate: 6, calls: 6 }, { gate: 0, calls: 0 }, 2, 2])
   expect(/\bB\b/.test(r.out) || /"B"/.test(file)).toBe(false)
 })
 
@@ -273,8 +294,9 @@ test('a control run with no part prints inactive as unconfirmed; a control above
   expect(r.out.split('\n').at(-1)).toBe('outcome inactive or a detector fault (unconfirmed)')
   const up = await go(d, ['diagnose', join(d, 'tasks.tsv'), '--control', 't1:H:1'])
   expect([up.code, up.error]).toEqual(['threw', 'diagnose refused: control t1 H-1 is above its floor (a standing run)'])
-  const b = await go(d, ['diagnose', join(d, 'tasks.tsv'), '--control', 'c1:B:1'])
-  expect(b.code).toBe('threw')
+  for (const arm of ['B', 'W']) expect((await go(d, ['diagnose', join(d, 'tasks.tsv'), '--control', `c1:${arm}:1`])).error).toContain('usage:') // H only
+  const twice = await go(d, ['diagnose', join(d, 'tasks.tsv'), '--control', 'c1:H:1,c1:H:2,c1:H:1'])
+  expect([twice.code, twice.error]).toEqual(['threw', 'diagnose refused: control c1 H-1 is named twice'])
 })
 
 test('a task with no floor file or with 2 standing runs in an arm stops before the reading', async () => {
