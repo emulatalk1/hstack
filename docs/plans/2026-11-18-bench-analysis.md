@@ -5,8 +5,8 @@ description: "Prereg step 14: register every analysis rule the prereg leaves ope
 status: stable
 generated: { by: claude-code/2.1.318, at: "2026-11-18T20:37:12+07:00" }
 verified:
-  - { by: claude-code-advisor/2.1.318, at: "2026-11-18T20:37:20+07:00" }  - { by: human:emulatalk1, at: "2026-11-18T23:07:42+07:00" }
-
+  - { by: claude-code-advisor/2.1.318, at: "2026-11-18T20:37:20+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-18T23:07:42+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
