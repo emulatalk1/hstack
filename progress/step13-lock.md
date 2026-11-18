@@ -82,7 +82,7 @@ Recheck: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/stick.mjs compare p
 7. **The pause file** was first created at `logs/step13/pause` by mistake and moved a minute later to `step13/pause`, the path `runs.sh` reads.
 8. **The third-grade rule** was registered during Task 5 (after s2-05, before any extra grade), on the user's decision; it moved three products from `noresult` to good.
 9. **H5 began before Task 5 ended** (amendment 2026-11-17), on external tasks whose products were all settled; s2-05, s2-03 and the real-estate tasks ran after the third grades and p6a. The user's free-text answer to the question ("don't worry about quota, I only need fast and accurate") was read as consent; the user was told so.
-10. **H5 make flake: no extra retry** (a controller ruling; the plan had been to ask the user before s2-05 and s2-03): `h5.mjs` grades P twice and P + edit once more when not ready. A failed make at P would read all `error` and land in not applicable; no P grade in H5 was all `error`, and `notready` (P + edit) is 0.
+10. **H5 make flake: no extra retry** (a controller ruling; the plan had been to ask the user before s2-05 and s2-03): `h5.mjs` grades P twice and P + edit once more when not ready. A failed make at P would read all `error` and land in not applicable; no P grade in H5 was all `error`, and `notready` (P + edit) is 0. At the lock, every grade in the 114 standing work folders (294, P and P + edit) was counted by status only: none all `error`, none empty, `error` only in s3-06's (2 of 5 checks, the same in each), so no make flake hid in not applicable and the ruling changed no count.
 11. **`oracle.mjs` exports** `once`, `resultIn`, `hasResults`, `notReadyOf` for `h5.mjs` (Task 2), and the seeder's edit gates moved into a shared `editCommit` (`seedCommit` unchanged).
 12. **Run minutes under two lanes** are not comparable with the trial's single-lane minutes (known limit of the two-lane amendment).
 13. **H5 did not enforce the shared-store groups**; s2-02 and s2-10 overlapped on the xum store, and the four runs in that window were rerun alone on the user's decision (H5 section). Two of them moved one bug each from not applicable to caught, with fresh porter replies (porter variance, not the overlap).
@@ -105,10 +105,12 @@ Recheck: `HSTACK_BENCH_MACHINE=<data>/machine.json bun bench/stick.mjs compare p
 
 ## Approval
 
-Pending. Decided without the user, for the user to accept or overturn:
+Pending the user's sign-off. Asked to approve, the user answered "Advisor quyết" ("the advisor decides") on 2026-11-18. The advisor's ruling, for the user to confirm:
 
-1. The early-H5 consent read from the user's free text (deviation 9).
-2. No extra H5 retry for a make flake (deviation 10), where the plan had been to ask.
-3. The 18 manifest changes beyond the predicted one, explained in `reasons.tsv` after the compare (the manifest).
+1. The early-H5 consent read from the user's free text (deviation 9): accept; the user was told how the answer was read, saw it in two later reports and did not object, and the start was gated by the canary and limited to settled tasks.
+2. No extra H5 retry for a make flake (deviation 10), where the plan had been to ask: accept; the grade count at the lock found no all-`error` grade, so the ruling changed no count.
+3. The 18 manifest changes beyond the predicted one, explained in `reasons.tsv` after the compare (the manifest): accept as a recorded deviation; all 18 trace to ledger entries made when they happened, 17 are logs, and s3-06's file follows the user's answer at the s3-11 stop. The missed stop under step 12's ruling 6 stays disclosed.
+
+A last compare before this commit: hashed 36,128, equal 36,128, changed 0. The plan stays `draft` until the user's own verified entry.
 
 Decided by the user: the four H5 runs of the s2-02/s2-10 store overlap were rerun alone (2026-11-18; H5 section).
