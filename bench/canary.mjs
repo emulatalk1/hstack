@@ -14,7 +14,7 @@ import { scoreAt, seedOf } from './oracle.mjs'
 import { runArm } from './run-arm.mjs'
 
 const USAGE = 'usage: bun bench/canary.mjs run <task> | report | diagnose'
-const SEED = 'hstack-bench-2026-10-27' // the extended verdict's bootstrap seed (prereg 7.3)
+export const SEED = 'hstack-bench-2026-10-27' // the extended verdict's bootstrap seed (prereg 7.3)
 export const ATTEMPTS = 2
 const K = 2, CACHE_LIMIT = 15e9, PAIRS = 3, MACHINE_RUNS = 2
 export const ARMS = ['B', 'B-']

@@ -401,7 +401,7 @@ export const dataOf = (data) => {
   if (!d) throw new Error('set HSTACK_BENCH_MACHINE to the machine file (for example .evidence/bench/machine.json)')
   return d
 }
-const readTsv = (f) => {
+export const readTsv = (f) => {
   const [head, ...rows] = readFileSync(f, 'utf8').trim().split('\n').map((l) => l.split('\t'))
   return rows.map((r) => Object.fromEntries(head.map((k, i) => [k, r[i]])))
 }

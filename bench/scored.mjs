@@ -5,12 +5,13 @@
 // Nothing here names a task, a stack or a model.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { aboveFloor, ATTEMPTS, attemptsOf, attemptKey, context, good, gradeFile, readJson, records, runStopped, Stop, standing } from './canary.mjs'
-import { dataOf, PRIVATE_SET, taskOf } from './ext.mjs'
+import { aboveFloor, ATTEMPTS, attemptsOf, attemptKey, context, fx, good, gradeFile, readJson, records, runStopped, SEED, Stop, standing } from './canary.mjs'
+import { dataOf, PRIVATE_SET, readTsv, taskOf } from './ext.mjs'
+import { analyse } from './lib/analysis.mjs'
 import { queuePick } from './lib/oracle.mjs'
 import { ScoreMissing, scoreAt, seedOf } from './oracle.mjs'
 
-const USAGE = 'usage: bun bench/scored.mjs run <task> | order | claim <lane> [--done <task> | --release] | report | table'
+const USAGE = 'usage: bun bench/scored.mjs run <task> | order | claim <lane> [--done <task> | --release] | report | table | analyse <tasks.tsv> --h5-drop <bug> --expect <json>'
 const K = 3, STALE_MS = 10 * 60000
 const lines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [])
 const tasksOf = (data) => lines(join(data, 'step13/tasks.txt'))
@@ -107,6 +108,70 @@ async function table(c) {
   return 0
 }
 
+// step 14's analysis (bench/lib/analysis.mjs) of step13/table.json, once, after the plan registers: the sets from the tasks file, the H5 rows
+// the standing file lists, the dropped bug and the lock's expected names and sums as arguments. Writes step14/analysis.json; prints one line
+// per measure, the two integrity lines first, then H4; exit 3 when the integrity lines differ from the lock (no score line printed)
+async function analyseCmd(data, tsv, drop, expectText) {
+  const registered = join(data, 'step14/registered'), tableFile = join(data, 'step13/table.json'), standingFile = join(data, 'logs/step13/h5-standing.out')
+  if (!existsSync(registered)) throw new Error(`analyse refused: ${registered} is missing (step 14 registers its plan first)`)
+  if (!existsSync(tableFile)) throw new Error(`analyse refused: ${tableFile} is missing (run table first)`)
+  if (!existsSync(standingFile)) throw new Error(`analyse refused: ${standingFile} is missing`)
+  let expect
+  try { expect = JSON.parse(expectText) } catch { throw new Error('--expect is not valid JSON') }
+  const names = (x) => Array.isArray(x) && x.every((n) => typeof n === 'string')
+  if (!names(expect?.noresult) || !names(expect?.unscored) || !Number.isInteger(expect?.caught) || !Number.isInteger(expect?.miss)) throw new Error('--expect must be { noresult: [names], unscored: [names], caught: <n>, miss: <n> }')
+  const { runs } = strictJson(tableFile, null, (v) => Array.isArray(v?.runs), 'a table ({ runs: [...] })')
+  const rows = readTsv(tsv)
+  if (!rows.length || !['set', 'task', 'status', 'h1_ids'].every((k) => k in rows[0])) throw new Error(`${tsv}: needs the columns set, task, status and h1_ids`)
+  const kept = rows.filter((r) => r.status === 'scored'), tasks = (f) => kept.filter(f).map((r) => r.task)
+  const sets = { h1: tasks((r) => Number(r.h1_ids) > 0), external: tasks((r) => r.set === 'external'), realEstate: tasks((r) => r.set === PRIVATE_SET.key), h5Drop: [drop] }
+  const seen = new Set(), h5 = lines(standingFile).map((l) => {
+    const [tag, task, arm, run] = l.split(/\s+/)
+    if (tag !== 'h5' || arm !== 'H' || !/^\d+$/.test(run ?? '')) throw new Error(`${standingFile}: not an H count line: ${l}`)
+    if (seen.has(`${task} ${run}`)) throw new Error(`${standingFile}: ${task} H ${run} is listed twice`)
+    seen.add(`${task} ${run}`)
+    const set = sets.external.includes(task) ? 'external' : sets.realEstate.includes(task) ? PRIVATE_SET.key : null
+    if (!set) throw new Error(`${standingFile}: ${task} is not a scored task of ${tsv}`)
+    const f = join(data, task, 'seeded/h5', `${arm}-${run}.json`)
+    return { task, set, run: Number(run), bugs: strictJson(f, null, Array.isArray, 'an array of H5 rows') ?? (() => { throw new Error(`${f} is missing`) })() }
+  })
+  const result = analyse({ runs, h5, sets, expect, seed: `${SEED}:step14` })
+  mkdirSync(join(data, 'step14'), { recursive: true })
+  writeFileSync(join(data, 'step14/analysis.json'), JSON.stringify({ at: new Date().toISOString(), args: { tasks: tsv, h5Drop: sets.h5Drop, expect }, ...result }, null, 2) + '\n')
+  for (const l of analysisLines(result, expect)) console.log(l)
+  return result.integrity.ok ? 0 : 3
+}
+const f4 = (x) => fx(x, 4), list = (xs) => (xs.length ? xs.join(',') : 'none'), iv = (l) => `[${f4(l.lower)}, ${f4(l.upper)}]`
+const lineText = (label, l) => `${label} tasks=${l.tasks} out=${list(l.out)} mean=${f4(l.mean)} 95%=${iv(l)} t=[${f4(l.tLower)}, ${f4(l.tUpper)}]` + (l.p === undefined ? '' : ` p=${f4(l.p)}`)
+const without = (l) => ` | without noresult: tasks=${l.withoutNoresult.tasks} mean=${f4(l.withoutNoresult.mean)} 95%=${iv(l.withoutNoresult)}`
+const h5Text = (label, l) => `H5 ${label} tasks=${l.tasks} skipped=${list(l.skipped)} caught=${l.caught} miss=${l.miss} rate=${f4(l.rate)} 95%=${iv(l)}`
+const met = (m) => (m ? 'met' : 'not met')
+export function analysisLines(r, expect) {
+  const { runs: ir, h5: ih } = r.integrity, out = [
+    `integrity runs unscored=${list(ir.unscored)} noresult=${list(ir.noresult)} expected unscored=${list(expect.unscored)} noresult=${list(expect.noresult)} ${ir.ok ? 'ok' : 'differs'}`,
+    `integrity h5 caught=${ih.caught} miss=${ih.miss} expected caught=${expect.caught} miss=${expect.miss} ${ih.ok ? 'ok' : 'differs'}`]
+  if (!r.integrity.ok) return [...out, 'analysis stopped: the integrity lines differ from the lock']
+  out.push(`${lineText('H4 score H-W', r.h4)} ${met(r.h4.met)}${without(r.h4)}`, `${lineText('H4 build H-W', r.h4.build)} decides nothing`, `${lineText('H4 requirement H-W', r.h4.requirement)} decides nothing`)
+  if (!r.h4.met) out.push('H4 not met: H1-H3, real-estate, pass^k and feature-missing are not reported')
+  else {
+    out.push(`${lineText('H1 build H-B', r.h1)} point>=0.10=${r.h1.point ? 'yes' : 'no'}${without(r.h1)}`, `${lineText('H2 requirement H-B', r.h2)}${without(r.h2)}`,
+      lineText('H3a H interventions', r.h3.a), lineText('H3b interventions H-B', r.h3.b), `H3 p=${f4(r.h3.p)} (the larger of H3a and H3b)`)
+    r.holm.forEach((h, i) => out.push(`holm ${i + 1} ${h.id} p=${f4(h.p)} level=${f4(h.level)} ${h.bounds.map(iv).join(' ')} ${met(h.met)}`))
+    out.push(`verdict H1=${met(r.h1.met)} H2=${met(r.h2.met)} H3=${met(r.h3.met)}`)
+    const re = r.realEstate
+    out.push(`${lineText('re H1 build H-B', re.h1)}${without(re.h1)} decides nothing`, `${lineText('re H2 requirement H-B', re.h2)}${without(re.h2)} decides nothing`,
+      `${lineText('re H3a H interventions', re.h3a)} decides nothing`, `${lineText('re H3b interventions H-B', re.h3b)} decides nothing`)
+    for (const p of r.passK) out.push(`passk ${p.set} ${p.arm} j=${p.j} tasks=${p.tasks} out=${list(p.out)} mean=${f4(p.mean)} 95%=${iv(p)}`)
+    for (const m of r.featureMissing) out.push(`featureMissing ${m.set} ${m.arm} runs=${m.runs} mean=${f4(m.mean)}`)
+  }
+  const { pooled, external, realEstate, without: w } = r.h5, c = pooled.classes
+  out.push(`${h5Text('pooled', pooled)} ${met(pooled.met)} | na=${c.na} refused=${c.refused} notready=${c.notready} nosuite=${c.nosuite}`,
+    h5Text('ext', external), h5Text('re', realEstate), h5Text(`without ${list(w.drop)}`, w))
+  for (const x of r.cost) out.push(`cost ${x.set} ${x.arm} runs=${x.runs} tokens/run=${fx(x.tokens, 0)} minutes/run=${fx(x.minutes, 1)}`)
+  for (const x of r.ends) out.push(`ends ${x.set} ${x.arm} ${Object.entries(x.ends).map(([k, n]) => `${k}:${n}`).join(',') || 'none'}`)
+  return out
+}
+
 // the one queue of the two lanes: `mkdir queue.lock` with a pid file, always removed; a lock older than 10 minutes whose pid is dead is reclaimed.
 // shortcut: two reclaimers racing on one stale lock can both win, needs a crashed holder and a same-instant claim; upgrade to rename-then-mkdir if seen.
 const alive = (pid) => { try { process.kill(pid, 0); return true } catch (e) { return e.code === 'EPERM' } }
@@ -162,6 +227,7 @@ export async function scored(args, inj = {}) {
   }
   if (cmd === 'report' && args.length === 1) return report(c)
   if (cmd === 'table' && args.length === 1) return table(c)
+  if (cmd === 'analyse' && args.length === 6 && rest[0] === '--h5-drop' && rest[1] && rest[2] === '--expect') return analyseCmd(data, task, rest[1], rest[3])
   if (cmd === 'run' && /^[a-z0-9][a-z0-9_-]*$/.test(task ?? '') && !rest.length) {
     if (!tasksOf(data).includes(task)) throw new Error(`${task} is not in step13/tasks.txt`)
     if (!existsSync(boxFile(data, task))) throw new Error(`${task}: ${boxFile(data, task)} is missing (ext box-env)`)
