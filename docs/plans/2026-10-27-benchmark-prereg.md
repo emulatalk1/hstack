@@ -786,6 +786,13 @@ Registered before any change to `bench/` for step 13 and before any step 13 run;
 - **Unchanged.** The classes; the porter brief; one task on one lane at a time (a grade's cleanup removes the task's Docker objects); the exclusions of the two-lane amendment.
 - Listed for step 14.
 
+**Amended at step 13 (Task 6, the store overlap), 2026-11-18, after H5 ended, before the lock** (the user's answer: "Chạy lại 4 run"):
+- **What happened.** The H5 lanes did not enforce the shared-store groups of `step13/exclusive.json`. s2-02 and s2-10 (one store) overlapped from 01:46 to 01:55 on 2026-11-18.
+- **Which runs.** Every H5 run whose interval meets that window, read from the row files' times and the lane log: s2-02 H-3, s2-10 H-1, H-2, H-3.
+- **How they run again.** Each run's work folder (`<task>/seeded/h5/H-<run>/`, with its grades, suites and porter replies) and its row file are moved aside first, kept as before-copies. The four then run from scratch (new grades, suites and porter runs; the brief unchanged), one at a time, on one lane, with nothing else in Docker on that store.
+- **What stands.** The new count lines, whatever they show; the old count lines stay in `h5.out` and are marked superseded. The counts are made again from the standing lines.
+- Listed for step 14.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
