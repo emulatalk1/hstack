@@ -23,7 +23,7 @@ Section 1: "Does the harness produce output that meets the requirement, at highe
 | `scored.mjs table` once | exit 0 | `table 315 runs`; `logs/step14/table.out` |
 | `scored.mjs analyse` once | exit 0 | `logs/step14/analyse.out` (copy `analyse-1.out`), `step14/analysis.json` (copy `analysis-1.json`) |
 
-Command: `bun bench/scored.mjs analyse progress/stick-v1/tasks-step11.tsv --h5-drop sb-s2-07-4 --expect '{"noresult":["s1-03 H-1","s1-03 W-3","p8e B-2"],"unscored":[],"caught":137,"miss":54}'`. Both integrity lines read `ok`: no unscored run, the three `noresult` runs exactly the lock's, the H5 sums exactly the lock's. Nothing was rerun. Before `analyse` printed, no one opened `table.json`, a grade or a score. Since H4 is not met, `table.json` stays unopened by hand. The H − B numbers it could yield are not reported. `step14/analysis.json` holds only `args`, `at`, `cost`, `ends`, `h4`, `h5` and `integrity`: no withheld part was written (ruling 5).
+Command: `bun bench/scored.mjs analyse progress/stick-v1/tasks-step11.tsv --h5-drop sb-s2-07-4 --expect '{"noresult":["s1-03 H-1","s1-03 W-3","p8e B-2"],"unscored":[],"caught":137,"miss":54}'`. Both integrity lines read `ok`: no unscored run, the three `noresult` runs exactly the lock's, the H5 sums exactly the lock's. Nothing was rerun. Before `analyse` printed, no one opened `table.json` or a score, with one exception: to write ruling 3, the controller printed the per-status check counts of the three `noresult` products' grades. Those were s1-03's two fix-commit grades (25 `error` each), p8e B-2's fix-commit grade (7 `error`), and p8e B-2's step grade (6 pass, 2 fail, 5 precondition). The last is one real-estate B run's build grade; nothing of that set is reported, and it changed no rule. Since H4 is not met, `table.json` stays unopened by hand. The H − B numbers it could yield are not reported. `step14/analysis.json` holds only `args`, `at`, `cost`, `ends`, `h4`, `h5` and `integrity`: no withheld part was written (ruling 5).
 
 **The arms differed as locked:** across the 315 standing records, every H run carries `hstack` 653af83 (sha256 `727d6781…`, 114 runs), every W run `hstack` 9c4b267 (sha256 `03b4fd12…`, 87), and every B run no plugin (114). This matches `arms.json`. Record fields only were read.
 
@@ -82,7 +82,9 @@ Stick v1 is locked; its sensitivity is **not validated** (step 9 decision, item 
 - the mutation score and the per-layer measures are not measured;
 - 13.3–13.5 are moved to step 15;
 - the tool's seven readings were registered after review and before `registered`;
-- the prompts the user gave the plugin-design session are not collected here. What the controller sent to the designer is in `progress/step11-lock.md` ("What went to the designer") and `progress/step12-lock.md` ("The designer").
+- the grade status counts read before `analyse` (above, "How it ran").
+
+The prompts the user typed into the plugin-design session (a registered duty, step 9 decision 1) are in `progress/step14/design-prompts.md`: 15 prompts, extracted verbatim by script from that session's transcript. What the controller sent to the designer is in `progress/step11-lock.md` ("What went to the designer") and `progress/step12-lock.md` ("The designer").
 
 The prereg calls the step 9 gate consequences deviations, while `progress/step9-lock.md` (deviation 10) calls them open rulings. Both are listed.
 
@@ -97,15 +99,19 @@ Section 15's limits stand. Also:
 - `noresult` products score their timed-out grades;
 - the real-estate set is secondary, one stack, and leans to the old harness's misses.
 
-## Open points (for the user)
+## Open points
 
-- **What step 15 is for, now that H4 is not met.** Section 13 items 3–5 would measure a harness whose acceptance cannot be reached at item 2. Any change to the stick, to W or to the hypotheses after this result needs its own registered plan, and this report proposes none.
-- **The design session's prompts:** whether they are added to this report from the design session's transcript.
+- **Step 15, decided under the user's delegation ("Theo advisor"):** a diagnosis of H4, before 13.3–13.5. Its purpose is to tell apart the two readings: the stick does not see the parts W removes, or those parts change nothing scored. Its rules are registered before anything is looked at, including which observation points to which reading. Candidates, to be checked against what the records hold: per-task ties and each arm's level; whether H's and W's exports differ as the designer stated; whether the removed parts ran in H's runs. The limits: H and W only, through a tool; no B number; `table.json` still unopened by hand; no change to the stick, W or the hypotheses. H4's verdict stands whatever it finds. 13.3–13.5 wait behind it. It is drafted on a new branch after this report is signed, with an advisor round and the user's approval before any run.
 
 ## Manifest
 
-`bun bench/stick.mjs hash --out <outside <data>>` (2026-11-18, after `analyse`, with `logs/step14/lock/` held outside `<data>`): 36,147 files (left out: link 47, node_modules 1, store 2,113, secret 8, transcript 911, rewritten 88, special 0). `progress/stick-v1-step14.sha256`, sha256 `9df12a13215b8ed857f22bd35b0cb94a615130d1654d0f58d8eee18baea2e27b`. Against `progress/stick-v1-step13.sha256` with an empty `progress/step14/reasons.tsv`: hashed 36,128, equal 36,128, **changed 0, missing 0, unexplained 0**. The new files are `step13/table.json`, `step14/` and `logs/step14/`. Self-compare and second self-compare: changed 0 (`logs/step14/lock/`).
+`bun bench/stick.mjs hash --out <outside <data>>` (2026-11-18, after `analyse`, with `logs/step14/lock/` held outside `<data>`): 36,147 files (left out: link 47, node_modules 1, store 2,113, secret 8, transcript 911, rewritten 88, special 0). `progress/stick-v1-step14.sha256`, sha256 `9df12a13215b8ed857f22bd35b0cb94a615130d1654d0f58d8eee18baea2e27b`. Against `progress/stick-v1-step13.sha256` with an empty `progress/step14/reasons.tsv`: hashed 36,128, equal 36,128, **changed 0, missing 0, unexplained 0**. The new files are `step13/table.json`, `step14/` and `logs/step14/`. Self-compare and second self-compare: changed 0 (`logs/step14/lock/`). A last compare before approval: hashed 36,147, equal 36,147, changed 0. `git diff --stat e1d2bb1..HEAD -- bench tests` is empty: the tool that ran is the registered one.
 
 ## Approval
 
-Pending the user's approval.
+The user delegated the open points to the advisor ("Theo advisor", 2026-11-18). The advisor's ruling:
+- approve this report once the sealing exception and the closing checks are in (done above);
+- add the design-session prompts (done);
+- make step 15 the registered diagnosis of H4 above.
+
+The user's own sign-off ("Duyệt") is pending. The plan stays `draft` until then.
