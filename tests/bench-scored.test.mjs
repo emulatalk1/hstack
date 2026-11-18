@@ -204,17 +204,20 @@ test('table writes featureMissing and marks a run noresult when a kind\'s final 
   putRun(d, 't1', 'H', 1)
   putRun(d, 't1', 'H', 2)
   putRun(d, 't1', 'H', 3)
-  const put = (n, checks) => writeFileSync(join(d, 't1/grades', `${shaOf(`bench/t1-H-${n}`).slice(0, 7)}.json`), JSON.stringify({ commit: shaOf(`bench/t1-H-${n}`), junit: 'ok', excluded: [], oracleSha: OSHA.grades.padEnd(64, '0'), checks }))
+  putRun(d, 't1', 'B', 1)
+  const put = (n, checks, arm = 'H') => writeFileSync(join(d, 't1/grades', `${shaOf(`bench/t1-${arm}-${n}`).slice(0, 7)}.json`), JSON.stringify({ commit: shaOf(`bench/t1-${arm}-${n}`), junit: 'ok', excluded: [], oracleSha: OSHA.grades.padEnd(64, '0'), checks }))
   put(1, [{ id: 'a1', bucket: 'requirement', severity: 'high', result: 'precondition' }, { id: 'a2', bucket: 'requirement', severity: 'high', result: 'pass' }, { id: 'a3', bucket: 'requirement', severity: 'high', result: 'pass' }, { id: 'a4', bucket: 'requirement', severity: 'high', result: 'pass' }])
   put(2, [{ id: 'a1', severity: 'high', result: 'error' }, { id: 'a2', severity: 'high', result: 'error' }]) // never good, 2 attempts: noresult, scored from what it gave
+  put(1, [{ id: 'a1', severity: 'high', result: 'error' }, { id: 'a2', severity: 'high', result: 'error' }], 'B') // never good, one attempt: no final grade
   mkdirSync(join(d, 'step13/attempts'), { recursive: true })
-  writeFileSync(join(d, 'step13/attempts/t1.json'), JSON.stringify({ [shaOf('bench/t1-H-2')]: 2 }))
+  writeFileSync(join(d, 'step13/attempts/t1.json'), JSON.stringify({ [shaOf('bench/t1-H-2')]: 2, [shaOf('bench/t1-B-1')]: 1 }))
   mkdirSync(join(d, 'step14'), { recursive: true })
   writeFileSync(join(d, 'step14/registered'), '')
   expect((await go(d, ['table'], fakes(d))).code).toBe(0)
   const runs = json(join(d, 'step13/table.json')).runs
-  expect(runs.map((x) => [x.run, x.featureMissing, x.noresult])).toEqual([[1, 1 / 4, false], [2, 0, true], [3, 0, false]])
+  expect(runs.map((x) => [x.arm, x.run, x.featureMissing, x.noresult])).toEqual([['H', 1, 1 / 4, false], ['H', 2, 0, true], ['H', 3, 0, false], ['B', 1, null, false]])
   expect(runs[1].build).toBe(0)
+  expect(runs.find((x) => x.arm === 'B').build).toBeNull() // a run without a final grade has no score and is not noresult
 })
 
 test('a machine run with another version is the machine\'s stop, not a version stop', async () => {

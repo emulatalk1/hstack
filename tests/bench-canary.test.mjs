@@ -480,17 +480,21 @@ test('an upper test counts only means above the threshold', () => {
 })
 
 test('bootstrapP draws the resample means bootstrapMean draws', () => {
-  const ds = [0.5, 1, -0.25, 0.75, 0, 1.5, 0.25], { lower, upper } = bootstrapMean(ds, SEED_X)
-  // (the interval ends are rounded to 1e-9, so the thresholds step 1e-9 up)
-  // the means at or under the 2.5th percentile are at least 251 of 10,000, those over the 97.5th at most 249
-  expect(bootstrapP(ds, SEED_X, lower + 1e-9, 'lower')).toBeGreaterThanOrEqual(2 * 251 / 10000)
-  expect(bootstrapP(ds, SEED_X, upper + 1e-9, 'upper')).toBeLessThanOrEqual(2 * 249 / 10000)
+  // non-round values, so the resample means rarely tie and the percentile index is pinned from both sides
+  const ds = [0.4137, -0.2209, 0.7731, 0.0583, 1.1194, -0.0847, 0.5326, 0.2961, -0.3578, 0.9012], R = 10000, e = 1e-7
+  const { lower, upper } = bootstrapMean(ds, SEED_X)
+  expect(bootstrapP(ds, SEED_X, lower + e, 'lower')).toBeGreaterThanOrEqual(2 * 251 / R) // indices 0..250 are at or under it
+  expect(bootstrapP(ds, SEED_X, lower - e, 'lower')).toBeLessThanOrEqual(2 * 250 / R) // only indices 0..249 are under it
+  expect(bootstrapP(ds, SEED_X, upper + e, 'upper')).toBeLessThanOrEqual(2 * 249 / R) // indices 9751.. are over it
+  expect(bootstrapP(ds, SEED_X, upper - e, 'upper')).toBeGreaterThanOrEqual(2 * 250 / R) // indices 9750.. are over it
 })
 
 test('bootstrapRatio of sums', () => {
-  expect(bootstrapRatio([[1, 2], [3, 4]], SEED_X).rate).toBe(4 / 6)
-  const one = bootstrapRatio([[3, 4]], SEED_X)
-  expect(one).toEqual({ rate: 0.75, lower: 0.75, upper: 0.75 })
+  expect(bootstrapRatio([[1, 2], [3, 4]], SEED_X).rate).toBeCloseTo(4 / 6, 9)
+  expect(bootstrapRatio([[3, 4]], SEED_X)).toEqual({ rate: 0.75, lower: 0.75, upper: 0.75 })
+  const t = bootstrapRatio([[2, 3]], SEED_X) // rate is rounded like its ends, so no end passes it
+  expect(t.lower).toBeLessThanOrEqual(t.rate)
+  expect(t.upper).toBeGreaterThanOrEqual(t.rate)
   const r = bootstrapRatio([[1, 2], [3, 4], [0, 5], [4, 4]], SEED_X)
   expect(r.lower).toBeLessThanOrEqual(r.rate)
   expect(r.upper).toBeGreaterThanOrEqual(r.rate)
