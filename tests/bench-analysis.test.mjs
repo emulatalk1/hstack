@@ -125,6 +125,22 @@ test('H3 takes the larger p of its two bounds', () => {
   expect(r.h3.b.p).toBeGreaterThan(r.h3.a.p)
   expect(r.h3.p).toBe(r.h3.b.p)
   expect(r.holm.find((x) => x.id === 'H3').p).toBe(r.h3.b.p)
+  const [a, b] = r.holm.find((x) => x.id === 'H3').bounds // both must clear: (a) does, (b) does not
+  expect(a.upper).toBeLessThanOrEqual(1)
+  expect(b.upper).toBeGreaterThan(0.5)
+  expect(r.h3.met).toBe(false)
+})
+
+test('each bound test at its boundary: lower is strict, upper and H5 are not', () => {
+  const zero = run({ runs: world({ h: () => 0.4 }) }) // H − B exactly 0: lower bound 0 is not > 0
+  expect(zero.h4.met).toBe(true)
+  expect([zero.h1.lower, zero.h2.lower]).toEqual([0, 0])
+  expect([zero.h1.met, zero.h2.met, zero.h3.met]).toEqual([false, false, true])
+  expect(zero.holm.map((x) => x.id)).toEqual(['H3', 'H1', 'H2'])
+  const one = run({ runs: world().map((r) => (r.arm === 'W' ? r : { ...r, interventions: 1 })) }) // H3a's upper exactly 1.0, H3b's 0
+  expect([one.h3.a.upper, one.h3.b.upper]).toEqual([1, 0])
+  expect(one.h3.met).toBe(true)
+  expect(run().h5.pooled).toMatchObject({ rate: 0.5, lower: 0.5, met: true }) // every task 1 of 2: lower bound exactly 0.5
 })
 
 test('pass^j is C(c,j)/C(k,j)', () => {
@@ -248,6 +264,8 @@ test('analyse prints the integrity lines, then H4 first, and writes analysis.jso
   const j = JSON.parse(readFileSync(join(d, 'step14/analysis.json'), 'utf8'))
   expect(j.args).toEqual({ tasks: join(d, 'tasks.tsv'), h5Drop: ['b2'], expect: JSON.parse(EXP) })
   expect(j.h4.tasks).toBe(6)
+  const bm = bootstrapMean(T.map((_, i) => Math.round((0.6 + 0.1 * i) * 1e9) / 1e9), 'hstack-bench-2026-10-27:step14:H4')
+  expect([j.h4.lower, j.h4.upper]).toEqual([bm.lower, bm.upper]) // the command's seed prefix
   expect(j.realEstate.h1.tasks).toBe(1) // r2 has no step ids
   expect(j.h5.pooled).toMatchObject({ caught: 21, miss: 7, tasks: 7 })
 })

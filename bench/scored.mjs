@@ -152,7 +152,7 @@ export function analysisLines(r, expect) {
     `integrity h5 caught=${ih.caught} miss=${ih.miss} expected caught=${expect.caught} miss=${expect.miss} ${ih.ok ? 'ok' : 'differs'}`]
   if (!r.integrity.ok) return [...out, 'analysis stopped: the integrity lines differ from the lock']
   out.push(`${lineText('H4 score H-W', r.h4)} ${met(r.h4.met)}${without(r.h4)}`, `${lineText('H4 build H-W', r.h4.build)} decides nothing`, `${lineText('H4 requirement H-W', r.h4.requirement)} decides nothing`)
-  if (!r.h4.met) out.push('H4 not met: H1-H3, real-estate, pass^k and feature-missing are not reported')
+  if (!r.h4.met) out.push(`H4 not met: H1-H3, ${PRIVATE_SET.key}, pass^k and feature-missing are not reported`)
   else {
     out.push(`${lineText('H1 build H-B', r.h1)} point>=0.10=${r.h1.point ? 'yes' : 'no'}${without(r.h1)}`, `${lineText('H2 requirement H-B', r.h2)}${without(r.h2)}`,
       lineText('H3a H interventions', r.h3.a), lineText('H3b interventions H-B', r.h3.b), `H3 p=${f4(r.h3.p)} (the larger of H3a and H3b)`)

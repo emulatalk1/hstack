@@ -105,7 +105,7 @@ export function analyse({ runs, h5, sets, expect, seed }) {
     h1.met = holmMet('H1') && h1.point
     h2.met = holmMet('H2')
     h3.met = holmMet('H3')
-    // real-estate: the same lines, H1 only where the task has step ids; no p, no Holm, no verdict
+    // the private set: the same lines, H1 only where the task has step ids; no p, no Holm, no verdict
     const reLine = (k, tasks) => { const { threshold, side, ...x } = spec[k]; return line(mine, { ...x, tasks, seed: s(`re-${k}`) }) }
     const realEstate = { h1: reLine('H1', withIds(re)), h2: reLine('H2', re), h3a: reLine('H3a', re), h3b: reLine('H3b', re) }
     // ruling 7: per set and arm over the tasks with step ids; k the runs with `passed`, a task with k < j out of pass^j
