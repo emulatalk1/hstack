@@ -1,6 +1,6 @@
 // Step 15's diagnosis of H4 (the plan's rulings 2–5, registered in the prereg's section 12 "Applied at step 15"). Pure: no fs, no git.
 // Counts only: a histogram key outside a plain-name pattern is counted as <other>, so no transcript text leaves here. Names no task.
-import { okToolInputs, toolUses } from './agent.mjs'
+import { toolCalls, toolUses } from './agent.mjs'
 import { bootstrapMean, canaryScore } from './score.mjs'
 
 export const PARTS = ['oracle', 'reviewer', 'gate']
@@ -13,32 +13,36 @@ const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : nu
 const sd = (xs) => (xs.length < 2 ? null : Math.sqrt(xs.reduce((a, x) => a + (x - mean(xs)) ** 2, 0) / (xs.length - 1)))
 const r9 = (x) => Math.round(x * 1e9) / 1e9
 
-// ruling 2 (O1): one run's turn texts. The totals count every call, as the record's toolUses; the parts and histograms non-error calls only
+// ruling 2 (O1): one run's turn texts. The totals count every call, as the record's toolUses; a part ran on its non-error calls (the
+// decider); `called` counts its calls with a tool_result, errored or not (fix round 1), as do the histograms, so an errored gate shows
 export function activity(turns) {
-  const a = { oracle: 0, reviewer: 0, gate: 0, agentTotal: 0, bashTotal: 0, agentTypes: {}, scriptWords: {} }
+  const a = { oracle: 0, reviewer: 0, gate: 0, called: { oracle: 0, reviewer: 0, gate: 0 }, agentTotal: 0, bashTotal: 0, agentTypes: {}, scriptWords: {} }
+  const count = (part, ok) => { a.called[part]++; if (ok) a[part]++ }
   for (const t of turns) {
     const n = toolUses(t)
     a.agentTotal += n.Agent ?? 0
     a.bashTotal += n.Bash ?? 0
-    for (const i of okToolInputs(t, 'Agent')) {
-      const type = String(i.subagent_type ?? '')
-      if (type === 'hstack:oracle') a.oracle++
-      if (type === 'hstack:reviewer') a.reviewer++
+    for (const { input, ok } of toolCalls(t, 'Agent')) {
+      const type = String(input.subagent_type ?? '')
+      if (type === 'hstack:oracle') count('oracle', ok)
+      if (type === 'hstack:reviewer') count('reviewer', ok)
       bump(a.agentTypes, type, AGENT_KEY)
     }
-    for (const i of okToolInputs(t, 'Bash')) {
-      const words = [...String(i.command ?? '').matchAll(HEAD)].map((m) => m[1])
-      if (words.includes('gate')) a.gate++ // a call, counted once; the histogram counts each word
+    for (const { input, ok } of toolCalls(t, 'Bash')) {
+      const words = [...String(input.command ?? '').matchAll(HEAD)].map((m) => m[1])
+      if (words.includes('gate')) count('gate', ok) // a call, counted once; the histogram counts each word
       for (const w of words) bump(a.scriptWords, w, WORD_KEY)
     }
   }
   return a
 }
-// per arm: the runs where each part ran, its mean calls per run, the histograms summed
+// per arm: the runs where each part ran (and was called), its mean calls per run, the histograms summed
 export function summary(acts) {
   const add = (k) => acts.reduce((h, a) => { for (const [w, n] of Object.entries(a[k])) h[w] = (h[w] ?? 0) + n; return h }, {})
-  return { runs: acts.length, ran: Object.fromEntries(PARTS.map((p) => [p, acts.filter((a) => a[p] > 0).length])),
-    calls: Object.fromEntries(PARTS.map((p) => [p, mean(acts.map((a) => a[p]))])), agentTypes: add('agentTypes'), scriptWords: add('scriptWords') }
+  const per = (f) => Object.fromEntries(PARTS.map((p) => [p, f(p)]))
+  return { runs: acts.length, ran: per((p) => acts.filter((a) => a[p] > 0).length), calls: per((p) => mean(acts.map((a) => a[p]))),
+    called: { ran: per((p) => acts.filter((a) => a.called[p] > 0).length), calls: per((p) => mean(acts.map((a) => a.called[p]))) },
+    agentTypes: add('agentTypes'), scriptWords: add('scriptWords') }
 }
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -87,9 +91,13 @@ export function scoreShape(rows, maxOf, tasks = [...new Set(rows.map((r) => r.ta
     sdH: mean(spread.H), sdW: mean(spread.W), sdD: sd(perTask.map((t) => t.d)), perTask }
 }
 
-// ruling 5, in its order; a null lower bound is no trace
-export function outcome({ ran, edge, controlFound, codeLower, testLower }) {
-  if (PARTS.every((p) => ran[p] < INACTIVE)) return controlFound ? 'inactive' : 'inactive or a detector fault (unconfirmed)'
+// ruling 5, in its order; a null lower bound is no trace. Inactive is decided on the non-error runs (`ran`); a control that found nothing,
+// then a part called (errored included) in 44 or more runs, leave it unconfirmed (fix round 1)
+export function outcome({ ran, called, edge, controlFound, codeLower, testLower }) {
+  if (PARTS.every((p) => ran[p] < INACTIVE)) {
+    if (!controlFound) return 'inactive or a detector fault (unconfirmed)'
+    return PARTS.every((p) => called[p] < INACTIVE) ? 'inactive' : 'inactive (unconfirmed: called in 44 or more)'
+  }
   if (edge >= EDGE) return 'little room'
   if (codeLower !== null && codeLower > 0) return 'a code trace'
   if (testLower !== null && testLower > 0) return 'a test trace only'

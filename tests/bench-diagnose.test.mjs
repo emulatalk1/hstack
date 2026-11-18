@@ -14,22 +14,29 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }))
 let ids = 0
 const turn = (calls, text = '') => [
   ...(text ? [{ type: 'assistant', message: { id: 'mt', content: [{ type: 'text', text }] } }] : []),
-  ...calls.flatMap(({ name, input, error = false }) => {
+  ...calls.flatMap(({ name, input, error = false, cut = false }) => {
     const id = `tu_${++ids}`, a = { type: 'assistant', message: { id: `m${id}`, content: [{ type: 'tool_use', id, name, input }] } }
-    return [a, a, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: error, content: `${text} out` }] } }]
+    return cut ? [a] : [a, a, { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: error, content: `${text} out` }] } }]
   }),
   { type: 'result', is_error: false, result: 'DONE' },
 ].map((e) => JSON.stringify(e)).join('\n') + '\n'
-const agent = (type, error) => ({ name: 'Agent', input: { subagent_type: type, prompt: 'p' }, error })
-const bash = (command, error) => ({ name: 'Bash', input: { command }, error })
+const agent = (type, error, cut) => ({ name: 'Agent', input: { subagent_type: type, prompt: 'p' }, error, cut })
+const bash = (command, error, cut) => ({ name: 'Bash', input: { command }, error, cut })
 
 test('activity counts Agent calls by subagent_type and Bash calls by the gate pattern', () => {
   const a = activity([
     turn([agent('hstack:oracle'), agent('hstack:oracle'), agent('hstack:reviewer', true), agent('general-purpose'), bash('sh "/p/scripts/hstack.sh" gate'), bash('$H lock a b && $H phase oracle')]),
     turn([agent('hstack:reviewer'), bash('ls'), bash('$H gate', true), { name: 'Write', input: {} }, agent('not a name!')]),
   ])
-  expect(a).toEqual({ oracle: 2, reviewer: 1, gate: 1, agentTotal: 6, bashTotal: 4,
-    agentTypes: { 'hstack:oracle': 2, 'general-purpose': 1, 'hstack:reviewer': 1, '<other>': 1 }, scriptWords: { gate: 1, lock: 1, phase: 1 } })
+  // ran: non-error calls; called: every call with a tool_result, errored included, as the histograms
+  expect(a).toEqual({ oracle: 2, reviewer: 1, gate: 1, called: { oracle: 2, reviewer: 2, gate: 2 }, agentTotal: 6, bashTotal: 4,
+    agentTypes: { 'hstack:oracle': 2, 'general-purpose': 1, 'hstack:reviewer': 2, '<other>': 1 }, scriptWords: { gate: 2, lock: 1, phase: 1 } })
+})
+
+test('a call with no tool_result counts in the totals only, neither ran nor called', () => {
+  const a = activity([turn([agent('hstack:oracle', false, true), bash('$H gate', false, true), agent('hstack:reviewer', true)])])
+  expect([a.oracle, a.gate, a.reviewer, a.called, a.agentTotal, a.bashTotal]).toEqual([0, 0, 0, { oracle: 0, reviewer: 1, gate: 0 }, 2, 1])
+  expect([a.agentTypes, a.scriptWords]).toEqual([{ 'hstack:reviewer': 1 }, {}])
 })
 
 test('only a command that runs the plugin script with gate counts, in each quoted form', () => {
@@ -64,10 +71,13 @@ test('taskDistance uses 9 between and 6 within pairs', async () => {
   expect([noWithin.code, noWithin.pairs]).toEqual([null, { between: 1, within: 0 }])
 })
 
-const base = { ran: { oracle: 80, reviewer: 80, gate: 80 }, runs: 87, edge: 3, controlFound: true, codeLower: -0.1, testLower: -0.1 }
+const base = { ran: { oracle: 80, reviewer: 80, gate: 80 }, called: { oracle: 80, reviewer: 80, gate: 80 }, runs: 87, edge: 3, controlFound: true, codeLower: -0.1, testLower: -0.1 }
 test("outcome follows ruling 5's order", () => {
-  expect(outcome({ ...base, ran: { oracle: 1, reviewer: 2, gate: 3 }, edge: 20, codeLower: 1, testLower: 1 })).toBe('inactive')
-  expect(outcome({ ...base, ran: { oracle: 1, reviewer: 2, gate: 3 }, controlFound: false })).toBe('inactive or a detector fault (unconfirmed)')
+  const low = { oracle: 1, reviewer: 2, gate: 3 }
+  expect(outcome({ ...base, ran: low, called: low, edge: 20, codeLower: 1, testLower: 1 })).toBe('inactive')
+  expect(outcome({ ...base, ran: low, called: low, controlFound: false })).toBe('inactive or a detector fault (unconfirmed)')
+  expect(outcome({ ...base, ran: low, called: { ...low, gate: 50 } })).toBe('inactive (unconfirmed: called in 44 or more)')
+  expect(outcome({ ...base, ran: low, called: { ...low, gate: 50 }, controlFound: false })).toBe('inactive or a detector fault (unconfirmed)') // the control's wording first
   expect(outcome({ ...base, edge: 20, codeLower: 1, testLower: 1 })).toBe('little room')
   expect(outcome({ ...base, codeLower: 0.2, testLower: 1 })).toBe('a code trace')
   expect(outcome({ ...base, testLower: 0.2 })).toBe('a test trace only')
@@ -76,8 +86,12 @@ test("outcome follows ruling 5's order", () => {
   expect(outcome({ ...base, controlFound: false })).toBe('no trace') // the control qualifies inactive only
 })
 test('inactive needs fewer than 44 in all three', () => {
-  expect(outcome({ ...base, ran: { oracle: 43, reviewer: 43, gate: 43 } })).toBe('inactive')
-  for (const k of ['oracle', 'reviewer', 'gate']) expect(outcome({ ...base, ran: { oracle: 43, reviewer: 43, gate: 43, [k]: 44 } })).toBe('no trace')
+  const at = (k, n) => ({ oracle: 43, reviewer: 43, gate: 43, ...(k ? { [k]: n } : {}) })
+  expect(outcome({ ...base, ran: at(), called: at() })).toBe('inactive')
+  for (const k of ['oracle', 'reviewer', 'gate']) {
+    expect(outcome({ ...base, ran: at(k, 44), called: at(k, 44) })).toBe('no trace')
+    expect(outcome({ ...base, ran: at(), called: at(k, 44) })).toBe('inactive (unconfirmed: called in 44 or more)') // called counts its own 44
+  }
 })
 test('little room at 15', () => {
   expect(outcome({ ...base, edge: 15 })).toBe('little room')
@@ -128,7 +142,7 @@ const git = (repo, ...a) => {
 }
 const PLUGINS = [{ name: 'hstack', commit: 'c0', sha256: 's0' }]
 const H_CALLS = [agent('hstack:oracle'), bash('sh "/p/scripts/hstack.sh" lock tests/x.test.js'), agent('hstack:reviewer'), bash('$H gate'), agent(`${MARK} free text`), bash(`hstack.sh ${MARK}`)]
-const W_CALLS = [agent('general-purpose'), bash('git commit -m "the gate"')]
+const W_CALLS = [agent('general-purpose'), bash('git commit -m "the gate"'), bash('$H gate', true)] // an errored gate: called, not ran
 
 // tasks t1 (h1_ids 2) and t2 (0) are external and scored; t3 is dropped; p1 is the private set's. c1 holds the control run, under its floor.
 function world(name, { wCalls = W_CALLS, controlCalls = [agent('hstack:oracle')], skipRegistered = false, skipTable = false } = {}) {
@@ -200,19 +214,20 @@ test('diagnose prints counts only', async () => {
   for (const text of [r.out, file]) expect(text.toLowerCase()).not.toContain(MARK.toLowerCase())
   expect(lines.findIndex((l) => l.startsWith('O1'))).toBeGreaterThan(lines.findLastIndex((l) => l.startsWith('check')))
   expect(lines.filter((l) => l.startsWith('check')).every((l) => l.endsWith(' ok'))).toBe(true)
-  expect(lines).toContain('O1 H runs=6 oracle=6/6 reviewer=6/6 gate=6/6 calls oracle=1.00 reviewer=1.00 gate=1.00')
-  expect(lines).toContain('O1 W runs=6 oracle=0/6 reviewer=0/6 gate=0/6 calls oracle=0.00 reviewer=0.00 gate=0.00')
+  expect(lines).toContain('O1 H runs=6 oracle=6/6 called=6/6 reviewer=6/6 called=6/6 gate=6/6 called=6/6 calls oracle=1.00 called=1.00 reviewer=1.00 called=1.00 gate=1.00 called=1.00')
+  expect(lines).toContain('O1 W runs=6 oracle=0/6 called=0/6 reviewer=0/6 called=0/6 gate=0/6 called=6/6 calls oracle=0.00 called=0.00 reviewer=0.00 called=0.00 gate=0.00 called=1.00')
   expect(lines).toContain('O1 H agentTypes <other>:6,hstack:oracle:6,hstack:reviewer:6')
   expect(lines).toContain('O1 H scriptWords <other>:6,gate:6,lock:6')
-  expect(lines).toContain('O1 W scriptWords none')
-  expect(lines).toContain('control runs=4 oracle=1 reviewer=0 gate=0 found=yes')
+  expect(lines).toContain('O1 W scriptWords gate:6') // the errored gate shows in the histogram
+  expect(lines).toContain('check standing tasks=2 ok')
+  expect(lines).toContain('control runs=4 oracle=1 called=1 reviewer=0 called=0 gate=0 called=0 found=yes')
   const o2 = lines.find((l) => l.startsWith('O2 code')), r1 = Math.log((22 + 1) / (2 + 1)).toFixed(4)
   expect(o2).toBe(`O2 code tasks=2 out=none mean=${r1} 95%=[${r1}, ${r1}]`)
   expect(lines.find((l) => l.startsWith('O2 test'))).toBe('O2 test tasks=2 out=none mean=1.0986 95%=[1.0986, 1.0986]') // ln((2 + 1)/(0 + 1))
   expect(lines.find((l) => l.startsWith('O3'))).toBe('O3 tasks=2 out=none max1=t2 ties=1 ceiling=1 floor=0 sdH=0.0000 sdW=0.0000 sdD=0.3536') // B and private-set rows left out
   expect(lines.at(-1)).toBe('outcome inactive') // 6 runs are fewer than the registered 44
   const j = JSON.parse(file)
-  expect([j.outcome, j.o1.H.ran, j.o2.code.tasks, j.o3.tasks]).toEqual(['inactive', { oracle: 6, reviewer: 6, gate: 6 }, 2, 2])
+  expect([j.outcome, j.o1.H.ran, j.o1.W.called.ran, j.o2.code.tasks, j.o3.tasks]).toEqual(['inactive', { oracle: 6, reviewer: 6, gate: 6 }, { oracle: 0, reviewer: 0, gate: 6 }, 2, 2])
   expect(/\bB\b/.test(r.out) || /"B"/.test(file)).toBe(false)
 })
 
@@ -254,10 +269,21 @@ test('a control run with no part prints inactive as unconfirmed; a control above
   const { d } = world('control', { controlCalls: [] })
   const r = await go(d, ARGS(d))
   expect(r.code).toBe(0)
-  expect(r.out).toContain('control runs=4 oracle=0 reviewer=0 gate=0 found=no')
+  expect(r.out).toContain('control runs=4 oracle=0 called=0 reviewer=0 called=0 gate=0 called=0 found=no')
   expect(r.out.split('\n').at(-1)).toBe('outcome inactive or a detector fault (unconfirmed)')
   const up = await go(d, ['diagnose', join(d, 'tasks.tsv'), '--control', 't1:H:1'])
   expect([up.code, up.error]).toEqual(['threw', 'diagnose refused: control t1 H-1 is above its floor (a standing run)'])
   const b = await go(d, ['diagnose', join(d, 'tasks.tsv'), '--control', 'c1:B:1'])
   expect(b.code).toBe('threw')
+})
+
+test('a task with no floor file or with 2 standing runs in an arm stops before the reading', async () => {
+  const { d } = world('standing')
+  rmSync(join(d, 'step13/floor/t2.json')) // no floor: no run of t2 stands
+  rmSync(join(d, 'results/t1-W-3.json'))
+  const r = await go(d, ARGS(d))
+  expect(r.code).toBe(3)
+  expect(r.out).toContain('check standing tasks=2 differs t1 W=2,t2 H=0,t2 W=0')
+  expect(r.out).not.toMatch(/^(O1|O2|O3|control|outcome)/m)
+  expect(existsSync(join(d, 'step15/diagnosis.json'))).toBe(false)
 })

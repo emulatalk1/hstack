@@ -206,13 +206,14 @@ async function diagnoseCmd(c, tsv, controlArg) {
   const all = [...runs.map((r) => ({ r })), ...controls.map((r) => ({ r, control: true }))].map((x) => { const t = turnsOf(x.r); return { ...x, turns: t.length, a: activity(t) } })
   const hPlugins = runs.filter((r) => r.arm === 'H').map((r) => JSON.stringify(r.plugins ?? null))
   const common = hPlugins.sort((a, b) => hPlugins.filter((x) => x === b).length - hPlugins.filter((x) => x === a).length)[0] // the most common value
-  const checks = Object.entries({
+  const short = tasks.flatMap((t) => ['H', 'W'].map((arm) => [t, arm, runs.filter((r) => r.task === t && r.arm === arm).length])).filter(([, , n]) => n !== K)
+  const checks = [{ what: 'standing', of: `tasks=${tasks.length}`, bad: short.map(([t, arm, n]) => `${t} ${arm}=${n}`) }, ...Object.entries({ // K per arm: a missing floor file stands none
     transcripts: all.filter((x) => !x.turns),
     toolUses: all.filter((x) => x.a.agentTotal !== (x.r.toolUses?.Agent ?? 0) || x.a.bashTotal !== (x.r.toolUses?.Bash ?? 0)),
     'W parts': all.filter((x) => x.r.arm === 'W' && PARTS.some((p) => x.a[p] > 0)),
     'H plugins': all.filter((x) => x.r.arm === 'H' && JSON.stringify(x.r.plugins ?? null) !== common),
-  }).map(([what, bad]) => ({ what, runs: all.length, bad: bad.map((x) => name(x.r)) }))
-  for (const k of checks) console.log(`check ${k.what} runs=${k.runs} ${k.bad.length ? `differs ${k.bad.join(',')}` : 'ok'}`)
+  }).map(([what, bad]) => ({ what, of: `runs=${all.length}`, bad: bad.map((x) => name(x.r)) }))]
+  for (const k of checks) console.log(`check ${k.what} ${k.of} ${k.bad.length ? `differs ${k.bad.join(',')}` : 'ok'}`)
   if (checks.some((k) => k.bad.length)) { console.log('diagnosis stopped: an instrument check failed'); return 3 }
 
   const o1 = Object.fromEntries(['H', 'W'].map((arm) => [arm, summary(all.filter((x) => !x.control && x.r.arm === arm).map((x) => x.a))]))
@@ -226,15 +227,15 @@ async function diagnoseCmd(c, tsv, controlArg) {
   const o2 = { code: o2Line(perTask, 'code', `${SEED}:step15:O2-code`), test: o2Line(perTask, 'test', `${SEED}:step15:O2-test`), perTask }
   const { runs: trows } = strictJson(tableFile, null, (v) => Array.isArray(v?.runs), 'a table ({ runs: [...] })')
   const o3 = { max1: tasks.filter((t) => maxOf(t) === 1), ...scoreShape(trows.filter((r) => tasks.includes(r.task) && (r.arm === 'H' || r.arm === 'W')), maxOf, tasks) }
-  const words = outcome({ ran: o1.H.ran, runs: o1.H.runs, edge: o3.edge, controlFound: found, codeLower: o2.code.lower, testLower: o2.test.lower })
+  const words = outcome({ ran: o1.H.ran, called: o1.H.called.ran, runs: o1.H.runs, edge: o3.edge, controlFound: found, codeLower: o2.code.lower, testLower: o2.test.lower })
   writeFileSync(join(data, 'step15/diagnosis.json'), JSON.stringify({ at: new Date().toISOString(), args: { tasks: tsv, control: controlArg }, checks, o1, control: { ...control, found }, o2, o3, outcome: words }, null, 2) + '\n')
-  const hist = (h) => Object.keys(h).sort().map((k) => `${k}:${h[k]}`).join(',') || 'none', parts = (s, f) => PARTS.map((p) => `${p}=${f(s, p)}`).join(' ')
+  const hist = (h) => Object.keys(h).sort().map((k) => `${k}:${h[k]}`).join(',') || 'none', parts = (f) => PARTS.map((p) => `${p}=${f(p)}`).join(' ')
   for (const [arm, s] of Object.entries(o1)) {
-    console.log(`O1 ${arm} runs=${s.runs} ${parts(s, (x, p) => `${x.ran[p]}/${x.runs}`)} calls ${parts(s, (x, p) => fx(x.calls[p]))}`)
+    console.log(`O1 ${arm} runs=${s.runs} ${parts((p) => `${s.ran[p]}/${s.runs} called=${s.called.ran[p]}/${s.runs}`)} calls ${parts((p) => `${fx(s.calls[p])} called=${fx(s.called.calls[p])}`)}`)
     console.log(`O1 ${arm} agentTypes ${hist(s.agentTypes)}`)
     console.log(`O1 ${arm} scriptWords ${hist(s.scriptWords)}`)
   }
-  console.log(`control runs=${control.runs} ${parts(control, (x, p) => x.ran[p])} found=${found ? 'yes' : 'no'}`)
+  console.log(`control runs=${control.runs} ${parts((p) => `${control.ran[p]} called=${control.called.ran[p]}`)} found=${found ? 'yes' : 'no'}`)
   for (const side of ['code', 'test']) console.log(`O2 ${side} tasks=${o2[side].tasks} out=${list(o2[side].out)} mean=${f4(o2[side].mean)} 95%=${iv(o2[side])}`)
   console.log(`O3 tasks=${o3.tasks} out=${list(o3.out)} max1=${list(o3.max1)} ties=${o3.ties} ceiling=${o3.ceiling} floor=${o3.floor} sdH=${f4(o3.sdH)} sdW=${f4(o3.sdW)} sdD=${f4(o3.sdD)}`)
   console.log(`outcome ${words}`)

@@ -70,15 +70,17 @@ export function toolUses(streamJson) {
   return n
 }
 
-// the inputs of the calls of one tool whose tool_result is not an error (a denied or failed call is one)
-export function okToolInputs(streamJson, name) {
+// the calls of one tool that have a tool_result: { input, ok }, ok when the result is not an error (a denied or failed call is one)
+export function toolCalls(streamJson, name) {
   const input = new Map(), failed = new Set(), done = new Set()
   for (const e of events(streamJson)) for (const b of Array.isArray(e?.message?.content) ? e.message.content : []) {
     if (e.type === 'assistant' && b?.type === 'tool_use' && b.name === name) input.set(b.id, b.input ?? {})
     if (e.type === 'user' && b?.type === 'tool_result') (b.is_error === true ? failed : done).add(b.tool_use_id)
   }
-  return [...input].filter(([id]) => done.has(id) && !failed.has(id)).map(([, i]) => i)
+  return [...input].filter(([id]) => done.has(id) || failed.has(id)).map(([id, i]) => ({ input: i, ok: done.has(id) && !failed.has(id) }))
 }
+// the inputs of the calls of one tool whose tool_result is not an error
+export const okToolInputs = (streamJson, name) => toolCalls(streamJson, name).filter((c) => c.ok).map((c) => c.input)
 export const okBashCommands = (streamJson) => okToolInputs(streamJson, 'Bash').map((i) => String(i.command ?? ''))
 
 export function judgeVerdict(text) {
