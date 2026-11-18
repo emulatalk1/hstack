@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-11-19
+* **Update**: Registered the rulings of the [H4 diagnosis plan](/plans/2026-11-18-bench-h4-diagnosis.md) in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Applied at step 15"), after the user approved the plan ("Duyệt") and before any change to `bench/` for step 15.
+
 ## 2026-11-18
 * **Update**: Added the plugin-design session's 15 prompts (`progress/step14/design-prompts.md`) and the advisor's ruling under the user's delegation to the step 14 report: approve, and make step 15 a registered diagnosis of H4 before 13.3–13.5. Approved by the user ("Duyệt"); the plan is `stable`.
 * **Creation**: Wrote the step 14 report `progress/step14-report.md` of the [analysis plan](/plans/2026-11-18-bench-analysis.md): the analysis ran once after registration; H4 (H − W) is not met (mean −0.0048, 95% [−0.0775, 0.0588]), so H1–H3 are not reported and section 13 acceptance, not judged while items 3–5 are unmeasured, cannot be reached; H5 is met (0.717, 95% [0.608, 0.818]); manifest `progress/stick-v1-step14.sha256` (changed 0 against step 13). Awaiting the user's approval.

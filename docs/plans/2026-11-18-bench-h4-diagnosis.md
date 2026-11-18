@@ -6,6 +6,7 @@ status: draft
 generated: { by: claude-code/2.1.318, at: "2026-11-18T23:11:30+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.318, at: "2026-11-18T23:14:30+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-19T02:06:11+07:00" }
 sources:
   - id: prereg
     resource: /plans/2026-10-27-benchmark-prereg.md
