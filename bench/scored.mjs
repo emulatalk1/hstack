@@ -135,6 +135,7 @@ async function analyseCmd(data, tsv, drop, expectText) {
     const f = join(data, task, 'seeded/h5', `${arm}-${run}.json`)
     return { task, set, run: Number(run), bugs: strictJson(f, null, Array.isArray, 'an array of H5 rows') ?? (() => { throw new Error(`${f} is missing`) })() }
   })
+  if (!h5.some((x) => x.bugs.some((b) => b?.bug === drop))) throw new Error(`--h5-drop ${drop} matches no bug of the H5 rows`) // else 'without' would be the pooled line
   const result = analyse({ runs, h5, sets, expect, seed: `${SEED}:step14` })
   mkdirSync(join(data, 'step14'), { recursive: true })
   writeFileSync(join(data, 'step14/analysis.json'), JSON.stringify({ at: new Date().toISOString(), args: { tasks: tsv, h5Drop: sets.h5Drop, expect }, ...result }, null, 2) + '\n')

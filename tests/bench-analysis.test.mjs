@@ -68,6 +68,25 @@ test('an integrity mismatch stops before H4', () => {
   const b = run({ expect: { ...EXPECT, caught: 5 } })
   expect(Object.keys(b)).toEqual(['integrity'])
   expect(b.integrity).toMatchObject({ ok: false, runs: { ok: true }, h5: { caught: 6, miss: 6, ok: false } })
+  const c = run({ expect: { ...EXPECT, miss: 5 } }) // miss alone differs
+  expect(Object.keys(c)).toEqual(['integrity'])
+  expect(c.integrity).toMatchObject({ ok: false, runs: { ok: true }, h5: { ok: false } })
+  const d = run({ runs: set(world(), is('t1', 'H', 1), UNSCORED) }) // an unscored run the lock does not list
+  expect(Object.keys(d)).toEqual(['integrity'])
+  expect(d.integrity).toMatchObject({ ok: false, runs: { unscored: ['t1 H-1'], ok: false }, h5: { ok: true } })
+})
+
+test('H1 reads build and H2 requirement', () => {
+  const runs = world().map((r) => ({ ...r, ...{ H: { build: 0.8, requirement: 0.6 }, B: { build: 0.4, requirement: 0.5 }, W: { build: 0, requirement: 0 } }[r.arm] }))
+  const r = run({ runs })
+  expect(r.h1.mean).toBeCloseTo(0.4, 9)
+  expect(r.h2.mean).toBeCloseTo(0.1, 9)
+})
+
+test('H1 runs only on the external tasks with step ids', () => {
+  const r = run({ sets: { ...SETS, h1: ['t1', 't2', 't3', 'r1'] } })
+  expect([r.h1.tasks, r.h2.tasks, r.h3.b.tasks]).toEqual([3, 6, 6])
+  expect(r.h1.out).toEqual([])
 })
 
 test('H4 prints build and requirement apart', () => {
@@ -104,6 +123,29 @@ test('Holm reads each interval at its level from the hypothesis seed', () => {
   expect(r.holm[0].bounds).toEqual([{ lower: at.lower, upper: at.upper }])
   expect(r.holm[2].bounds).toHaveLength(2) // H3: both of its tests
   expect(r.holm.every((x) => x.met)).toBe(true)
+})
+
+// Holm end to end: H − B build d1 and requirement d2 per task, H's interventions per task as a count of its 3 runs (B none), B = 1, W = 0
+const holmRun = (d1, d2, iv = d1.map(() => 0)) => {
+  const ts = d1.map((_, i) => `h${i + 1}`)
+  const runs = ts.flatMap((t, i) => [1, 2, 3].flatMap((n) => [row(t, 'H', n, 0, { build: 1 + d1[i], requirement: 1 + d2[i], interventions: n <= iv[i] ? 1 : 0 }), row(t, 'B', n, 1), row(t, 'W', n, 0)]))
+  return run({ runs, sets: { h1: ts, external: ts, realEstate: [], h5Drop: ['b2'] } })
+}
+
+test('the verdicts are Holm\'s: a hypothesis that clears its own 95% is not met after the first not met', () => {
+  // H3 (p 0), then H2 (p 0.039) fails at 97.5% though its 95% clears, so H1 (p 0.0426) is not met though its 95% and point clear
+  const r = holmRun([0.1, 0.1, 0.1, 0.1, 0.1, 0.3, 0.3, -0.2], [0.1, 0.1, 0.1, 0.1, 0.1, 0.4, 0.4, -0.2])
+  expect(r.holm.map((x) => [x.id, x.met])).toEqual([['H3', true], ['H2', false], ['H1', false]])
+  expect(r.holm[1].bounds[0].lower).toBeLessThan(0)
+  expect([r.h2.lower, r.h1.lower]).toEqual([0.025, 0.0125]) // both 95% lower bounds clear 0
+  expect(r.h1.point).toBe(true)
+  expect([r.h1.met, r.h2.met, r.h3.met]).toEqual([false, false, true])
+  // H2 (p 0), then H1 (p 0.029) fails at 97.5%, so H3 (p 0.0342), whose two 95% bounds clear, is not met
+  const q = holmRun([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, -0.2], Array(10).fill(0.5), [0, 0, 0, 0, 1, 1, 1, 2, 2, 2])
+  expect(q.holm.map((x) => [x.id, x.met])).toEqual([['H2', true], ['H1', false], ['H3', false]])
+  expect(q.h3.a.upper).toBeLessThanOrEqual(1)
+  expect(q.h3.b.upper).toBeLessThanOrEqual(0.5)
+  expect(q.h3.met).toBe(false)
 })
 
 test('H1 needs its point at 0.10 after Holm', () => {
@@ -212,7 +254,7 @@ const quiet = async (fn) => {
   const b = spyOn(console, 'error').mockImplementation((...x) => out.push(x.join(' ')))
   try { return { code: await fn(), out } } catch (e) { return { code: 'threw', out, error: e.message } } finally { a.mockRestore(); b.mockRestore() }
 }
-const TSV = ['set\ttask\tstatus\th1_ids', ...T.map((t) => `external\t${t}\tscored\t1`), 'external\tt9\tdropped\t1', 'real-estate\tr1\tscored\t2', 'real-estate\tr2\tscored\t0'].join('\n') + '\n'
+const TSV = ['set\ttask\tstatus\th1_ids', ...T.map((t, i) => `external\t${t}\tscored\t${i < 4 ? 1 : 0}`), 'external\tt9\tdropped\t1', 'real-estate\tr1\tscored\t2', 'real-estate\tr2\tscored\t0'].join('\n') + '\n'
 function dataDir(name, { runs = world({ re: RE }), registered = true, table = true } = {}) {
   const d = join(tmp, name)
   mkdirSync(join(d, 'step13'), { recursive: true })
@@ -231,10 +273,10 @@ function dataDir(name, { runs = world({ re: RE }), registered = true, table = tr
   return d
 }
 const EXP = JSON.stringify({ noresult: [], unscored: [], caught: 21, miss: 7 })
-const cli = async (d, expectJson = EXP) => {
+const cli = async (d, expectJson = EXP, drop = 'b2') => {
   const prev = process.env.HSTACK_BENCH_MACHINE
   process.env.HSTACK_BENCH_MACHINE = join(d, 'machine.json')
-  try { return await quiet(() => scored(['analyse', join(d, 'tasks.tsv'), '--h5-drop', 'b2', '--expect', expectJson])) }
+  try { return await quiet(() => scored(['analyse', join(d, 'tasks.tsv'), '--h5-drop', drop, '--expect', expectJson])) }
   finally { if (prev === undefined) delete process.env.HSTACK_BENCH_MACHINE; else process.env.HSTACK_BENCH_MACHINE = prev }
 }
 
@@ -267,6 +309,7 @@ test('analyse prints the integrity lines, then H4 first, and writes analysis.jso
   const bm = bootstrapMean(T.map((_, i) => Math.round((0.6 + 0.1 * i) * 1e9) / 1e9), 'hstack-bench-2026-10-27:step14:H4')
   expect([j.h4.lower, j.h4.upper]).toEqual([bm.lower, bm.upper]) // the command's seed prefix
   expect(j.realEstate.h1.tasks).toBe(1) // r2 has no step ids
+  expect([j.h1.tasks, j.h2.tasks]).toEqual([4, 6]) // t5 and t6 have no step ids
   expect(j.h5.pooled).toMatchObject({ caught: 21, miss: 7, tasks: 7 })
 })
 
@@ -293,4 +336,11 @@ test('analyse refuses a bad --expect and a listed H5 row file that is missing', 
   const d = dataDir('nofile')
   rmSync(join(d, 't1/seeded/h5/H-1.json'))
   expect((await cli(d)).error).toContain('H-1.json')
+})
+
+test('analyse refuses an --h5-drop that matches no H5 row', async () => {
+  const d = dataDir('nodrop'), r = await cli(d, EXP, 'zzz')
+  expect(r.code).toBe('threw')
+  expect(r.error).toContain('zzz')
+  expect(existsSync(join(d, 'step14/analysis.json'))).toBe(false)
 })
