@@ -846,6 +846,8 @@ Registered before any change to `bench/` for step 15 and before `<data>/step15/r
 
 Registered before `<data>/step15/registered` exists. Checked structurally before it (record fields and git hashes only): the 29 tasks' box and floor files exist; the four control records exist with run 1, plugin 653af83, at or under their floors; all 178 H and W records of the 29 tasks have turn files; in every task the env commits of the H and W runs above the floor (run by no machine) share one git tree.
 
+**Applied at step 16 (2026-11-19).** The [benchmark close-out plan](/plans/2026-11-19-bench-close-out.md), approved by the user on 2026-11-19 ("Duyệt plan kết thúc", asked directly) after the advisor's ruling under the user's delegation, closes the benchmark with one final report, `progress/final-report.md`. It computes nothing: no new run, grade, port or analysis; `table.json` is not read by hand; no H − B number. Every number it gives is quoted from a locked or approved document named beside it. It supersedes step 14's decision 1 (a) ("Để bước 15") and step 15's limit that 13.3–13.5 wait behind it: 13.3–13.5 stay unmeasured, and section 13 acceptance stays **not judged** (item 2 not met, so it cannot be reached). A re-test is a proposal in the report, started only by a new registered plan.
+
 ## 13. Acceptance thresholds (decided by neither the agent nor the user)
 
 1. H1, H2, H3 meet the thresholds of section 2 on external tasks, after the Holm correction.
