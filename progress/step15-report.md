@@ -121,4 +121,4 @@ These are observations only. The registered order stops at "little room", so O2 
 
 ## Approval
 
-Waiting for the user's approval after the advisor's review.
+After the advisor's review (wording fixes, no number changed), approved by the user ("Duyệt", 2026-11-19, asked directly); the plan is `stable`. The next step was left to the advisor ("Theo advisor"); its ruling is recorded in `progress/progress.md`.

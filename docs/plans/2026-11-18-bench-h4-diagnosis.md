@@ -2,7 +2,7 @@
 type: plan
 title: "H4 diagnosis plan"
 description: "Step 15: why H4 was not met. With H and W only, through one registered tool, and before anything is looked at: did the three parts W removes run in H's runs, do H's and W's products differ more than runs of one arm differ, and where do the two arms' scores sit. A registered rule names the outcome. H4's verdict stands; nothing about B is computed."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.318, at: "2026-11-18T23:11:30+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.318, at: "2026-11-18T23:14:30+07:00" }
