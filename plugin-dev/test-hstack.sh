@@ -277,6 +277,12 @@ desc 'explore was skipped' '' 'It said: no way to run it.'
 ok 'a short, generic reason of an earlier stumble is not refused' 'F draft | grep -q "^entry "'
 flush
 
+# a description in another script than ASCII is text like any other
+text 'a summary' '' "$(printf 'caf\303\251 \342\200\224 ti\341\272\277ng Vi\341\273\207t')" | F add bug none >/dev/null
+ok 'bytes over 127 are text: the draft shows them as written' 'F draft | grep -qxF "| $(printf "caf\303\251 \342\200\224 ti\341\272\277ng Vi\341\273\207t")"'
+flush
+ok 'and they are posted as written' 'log | grep -qF "$(printf "caf\303\251 \342\200\224 ti\341\272\277ng Vi\341\273\207t")"'
+
 # the fields: a head with anything outside the allow-list is refused, by draft and by post
 : > "$T/bin/log"
 B="$FB/20000101-000000-1"
