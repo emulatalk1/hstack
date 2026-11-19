@@ -10,6 +10,8 @@ verified:
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T16:54:17+07:00" }
   - { by: human:emulatalk1, at: "2026-11-19T16:54:17+07:00" }
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T17:22:42+07:00" }
+  - { by: claude-code-advisor/2.1.327, at: "2026-11-19T20:45:11+07:00" }
+  - { by: claude-code-advisor/2.1.327, at: "2026-11-19T20:58:58+07:00" }
 ---
 
 # Build Playbook and TDD Implementation Plan
@@ -96,6 +98,7 @@ Each line names a way this breaks for someone running `hstack:build`, and the ch
 Known limits, pinned by nothing:
 
 - A context compaction late in a long run can drop the rules the builder read. Steps 6, 7 and 9 still ask for a failing test with each fix in their own words.
+- The item on a test proved by breaking the code gives its reason for step 4 ("the code of step 4 is not committed yet"), while the rules also cover fixes in steps 6, 7 and 9, where a fix is uncommitted too. "Undo that one edit by hand" has no condition, so the instruction holds there; only the stated reason is narrower than the rule.
 - A feedback entry recorded with `phase: build` by 0.3.1 or earlier is refused by `feedback draft` and can be dismissed. A run recorded with the old name is read correctly by `missing` (added after the review).
 
 ## File Structure
@@ -379,7 +382,7 @@ Task 5 found two places where the builder left the test rules, and the review ha
 
 The text of `skills/build-implement/SKILL.md` in Task 2 above is the text after this fix.
 
-The second row was first written as "A change to product code after its test passes is a new cycle", which contradicted the refactor step of the copied rules: a refactor is a change to product code after green. The second run below ran on that first wording; the sentence was corrected after it, and no run has read the corrected sentence.
+The second row was first written as "A change to product code after its test passes is a new cycle", which contradicted the refactor step of the copied rules: a refactor is a change to product code after green. The second run below ran on that first wording; the sentence was corrected after it, and the third run read the corrected sentence.
 
 ### The second run
 
@@ -402,7 +405,24 @@ The second run's open point was put to the user with the run's own example (the 
 - **What the user approved and what this is.** The user approved "the test before the code", as the author had put it. The repair keeps the purpose (every such test is seen failing) and not that letter: the test may come after the code. It is the author's, for the user to accept or turn back.
 - **Walked through** `tdd.md`, `SKILL.md` and the playbook on the fixture's edges before the commit: an edge the base handles (a guard), an edge one earlier piece of this run's code settles (proved by breaking it), an edge that needs code (its own cycle), a fix from review, a surviving mutant.
 
-Read by no run: the refactor sentence, the narrowed guard, the new item and its two clauses.
+The third run, below, read all of these.
+
+### The third run
+
+Asked for by the user ("chạy thử lượt thật đi") after the repair: Task 5's command once more, on commit `99ac35a` and a clean clone of the fixture at its first commit. It replied `DONE`: 5 minutes 38 seconds, USD 3.43 (USD 9.30 for the three runs), 23 turns, 0 permission denials, 8 steps recorded, `done` equals HEAD, the tree clean, 0 Stop blocks; agents: oracle 1, reviewer 2, explorer 1, mutator 1. The first event listed plugin `hstack`, with `hstack:build` and `hstack:build-implement` among its skills, and five plugins of the harness itself (their names start `cc-plugin-`); no other.
+
+What the builder did in step 4, from the tool calls:
+
+- **The skill and the rules:** the Skill call, `$H missing`, both files printed by one `cat`, as before.
+- **The oracle's tests first:** run before any code, 7 of 8 failing; passing after the first code.
+- **One test, its failing run, its code:** one test (a negative N) written and run alone, 1 failure; then its code; then that test passing.
+- **Three further tests written in one edit, after the code.** They passed at once (4 tests, OK). The builder then broke its own code twice, each time with a one-line change, ran the tests and put the line back by the reverse change, with no `git checkout`: the first break (zero refused along with negatives) failed the `--top 0` test, on its own edge; the second (the value parsed as a decimal number) failed the test of a value that is not an integer on its own edge, since `1.5` was then accepted where it must be refused, and it also made every call with `--top N` crash, so the `--top 0` test and the empty-file test failed with it because the option stopped working at all. Both checked by hand afterwards. So each of the three was seen failing, which is what the new item asks; the empty-file test is the one that never failed on anything about its own edge. `spec.md` calls none of them a guard. A third break was announced and not made. The three tests were still written together, where item 4 says one at a time.
+- **No change to product code after green** in step 4, where both earlier runs had one. The only later edit before the commit was the README.
+- **Build:** the build command ran before the commit.
+
+After step 4: a fix from review and explore with its tests first (2 failures, then the code, then 15 passing); a second review round; a mutant-killing test (the mutant applied, 1 failure, the file restored with `git checkout`, which is right there because the code is committed, then 16 passing).
+
+What three runs on one small fixture show: what this builder did each time. Every run loaded hstack alone (`--setting-sources project,local` leaves the user's own settings out, the same reason the commit trailer appeared), while the user's own sessions also load superpowers, with its unedited test-driven-development skill and its session-start router: no run shows which of the two texts a builder follows there. They also do not show what it does on a project with a slow suite, a compiled language or a base with failures, and the parts of "In hstack" on an empty interface, a base with failures and a lint or type fix have been exercised by none of them.
 
 Seen in Task 5's transcript afterwards and not changed: the first mutation agent refused to start because the tree had two untracked cache folders, left there by the fixture's own preparation, and the builder started a second one after clearing the status. A project whose test runs leave untracked files and ignores none of them would meet the same refusal; telling the builder to delete untracked files could delete something the user keeps, so the playbook is left as it is.
 
