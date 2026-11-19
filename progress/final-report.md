@@ -85,7 +85,7 @@ The stick is **not validated** [S14]:
 
 ## Lock
 
-Nothing under `<data>` changes in this step. `stick compare progress/stick-v1-step15.sha256` (2026-11-19, before approval): hashed 36,158, equal 36,158, **changed 0, missing 0, unexplained 0**. Number check: each of the 40 quoted figures and phrases above was matched by script (`grep -F`) in the source named beside it; none missing.
+Nothing under `<data>` changes in this step. `stick compare progress/stick-v1-step15.sha256` (2026-11-19, before approval): hashed 36,158, equal 36,158, **changed 0, missing 0, unexplained 0**. Number check: 33 quoted figures and phrases (every number above) were matched by script (`grep -F`) in the source named beside it; none missing.
 
 ## Approval
 
