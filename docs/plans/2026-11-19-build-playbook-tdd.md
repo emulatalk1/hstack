@@ -184,7 +184,7 @@ No human is in this run. Where this file would ask one, decide and write the dec
 These rules govern every test and every line of product code the builder writes in step 4, and every fix in steps 6, 7 and 9. Six things are not violations of them, in the rules, the red flags and the checklist alike:
 
 - **The oracle's tests** (step 3) are the failing tests for the stated behaviours. Make them pass; write no second test for what one of them checks.
-- **A guard.** A test for a decided edge the codebase already handles passes at once. Keep it and mark the edge in `$S/spec.md` as already holding. It is the one test you do not watch fail.
+- **A guard.** A test for a decided edge that the code at the base already handles, before this run changed anything, passes at once. Keep it and mark the edge in `$S/spec.md` as already holding. It is the one test you do not watch fail. An edge that holds only because of code this run wrote is not a guard: its test comes before that code.
 - **A mutant-killing test** (step 8) is written after the code. Its failing run is the run with the mutant applied.
 - **An empty interface.** When a test you wrote cannot run because a public interface does not exist yet, add that interface, empty, and run the test again until it fails on the behaviour. The test came first, so this is not code before a test.
 - **What the base already had.** A failing test, an error or a warning that Setup recorded at the base is not yours to fix. "All tests pass" and "Other tests fail? Fix now" mean the tests that passed at the base.
@@ -389,6 +389,10 @@ The user's word covered the fixes; this run was the author's own decision, not a
 - **Parts of "In hstack" this run exercised, which the first did not:** guards (above); a fix from review or explore with its test first (a test added and failing, 1 of 5, then the code, then 14 passing); a mutant-killing test (written, the mutant applied and the test failing, the file restored with `git checkout`, the suite passing). Still not exercised by either run: an empty interface, a base with failures, a lint or type fix.
 
 Two runs on one small fixture: they show what the builder did twice, not what it will do on another project.
+
+### The guard, after the second run
+
+The second run's open point was put to the user with the run's own example (the test for `--top 0` written after the code for `--top`, and called a guard). The user's answer to "do you want it fixed": "Có". The guard item of "In hstack" now says a guard is for an edge "that the code at the base already handles, before this run changed anything", and ends: "An edge that holds only because of code this run wrote is not a guard: its test comes before that code." Its check is in the bun test of the test rules, and failed first. No run has read this text.
 
 Seen in Task 5's transcript afterwards and not changed: the first mutation agent refused to start because the tree had two untracked cache folders, left there by the fixture's own preparation, and the builder started a second one after clearing the status. A project whose test runs leave untracked files and ignores none of them would meet the same refusal; telling the builder to delete untracked files could delete something the user keeps, so the playbook is left as it is.
 

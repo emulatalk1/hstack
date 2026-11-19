@@ -15,7 +15,7 @@ No human is in this run. Where this file would ask one, decide and write the dec
 These rules govern every test and every line of product code the builder writes in step 4, and every fix in steps 6, 7 and 9. Six things are not violations of them, in the rules, the red flags and the checklist alike:
 
 - **The oracle's tests** (step 3) are the failing tests for the stated behaviours. Make them pass; write no second test for what one of them checks.
-- **A guard.** A test for a decided edge the codebase already handles passes at once. Keep it and mark the edge in `$S/spec.md` as already holding. It is the one test you do not watch fail.
+- **A guard.** A test for a decided edge that the code at the base already handles, before this run changed anything, passes at once. Keep it and mark the edge in `$S/spec.md` as already holding. It is the one test you do not watch fail. An edge that holds only because of code this run wrote is not a guard: its test comes before that code.
 - **A mutant-killing test** (step 8) is written after the code. Its failing run is the run with the mutant applied.
 - **An empty interface.** When a test you wrote cannot run because a public interface does not exist yet, add that interface, empty, and run the test again until it fails on the behaviour. The test came first, so this is not code before a test.
 - **What the base already had.** A failing test, an error or a warning that Setup recorded at the base is not yours to fix. "All tests pass" and "Other tests fail? Fix now" mean the tests that passed at the base.

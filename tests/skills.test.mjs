@@ -49,6 +49,8 @@ test("the builder's test rules: no ask of a human, no upstream name, the licence
   for (const s of ['NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST', '## In hstack', '$S/capabilities.md', '](writing-good-tests.md)']) expect(tdd).toContain(s);
   // what the loop does on purpose and the copied rules would call a violation: each has its item
   for (const s of ["**The oracle's tests**", '**A guard.**', '**A mutant-killing test**', '**An empty interface.**', '**What the base already had.**', '**A fix no test can show.**', '$S/summary.md']) expect(tdd).toContain(s);
+  // a guard is for what the base already did, never for what this run's own code does
+  for (const s of ['that the code at the base already handles', 'is not a guard: its test comes before that code']) expect(tdd).toContain(s);
   // the edits of the copy, each by its new text; the text they replace is gone
   for (const s of ['write the decision in `$S/decisions.md`):**', 'A guard (see "In hstack") stays', 'Only in code this run added', 'and is not a guard', 'No exceptions but the ones this file names.']) expect(tdd).toContain(s);
   expect(tdd.split('No error or warning the base did not have').length).toBe(3);
