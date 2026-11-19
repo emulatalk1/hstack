@@ -1,6 +1,8 @@
 # Update Log
 
 ## 2026-11-19
+* **Update**: The [build playbook and TDD plan](/plans/2026-11-19-build-playbook-tdd.md) is `stable`: approved by the user on a condition ("nếu advisor không có vấn đề gì với plan này thì duyệt"), which the advisor's read met after five gaps were closed in the plan; step 4 is the skill `hstack:build-implement` and is named `implement`; the licence file of the copied test rules is kept.
+* **Creation**: Added the [build playbook and TDD plan](/plans/2026-11-19-build-playbook-tdd.md) (draft): step 4 of `hstack:build` as its own skill `hstack:implement`, with test rules copied from a third-party skill at a pinned commit; nothing built yet.
 * **Creation**: Wrote the benchmark's final report `progress/final-report.md` under the [benchmark close-out plan](/plans/2026-11-19-bench-close-out.md): acceptance not judged and unreachable (H4 not met), H1–H3 not reported, H5 met, step 15's "little room", what was not measured, and a re-test proposal. Approved by the user ("Duyệt, merge và push"); the plan is `stable`; the benchmark is closed.
 * **Update**: Registered the [benchmark close-out plan](/plans/2026-11-19-bench-close-out.md) in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Applied at step 16") after the user approved it; it supersedes step 14's decision 1 (a): 13.3–13.5 stay unmeasured.
 * **Creation**: Added the [benchmark close-out plan](/plans/2026-11-19-bench-close-out.md) (draft) for step 16, after the advisor's ruling under the user's delegation: a final report, no new run.

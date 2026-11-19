@@ -41,10 +41,10 @@ git checkout -q -- src/a.txt
 start startup
 sh "$H" start >/dev/null
 ok 'start records the base' '[ "$(cat "$S/base")" = "$(git rev-parse HEAD)" ]'
-ok 'missing lists every phase at first' '[ "$(sh "$H" missing)" = "setup oracle build gate review explore mutate final" ]'
+ok 'missing lists every phase at first' '[ "$(sh "$H" missing)" = "setup oracle implement gate review explore mutate final" ]'
 ok 'stop blocks a started run and names the missing steps' 'stop | grep -q "steps not recorded: setup oracle"'
 sh "$H" phase setup; sh "$H" phase oracle; sh "$H" phase explore skipped: no way to run it
-ok 'a skipped phase counts' '[ "$(sh "$H" missing)" = "build gate review mutate final" ]'
+ok 'a skipped phase counts' '[ "$(sh "$H" missing)" = "implement gate review mutate final" ]'
 ok 'phase refuses a bad line' '! sh "$H" phase "explore skipped:" 2>/dev/null && ! sh "$H" phase "Build" 2>/dev/null'
 ok 'a bare word skipped does not count' 'sh "$H" phase "mutatex" && sh "$H" missing | grep -q mutate'
 
@@ -70,7 +70,7 @@ echo 'assert new' > tests/new_test.txt
 
 # done
 ok 'done refuses while steps are missing' '! sh "$H" done 2>/dev/null'
-for p in build gate review mutate final; do sh "$H" phase $p; done
+for p in implement gate review mutate final; do sh "$H" phase $p; done
 ok 'done refuses an uncommitted change' '! sh "$H" done 2>/dev/null'
 git add -A; git commit -qm feature
 ok 'done records HEAD' 'sh "$H" done >/dev/null && [ "$(cat "$S/done")" = "$(git rev-parse HEAD)" ]'
@@ -153,8 +153,8 @@ ok 'a logged-out gh keeps the file and prints its path' 'F post "$id" "$code" | 
 : > "$T/bin/mode"
 ok 'a wrong confirm code posts nothing' '! F post "$id" 123 >/dev/null 2>&1 && ! log | grep -q create'
 ok 'an id that is not an entry id is refused' 'F post "../$e1" "$code" 2>&1 | grep -q "usage:" && F post "$id/../x" "$code" 2>&1 | grep -q "usage:" && F post "1/2" "$code" 2>&1 | grep -q "not an entry id"'
-mkdir -p "$T/state/acme corp/feedback"; printf 'version=0.3.0\nkind=cost\nphase=build\n\n' > "$T/state/acme corp/feedback/20000101-000000-2"
-printf 'version=0.3.0\nkind=cost\nphase=build\n\n' > "$FB/acme-name"
+mkdir -p "$T/state/acme corp/feedback"; printf 'version=0.3.0\nkind=cost\nphase=implement\n\n' > "$T/state/acme corp/feedback/20000101-000000-2"
+printf 'version=0.3.0\nkind=cost\nphase=implement\n\n' > "$FB/acme-name"
 ok 'a file whose name is not an entry id is no entry, and its name is never printed' '! F draft | grep -q acme'
 mv "$FB/acme-name" "$T/acme-name"
 mkdir "$T/badgrep"; printf '#!/bin/sh\ncase $1 in -Ev*) exit 2 ;; esac\nexec %s "$@"\n' "$(command -v grep)" > "$T/badgrep/grep"; chmod +x "$T/badgrep/grep"
@@ -230,10 +230,10 @@ e=$(entries); idd="${S##*/}/$e"
 ok 'an enhancement with the phase none carries no run numbers' '[ "$(head_of "$FB/$e" | wc -l | tr -d " ")" = 3 ] && head_of "$FB/$e" | grep -qx "phase=none"'
 flush
 lines_of() { text 'a summary' '' 'a text' | F add "$@" >/dev/null; head_of "$FB/$(entries)" | wc -l | tr -d ' '; }
-n=$(lines_of update build); flush;      ok 'an update carries no run numbers, whatever its phase' '[ "$n" = 3 ]'
-n=$(lines_of enhancement build); flush; ok 'nor does an enhancement' '[ "$n" = 3 ]'
+n=$(lines_of update implement); flush;      ok 'an update carries no run numbers, whatever its phase' '[ "$n" = 3 ]'
+n=$(lines_of enhancement implement); flush; ok 'nor does an enhancement' '[ "$n" = 3 ]'
 n=$(lines_of bug none); flush;          ok 'nor does a report with the phase none' '[ "$n" = 3 ]'
-n=$(lines_of bug build); flush;         ok 'a bug at a step of a started run carries them' '[ "$n" = 10 ]'
+n=$(lines_of bug implement); flush;         ok 'a bug at a step of a started run carries them' '[ "$n" = 10 ]'
 text 'a summary' '' 'a text' | F add enhancement none >/dev/null
 e=$(entries); idd="${S##*/}/$e"
 desc() { text "$@" | F describe "$idd" >/dev/null 2>&1; }
@@ -314,17 +314,17 @@ text 'a summary' '' 'a text' > "$B.md"
 bad() { printf '%s\n' "$@" '' 'detail hello' > "$B"; }
 refused() { F draft | grep -q "^refused: $B: " && ! F draft | grep -Eq "^entry .*20000101|hello" && F post "${S##*/}/20000101-000000-1" 0 2>&1 | grep -q refused && ! log | grep -q create; }
 bad version=0.3.0 kind=cost phase=/a/path;                 ok 'a path as a value is refused' refused
-bad version=0.3.0 kind=cost phase=build note=hello;        ok 'a field outside the list is refused' refused
-bad version=0.3.0 kind=cost phase=build elapsed=12x;       ok 'a count that is not a number is refused' refused
-bad version=0.3.0 kind=cost kind=cost phase=build;         ok 'a field given twice is refused' refused
-bad kind=cost phase=build;                                 ok 'a missing version is refused' refused
-bad version=0.3.0 kind=fix phase=build;                    ok 'a kind outside the list is refused' refused
-bad version=0.3.0 kind=cost 'phase=build and more';        ok 'text after a phase name is refused' refused
-printf 'version=0.3.0\nkind=cost\nphase=build\nnote=caf\351 hello\n\ndetail hello\n' > "$B"
+bad version=0.3.0 kind=cost phase=implement note=hello;        ok 'a field outside the list is refused' refused
+bad version=0.3.0 kind=cost phase=implement elapsed=12x;       ok 'a count that is not a number is refused' refused
+bad version=0.3.0 kind=cost kind=cost phase=implement;         ok 'a field given twice is refused' refused
+bad kind=cost phase=implement;                                 ok 'a missing version is refused' refused
+bad version=0.3.0 kind=fix phase=implement;                    ok 'a kind outside the list is refused' refused
+bad version=0.3.0 kind=cost 'phase=implement and more';        ok 'text after a phase name is refused' refused
+printf 'version=0.3.0\nkind=cost\nphase=implement\nnote=caf\351 hello\n\ndetail hello\n' > "$B"
                                                            ok 'a line with an invalid byte is refused, not dropped' refused
 : > "$B";                                                  ok 'an empty entry is refused' refused
-bad version=0.3.0 kind=cost phase=build elapsed=12
-ok 'the same entry with only listed fields is accepted' 'F draft | grep -q "^entry .*/20000101-000000-1\$" && F draft | grep -qx "title: \[feedback\] build cost: a summary" && F draft | grep -qx "| elapsed minutes: 12"'
+bad version=0.3.0 kind=cost phase=implement elapsed=12
+ok 'the same entry with only listed fields is accepted' 'F draft | grep -q "^entry .*/20000101-000000-1\$" && F draft | grep -qx "title: \[feedback\] implement cost: a summary" && F draft | grep -qx "| elapsed minutes: 12"'
 flush
 
 # unavailable capabilities at setup
@@ -367,9 +367,9 @@ ok 'the pass goes to the session repository, wherever the verb ran' '[ -f "$S/pa
 
 # run numbers on what the user flags
 echo $(( $(date +%s) - 200000 )) > "$S/started"
-F add intervention build </dev/null >/dev/null
+F add intervention implement </dev/null >/dev/null
 e=$(entries)
-ok 'add without a text leaves the entry undescribed' 'F draft | grep -q "^undescribed .*/$e: intervention at build\$"'
+ok 'add without a text leaves the entry undescribed' 'F draft | grep -q "^undescribed .*/$e: intervention at implement\$"'
 ok 'an elapsed over a day is left out, the counts stay' '! head_of "$FB/$e" | grep -q "^elapsed=" && head_of "$FB/$e" | grep -q "^oracle_files="'
 flush
 F add escaped-bug review </dev/null >/dev/null
@@ -380,7 +380,7 @@ ok 'a flagged escaped-bug on an unfinished run has no elapsed and no counts' '[ 
 sh "$H" start >/dev/null
 ok 'entries survive start' '[ -f "$FB/$e3" ] && [ -f "$FB/posted/$e1" ] && [ -f "$FB/posted/$e1.md" ] && [ -n "$(ls "$FB/dismissed")" ] && [ -z "$(ls -d "$S"/old/*/feedback 2>/dev/null)" ]'
 flush
-for p in setup oracle build gate review explore mutate final; do sh "$H" phase $p; done
+for p in setup oracle implement gate review explore mutate final; do sh "$H" phase $p; done
 sh "$H" done >/dev/null
 echo $(( $(cat "$S/ended") - 600 )) > "$S/started"
 ok 'add prints the path of the entry' 'F add escaped-bug review </dev/null | grep -q "recorded: $FB/"'
@@ -395,6 +395,10 @@ ok 'collect groups the open issues by phase and kind and lists each one' '[ "$(F
 ok 'collect asks for the open issues with the label, on the repo' 'log | grep -q "^gh \[issue\] \[list\] \[--repo\] \[emulatalk1/hstack\] \[--label\] \[feedback\] \[--state\] \[open\]"'
 
 ok 'feedback wrote nothing inside the project repository' '[ "$(git status --porcelain --ignored)" = "$before" ] && [ ! -e .git/hstack ] && case $FB in "$T/state/"*) true;; *) false;; esac'
+
+# a run recorded by 0.3.1 or earlier named step 4 build: it must not read as a run waiting at implement
+printf 'setup\noracle\nbuild\ngate\nreview\nexplore\nmutate\nfinal\n' > "$S/phases"
+ok 'a run recorded with the old step name misses nothing' '[ -z "$(sh "$H" missing)" ]'
 
 echo "$fails failure(s)"
 [ $fails -eq 0 ]

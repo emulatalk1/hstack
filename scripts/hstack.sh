@@ -9,7 +9,7 @@
 #        hstack.sh feedback add <kind> <phase|none> <description on stdin|describe <id> <description on stdin
 #        hstack.sh feedback draft|post <id> <code>|dismiss <id>...|label|collect
 
-PHASES='setup oracle build gate review explore mutate final'
+PHASES='setup oracle implement gate review explore mutate final'
 # the first four are what a run does (escaped-bug: a bug in the product that the loop let through); the last three are
 # about hstack itself, as its user reports them
 KINDS='setup-failure intervention escaped-bug cost bug update enhancement'
@@ -127,8 +127,9 @@ fingerprint() { printf '%s %s\n' "$(git rev-parse -q --verify HEAD 2>/dev/null)"
 missing() {
   out=''
   for p in $PHASES; do
-    # a phase line is "<name>" or "<name> skipped: <why>"
-    grep -Eq "^$p( skipped: .+)?\$" "$S/phases" 2>/dev/null || out="$out $p"
+    # a phase line is "<name>" or "<name> skipped: <why>"; a run recorded by 0.3.1 or earlier named implement "build"
+    case $p in implement) q='(implement|build)' ;; *) q=$p ;; esac
+    grep -Eq "^$q( skipped: .+)?\$" "$S/phases" 2>/dev/null || out="$out $p"
   done
   printf '%s\n' "${out# }"
 }

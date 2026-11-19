@@ -2,7 +2,7 @@
 
 A Claude Code plugin for an evidence-led build loop: review, mutation testing and blind evaluators, run per project.
 
-**Status: v0.3.1.** `hstack:build` is an autonomous build loop for any stack: it finds how to test and run the project (each capability proven by a probe and a canary), has an independent oracle write acceptance tests from the requirement before any code, builds, gates against weakened tests, then runs a reviewer, an exploratory tester and a mutation check, each in its own context. Two hooks keep it going: a session-start nudge and a stop gate that refuses to end an unfinished run (at most 3 times per process; a turn you spend on `/hstack:hstack-feedback` ends once without that block). Everything it runs is POSIX `sh` and `git`; its run state lives in `~/.hstack/<checksum of the git dir>/`, never in the work tree or `.git`. Design: [`plugin-dev/2026-11-10-hstack-plugin-design.md`](plugin-dev/2026-11-10-hstack-plugin-design.md); hook tests: `sh plugin-dev/test-hstack.sh`.
+**Status: v0.3.2.** `hstack:build` is an autonomous build loop for any stack: it finds how to test and run the project (each capability proven by a probe and a canary), has an independent oracle write acceptance tests from the requirement before any code, builds, gates against weakened tests, then runs a reviewer, an exploratory tester and a mutation check, each in its own context. Step 4 is a skill of its own, `hstack:build-implement`, which the loop invokes, with its test rules beside it (`tdd.md`, `writing-good-tests.md`; third-party text, licence in `skills/build-implement/LICENSE-tdd`). Two hooks keep it going: a session-start nudge and a stop gate that refuses to end an unfinished run (at most 3 times per process; a turn you spend on `/hstack:hstack-feedback` ends once without that block). Everything it runs is POSIX `sh` and `git`; its run state lives in `~/.hstack/<checksum of the git dir>/`, never in the work tree or `.git`. Design: [`plugin-dev/2026-11-10-hstack-plugin-design.md`](plugin-dev/2026-11-10-hstack-plugin-design.md); hook tests: `sh plugin-dev/test-hstack.sh`.
 
 **Benchmark.** The benchmark ([`progress/final-report.md`](progress/final-report.md)) measured plugin commit `653af835fd613e3eb25feb48e4ccc9bfb534ae6e` only; every later version, this one included, is unmeasured. That commit is in `main`'s history and is pinned by the ref `refs/bench/plugins/hstack-653af83`. A plain clone does not fetch that namespace: `git fetch origin refs/bench/plugins/hstack-653af83:refs/bench/plugins/hstack-653af83`.
 
@@ -30,6 +30,7 @@ You can also add a local clone: `/plugin marketplace add /path/to/hstack`.
 | Skill | Use it |
 |---|---|
 | `build` | Any request to build, change or fix code. Runs to the end without asking. Loop agents: `oracle`, `reviewer`, `explorer`, `mutator`. |
+| `build-implement` | Step 4 of `build`: the spec, the feature written test-first, the checks. Invoked by the loop, not by you. |
 | `hstack-feedback` | When you find a problem with hstack and want it written up as an issue, or want the open ones listed. User-invoked only; posting needs `gh`. |
 | `hstack-init` | Once per project, and again after the project folder is copied or moved. |
 | `hstack-safety` | Before any Docker command, port stop, database drop or folder wipe. |

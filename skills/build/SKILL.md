@@ -1,11 +1,13 @@
 ---
 name: build
-description: Use for any request to build, change or fix code in a repository - a feature, an issue, a plan, a bug. Runs the hstack loop - capabilities, an independent oracle written before the code, the build, a gate against weakened tests, review, exploratory testing, mutation - and finishes on its own without asking a human.
+description: Use for any request to build, change or fix code in a repository - a feature, an issue, a plan, a bug. Runs the hstack loop - capabilities, an independent oracle written before the code, the implementation, a gate against weakened tests, review, exploratory testing, mutation - and finishes on its own without asking a human.
 ---
 
 # hstack build loop
 
 You are the builder. You run every step below, in order, to the end, then reply exactly what the task asked for (for example `DONE`). Nobody will answer a question: decide from the requirement, the code and the way this codebase already does things, write the decision in `$S/decisions.md`, and go on. A stop before the last step is a failure.
+
+This file is the playbook: which step runs, in what order, who does it, what goes in, what comes out and how long it may take. How a step is done is in its own file: an agent's file, or a skill this playbook invokes.
 
 `H` below is `sh "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.sh"`; if that variable is empty, the script is `../../scripts/hstack.sh` from this skill's base directory. Shell variables do not survive between Bash calls, so write the absolute paths of the script and of `S` into each command. Pass both to every agent you start.
 
@@ -42,19 +44,17 @@ Start `hstack:oracle` with: `$S/requirement.md`, `$S/capabilities.md`, the path 
 
 It writes black-box acceptance tests in new files and returns their paths. Run `$H lock <those files>`, commit them ("Add tests for <the feature>"), and run `git rev-parse HEAD > $S/oracle-commit`. Read `$S/oracle-report.md`: its behaviour list, the tests for each, and its **open edges**. Then `$H phase oracle`.
 
-## 4. Build
+## 4. Implement
 
-1. Read the code the requirement touches and the neighbouring features that do similar things.
-2. Write `$S/spec.md`: numbered behaviours; every entry point the feature is reached by (each page, endpoint, command, public function, import or export path, serializer, setting); each open edge from the oracle report and every other edge you see (empty, missing, invalid, boundary values, errors, permissions, existing data, repeated actions, ordering, other entry points) with a decision that cites the requirement or the existing code it follows. Decide an edge the way this codebase already decides the same case.
-3. Implement, in the style of the neighbouring code. Write tests for every decided edge and every rule you add, where the project's test command finds them.
-4. Make the oracle's tests pass **without editing them**. While a public interface the oracle calls does not exist yet, run tests in their single-file or single-target form from the capabilities.
-5. **Dispute** (at most 2 rounds): if an oracle test contradicts the requirement or a fact of the existing public interface, write the claim in `$S/disputes.md` (test, claim, the quote or fact it rests on) and start `hstack:oracle` again with `requirement.md`, `capabilities.md`, the test file and that dispute entry only. Only the oracle edits its test. Then `$H lock` all oracle files again, commit, and write the new commit to `$S/oracle-commit`.
-6. Run the tests near the change, then the widest suite the time allows. No failure the base did not have.
-7. Commit. `$H phase build`.
+Invoke the `hstack:build-implement` skill with the Skill tool and do what it says, from its first item to its last. In: `$S/requirement.md`, `$S/capabilities.md`, `$S/oracle-report.md`. Out: `$S/spec.md`; the feature and its tests; the oracle's tests passing, unedited; no failure the base did not have.
+
+**Dispute** (at most 2 rounds): if an oracle test contradicts the requirement or a fact of the existing public interface, write the claim in `$S/disputes.md` (test, claim, the quote or fact it rests on) and start `hstack:oracle` again with `requirement.md`, `capabilities.md`, the test file and that dispute entry only. Only the oracle edits its test. Then `$H lock` all oracle files again, commit, and write the new commit to `$S/oracle-commit`.
+
+Commit. `$H phase implement`.
 
 ## 5. Gate
 
-Run `$H gate`. It must exit 0: an `ORACLE CHANGED` or `ORACLE MISSING` line means restore that file with `git checkout $(cat $S/oracle-commit) -- <file>` (or dispute it, step 4.5). Every `PRE-EXISTING TEST` and `REMOVED` line is a pre-existing test you deleted or weakened: put the test back, or write an entry in `$S/decisions.md` that quotes the part of the requirement that changes that behaviour. Save the output to `$S/gate.txt`. Commit if you changed anything. `$H phase gate`.
+Run `$H gate`. It must exit 0: an `ORACLE CHANGED` or `ORACLE MISSING` line means restore that file with `git checkout $(cat $S/oracle-commit) -- <file>` (or dispute it, step 4). Every `PRE-EXISTING TEST` and `REMOVED` line is a pre-existing test you deleted or weakened: put the test back, or write an entry in `$S/decisions.md` that quotes the part of the requirement that changes that behaviour. Save the output to `$S/gate.txt`. Commit if you changed anything. `$H phase gate`.
 
 ## 6. Review (at most 2 rounds)
 
