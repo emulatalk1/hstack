@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-19
+* **Creation**: Wrote the benchmark's final report `progress/final-report.md` under the [benchmark close-out plan](/plans/2026-11-19-bench-close-out.md): acceptance not judged and unreachable (H4 not met), H1–H3 not reported, H5 met, step 15's "little room", what was not measured, and a re-test proposal. Awaiting the user's approval.
 * **Update**: Registered the [benchmark close-out plan](/plans/2026-11-19-bench-close-out.md) in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Applied at step 16") after the user approved it; it supersedes step 14's decision 1 (a): 13.3–13.5 stay unmeasured.
 * **Creation**: Added the [benchmark close-out plan](/plans/2026-11-19-bench-close-out.md) (draft) for step 16, after the advisor's ruling under the user's delegation: a final report, no new run.
 * **Creation**: Wrote the step 15 report `progress/step15-report.md` of the [H4 diagnosis plan](/plans/2026-11-18-bench-h4-diagnosis.md): the diagnosis ran once after registration; the three parts W removes ran in all 87 H runs and in no W run; 15 of the 29 tasks sit at the ceiling or the floor in both arms, so the registered outcome is "little room"; H4's verdict stands; manifest `progress/stick-v1-step15.sha256` (changed 0 against step 14). Approved by the user ("Duyệt"); the plan is `stable`.
