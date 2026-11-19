@@ -1,7 +1,6 @@
 # Final report: the hstack benchmark
 
 Plan: [benchmark close-out plan](../docs/plans/2026-11-19-bench-close-out.md), registered in the prereg's section 12 ("Applied at step 16"). This report computes nothing. Every number is quoted from the locked or approved document named in brackets after it:
-- [S13] `progress/step13-lock.md`
 - [S14] `progress/step14-report.md`
 - [S15] `progress/step15-report.md`
 - [DEV] `progress/step14/deviations.md`
@@ -14,10 +13,10 @@ Section 1 [PRE]: "Does the harness produce output that meets the requirement, at
 ## The answer
 
 - **Section 13 acceptance: not judged.** This is the registered wording while items 3–5 are unmeasured (step 14 ruling 11) [S14]. Item 2, "H4 is met", is measured and **not met**, so acceptance cannot be reached, whatever items 3–5 would show. Item 6, the 30-day handover count, is tracked only.
-- **"At higher quality than Claude Code without the plugin": not answered.** H4 is the guard for the stick. On the 29 external tasks, H − W on build + requirement has mean −0.0048, 95% bootstrap [−0.0775, 0.0588] [S14]. The registered consequence applies: "if H4 is not met, H1–H3 are not reported (the stick cannot tell a weak harness apart)" [PRE]. H1, H2, H3, real-estate's H − B, pass^k and the feature-missing rate are therefore not reported.
+- **"Meets the requirement, at higher quality than Claude Code without the plugin": not answered.** Both clauses rest on the H − B lines (H1, H2), which sit behind H4. H4 is the guard for the stick. On the 29 external tasks, H − W on build + requirement has mean −0.0048, 95% bootstrap [−0.0775, 0.0588] [S14]. The registered consequence applies: "if H4 is not met, H1–H3 are not reported (the stick cannot tell a weak harness apart)" [PRE]. H1, H2, H3, real-estate's H − B, pass^k and the feature-missing rate are therefore not reported.
 - **"Which harness layers are worth keeping":**
   - **The three parts W removes** are the independent oracle, the reviewer in its own context and the gate. H4 is not met, and the same consequence applies: the stick cannot tell a weak harness apart.
-  - **The diagnosis** [S15] found that these parts ran in all 87 of H's standing runs, and in none of W's. Its positive control found every part in all four trial runs.
+  - **The diagnosis** [S15] found that these parts ran in all of H's 87 standing runs, and in none of W's. Its positive control found every part in all four trial runs.
   - **But the stick had little room to move.** 15 of the 29 tasks sit at the ceiling (13) or the floor (2) in both arms, exactly the registered bar for "little room". On 20 tasks the arm means tie exactly, so at least 5 of the 14 tasks with room also tie.
   - **What the benchmark cannot say:** whether these parts are worth keeping. The per-layer measures of section 8.4 were never taken.
 - **H5 (secondary, reported on its own): met.** The suites H wrote caught 137 of the 191 applicable seeded bugs, a rate of 0.7173, 95% [0.6080, 0.8182], against a bar of 0.5 on the lower bound [S14]. Two caveats come with it:
@@ -67,7 +66,7 @@ The stick is **not validated** [S14]:
 
 ## Deviations
 
-- **`progress/step14/deviations.md`** lists 90 items by step, each with its source, and counts them per source [S14, DEV].
+- **`progress/step14/deviations.md`** lists 90 items by step, each with its source, and counts them per source [S14, DEV]; this report points to it and does not repeat the table.
 - **Step 15's five** are in its report [S15]:
   1. the tool's readings, registered after review;
   2. interfaces that differ from the plan text;
@@ -75,6 +74,10 @@ The stick is **not validated** [S14]:
   4. the approval typed "Duyêth";
   5. step 14's lock logs entering the manifest.
 - **The close-out's own deviation:** it supersedes step 14's decision 1 (a) ("Để bước 15") and step 15's limit that 13.3–13.5 wait behind it. The user approved this ("Duyệt plan kết thúc", 2026-11-19, asked directly).
+
+## Known limits
+
+The known limits of the step 14 and step 15 reports stand [S14, S15]. This report adds no evidence; it is only as strong as steps 1–15.
 
 ## What a re-test would need (a proposal; not registered)
 
@@ -85,7 +88,7 @@ The stick is **not validated** [S14]:
 
 ## Lock
 
-Nothing under `<data>` changes in this step. `stick compare progress/stick-v1-step15.sha256` (2026-11-19, before approval): hashed 36,158, equal 36,158, **changed 0, missing 0, unexplained 0**. Number check: 33 quoted figures and phrases (every number above) were matched by script (`grep -F`) in the source named beside it; none missing.
+Nothing under `<data>` changes in this step. `stick compare progress/stick-v1-step15.sha256` (2026-11-19, before approval): hashed 36,158, equal 36,158, **changed 0, missing 0, unexplained 0**. Number check: `progress/step16/number-check.tsv` lists each figure quoted here with its named source; one script run requires each figure in both this report and that source (`grep -F`), and its result is `progress/step16/number-check.out`: 40 of 40 found in both. A match shows the figure appears in both files, not that it is used in the same sense; short figures (13, 15, 20, 0.5) were also read in context by the controller.
 
 ## Approval
 
