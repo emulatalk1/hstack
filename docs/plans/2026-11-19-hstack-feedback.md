@@ -1,7 +1,7 @@
 ---
 type: plan
 title: "hstack-feedback plan"
-description: "A small skill and a `feedback` subcommand of hstack.sh: the build loop records each stumble in the state dir, outside the project; a command the user invokes shows an allow-listed draft and posts it as a GitHub issue only after the user's yes; a collect command groups the open issues."
+description: "A small skill and a `feedback` subcommand of hstack.sh: when the user finds a problem with hstack, the skill writes it up as an issue that can be fixed from (a description plus fixed fields from the run), shows the exact text and posts it to GitHub only after the user's yes; the build loop also records each stumble locally; a collect command lists the open issues."
 status: draft
 generated: { by: claude-code/2.1.327, at: "2026-11-19T10:28:18+07:00" }
 verified:
@@ -13,11 +13,42 @@ verified:
 
 > Built natively in one session, test-first, on branch `hstack-feedback` from main. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** when hstack stumbles on a real project, the stumble is recorded on the user's machine, the user can post it to `emulatalk1/hstack` as an issue that holds no project content, and the open issues can be listed by phase and kind and closed by the fixing commit.
+**Goal:** when the user finds a problem with hstack on a real project (a bug, something to update, something to enhance), the skill collects what the problem is and posts it to `emulatalk1/hstack` as an issue someone can fix from, with no customer content in it; the open issues can be listed by phase and kind and closed by the fixing commit.
 
 **Why:** hstack v0.2.0 is about to run on customer work. The benchmark is closed (`progress/final-report.md`) and measured plugin 653af83 only; every later version, this one included, is unmeasured.
 
 **Decided by the user (not reopened here):** public issues on `emulatalk1/hstack` with the label `feedback` (a setting may override the repo; the label is never created without asking); capture is local and automatic, in `${HSTACK_STATE:-$HOME/.hstack}/<cksum>/`; posting only by a command the user invokes, after the exact title and body are shown and the user says yes; the posted draft is built from an allow-list of fixed fields and has no free text; without `gh`, or with `gh` logged out, the file is kept, its path printed and nothing posted; collect is `gh issue list --label feedback --state open` grouped by phase and kind.
+
+## Revision (2026-11-19, after the first build)
+
+The first build posted fixed fields only: a version, a phase, a kind and counts. The user rejected it: such an issue says where hstack stumbled but not what the problem is, so nobody can fix from it. The user's words: the skill is to "collect the problem when the user finds an error and create the issue to fix, update, enhance". Asked whether an issue may then carry a description in words, written by the skill and approved verbatim before posting, the user answered "đúng vậy".
+
+**This lifts one decided item, on the user's word:** "a draft has no free-text field". Everything else decided stands: where issues go, the label, local capture, never posting automatically, the exact title and body shown before the yes, `gh` absent or logged out keeps the file, collect.
+
+What replaces the allow-list as the guard for customer content, in order of weight:
+
+1. **The user reads the exact text.** Unchanged: the title and body sit inside the question, and the confirm code binds the yes to that text and that repository.
+2. **The skill writes about hstack, not about the project.** Its rules: describe what hstack did and what it should have done; never copy a path, a project, customer or repository name, requirement text, code, a log or error line, a branch name or a commit hash of the project; paraphrase.
+3. **A mechanical net in the script**, for the commonest leak only: a description that contains the user's home path or the project's folder path is refused; one that contains the project folder's name gets a `warning:` line the skill must show in the question; a description over 4000 bytes, or with a first line over 200 bytes, is refused (a log does not fit).
+
+The net cannot tell customer content from other words. Guards 1 and 2 carry the weight, and the plan says so.
+
+**What changes in the design below** (the sections keep their text where it still holds; where it conflicts with this section, this section rules):
+
+- **Kinds.** Three more, for what the user reports: `bug` (hstack did something wrong), `update` (something in hstack is out of date or must change), `enhancement` (something hstack should do better or also do). The four stumble kinds stay for what the script records by itself. `escaped-bug` is a bug in the product that the loop let through; `bug` is a bug in hstack.
+- **Phase.** A report that belongs to no step of the loop takes the phase `none`.
+- **The description.** A text beside the entry, `S/feedback/<entry>.md`: a first line that is the summary, an empty line, then the description. It is the only text that is posted. The entry's own detail (a skip reason, `unavailable:` lines, a private note) is still never posted and never printed.
+  - `feedback add <kind> <phase> [private note]` reads the description from stdin and writes the entry and its text.
+  - `feedback describe <id>` reads a description from stdin for an unposted entry: for a stumble the script recorded, or to replace a text the user wants changed. An edit is a `describe`, then `draft` again.
+- **The draft.** Title: `[feedback] <phase> <kind>: <summary>`. Body: the description, a `---` line, then the fixed-field lines, checked exactly as before. `draft` prints body lines behind `| `, so no line of a description can pass for one of the script's own lines (`entry`, `to:`, `title:`, `confirm:`).
+- **No description, no post.** An entry without a text is listed by `draft` as `undescribed <id>: <kind> at <phase>` with its local path, and `post` refuses it. The numbers alone are never an issue again.
+- **Still no text at post time.** `post` takes an id and a code. Text enters only through `add` and `describe`, is stored, and is shown by `draft` before any yes.
+- **Collect.** One line per phase and kind with its count, then one line per issue under it: `#<n> <summary>`, so an issue can be picked up to fix.
+- **The skill.** Invoked with what the user found, it writes the kind, the phase, the summary and the description from what happened in this session and the user's words, runs `add`, then the draft, the question and the post as before. It lists the recorded stumbles that have no description and writes one for those the user wants posted. It reads an entry's detail only when the user asks it to, and never copies from it.
+
+**Tests added:** a description is posted as shown, after the fields' check; an entry without one is not postable; a description with the home path or the project path is refused; the project folder's name gives the warning; an oversized one is refused; a description line that imitates `confirm:` or `title:` cannot change what is posted; `describe` replaces a text and changes the code; an entry's detail never reaches a draft, with or without a description; `none` is a phase for `add` only; collect lists each issue's summary.
+
+**Not verified by the user as a plan:** the user confirmed the direction in one message; the build of this revision is shown to them before any merge.
 
 ## What the state holds today
 
