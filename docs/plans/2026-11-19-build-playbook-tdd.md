@@ -91,7 +91,7 @@ Each line names a way this breaks for someone running `hstack:build`, and the ch
 2. **An agent picks `hstack:build-implement` for a request to build something and skips the loop.** Pinned by the skill's description and its first paragraph, which send anyone who did not come from the loop to `hstack:build`; by the bun test on both; and by the Stop hook, which already blocks a changed repository that has no run (sh test "resume keeps the reference, so a change still blocks").
 3. **The loop cannot invoke the new skill.** A skill marked `disable-model-invocation: true`, as `hstack-init` and `hstack-safety` are, cannot be triggered by the playbook. Pinned by the bun test that the mark is absent, and by Task 5 (reading 1).
 4. **The builder cannot read the two rule files** from the skill's folder under a strict permission mode. Pinned by Task 5 (readings 1 and 4, "0 permission denials"); under the box's mode every read is allowed.
-5. **A red flag of the copied rules fires on something hstack does on purpose** (the oracle's tests, a guard, a mutant-killing test, an empty interface), and the builder deletes work and starts over. Pinned by the six items of "In hstack" (edit E1) and edits E4, E8 and E11, by the bun test that names each item and each edit, and by Task 5 (reading 4).
+5. **A red flag of the copied rules fires on something hstack does on purpose** (the oracle's tests, a guard, a mutant-killing test, an empty interface), and the builder deletes work and starts over. Pinned by the seven items of "In hstack" (edit E1) and edits E4, E8 and E11, by the bun test that names each item and each edit, and by Task 5 (reading 4).
 
 Known limits, pinned by nothing:
 
@@ -142,9 +142,11 @@ test("the builder's test rules: no ask of a human, no upstream name, the licence
   const [tdd, good, licence] = await Promise.all([rule('tdd.md'), rule('writing-good-tests.md'), rule('LICENSE-tdd')]);
   for (const s of ['NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST', '## In hstack', '$S/capabilities.md', '](writing-good-tests.md)']) expect(tdd).toContain(s);
   // what the loop does on purpose and the copied rules would call a violation: each has its item
-  for (const s of ["**The oracle's tests**", '**A guard.**', '**A mutant-killing test**', '**An empty interface.**', '**What the base already had.**', '**A fix no test can show.**', '$S/summary.md']) expect(tdd).toContain(s);
+  for (const s of ["**The oracle's tests**", '**A guard.**', '**A mutant-killing test**', '**An empty interface.**', '**What the base already had.**', '**A fix no test can show.**', '$S/summary.md', 'Seven things are not violations']) expect(tdd).toContain(s);
+  // a guard is for what the base already did, never for what this run's own code does
+  for (const s of ['that the code at the base already handles', 'is not a guard; the next item is for its test', "**A test that passes at once on this run's own code.**", 'break the part of your code the edge rests on', 'undo that one edit by hand', 'never restore the file with `git checkout`', 'the test is a guard', 'make it check the edge, or drop it']) expect(tdd).toContain(s);
   // the edits of the copy, each by its new text; the text they replace is gone
-  for (const s of ['write the decision in `$S/decisions.md`):**', 'A guard (see "In hstack") stays', 'Only in code this run added', 'and is not a guard', 'No exceptions but the ones this file names.']) expect(tdd).toContain(s);
+  for (const s of ['write the decision in `$S/decisions.md`):**', 'A guard, or a test you then prove by breaking the code (see "In hstack"), stays', 'Only in code this run added', 'and is neither a guard nor proven by breaking the code', 'No exceptions but the ones this file names.']) expect(tdd).toContain(s);
   expect(tdd.split('No error or warning the base did not have').length).toBe(3);
   expect(tdd).not.toMatch(/Output pristine|Fix test\.$/m);
   expect(tdd).not.toMatch(/ask your human partner|human partner's permission|superpowers/i);
@@ -165,14 +167,14 @@ test("the builder's test rules: no ask of a human, no upstream name, the licence
 | E0 | 1–5 | the frontmatter and the blank line after it | nothing: the file starts at its title |
 | E1 | after 14 (end of Overview) | nothing | the section below |
 | E2 | 24 | `**Exceptions (ask your human partner):**` | ``**Exceptions (decide, and write the decision in `$S/decisions.md`):**`` |
-| E4 | 126 | `**Test passes?** You're testing existing behavior. Fix test.` | `**Test passes?** You're testing existing behavior. A guard (see "In hstack") stays; any other test: fix it.` |
+| E4 | 126 | `**Test passes?** You're testing existing behavior. Fix test.` | `**Test passes?** You're testing existing behavior. A guard, or a test you then prove by breaking the code (see "In hstack"), stays; any other test: fix it.` |
 | E5 | 179 and 302 | `Output pristine (no errors, warnings)` | `No error or warning the base did not have` |
 | E7 | after 202 (`Keep tests green. Don't add behavior.`) | nothing | `Only in code this run added: leave code and tests that existed at the base as they are.` |
-| E8 | 242 | `- Test passes immediately` | `- Test passes immediately and is not a guard` |
+| E8 | 242 | `- Test passes immediately` | `- Test passes immediately and is neither a guard nor proven by breaking the code` |
 | E10 | 312 | `Write wished-for API. Write assertion first. Ask your human partner.` | `Write wished-for API. Write assertion first.` |
 | E11 | 330 | `No exceptions without your human partner's permission.` | `No exceptions but the ones this file names.` |
 
-That is 9 kinds of edit in 10 places of a 330-line file (`diff` prints 11 hunks: it splits the one insertion E1 at a blank line). E3, E6 and E9 of the first draft (the example commands) and E12 of the second (the link, changed for the withdrawn `play` verb) are withdrawn.
+That is 9 kinds of edit in 10 places of a 330-line file (at the branch's tip `diff` prints 10 hunks, one for each place). E3, E6 and E9 of the first draft (the example commands) and E12 of the second (the link, changed for the withdrawn `play` verb) are withdrawn.
 
 The section of E1, exactly:
 
@@ -181,10 +183,11 @@ The section of E1, exactly:
 
 No human is in this run. Where this file would ask one, decide and write the decision in `$S/decisions.md`.
 
-These rules govern every test and every line of product code the builder writes in step 4, and every fix in steps 6, 7 and 9. Six things are not violations of them, in the rules, the red flags and the checklist alike:
+These rules govern every test and every line of product code the builder writes in step 4, and every fix in steps 6, 7 and 9. Seven things are not violations of them, in the rules, the red flags and the checklist alike:
 
 - **The oracle's tests** (step 3) are the failing tests for the stated behaviours. Make them pass; write no second test for what one of them checks.
-- **A guard.** A test for a decided edge that the code at the base already handles, before this run changed anything, passes at once. Keep it and mark the edge in `$S/spec.md` as already holding. It is the one test you do not watch fail. An edge that holds only because of code this run wrote is not a guard: its test comes before that code.
+- **A guard.** A test for a decided edge that the code at the base already handles, before this run changed anything, passes at once. Keep it and mark the edge in `$S/spec.md` as already holding. It is the one test you do not watch fail. An edge that holds only because of code this run wrote is not a guard; the next item is for its test.
+- **A test that passes at once on this run's own code.** One piece of code often settles several decided edges, and the cycle puts one test before its code. The test of a further edge, written after that code, is kept only once you have seen it fail: break the part of your code the edge rests on, run the test and see it fail, then undo that one edit by hand and see it pass. The code of step 4 is not committed yet, so never restore the file with `git checkout` here: that would throw the step's work away. If no break of this run's code makes it fail, it checks nothing this run built: where the base already handles the edge, the test is a guard; otherwise make it check the edge, or drop it.
 - **A mutant-killing test** (step 8) is written after the code. Its failing run is the run with the mutant applied.
 - **An empty interface.** When a test you wrote cannot run because a public interface does not exist yet, add that interface, empty, and run the test again until it fails on the behaviour. The test came first, so this is not code before a test.
 - **What the base already had.** A failing test, an error or a warning that Setup recorded at the base is not yours to fix. "All tests pass" and "Other tests fail? Fix now" mean the tests that passed at the base.
@@ -225,7 +228,7 @@ test('hstack:build-implement is step 4: the loop can invoke it, and it sends any
   expect(front).toMatch(/^description: .*invoke hstack:build, not this\.$/m);
   expect(front).not.toMatch(/disable-model-invocation/); // the playbook must be able to trigger it
   // the cycle is one test at a time, and a change after green starts a new one: the first run did neither
-  for (const s of ['one decided edge or rule per cycle', 'Only then write the next test', 'is a new cycle and starts with a test that fails', "the cycle's refactor step changes none of these"]) expect(text).toContain(s);
+  for (const s of ['one decided edge or rule per cycle', 'Only then write the next test', 'is a new cycle and starts with a test that fails', "the cycle's refactor step changes none of these", 'A next test that passes at once', 'break that code, see the test fail, undo that one edit by hand']) expect(text).toContain(s);
   for (const s of ['do nothing here and invoke `hstack:build`', 'its first word must be `implement`', 'never run `$H start` again', 'tdd.md', 'writing-good-tests.md', '$S/spec.md', 'without editing them', 'type-check']) expect(text).toContain(s);
 });
 ```
@@ -249,7 +252,7 @@ Do the items below in order, then go back to the loop for the commit and `$H pha
 1. **Read** the code the requirement touches and the neighbouring features that do similar things.
 2. **Spec.** Write `$S/spec.md`: numbered behaviours; every entry point the feature is reached by (each page, endpoint, command, public function, import or export path, serializer, setting); each open edge from the oracle report and every other edge you see (empty, missing, invalid, boundary values, errors, permissions, existing data, repeated actions, ordering, other entry points) with a decision that cites the requirement or the existing code it follows. Decide an edge the way this codebase already decides the same case.
 3. **The test rules.** Read `tdd.md` and `writing-good-tests.md` in this skill's base directory, both to the end. From here to the end of the run they are the rules for every test and every line of product code you write.
-4. **Implement,** in the style of the neighbouring code, by the cycle of the test rules, one decided edge or rule per cycle: write one test where the project's test command finds it, run it and see it fail on the missing behaviour, write the code for that one test, run it and see it pass. Only then write the next test: never several tests before their code. A change to what the product does after its test passes (an output, a message, an exit code) is a new cycle and starts with a test that fails; the cycle's refactor step changes none of these. Run tests in their single-file or single-target form from the capabilities.
+4. **Implement,** in the style of the neighbouring code, by the cycle of the test rules, one decided edge or rule per cycle: write one test where the project's test command finds it, run it and see it fail on the missing behaviour, write the code for that one test, run it and see it pass. Only then write the next test: never several tests before their code. A next test that passes at once, because code you already wrote settles its edge, is kept only as the test rules say: break that code, see the test fail, undo that one edit by hand (your code is not committed yet). A change to what the product does after its test passes (an output, a message, an exit code) is a new cycle and starts with a test that fails; the cycle's refactor step changes none of these. Run tests in their single-file or single-target form from the capabilities.
 5. **The oracle's tests.** Make them pass **without editing them**. If one contradicts the requirement or a fact of the existing public interface, use the dispute rule of step 4 in the loop.
 6. **Check.** Run the tests near the change, then the widest suite the time allows, then build, type-check and lint as the capabilities have them. No failure the base did not have.
 ```
@@ -392,7 +395,14 @@ Two runs on one small fixture: they show what the builder did twice, not what it
 
 ### The guard, after the second run
 
-The second run's open point was put to the user with the run's own example (the test for `--top 0` written after the code for `--top`, and called a guard). The user's answer to "do you want it fixed": "Có". The guard item of "In hstack" now says a guard is for an edge "that the code at the base already handles, before this run changed anything", and ends: "An edge that holds only because of code this run wrote is not a guard: its test comes before that code." Its check is in the bun test of the test rules, and failed first. No run has read this text.
+The second run's open point was put to the user with the run's own example (the test for `--top 0` written after the code for `--top`, and called a guard). The user's answer to "do you want it fixed": "Có".
+
+- **First wording, commit `6379bad`, wrong.** The guard item was narrowed to an edge "that the code at the base already handles, before this run changed anything", which stands, and ended "its test comes before that code", which does not: item 4 of the skill forbids several tests before their code, and one piece of code often settles several edges (on the fixture, accepting `--top` settles `--top 0`, an empty file and an N larger than the number of words at once). No order of tests and code obeys both. The advisor found this; the author's check had been a string check, and the explanation given to the user carried the same conflict.
+- **Repair.** A seventh item of "In hstack", "A test that passes at once on this run's own code": such a test is kept only once it has been seen failing, by breaking the part of the run's code the edge rests on, running the test, and putting the code back; if no break makes it fail, it checks nothing this run built. Edits E4 and E8 and item 4 of the skill name this case. It is the kind of red run step 8 uses for a mutant-killing test, with one difference the item states: in step 4 the code is not committed, so the break is undone by hand and never with `git checkout`, which would discard the step's work. If no break makes the test fail and the base already handles the edge, the test is a guard. Both clauses were added after the advisor's second read of the repair.
+- **What the user approved and what this is.** The user approved "the test before the code", as the author had put it. The repair keeps the purpose (every such test is seen failing) and not that letter: the test may come after the code. It is the author's, for the user to accept or turn back.
+- **Walked through** `tdd.md`, `SKILL.md` and the playbook on the fixture's edges before the commit: an edge the base handles (a guard), an edge one earlier piece of this run's code settles (proved by breaking it), an edge that needs code (its own cycle), a fix from review, a surviving mutant.
+
+Read by no run: the refactor sentence, the narrowed guard, the new item and its two clauses.
 
 Seen in Task 5's transcript afterwards and not changed: the first mutation agent refused to start because the tree had two untracked cache folders, left there by the fixture's own preparation, and the builder started a second one after clearing the status. A project whose test runs leave untracked files and ignores none of them would meet the same refusal; telling the builder to delete untracked files could delete something the user keeps, so the playbook is left as it is.
 

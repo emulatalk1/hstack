@@ -48,11 +48,11 @@ test("the builder's test rules: no ask of a human, no upstream name, the licence
   const [tdd, good, licence] = await Promise.all([rule('tdd.md'), rule('writing-good-tests.md'), rule('LICENSE-tdd')]);
   for (const s of ['NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST', '## In hstack', '$S/capabilities.md', '](writing-good-tests.md)']) expect(tdd).toContain(s);
   // what the loop does on purpose and the copied rules would call a violation: each has its item
-  for (const s of ["**The oracle's tests**", '**A guard.**', '**A mutant-killing test**', '**An empty interface.**', '**What the base already had.**', '**A fix no test can show.**', '$S/summary.md']) expect(tdd).toContain(s);
+  for (const s of ["**The oracle's tests**", '**A guard.**', '**A mutant-killing test**', '**An empty interface.**', '**What the base already had.**', '**A fix no test can show.**', '$S/summary.md', 'Seven things are not violations']) expect(tdd).toContain(s);
   // a guard is for what the base already did, never for what this run's own code does
-  for (const s of ['that the code at the base already handles', 'is not a guard: its test comes before that code']) expect(tdd).toContain(s);
+  for (const s of ['that the code at the base already handles', 'is not a guard; the next item is for its test', "**A test that passes at once on this run's own code.**", 'break the part of your code the edge rests on', 'undo that one edit by hand', 'never restore the file with `git checkout`', 'the test is a guard', 'make it check the edge, or drop it']) expect(tdd).toContain(s);
   // the edits of the copy, each by its new text; the text they replace is gone
-  for (const s of ['write the decision in `$S/decisions.md`):**', 'A guard (see "In hstack") stays', 'Only in code this run added', 'and is not a guard', 'No exceptions but the ones this file names.']) expect(tdd).toContain(s);
+  for (const s of ['write the decision in `$S/decisions.md`):**', 'A guard, or a test you then prove by breaking the code (see "In hstack"), stays', 'Only in code this run added', 'and is neither a guard nor proven by breaking the code', 'No exceptions but the ones this file names.']) expect(tdd).toContain(s);
   expect(tdd.split('No error or warning the base did not have').length).toBe(3);
   expect(tdd).not.toMatch(/Output pristine|Fix test\.$/m);
   expect(tdd).not.toMatch(/ask your human partner|human partner's permission|superpowers/i);
@@ -68,7 +68,7 @@ test('hstack:build-implement is step 4: the loop can invoke it, and it sends any
   expect(front).toMatch(/^description: .*invoke hstack:build, not this\.$/m);
   expect(front).not.toMatch(/disable-model-invocation/); // the playbook must be able to trigger it
   // the cycle is one test at a time, and a change after green starts a new one: the first run did neither
-  for (const s of ['one decided edge or rule per cycle', 'Only then write the next test', 'is a new cycle and starts with a test that fails', "the cycle's refactor step changes none of these"]) expect(text).toContain(s);
+  for (const s of ['one decided edge or rule per cycle', 'Only then write the next test', 'is a new cycle and starts with a test that fails', "the cycle's refactor step changes none of these", 'A next test that passes at once', 'break that code, see the test fail, undo that one edit by hand']) expect(text).toContain(s);
   for (const s of ['do nothing here and invoke `hstack:build`', 'its first word must be `implement`', 'never run `$H start` again', 'tdd.md', 'writing-good-tests.md', '$S/spec.md', 'without editing them', 'type-check']) expect(text).toContain(s);
 });
 

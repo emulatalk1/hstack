@@ -12,10 +12,11 @@ Write the test first. Watch it fail. Write minimal code to pass.
 
 No human is in this run. Where this file would ask one, decide and write the decision in `$S/decisions.md`.
 
-These rules govern every test and every line of product code the builder writes in step 4, and every fix in steps 6, 7 and 9. Six things are not violations of them, in the rules, the red flags and the checklist alike:
+These rules govern every test and every line of product code the builder writes in step 4, and every fix in steps 6, 7 and 9. Seven things are not violations of them, in the rules, the red flags and the checklist alike:
 
 - **The oracle's tests** (step 3) are the failing tests for the stated behaviours. Make them pass; write no second test for what one of them checks.
-- **A guard.** A test for a decided edge that the code at the base already handles, before this run changed anything, passes at once. Keep it and mark the edge in `$S/spec.md` as already holding. It is the one test you do not watch fail. An edge that holds only because of code this run wrote is not a guard: its test comes before that code.
+- **A guard.** A test for a decided edge that the code at the base already handles, before this run changed anything, passes at once. Keep it and mark the edge in `$S/spec.md` as already holding. It is the one test you do not watch fail. An edge that holds only because of code this run wrote is not a guard; the next item is for its test.
+- **A test that passes at once on this run's own code.** One piece of code often settles several decided edges, and the cycle puts one test before its code. The test of a further edge, written after that code, is kept only once you have seen it fail: break the part of your code the edge rests on, run the test and see it fail, then undo that one edit by hand and see it pass. The code of step 4 is not committed yet, so never restore the file with `git checkout` here: that would throw the step's work away. If no break of this run's code makes it fail, it checks nothing this run built: where the base already handles the edge, the test is a guard; otherwise make it check the edge, or drop it.
 - **A mutant-killing test** (step 8) is written after the code. Its failing run is the run with the mutant applied.
 - **An empty interface.** When a test you wrote cannot run because a public interface does not exist yet, add that interface, empty, and run the test again until it fails on the behaviour. The test came first, so this is not code before a test.
 - **What the base already had.** A failing test, an error or a warning that Setup recorded at the base is not yours to fix. "All tests pass" and "Other tests fail? Fix now" mean the tests that passed at the base.
@@ -135,7 +136,7 @@ Confirm:
 - Failure message is expected
 - Fails because feature missing (not typos)
 
-**Test passes?** You're testing existing behavior. A guard (see "In hstack") stays; any other test: fix it.
+**Test passes?** You're testing existing behavior. A guard, or a test you then prove by breaking the code (see "In hstack"), stays; any other test: fix it.
 
 **Test errors?** Fix error, re-run until it fails correctly.
 
@@ -253,7 +254,7 @@ When writing or changing any test, read [writing-good-tests.md](writing-good-tes
 
 - Code before test
 - Test after implementation
-- Test passes immediately and is not a guard
+- Test passes immediately and is neither a guard nor proven by breaking the code
 - Can't explain why test failed
 - Tests added "later"
 - Rationalizing "just this once"
