@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-19
+* **Creation**: Added the [benchmark close-out plan](/plans/2026-11-19-bench-close-out.md) (draft) for step 16, after the advisor's ruling under the user's delegation: a final report, no new run.
 * **Creation**: Wrote the step 15 report `progress/step15-report.md` of the [H4 diagnosis plan](/plans/2026-11-18-bench-h4-diagnosis.md): the diagnosis ran once after registration; the three parts W removes ran in all 87 H runs and in no W run; 15 of the 29 tasks sit at the ceiling or the floor in both arms, so the registered outcome is "little room"; H4's verdict stands; manifest `progress/stick-v1-step15.sha256` (changed 0 against step 14). Approved by the user ("Duyệt"); the plan is `stable`.
 * **Update**: Registered the step 15 diagnosis tool's readings ("Amended at step 15 (the tool's readings)") in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md), among them a `called` count beside the registered non-error count and gate heads wider than the six of the [H4 diagnosis plan](/plans/2026-11-18-bench-h4-diagnosis.md), before `registered` and before any value is seen.
 * **Update**: Registered the rulings of the [H4 diagnosis plan](/plans/2026-11-18-bench-h4-diagnosis.md) in the [benchmark pre-registration plan](/plans/2026-10-27-benchmark-prereg.md) ("Applied at step 15"), after the user approved the plan (typed "Duyêth", i.e. "Duyệt") and before any change to `bench/` for step 15.
