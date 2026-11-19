@@ -123,6 +123,7 @@ The skill passes the text only through a quoted heredoc with its own delimiter (
 - `state()` also writes `S/top`, the work tree's folder as git prints it, for the description's path check.
 - `S` is keyed by the absolute git dir, so each worktree has its own. `draft` and `post` read `${HSTACK_STATE:-$HOME/.hstack}/*/feedback/` and work from any folder, inside a git repository or not. An entry's id is `<cksum>/<file name>`.
 - A posted entry gets a last line `posted: <issue URL>` and moves with its description to `feedback/posted/`. Nothing is deleted.
+- `hstack.sh feedback dismiss <id>` (added after the merge, plugin 0.3.1) moves an unposted entry, and its description if it has one, to `feedback/dismissed/`: off `draft`'s list, still on disk. It calls no `gh`. The description net reads dismissed entries too, so a dismissed stumble's reason still cannot be pasted into a new report. The skill runs it only on the user's word.
 
 ### The draft and its check
 
@@ -191,7 +192,7 @@ Invoked with what the user found, it decides the kind and the phase, writes the 
 
 ## Tests
 
-In `plugin-dev/test-hstack.sh` (132 checks with the hook tests) and `tests/skills.test.mjs`. A fake `gh` first on `PATH` appends its arguments to a log and answers from files in the temp dir. No test can reach GitHub even if `PATH` slips (the real `gh` may read its token from the keychain): for the whole file, `HTTPS_PROXY` points at a dead local port, `GH_TOKEN` and `GITHUB_TOKEN` hold junk and `GH_CONFIG_DIR` is under the temp dir; the feedback tests abort unless `command -v gh` is the fake. Tests delete nothing: entries are cleared by posting them through the fake.
+In `plugin-dev/test-hstack.sh` (136 checks with the hook tests) and `tests/skills.test.mjs`. A fake `gh` first on `PATH` appends its arguments to a log and answers from files in the temp dir. No test can reach GitHub even if `PATH` slips (the real `gh` may read its token from the keychain): for the whole file, `HTTPS_PROXY` points at a dead local port, `GH_TOKEN` and `GITHUB_TOKEN` hold junk and `GH_CONFIG_DIR` is under the temp dir; the feedback tests abort unless `command -v gh` is the fake. Tests delete nothing: entries are cleared by posting them through the fake.
 
 Baseline on the clean branch, before any change: `bun test ./tests` 727 pass, 65 skip, 0 fail; `sh` and `dash plugin-dev/test-hstack.sh` 0 failures.
 
@@ -204,6 +205,7 @@ Baseline on the clean branch, before any change: `bun test ./tests` 727 pass, 65
 - [x] **The loop is not disturbed.** A plain and a skipped `phase` exit 0 and print nothing; `phase` fails when its line cannot be written; the capped stop prints nothing, records one `intervention` only on a started run and none the second time; an empty `started` breaks neither the capped stop nor `phase`.
 - [x] **The pass.** One stop goes through and the next blocks; a pass on a finished run is consumed by that stop; a new process drops a stale one; a mistyped verb writes none; it goes to the session's repository wherever the verb ran.
 - [x] **The state dir.** Entries and `top` survive `start`; nothing is written inside the project repository (`git status --porcelain --ignored` unchanged); a file whose name is not an entry id is no entry and its name is not printed; an id that is not an entry id is refused.
+- [x] **Dismiss** takes an entry off the list with its text, keeps both files, calls no `gh`, refuses an unknown id, a posted entry and one already dismissed; the reason of a dismissed stumble is still netted; dismissed entries survive `start`.
 - [x] **Collect** groups by phase and kind, lists each issue's summary, and asks for the open issues with the label on the repository.
 - [x] **The skill file** has its name, `disable-model-invocation: true`, the quoted heredoc for `add` and `describe`, and the README names the plugin's version.
 
@@ -228,13 +230,14 @@ Baseline on the clean branch, before any change: `bun test ./tests` 727 pass, 65
 - No customer content, token or `.evidence/` data in anything pushed: the branch's diff was scanned for the home path, the user's address and token shapes before the push.
 - **Not verified:** the real `gh`; the skill in a live session (whether a question shows a full 1500-byte body, and the pass against the real Stop hook); any Linux userland (the new code ran with macOS tools, under `sh` and `dash`).
 - The script cannot prove a yes: the confirm code binds the text and the repository; the yes is held by the skill and the permission prompt.
-- An entry cannot be dismissed, so stumbles the user never describes stay listed by `draft`.
-- Not built: posting from the hook or the build loop, a `close` verb, a `dismiss` verb, reading entries from `old/`, `collect` printing the local entry beside an issue.
+- Not built: posting from the hook or the build loop, a `close` verb, bringing a dismissed entry back (move the file by hand), reading entries from `old/`, `collect` printing the local entry beside an issue.
 
 ## Approval
 
 1. **The plan**, approved by the user on 2026-11-19 ("duyệt") with the advisor's suggestions on four rulings: the cap entry is recorded automatically; the bench ref is pushed with the final push; a feedback verb lets its turn end once; the version is 0.3.0.
 2. **The correction**, the same day: an issue must describe the problem ("đúng vậy" to the restated purpose). See History.
 3. **The second build**, approved by the user on 2026-11-19 ("duyệt") after asking how the skill works. With it: the pass's known limits are accepted; `main` is fast-forwarded and pushed together with the one bench ref, by an explicit refspec after a dry run; `collect` printing local entries is dropped.
+
+4. **`dismiss`**, asked for by the user on 2026-11-19 after the merge ("ok làm luôn đi"), built on branch `feedback-dismiss` with plugin 0.3.1. Its merge waits for the user's word.
 
 Chosen by the builder, open to change: seven kinds in one list, the phase `none`, the 200 and 1500 byte limits, issues in English.

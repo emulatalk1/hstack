@@ -107,7 +107,7 @@ PATH="$T/bin:$PATH"; export PATH
 echo feedback > "$T/bin/labels"; : > "$T/bin/mode"; : > "$T/bin/log"
 log() { cat "$T/bin/log"; }
 FB="$S/feedback"
-entries() { ls "$FB" 2>/dev/null | grep -Ev '^posted$|\.md$'; }
+entries() { ls "$FB" 2>/dev/null | grep -Ev '^(posted|dismissed)$|\.md$'; }
 F() { sh "$H" feedback "$@"; }
 head_of() { sed -n '/^$/q;p' "$1"; }
 text() { printf '%s\n' "$@"; } # a description: the summary, an empty line, the rest
@@ -277,6 +277,23 @@ desc 'explore was skipped' '' 'It said: no way to run it.'
 ok 'a short, generic reason of an earlier stumble is not refused' 'F draft | grep -q "^entry "'
 flush
 
+# dismiss: a stumble the user will not post leaves the list, and nothing is deleted
+: > "$T/bin/log"
+sh "$H" phase explore skipped: the billing-core service cannot boot here
+e=$(entries); idd="${S##*/}/$e"
+out=$(F dismiss "$idd")
+ok 'dismiss takes the entry off the list, keeps the file and calls no gh' 'echo "$out" | grep -qx "dismissed: $FB/dismissed/$e" && [ -f "$FB/dismissed/$e" ] && [ -z "$(entries)" ] && F draft | grep -qx "no unposted feedback entry" && ! log | grep -q "^gh "'
+text 'a summary' '' 'a text' | F add bug none >/dev/null
+e=$(entries); idd="${S##*/}/$e"
+F dismiss "$idd" >/dev/null
+ok 'a described entry is dismissed with its text' '[ -f "$FB/dismissed/$e" ] && [ -f "$FB/dismissed/$e.md" ] && [ ! -e "$FB/$e.md" ] && [ -z "$(entries)" ]'
+ok 'dismiss refuses an unknown id, a posted entry and one already dismissed' 'F dismiss "1/20000101-000000-9" 2>&1 | grep -q "no unposted entry" && F dismiss "${S##*/}/posted/$e1" 2>&1 | grep -q "usage:" && F dismiss "$idd" 2>&1 | grep -q "no unposted entry"'
+text 'explore was skipped' '' 'It said the billing-core service cannot boot here.' | F add bug explore >/dev/null
+e=$(entries); idd="${S##*/}/$e"
+ok 'the reason of a dismissed stumble is still netted' 'refused_text "copies from an entry"'
+desc 'explore was skipped' '' 'A service the product needs could not start.'
+flush
+
 # a description in another script than ASCII is text like any other
 text 'a summary' '' "$(printf 'caf\303\251 \342\200\224 ti\341\272\277ng Vi\341\273\207t')" | F add bug none >/dev/null
 ok 'bytes over 127 are text: the draft shows them as written' 'F draft | grep -qxF "| $(printf "caf\303\251 \342\200\224 ti\341\272\277ng Vi\341\273\207t")"'
@@ -354,7 +371,7 @@ ok 'a flagged escaped-bug on an unfinished run has no elapsed and no counts' '[ 
 
 # entries survive start; a finished run gives an escaped bug its numbers
 sh "$H" start >/dev/null
-ok 'entries survive start' '[ -f "$FB/$e3" ] && [ -f "$FB/posted/$e1" ] && [ -f "$FB/posted/$e1.md" ] && [ -z "$(ls -d "$S"/old/*/feedback 2>/dev/null)" ]'
+ok 'entries survive start' '[ -f "$FB/$e3" ] && [ -f "$FB/posted/$e1" ] && [ -f "$FB/posted/$e1.md" ] && [ -n "$(ls "$FB/dismissed")" ] && [ -z "$(ls -d "$S"/old/*/feedback 2>/dev/null)" ]'
 flush
 for p in setup oracle build gate review explore mutate final; do sh "$H" phase $p; done
 sh "$H" done >/dev/null

@@ -7,7 +7,7 @@
 # fields; never an entry's detail. gh is needed by post, label and collect only.
 # usage: hstack.sh dir|start|phase <name> [skipped: <why>]|missing|lock <file>...|gate|elapsed|done|hook-start|hook-stop
 #        hstack.sh feedback add <kind> <phase|none> <description on stdin|describe <id> <description on stdin
-#        hstack.sh feedback draft|post <id> <code>|label|collect
+#        hstack.sh feedback draft|post <id> <code>|dismiss <id>|label|collect
 
 PHASES='setup oracle build gate review explore mutate final'
 # the first four are what a run does (escaped-bug: a bug in the product that the loop let through); the last three are
@@ -97,10 +97,10 @@ draft() { # <entry file>: 0 with title and body set; 1 refused, why says it; 2 n
     [ "${#p}" -gt 1 ] || continue
     case $text in *"$p"*) return 1 ;; esac
   done
-  # every entry of this project, posted ones too, so a stumble's reason cannot come back in through a new report:
+  # every entry of this project, posted and dismissed ones too, so a stumble's reason cannot come back in through a new report:
   # a whole detail line, or what follows "skipped: " or "unavailable: " in it, when over 24 bytes
   why="the description copies from an entry's local detail"
-  for d in "$dir"/feedback/* "$dir"/feedback/posted/*; do
+  for d in "$dir"/feedback/* "$dir"/feedback/posted/* "$dir"/feedback/dismissed/*; do
     case ${d##*/} in *[!0-9-]*) continue ;; esac
     [ -f "$d" ] && sed '1,/^$/d' "$d"
   done | ( while IFS= read -r l; do
@@ -194,7 +194,7 @@ if [ "$cmd" = feedback ]; then
   S=''
   state
   # the user is in this turn: the stop hook of the session's repository lets it end once
-  case $verb in add|describe|draft|post|label|collect) ( cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && state && : > "$S/pass" ) ;; esac
+  case $verb in add|describe|draft|post|dismiss|label|collect) ( cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && state && : > "$S/pass" ) ;; esac
   need_gh() {
     command -v gh >/dev/null 2>&1 || kept "gh is not installed"
     gh auth status >/dev/null 2>&1 || kept "gh is not logged in"
@@ -269,6 +269,12 @@ if [ "$cmd" = feedback ]; then
       mkdir -p "${f%/*}/posted" && echo "posted: $url" >> "$f" && mv "$f" "$f.md" "${f%/*}/posted/"
       echo "$url" ;;
 
+    dismiss) # off the list, not off the disk: a stumble the user will not post
+      entry "$1"
+      mkdir -p "${f%/*}/dismissed" && mv "$f" "${f%/*}/dismissed/" || { echo "hstack: could not dismiss $f" >&2; exit 1; }
+      [ ! -e "$f.md" ] && [ ! -L "$f.md" ] || mv "$f.md" "${f%/*}/dismissed/"
+      echo "dismissed: ${f%/*}/dismissed/${f##*/}" ;;
+
     label) f=''; need_gh; gh label create feedback --repo "$REPO" --description 'Reports posted by hstack-feedback' ;;
 
     collect)
@@ -283,7 +289,7 @@ if [ "$cmd" = feedback ]; then
         awk -F'\t' '$1 != k { if (k != "") printf "%s: %d%s\n", k, n, l; k = $1; n = 0; l = "" }
           { n++; l = l "\n  #" $2 " " $3 } END { if (k != "") printf "%s: %d%s\n", k, n, l }' ;;
 
-    *) echo "usage: hstack.sh feedback add <kind> <phase|none>|describe <id>|draft|post <id> <code>|label|collect" >&2; exit 1 ;;
+    *) echo "usage: hstack.sh feedback add <kind> <phase|none>|describe <id>|draft|post <id> <code>|dismiss <id>|label|collect" >&2; exit 1 ;;
   esac
   exit
 fi
