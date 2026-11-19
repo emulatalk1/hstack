@@ -6,7 +6,7 @@ A Claude Code plugin for an evidence-led build loop: review, mutation testing an
 
 **Benchmark.** The benchmark ([`progress/final-report.md`](progress/final-report.md)) measured plugin commit `653af835fd613e3eb25feb48e4ccc9bfb534ae6e` only; every later version, this one included, is unmeasured. That commit is in `main`'s history and is pinned by the ref `refs/bench/plugins/hstack-653af83`. A plain clone does not fetch that namespace: `git fetch origin refs/bench/plugins/hstack-653af83:refs/bench/plugins/hstack-653af83`.
 
-**Feedback.** Each stumble of a run (a skipped step, an unavailable capability, a stop gate that gave up) is recorded in `~/.hstack/<checksum>/feedback/`, on your machine only. `/hstack:hstack-feedback` shows each entry as the exact issue it would post to `emulatalk1/hstack` (set `HSTACK_FEEDBACK_REPO` for another repository) and posts only on your yes, with `gh`. An issue holds the plugin version, the phase name, the kind, the minutes and a few counts, and nothing else: no path, name, requirement, error line or code.
+**Feedback.** When you find a problem with hstack (a bug, something to update or enhance), `/hstack:hstack-feedback <what you found>` writes it up as an issue for `emulatalk1/hstack` (set `HSTACK_FEEDBACK_REPO` for another repository), shows you the exact title and body, and posts only on your yes, with `gh`. An issue holds a description of what hstack did and should have done, then the plugin version, the phase, the kind, the minutes and a few counts of the run. The description is written about hstack, not about your project: no path, name, requirement, error line or code of the project belongs in it, and you read it before it goes. Each stumble of a run (a skipped step, an unavailable capability, a stop gate that gave up) is also recorded by itself in `~/.hstack/<checksum>/feedback/`, on your machine only, and waits there for a description.
 
 The older stack A/B tools below (`init`, the safety checks) are kept as they were; their skills are user-invoked only (`disable-model-invocation`), because they need Bun and a manifest.
 
@@ -30,7 +30,7 @@ You can also add a local clone: `/plugin marketplace add /path/to/hstack`.
 | Skill | Use it |
 |---|---|
 | `build` | Any request to build, change or fix code. Runs to the end without asking. Loop agents: `oracle`, `reviewer`, `explorer`, `mutator`. |
-| `hstack-feedback` | When you want to flag a stumble, post the recorded ones as issues, or list the open ones. User-invoked only; posting needs `gh`. |
+| `hstack-feedback` | When you find a problem with hstack and want it written up as an issue, or want the open ones listed. User-invoked only; posting needs `gh`. |
 | `hstack-init` | Once per project, and again after the project folder is copied or moved. |
 | `hstack-safety` | Before any Docker command, port stop, database drop or folder wipe. |
 
