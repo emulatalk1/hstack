@@ -317,8 +317,8 @@ Commit. `$H phase implement`.
 
 ### Task 5: one end-to-end run (right after Task 4, by itself)
 
-- [ ] **Step 1:** rebuild the 2026-11-10 fixture in the scratchpad: a small command-line program with one test in the language's own test runner, in a fresh git repository; the task "add `--top N`" with an interface sheet and the line "When the task is done, reply exactly DONE."
-- [ ] **Step 2:** from the fixture's folder, with `HSTACK_STATE` set to a new folder `<state>` in the scratchpad, run the command below. It follows run 2 of 2026-11-10 (`plugin-dev/2026-11-10-checks.md`, "End-to-end runs"), whose record gives the mode and "Bash allowed" but not its list of tools; the list here is this plan's. The model is the session's default; write its name under "Results". Run it in the background with a cap of 60 minutes. If the cap is hit, write "stopped at 60 minutes" and the steps recorded so far under "Results", and stop: no second run. If the local classifier refuses the nested run, as it did for W on 2026-11-11, write that under "Results" and stop: no other mode is tried.
+- [x] **Step 1:** rebuild the 2026-11-10 fixture in the scratchpad: a small command-line program with one test in the language's own test runner, in a fresh git repository; the task "add `--top N`" with an interface sheet and the line "When the task is done, reply exactly DONE."
+- [x] **Step 2:** from the fixture's folder, with `HSTACK_STATE` set to a new folder `<state>` in the scratchpad, run the command below. It follows run 2 of 2026-11-10 (`plugin-dev/2026-11-10-checks.md`, "End-to-end runs"), whose record gives the mode and "Bash allowed" but not its list of tools; the list here is this plan's. The model is the session's default. Run it in the background with a cap of 60 minutes. If the cap is hit, write "stopped at 60 minutes" and the steps recorded so far under "Results", and stop: no second run. If the local classifier refuses the nested run, as it did for W on 2026-11-11, write that under "Results" and stop: no other mode is tried.
 
 ```sh
 HSTACK_STATE=<state> claude -p "<the task, its interface sheet and the DONE line>" \
@@ -327,14 +327,14 @@ HSTACK_STATE=<state> claude -p "<the task, its interface sheet and the DONE line
   --add-dir <state> --output-format stream-json --verbose > <scratchpad>/run.jsonl
 ```
 
-- [ ] **Step 3: Read the transcript,** tool calls only, and write each reading under "Results":
+- [x] **Step 3: Read the transcript,** tool calls only, and write each reading under "Results":
   1. Between `phase oracle` and `phase implement`: a Skill call of `hstack:build-implement`, then for `tdd.md` and for `writing-good-tests.md` a tool call whose result holds the file (a Read, or a Bash command that prints it), not an error.
   2. For one or more test files the builder wrote in that span: a run of it that exits non-zero comes before the first edit of a non-test source file that follows it. If the builder wrote no test file there, or `spec.md` marks every edge it tested as already holding, the reading is "not exercised" and says nothing about compliance.
   3. Between the Skill call and `phase implement`: the build, type-check and lint commands of `capabilities.md`, or their `unavailable` lines.
   4. All 8 phases recorded, `done` equals HEAD, 0 Stop blocks, 0 permission denials; no source file the run wrote was deleted whole and written again.
   5. Minutes and cost, beside run 2's 3 minutes and USD 1.09. This is scale, not a comparison: the plugin version differs.
-- [ ] **Step 4:** if reading 1 or 2 fails, the wording is what failed: report it and propose the change; do not patch the run.
-- [ ] **Step 5:** commit the "Results" of this task as a second commit on the branch.
+- [x] **Step 4:** if reading 1 or 2 fails, the wording is what failed: report it and propose the change; do not patch the run.
+- [x] **Step 5:** commit the "Results" of this task as a second commit on the branch.
 
 ## Not built
 
@@ -370,4 +370,11 @@ Not checked by the reviewer, by its own account: `dash` and the full bun suite (
 - **Task 2:** the skill written; `bun test ./tests/skills.test.mjs` 4 pass.
 - **Task 3:** before the edits the new bun test failed and 18 sh checks failed on the step's name; after them `bun test ./tests/skills.test.mjs` 5 pass, `sh` and `dash` 140 ok, 0 FAIL; `grep -rn 'phase build' skills scripts agents` prints nothing.
 - **Task 4:** version 0.3.2. After the review's fixes: `bun test ./tests` 731 pass, 65 skip, 0 fail; `sh plugin-dev/test-hstack.sh` and `dash plugin-dev/test-hstack.sh` 141 ok, 0 FAIL each; `bun scripts/okf-check.mjs docs` OK.
-- **Task 5:** not run yet.
+- **Task 5** (2026-11-19, on commit `f03aef7`, one run, not repeated). The fixture: a word-count program in one file with one test in the language's own test runner; the task: add `--top N`, with an interface sheet of three lines and the DONE line. The command of step 2 as written, in the background. The first event listed plugin `hstack` with the skills `hstack:build` and `hstack:build-implement`, the harness's own built-in plugins and no other; mode `dontAsk`; the model was the session's default (its name is kept out of the repository). The run replied `DONE`. No call was refused, so the list of allowed tools did not get in the way.
+  1. **The skill and the rules: yes.** After `phase oracle` the builder called the Skill tool with `hstack:build-implement`, then ran `$H missing` (first word `implement`) and printed `tdd.md` and `writing-good-tests.md` with one Bash `cat`: 19,539 characters, the last line of each file in the result, not cut. It used no Read call.
+  2. **A failing run before the code: yes, with two things the wording did not get.** The builder wrote one test file of 6 tests, ran it (6 failures, 1 error) and only then edited the source file for the first time; the suite then passed (14 tests). But it wrote the six tests in one batch and the code in one edit, not "one decided edge or rule at a time". And after the suite was green it changed the code once more (a clearer message for a value that is not an integer) with no failing test before that change: the existing test of that edge passed before and after.
+  3. **Build and lint in step 4: yes.** `capabilities.md` has a build command (a syntax check; the project has no type checker) and `lint | unavailable`. The build command ran twice inside step 4, after each code edit.
+  4. **The run as a whole: yes.** 8 steps recorded (`setup oracle implement gate review explore mutate final`), `done` equals HEAD, the tree clean, 0 Stop blocks, 0 permission denials; no file was deleted whole and written again. Agents called: oracle 1, reviewer 1, explorer 1, mutator 2. One tool result was an error: the first command ended on a `cat` of a file that does not exist. The loop recorded one stumble by itself, `setup-failure at setup` (the unavailable linter).
+  5. **Scale:** 4 minutes 55 seconds, USD 2.82, 24 turns. Run 2 of 2026-11-10 was about 3 minutes and USD 1.09 on another model and plugin version; this is not a comparison.
+
+  What the run does not show: anything about a project with a slow suite, a compiled language, or a base with failures; whether a second run would behave the same; whether the product is better than without the rules. Reading 2's two misses are the wording's to answer (Task 5 step 4): a proposal, not built, is to say in step 4's item 4 "one test, its failing run, its code; then the next", and to name a change made after green as a new cycle.
