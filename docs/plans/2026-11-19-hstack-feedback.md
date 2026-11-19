@@ -9,6 +9,7 @@ verified:
   - { by: human:emulatalk1, at: "2026-11-19T11:09:12+07:00" }
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T12:47:14+07:00" }
   - { by: human:emulatalk1, at: "2026-11-19T13:08:38+07:00" }
+  - { by: claude-code-advisor/2.1.327, at: "2026-11-19T13:39:35+07:00" }
 ---
 
 # hstack-feedback Plan
@@ -215,7 +216,7 @@ Baseline on the clean branch, before any change: `bun test ./tests` 727 pass, 65
 - [x] 2. `scripts/hstack.sh`: the capture points, `ended`, `locks`, `top`, `feedback` kept by `start`, `pass` in both hooks, and `feedback add|describe|draft|post|label|collect`.
 - [x] 3. `skills/hstack-feedback/SKILL.md`.
 - [x] 4. `.claude-plugin/plugin.json` to 0.3.0; `README.md`: the status line, the skill's row, the feedback paragraph, the benchmark note, and the repository no longer called private.
-- [x] 5. `bun test ./tests` (728 pass, 65 skip, 0 fail), `sh plugin-dev/test-hstack.sh` under `sh` and `dash` (132 ok), `bun scripts/okf-check.mjs docs`.
+- [x] 5. `bun test ./tests` (728 pass, 65 skip, 0 fail), `sh plugin-dev/test-hstack.sh` under `sh` and `dash` (140 ok with `dismiss`), `bun scripts/okf-check.mjs docs`.
 - [x] 6. A review of each build's diff on the most capable model, its findings fixed with tests; the advisor's final review of each.
 - [x] 7. The user's approval of the build, then the merge and the push.
 
