@@ -145,30 +145,30 @@ In `plugin-dev/test-hstack.sh`. A fake `gh` first on `PATH` appends its argument
 
 Baseline on the clean branch (159a89c plus this plan), before any change: `bun test ./tests` 727 pass, 65 skip, 0 fail; `sh` and `dash plugin-dev/test-hstack.sh` 0 failures. A test that fails after the change is a finding for the user, never a reason to regenerate something locked.
 
-- [ ] a skip reason never reaches a draft: `phase explore skipped: <words with a path and a name>` writes an entry whose detail holds the words; `draft`'s output and the fake `gh`'s log after `post` do not.
-- [ ] a draft with a path or a field outside the list is refused: an entry whose head has `phase=/a/path`, an extra `note=…` line, `elapsed=12x`, a second `kind=` line, or no `version=` line is refused by `draft` and by `post`, and the log has no `issue create`.
-- [ ] a wrong confirm code posts nothing.
-- [ ] the happy path: the log shows `issue create --repo emulatalk1/hstack --label feedback` with the shown title and body; the entry is in `posted/` with its URL; `HSTACK_FEEDBACK_REPO` changes `--repo` on every call.
-- [ ] no `gh` keeps the file: with a `PATH` checked to hold no `gh` at all, and again with the fake `gh` logged out, `post` prints the path, the entry stays, and the log has no `issue create`.
-- [ ] a missing label, and a failed `gh label list`, post nothing and create no label; `feedback label` alone creates it.
-- [ ] nothing is written inside the project repo: after every verb above, `git status --porcelain --ignored` is empty and each entry's path starts with the test's state dir.
-- [ ] entries survive `start`: after a second `start`, the entry is still in `S/feedback/`, not in `old/`.
-- [ ] capture does not disturb the loop: `phase setup` with no `capabilities.md` exits 0 and prints nothing; `phase mutatex` writes no entry; the capped stop prints nothing, records one `intervention` only on a started run, and a second capped stop records none.
-- [ ] a flagged `escaped-bug` without `done` has no elapsed and no counts; with `done`, elapsed is `ended` minus `started`.
-- [ ] `S/pass` lets one stop through on an unfinished run, and the next stop blocks again; a pass written on a finished run is consumed by that turn's stop and does not excuse a later unfinished one.
-- [ ] `phase mutate skipped: time, 185 min` records a `cost`, not a `setup-failure`.
-- [ ] `collect` prints the grouped lines from the fake `gh`'s answer.
-- [ ] from the review of the build: a `grep` that fails refuses the draft; a file whose name is not an entry id is no entry and its name is not printed; an empty `started` breaks neither the capped stop nor `phase`; `phase` fails when its line cannot be written; a mistyped verb writes no pass; a code shown for one repository does not post to another.
-- [ ] `tests/skills.test.mjs`: the new skill has its name, `disable-model-invocation: true` and the script's `feedback` command (its own check; `checkFrontmatter` demands the Bun line).
+- [x] a skip reason never reaches a draft: `phase explore skipped: <words with a path and a name>` writes an entry whose detail holds the words; `draft`'s output and the fake `gh`'s log after `post` do not.
+- [x] a draft with a path or a field outside the list is refused: an entry whose head has `phase=/a/path`, an extra `note=…` line, `elapsed=12x`, a second `kind=` line, or no `version=` line is refused by `draft` and by `post`, and the log has no `issue create`.
+- [x] a wrong confirm code posts nothing.
+- [x] the happy path: the log shows `issue create --repo emulatalk1/hstack --label feedback` with the shown title and body; the entry is in `posted/` with its URL; `HSTACK_FEEDBACK_REPO` changes `--repo` on every call.
+- [x] no `gh` keeps the file: with a `PATH` checked to hold no `gh` at all, and again with the fake `gh` logged out, `post` prints the path, the entry stays, and the log has no `issue create`.
+- [x] a missing label, and a failed `gh label list`, post nothing and create no label; `feedback label` alone creates it.
+- [x] nothing is written inside the project repo: after every verb above, `git status --porcelain --ignored` is empty and each entry's path starts with the test's state dir.
+- [x] entries survive `start`: after a second `start`, the entry is still in `S/feedback/`, not in `old/`.
+- [x] capture does not disturb the loop: `phase setup` with no `capabilities.md` exits 0 and prints nothing; `phase mutatex` writes no entry; the capped stop prints nothing, records one `intervention` only on a started run, and a second capped stop records none.
+- [x] a flagged `escaped-bug` without `done` has no elapsed and no counts; with `done`, elapsed is `ended` minus `started`.
+- [x] `S/pass` lets one stop through on an unfinished run, and the next stop blocks again; a pass written on a finished run is consumed by that turn's stop and does not excuse a later unfinished one.
+- [x] `phase mutate skipped: time, 185 min` records a `cost`, not a `setup-failure`.
+- [x] `collect` prints the grouped lines from the fake `gh`'s answer.
+- [x] from the review of the build: a `grep` that fails refuses the draft; a file whose name is not an entry id is no entry and its name is not printed; an empty `started` breaks neither the capped stop nor `phase`; `phase` fails when its line cannot be written; a mistyped verb writes no pass; a code shown for one repository does not post to another; a line with an invalid byte is refused; the pass goes to the session's repository; `time` inside another why is not a `cost`.
+- [x] `tests/skills.test.mjs`: the new skill has its name, `disable-model-invocation: true` and the script's `feedback` command (its own check; `checkFrontmatter` demands the Bun line).
 
 ## Tasks
 
-- [ ] 1. Tests first: the cases above in `plugin-dev/test-hstack.sh` and `tests/skills.test.mjs`; see them fail.
-- [ ] 2. `scripts/hstack.sh`: `record`, the three capture points, `ended`, `locks`, `feedback` kept by `start`, `pass` in both hooks, and `feedback add|draft|post|label|collect`.
-- [ ] 3. `skills/hstack-feedback/SKILL.md`.
-- [ ] 4. Done: `.claude-plugin/plugin.json` to 0.3.0; `README.md`: the status line, the skill's row, the feedback paragraph, the benchmark note below, and line 22 (the repository is public now).
-- [ ] 5. `bun test ./tests`, `sh plugin-dev/test-hstack.sh` (also under `dash`), `bun scripts/okf-check.mjs docs`.
-- [ ] 6. One review of the diff on the most capable model; the advisor's final review; then ask the user before any merge or push.
+- [x] 1. Tests first: the cases above in `plugin-dev/test-hstack.sh` and `tests/skills.test.mjs`; see them fail.
+- [x] 2. `scripts/hstack.sh`: `record`, the three capture points, `ended`, `locks`, `feedback` kept by `start`, `pass` in both hooks, and `feedback add|draft|post|label|collect`.
+- [x] 3. `skills/hstack-feedback/SKILL.md`.
+- [x] 4. Done: `.claude-plugin/plugin.json` to 0.3.0; `README.md`: the status line, the skill's row, the feedback paragraph, the benchmark note below, and line 22 (the repository is public now).
+- [x] 5. `bun test ./tests`, `sh plugin-dev/test-hstack.sh` (also under `dash`), `bun scripts/okf-check.mjs docs`.
+- [x] 6. One review of the diff on the most capable model; the advisor's final review. Still to do: ask the user before any merge or push.
 
 **The README's benchmark note:** "The benchmark (`progress/final-report.md`) measured plugin commit 653af835fd613e3eb25feb48e4ccc9bfb534ae6e only; every later version, this one included, is unmeasured. That commit is in `main`'s history and is pinned by the ref `refs/bench/plugins/hstack-653af83`." Today that ref exists only in the user's local clone (`git ls-remote origin` shows `main` alone), and the note says so unless the user has it pushed.
 

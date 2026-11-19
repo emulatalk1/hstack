@@ -4,6 +4,7 @@ set -u
 H="${HSTACK_SH:-$(cd "$(dirname "$0")/.." && pwd)/scripts/hstack.sh}"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 export HSTACK_STATE="$T/state"
+unset CLAUDE_PROJECT_DIR # a caller's value would send the hooks and the pass to another repository
 # No test may reach GitHub, even if PATH slips past the fake gh below: a dead proxy and junk tokens.
 export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 GH_TOKEN=junk GITHUB_TOKEN=junk GH_CONFIG_DIR="$T/ghconfig"
 fails=0
@@ -191,6 +192,8 @@ bad version=0.3.0 kind=cost kind=cost phase=build;         ok 'a field given twi
 bad kind=cost phase=build;                                 ok 'a missing version is refused' refused
 bad version=0.3.0 kind=bug phase=build;                    ok 'a kind outside the four is refused' refused
 bad version=0.3.0 kind=cost 'phase=build and more';        ok 'text after a phase name is refused' refused
+printf 'version=0.3.0\nkind=cost\nphase=build\nnote=caf\351 hello\n\ndetail hello\n' > "$B"
+                                                           ok 'a line with an invalid byte is refused, not dropped' refused
 : > "$B";                                                  ok 'an empty entry is refused' refused
 bad version=0.3.0 kind=cost phase=build elapsed=12
 ok 'the same entry with only listed fields is accepted' 'F draft | grep -q "^entry .*/20000101-000000-1\$" && F draft | grep -qx "title: \[feedback\] build cost (hstack 0.3.0)"'
@@ -201,6 +204,11 @@ printf 'suite | x | probe: pass | canary: pass |\nui | unavailable: no headless 
 sh "$H" phase setup
 e=$(entries)
 ok 'an unavailable capability records a setup-failure at setup' 'head_of "$FB/$e" | grep -qx "unavailable_capabilities=1" && head_of "$FB/$e" | grep -qx "phase=setup" && grep -q "/opt/acme" "$FB/$e" && ! F draft | grep -q acme'
+flush
+
+sh "$H" phase explore skipped: nothing runs it, like mutate skipped: time
+e=$(entries)
+ok 'time inside another why is not a cost' 'head_of "$FB/$e" | grep -qx "kind=setup-failure" && head_of "$FB/$e" | grep -qx "phase=explore"'
 flush
 
 # the capped stop on a started run
@@ -227,6 +235,8 @@ ok 'a feedback verb lets the turn end once, with no block counted' '[ -z "$(stop
 ok 'the next stop blocks again' 'stop | grep -q block'
 F draft >/dev/null; start resume
 ok 'a new process drops a stale pass' '[ ! -f "$S/pass" ]'
+(cd "$T" && CLAUDE_PROJECT_DIR="$T/r" sh "$H" feedback draft >/dev/null)
+ok 'the pass goes to the session repository, wherever the verb ran' '[ -f "$S/pass" ]'
 
 # flags
 echo $(( $(date +%s) - 200000 )) > "$S/started"
