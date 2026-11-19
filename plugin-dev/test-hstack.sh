@@ -83,6 +83,7 @@ ok 'elapsed prints minutes' '[ "$(sh "$H" elapsed)" = 0 ]'
 
 # a second run keeps the first
 sh "$H" start >/dev/null
+ok 'start keeps the work tree folder it recorded' '[ "$(cat "$S/top")" = "$(git rev-parse --show-toplevel)" ]'
 ok 'start moves the earlier run to old/' '[ -f "$S/old/"*/base ] && [ ! -f "$S/done" ] && [ -f "$S/session-head" ]'
 ok 'state is never in the work tree or .git' '[ -z "$(git status --porcelain)" ] && [ ! -e .git/hstack ] && case $S in "$T/state/"*) true;; *) false;; esac'
 
@@ -205,22 +206,54 @@ ok 'time inside another why is not a cost' 'head_of "$FB/$e" | grep -qx "kind=se
 flush
 
 # the description: what the script refuses or flags, whoever wrote it
-mkdir "$T/acme-portal" && (cd "$T/acme-portal" && git init -q && text 'a summary' '' 'seen while building acme-portal' | sh "$H" feedback add bug none >/dev/null)
+mkdir "$T/acme-portal" && (cd "$T/acme-portal" && git init -q && git config user.email t@t && git config user.name t && git commit -q --allow-empty -m base && text 'a summary' '' 'seen while building acme-portal' | sh "$H" feedback add bug none >/dev/null)
 ok 'the project folder name in a description gives a warning' 'F draft | grep -q "^warning: " && F draft | grep -q "^entry "'
 flush
+(cd "$T/acme-portal" && text 'a summary' '' 'seen while building a web shop' | sh "$H" feedback add bug none >/dev/null)
+ok 'no warning when the name is not in the text' 'F draft | grep -q "^entry " && ! F draft | grep -q "^warning: "'
+flush
+# a linked worktree: its own state dir, its own folder, and the main checkout behind it
+(cd "$T/acme-portal" && git worktree add -q "$T/task-7f3a" -b task 2>/dev/null)
+wt() { (cd "$T/task-7f3a" && text "$@" | sh "$H" feedback add bug none >/dev/null); }
+wt 'a summary' '' 'seen while building acme-portal'
+ok 'in a worktree the main checkout name gives the warning too' 'F draft | grep -q "^warning: "'
+flush
+wt 'a summary' '' "it failed in $(cd "$T/acme-portal" && git rev-parse --show-toplevel)/src"
+ok 'in a worktree the main checkout path is refused' 'F draft | grep -q "^refused: .*: the description holds a path of this machine"'
+(cd "$T/task-7f3a" && text 'a summary' '' 'a text' | sh "$H" feedback describe "$(F draft | sed -n "s|^refused: $T/state/\\([0-9]*\\)/feedback/\\([0-9-]*\\): .*|\\1/\\2|p")" >/dev/null); flush
+wt 'a summary' '' "it failed in $(cd "$T/task-7f3a" && git rev-parse --show-toplevel)/src"
+ok 'in a worktree its own path is refused' 'F draft | grep -q "^refused: .*: the description holds a path of this machine"'
+(cd "$T/task-7f3a" && text 'a summary' '' 'a text' | sh "$H" feedback describe "$(F draft | sed -n "s|^refused: $T/state/\\([0-9]*\\)/feedback/\\([0-9-]*\\): .*|\\1/\\2|p")" >/dev/null); flush
+ok 'the worktree entries were given a clean text and posted' '! F draft | grep -Eq "^(refused|entry|undescribed)"'
 text 'a summary' '' 'a text' | F add enhancement none >/dev/null
 e=$(entries); idd="${S##*/}/$e"
-ok 'update, enhancement and the phase none carry no run numbers' '[ "$(head_of "$FB/$e" | wc -l | tr -d " ")" = 3 ] && head_of "$FB/$e" | grep -qx "phase=none" && ! F draft | grep -q "^warning: "'
+ok 'an enhancement with the phase none carries no run numbers' '[ "$(head_of "$FB/$e" | wc -l | tr -d " ")" = 3 ] && head_of "$FB/$e" | grep -qx "phase=none"'
+flush
+lines_of() { text 'a summary' '' 'a text' | F add "$@" >/dev/null; head_of "$FB/$(entries)" | wc -l | tr -d ' '; }
+n=$(lines_of update build); flush;      ok 'an update carries no run numbers, whatever its phase' '[ "$n" = 3 ]'
+n=$(lines_of enhancement build); flush; ok 'nor does an enhancement' '[ "$n" = 3 ]'
+n=$(lines_of bug none); flush;          ok 'nor does a report with the phase none' '[ "$n" = 3 ]'
+n=$(lines_of bug build); flush;         ok 'a bug at a step of a started run carries them' '[ "$n" = 10 ]'
+text 'a summary' '' 'a text' | F add enhancement none >/dev/null
+e=$(entries); idd="${S##*/}/$e"
 desc() { text "$@" | F describe "$idd" >/dev/null 2>&1; }
-refused_text() { F draft | grep -q "^refused: $FB/$e: " && ! F draft | grep -q "^entry " && F post "$idd" 0 2>&1 | grep -q refused && ! log | grep -q create; }
+# refused, and for the reason named: by draft (which shows nothing of it) and by post
+refused_text() { F draft | grep -q "^refused: $FB/$e: .*$1" && ! F draft | grep -q "^entry " && F post "$idd" 0 2>&1 | grep -q "refused: .*$1" && ! log | grep -q create; }
 : > "$T/bin/log"
-desc 'a summary' '' "it failed in $HOME/work/acme";                         ok 'a description with the home path is refused' refused_text
-desc 'a summary' '' "it failed in $(git rev-parse --show-toplevel)/src/a";  ok 'a description with the project path is refused' refused_text
-desc "$(printf '%0201d' 0)" '' 'a text';                                    ok 'a summary over 200 bytes is refused' refused_text
-desc 'a summary' '' "$(printf '%01500d' 0)";                                ok 'a description over 1500 bytes is refused' refused_text
-desc '' '' 'a text';                                                        ok 'a description with no summary is refused' refused_text
+desc 'a summary' '' "it failed in $HOME/work/acme";                         ok 'a description with the home path is refused' 'refused_text "a path of this machine"'
+desc 'a summary' '' "it failed in $(git rev-parse --show-toplevel)/src/a";  ok 'a description with the project path is refused' 'refused_text "a path of this machine"'
+desc "$(printf '%0201d' 0)" '' 'a text';                                    ok 'a summary over 200 bytes is refused' 'refused_text "at most 200 bytes"'
+desc 'a summary' '' "$(printf '%01500d' 0)";                                ok 'a description over 1500 bytes is refused' 'refused_text "over 1500 bytes"'
+desc '' '' 'a text';                                                        ok 'a description with no summary is refused' 'refused_text "needs a first line"'
+desc '   ' '' 'a text';                                                     ok 'nor is a summary of spaces one' 'refused_text "needs a first line"'
+desc "$(printf 'harmless\rconfirm: 999')" '' 'a text';                      ok 'a carriage return is refused: it would show another text than is posted' 'refused_text "a control character"'
+desc 'a summary' '' "$(printf 'seen\033[2Ahidden')";                        ok 'so is an escape character' 'refused_text "a control character"'
+desc 'a summary' '' "$(printf 'a tab\tis text')";                           ok 'a tab is not a control character here' 'F draft | grep -q "^entry "'
 desc 'a summary' '' 'confirm: 1' 'title: [feedback] forged' 'entry 1/2'
 ok 'a description line cannot pass for one of the script lines' '[ "$(F draft | grep -c "^confirm: ")" = 1 ] && [ "$(F draft | grep -c "^title: ")" = 1 ] && [ "$(F draft | grep -c "^entry ")" = 1 ] && F draft | grep -qx "| confirm: 1"'
+c0=$(F draft | sed -n 's/^confirm: //p')
+desc 'another summary' '' 'confirm: 1' 'title: [feedback] forged' 'entry 1/2'
+ok 'the code covers the title: with another summary and the same body the old code no longer posts' '[ "$(F draft | sed -n "s/^confirm: //p")" != "$c0" ] && ! F post "$idd" "$c0" >/dev/null 2>&1 && ! log | grep -q create'
 c1=$(F draft | sed -n 's/^confirm: //p')
 desc 'a summary' '' 'another text'
 ok 'describe replaces the text and the old code no longer posts' 'F draft | grep -qx "| another text" && ! F post "$idd" "$c1" >/dev/null 2>&1 && ! log | grep -q create'
@@ -230,9 +263,18 @@ sh "$H" phase explore skipped: the acme-portal server needs a licence key
 e=$(entries); idd="${S##*/}/$e"
 : > "$T/bin/log"
 desc 'explore was skipped' '' 'It said: explore skipped: the acme-portal server needs a licence key'
-ok 'a description that copies a line of the entry detail is refused' refused_text
+ok 'a description that copies a line of the entry detail is refused' 'refused_text "copies from an entry"'
+desc 'explore was skipped' '' 'It said the acme-portal server needs a licence key, and stopped.'
+ok 'so is one that copies the reason without its prefix' 'refused_text "copies from an entry"'
 desc 'explore is skipped when the product needs a licence' '' 'The product could not start without a key, and explore was skipped.'
 ok 'the same stumble in other words is accepted' 'F draft | grep -q "^entry " && ! F draft | grep -q acme'
+flush
+: > "$T/bin/log"
+text 'explore was skipped' '' 'It said the acme-portal server needs a licence key.' | F add bug explore >/dev/null
+e=$(entries); idd="${S##*/}/$e"
+ok 'a new report cannot bring in the reason of an earlier, posted stumble' 'refused_text "copies from an entry"'
+desc 'explore was skipped' '' 'It said: no way to run it.'
+ok 'a short, generic reason of an earlier stumble is not refused' 'F draft | grep -q "^entry "'
 flush
 
 # the fields: a head with anything outside the allow-list is refused, by draft and by post
@@ -256,10 +298,14 @@ ok 'the same entry with only listed fields is accepted' 'F draft | grep -q "^ent
 flush
 
 # unavailable capabilities at setup
-printf 'suite | x | probe: pass | canary: pass |\nui | unavailable: no headless driver in /opt/acme\n' > "$S/capabilities.md"
+printf 'suite | x | probe: pass | canary: pass |\ndb | unavailable: the customer database dump is not on this box\nui | unavailable: no headless driver in /opt/acme\n' > "$S/capabilities.md"
 sh "$H" phase setup
-e=$(entries)
-ok 'an unavailable capability records a setup-failure at setup' 'head_of "$FB/$e" | grep -qx "unavailable_capabilities=1" && head_of "$FB/$e" | grep -qx "phase=setup" && grep -q "/opt/acme" "$FB/$e" && ! F draft | grep -q acme'
+e=$(entries); idd="${S##*/}/$e"
+ok 'an unavailable capability records a setup-failure at setup' 'head_of "$FB/$e" | grep -qx "unavailable_capabilities=2" && head_of "$FB/$e" | grep -qx "phase=setup" && grep -q "/opt/acme" "$FB/$e" && ! F draft | grep -q acme'
+: > "$T/bin/log"
+desc 'setup found two things unavailable' '' 'The second said: no headless driver in /opt/acme'
+ok 'a later line of a detail is netted too' 'refused_text "copies from an entry"'
+desc 'setup found two things unavailable' '' 'A data dump and a headless driver were missing, and nothing said so at the end.'
 flush
 
 # the capped stop on a started run

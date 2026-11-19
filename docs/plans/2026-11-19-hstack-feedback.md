@@ -29,7 +29,16 @@ What replaces the allow-list as the guard for customer content, in order of weig
 
 1. **The user reads the exact text.** Unchanged: the title and body sit inside the question, and the confirm code binds the yes to that text and that repository.
 2. **The skill writes about hstack, not about the project.** Its rules: describe what hstack did and what it should have done; never copy a path, a project, customer or repository name, requirement text, code, a log or error line, a branch name or a commit hash of the project; paraphrase.
-3. **A mechanical net in the script**, for the commonest leaks only. Refused: a description that contains the user's home path or the project's folder path (the git dir's and the work tree's, as git prints them; a path through a symlink is not caught); one that repeats a line of the entry's own detail (lines over 12 bytes), so a skip reason still cannot be pasted in; one over 1500 bytes, or with a first line over 200 bytes (it must fit inside the question, and a log does not). Flagged with a `warning:` line the skill must show in the question: a description that contains the project folder's name (names under 4 bytes are not looked for).
+3. **A mechanical net in the script**, for the commonest leaks only. Refused:
+   - a description that contains the user's home path, or the folder path of the entry's project or of the session's project (the main checkout's and the work tree's, as git prints them);
+   - one that repeats, from any entry of that project (posted ones too), a whole detail line or what follows `skipped: ` or `unavailable: ` in it, when that is over 24 bytes; shorter reasons ("no way to run it") are too generic to refuse;
+   - one with a control character other than a newline or a tab: a carriage return or an escape would show the user another text than the one posted;
+   - one over 1500 bytes, with a first line over 200 bytes, or with no summary (it must fit inside the question, and a log does not);
+   - one whose text file is a symbolic link.
+
+   Flagged with a `warning:` line the skill must show in the question: a description that contains the name of the project's folder, or of the main checkout's when the entry comes from a worktree (names under 4 bytes are not looked for).
+
+   What the net misses, found by the review of this build: a path through a symlink or an alias (`/tmp` for `/private/tmp`), a `~/` or repo-relative path, a path outside home and the project, a path in another letter case; a reason that is reworded, under 25 bytes, or held only in the session's memory and never recorded; a customer's name that is not the folder's name.
 
 The net cannot tell customer content from other words. Guards 1 and 2 carry the weight, and the plan says so.
 
@@ -47,6 +56,8 @@ The net cannot tell customer content from other words. Guards 1 and 2 carry the 
 - **Still no text at post time.** `post` takes an id and a code. Text enters only through `add` and `describe`, is stored, and is shown by `draft` before any yes.
 - **Collect.** One line per phase and kind with its count, then one line per issue under it: `#<n> <summary>`, so an issue can be picked up to fix.
 - **The skill.** Invoked with what the user found, it writes the kind, the phase, the summary and the description from what happened in this session and the user's words, runs `add`, then the draft, the question and the post as before. It lists the recorded stumbles that have no description and writes one for those the user wants posted. It reads an entry's detail only when the user asks it to, and never copies from it.
+
+**Tests added after the review of this build:** the code covers the title; each no-run-numbers rule alone; a worktree (the main checkout's path and name, the worktree's own path); no warning when the name is absent; a reason copied without its prefix, from a later detail line, or into a new report after the stumble was posted; a short generic reason is accepted; a carriage return and an escape are refused, a tab is not; a summary of spaces is refused; `start` keeps `top`; each refusal is checked for its reason.
 
 **Tests added:** a description is posted as shown, after the fields' check, with `$` and backticks kept; an entry without one is not postable; a description with the home path or the project path is refused; one that copies a line of the entry's detail is refused, and the same stumble in other words is accepted; the project folder's name gives the warning; an oversized one is refused; a description line that imitates `confirm:`, `title:` or `entry` cannot pass for one of the script's lines; `describe` replaces a text and the old code no longer posts; `describe` refuses a posted entry, an unknown id and an empty text; `update`, `enhancement` and the phase `none` carry no run numbers; collect lists each issue's summary.
 

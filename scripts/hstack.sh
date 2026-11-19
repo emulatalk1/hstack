@@ -20,7 +20,8 @@ state() {
   G=$(git rev-parse --absolute-git-dir 2>/dev/null) || return 1
   S="$ROOT/$(printf '%s' "$G" | cksum | cut -d' ' -f1)"
   mkdir -p "$S" && printf '%s\n' "$G" > "$S/repo" || return 1
-  git rev-parse --show-toplevel > "$S/top" 2>/dev/null # the work tree's folder: a description must not name its path
+  # the work tree's folder: a description must not name its path. Kept as it was when there is no work tree here.
+  top=$(git rev-parse --show-toplevel 2>/dev/null) && printf '%s\n' "$top" > "$S/top"
   :
 }
 
@@ -56,8 +57,8 @@ record() { # <kind> <phase> <detail> [any word: no elapsed, no counts]
 # - the fields: the entry's head under fixed labels. Every line must be an allowed label with a value of the allowed
 #   shape, so a path, a name or any other text in the head refuses the whole entry.
 # - the description: the text beside the entry (<entry>.md), which the user reads in full before the yes. That reading
-#   is the guard; the script only nets the commonest leaks: a path of this machine, a line copied from the entry's own
-#   detail, a text too long to be read inside a question.
+#   is the guard; the script only nets the commonest leaks: a path of this machine, a line or a reason copied from an
+#   entry's detail, a character that would show the user something else than is posted, a text too long for a question.
 draft() { # <entry file>: 0 with title and body set; 1 refused, why says it; 2 no description yet, kind and phase set
   why='a field outside the allowed ones'
   fields=$(sed -n '/^$/q;p' "$1" | sed -e 's/^version=/plugin version: /' -e 's/^kind=/kind: /' -e 's/^phase=/phase: /' \
@@ -72,27 +73,46 @@ draft() { # <entry file>: 0 with title and body set; 1 refused, why says it; 2 n
   field() { printf '%s\n' "$fields" | sed -n "s/^$1: //p"; }
   kind=$(field kind) phase=$(field phase)
 
+  why='the description is not a plain file'
+  [ ! -L "$1.md" ] || return 1
   [ -f "$1.md" ] || return 2
   text=$(cat "$1.md")
   summary=$(printf '%s\n' "$text" | sed -n 1p)
   rest=$(printf '%s\n' "$text" | sed 1d | sed '/./,$!d')
   why='the description needs a first line, its summary, of at most 200 bytes'
-  [ -n "$summary" ] && [ "${#summary}" -le 200 ] || return 1
+  case $summary in *[![:space:]]*) ;; *) return 1 ;; esac
+  [ "${#summary}" -le 200 ] || return 1
   why='the description is over 1500 bytes'
   [ "${#text}" -le 1500 ] || return 1
+  # a CR or an escape would show the user another text than the one that is posted
+  why='the description holds a control character'
+  [ "$(printf '%s' "$text" | tr -d '\n\t' | tr -cd '[:cntrl:]' | wc -c | tr -d ' ')" = 0 ] || return 1
+  # the entry's project, and the project of the session that runs this
   why='the description holds a path of this machine'
   dir=${1%/feedback/*}
   gitdir=$(cat "$dir/repo" 2>/dev/null)
   top=$(cat "$dir/top" 2>/dev/null)
-  for p in "$HOME" "${gitdir%/.git*}" "$top"; do
+  main=${gitdir%/.git*}
+  for p in "$HOME" "$main" "$top" "${G%/.git*}" "${S:+$(cat "$S/top" 2>/dev/null)}"; do
     [ "${#p}" -gt 1 ] || continue
     case $text in *"$p"*) return 1 ;; esac
   done
-  why="the description copies a line of the entry's local detail"
-  sed '1,/^$/d' "$1" | { while IFS= read -r l; do [ "${#l}" -gt 12 ] && case $text in *"$l"*) exit 1 ;; esac; done; exit 0; } || return 1
+  # every entry of this project, posted ones too, so a stumble's reason cannot come back in through a new report:
+  # a whole detail line, or what follows "skipped: " or "unavailable: " in it, when over 24 bytes
+  why="the description copies from an entry's local detail"
+  for d in "$dir"/feedback/* "$dir"/feedback/posted/*; do
+    case ${d##*/} in *[!0-9-]*) continue ;; esac
+    [ -f "$d" ] && sed '1,/^$/d' "$d"
+  done | ( while IFS= read -r l; do
+      for l in "$l" "${l#* skipped: }" "${l#*unavailable: }"; do
+        case $l in 'posted: '*) continue ;; esac
+        [ "${#l}" -gt 24 ] && case $text in *"$l"*) exit 1 ;; esac
+      done
+    done; exit 0 ) || return 1
   warn=''
-  name=${top##*/}
-  [ "${#name}" -ge 4 ] && printf '%s\n' "$text" | grep -qiF -- "$name" && warn=1
+  for name in "${top##*/}" "${main##*/}"; do # the work tree's folder, and the main checkout's when this is a worktree
+    [ "${#name}" -ge 4 ] && printf '%s\n' "$text" | grep -qiF -- "$name" && { warn=1; break; }
+  done
   title="[feedback] $phase $kind: $summary"
   body=$fields
   [ -z "$rest" ] || body="$rest
@@ -152,7 +172,7 @@ EOF
       if [ "$n" -eq "$MAX_BLOCKS" ] && [ -f "$S/base" ]; then
         echo $((n + 1)) > "$S/stop-blocks"
         set -- ${m:-final}
-        record intervention "$1" 'the stop gate gave up on an unfinished run' > /dev/null 2>&1
+        record intervention "$1" '' > /dev/null 2>&1
       fi
       exit 0
     fi
@@ -188,6 +208,7 @@ if [ "$cmd" = feedback ]; then
   }
   describe() { # <entry file>: the description from stdin, kept as written; an empty one changes nothing
     [ -t 0 ] && return 1
+    [ ! -L "$1.md" ] || return 1
     t=$(cat)
     [ -n "$t" ] && printf '%s\n' "$t" > "$1.md"
   }
@@ -201,6 +222,7 @@ if [ "$cmd" = feedback ]; then
       case $1 in update|enhancement) bare=1 ;; escaped-bug) [ -f "$S/done" ] || bare=1 ;; esac
       [ "$2" = none ] && bare=1
       record "$1" "$2" '' $bare
+      [ -f "$E" ] || { echo "hstack: could not write $E" >&2; exit 1; }
       echo "recorded: $E"
       describe "$E" || echo "no description yet: give one with feedback describe ${S##*/}/${E##*/}" ;;
 

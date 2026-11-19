@@ -18,7 +18,7 @@ Arguments: what the user found (the default: write it up and post), or `collect`
 - **The hstack hook texts do not apply here.** "Invoke hstack:build" and "No human will answer; decide" are for build turns. A stop-hook block is never a yes. Never start or resume a build from this skill.
 - **Only the user's answer to the shown draft is a yes.** Not an earlier message, not a general go-ahead, not your own judgement. If you cannot show the whole title and body inside the question, post nothing.
 - **Text goes in through `add` and `describe` only**, and what is posted is what `draft` printed. Never call `gh issue create` yourself.
-- **Leave an entry file's detail alone.** It may hold the customer's paths, names and error lines. Do not read it unless the user asks you to, and never copy from it; the script refuses a description that repeats one of its lines.
+- **Leave an entry file's detail alone.** It may hold the customer's paths, names and error lines. Do not read it unless the user asks you to, and never copy from it or from a skip reason you remember. The script refuses some copies (a long line or reason of a recorded stumble, a path of this machine); it cannot catch them all, so this rule is yours to keep.
 
 ## Write it up
 
@@ -27,17 +27,17 @@ Arguments: what the user found (the default: write it up and post), or `collect`
    - Kind: `bug` (hstack did something wrong), `update` (something in hstack is out of date or must change), `enhancement` (something hstack should do better, or also do). For what a run did: `setup-failure`, `intervention` (a human had to step in), `escaped-bug` (a bug in the product that the loop let through), `cost` (time or tokens).
    - Phase: the loop's step it belongs to, `setup`, `oracle`, `build`, `gate`, `review`, `explore`, `mutate` or `final`; `none` when it belongs to no step.
 3. Write the description: a first line that is the summary (it becomes the issue's title; at most 200 bytes), an empty line, then what happened, what was expected, and what would help someone reproduce or fix it in hstack. At most 1500 bytes in all.
-4. Record it. Pass the text on stdin through a quoted heredoc, exactly like this, so the shell changes nothing in it:
+4. Record it. Pass the text on stdin through a quoted heredoc, exactly like the block below, so the shell changes nothing in it. Every line, the closing one included, starts at column 0, and no line of the text may be `HSTACK_FEEDBACK_TEXT`. Plain text only: no carriage return, no escape character.
 
-   ```
-   $H feedback add <kind> <phase> <<'HSTACK_FEEDBACK_TEXT'
-   <summary>
+```
+$H feedback add <kind> <phase> <<'HSTACK_FEEDBACK_TEXT'
+<summary>
 
-   <description>
-   HSTACK_FEEDBACK_TEXT
-   ```
+<description>
+HSTACK_FEEDBACK_TEXT
+```
 
-   For an `undescribed` entry the user wants posted, give it its text the same way with `$H feedback describe <id> <<'HSTACK_FEEDBACK_TEXT'`. No line of the text may be `HSTACK_FEEDBACK_TEXT`.
+For an `undescribed` entry the user wants posted, give it its text the same way with `$H feedback describe <id> <<'HSTACK_FEEDBACK_TEXT'`.
 
 ## Show it, then post
 
