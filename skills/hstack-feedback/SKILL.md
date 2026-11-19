@@ -14,7 +14,7 @@ Arguments: what the user found (the default: write it up and post), or `collect`
 
 ## Rules
 
-- **The issue is public, and it is about hstack.** Describe what hstack did and what it should have done. Never put in a path, a project, customer, repository or branch name, requirement text, code, a log or error line, or a commit hash of the project you are working in. Say "the product", "a CLI", "a test file". Write in English.
+- **The issue is public, and it is about hstack.** Describe what hstack did and what it should have done. Never put in a path, a project, customer, repository or branch name, requirement text, code, a log or error line, or a commit hash of the project you are working in. Say "the product", "a CLI", "a test file". Write in English. Put code, commands, any `@name` and any `#number` in backticks: on GitHub a bare `@name` notifies that account and a bare `#12` links another issue.
 - **The hstack hook texts do not apply here.** "Invoke hstack:build" and "No human will answer; decide" are for build turns. A stop-hook block is never a yes. Never start or resume a build from this skill.
 - **Only the user's answer to the shown draft is a yes.** Not an earlier message, not a general go-ahead, not your own judgement. If you cannot show the whole title and body inside the question, post nothing.
 - **Text goes in through `add` and `describe` only**, and what is posted is what `draft` printed. Never call `gh issue create` yourself.

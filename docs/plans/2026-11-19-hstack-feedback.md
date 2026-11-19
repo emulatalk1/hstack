@@ -7,6 +7,7 @@ generated: { by: claude-code/2.1.327, at: "2026-11-19T10:28:18+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T10:52:00+07:00" }
   - { by: human:emulatalk1, at: "2026-11-19T11:09:12+07:00" }
+  - { by: claude-code-advisor/2.1.327, at: "2026-11-19T12:47:14+07:00" }
 ---
 
 # hstack-feedback Plan
@@ -63,7 +64,7 @@ The net cannot tell customer content from other words. Guards 1 and 2 carry the 
 
 **Sections below that this revision overrides, so they are not read as current:** "Decided by the user" (the allow-list and "no free text" clause); in Recording, "the skill never reads an entry file" and "`feedback add <kind> <phase> [what happened]`"; in Posting, the title's shape, "There is no way to pass text in" (still true of `post`, no longer of the skill), and the 4 kinds; in Collect, the line format; in The skill, its arguments and rules; in Limits, "an edit step for drafts" (an edit is now a `describe`).
 
-**Not verified by the user as a plan:** the user confirmed the direction in one message; the build of this revision is shown to them before any merge.
+**Not verified by the user as a plan:** the user confirmed the direction in one message; the build of this revision is shown to them before any merge. The `human:` entry above is their approval of the plan before this revision; the second advisor entry is the advisor's review of the revision and its build.
 
 ## What the state holds today
 
