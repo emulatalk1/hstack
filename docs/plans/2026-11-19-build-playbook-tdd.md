@@ -96,7 +96,6 @@ Each line names a way this breaks for someone running `hstack:build`, and the ch
 Known limits, pinned by nothing:
 
 - A context compaction late in a long run can drop the rules the builder read. Steps 6, 7 and 9 still ask for a failing test with each fix in their own words.
-- Step 9 of the playbook still says "a fix gets a test", while "In hstack" lets a lint or type fix go without one. Step 9 is outside what the user approved to change.
 - A feedback entry recorded with `phase: build` by 0.3.1 or earlier is refused by `feedback draft` and can be dismissed. A run recorded with the old name is read correctly by `missing` (added after the review).
 
 ## File Structure
@@ -248,7 +247,7 @@ Do the items below in order, then go back to the loop for the commit and `$H pha
 1. **Read** the code the requirement touches and the neighbouring features that do similar things.
 2. **Spec.** Write `$S/spec.md`: numbered behaviours; every entry point the feature is reached by (each page, endpoint, command, public function, import or export path, serializer, setting); each open edge from the oracle report and every other edge you see (empty, missing, invalid, boundary values, errors, permissions, existing data, repeated actions, ordering, other entry points) with a decision that cites the requirement or the existing code it follows. Decide an edge the way this codebase already decides the same case.
 3. **The test rules.** Read `tdd.md` and `writing-good-tests.md` in this skill's base directory, both to the end. From here to the end of the run they are the rules for every test and every line of product code you write.
-4. **Implement,** in the style of the neighbouring code, one decided edge or rule at a time, by the cycle of the test rules: its test where the project's test command finds it, the run that fails on the missing behaviour, the code, the run that passes. Run tests in their single-file or single-target form from the capabilities.
+4. **Implement,** in the style of the neighbouring code, by the cycle of the test rules, one decided edge or rule per cycle: write one test where the project's test command finds it, run it and see it fail on the missing behaviour, write the code for that one test, run it and see it pass. Only then write the next test: never several tests before their code. A change to product code after its test passes is a new cycle and starts with a test that fails. Run tests in their single-file or single-target form from the capabilities.
 5. **The oracle's tests.** Make them pass **without editing them**. If one contradicts the requirement or a fact of the existing public interface, use the dispute rule of step 4 in the loop.
 6. **Check.** Run the tests near the change, then the widest suite the time allows, then build, type-check and lint as the capabilities have them. No failure the base did not have.
 ```
@@ -361,6 +360,20 @@ Task 4's review (one fresh reviewer on the most capable model, read-only) found 
 | 9 | "Results" held Task 0 only | Filled in below | none |
 
 Not checked by the reviewer, by its own account: `dash` and the full bun suite (both rerun by the author after the fixes), and a real invocation of the skill (Task 5).
+
+## After the run
+
+Task 5 found two places where the builder left the test rules, and the review had left one known limit. The user's word on 2026-11-19, asked what was needed of them: "cái gì cần sửa thì phải sửa". Fixed, each with a check that failed first:
+
+| What | Before | After | Its check |
+|---|---|---|---|
+| Six tests written in one batch, then the code in one edit | item 4 of `hstack:build-implement`: "one decided edge or rule at a time, by the cycle of the test rules: its test …, the run that fails …, the code, the run that passes" | "one decided edge or rule per cycle: write one test …, run it and see it fail …, write the code for that one test, run it and see it pass. Only then write the next test: never several tests before their code." | bun: both sentences |
+| A change to the code after green with no failing test | nothing said | "A change to product code after its test passes is a new cycle and starts with a test that fails." | bun: the sentence |
+| Step 9 of the playbook said "a fix gets a test", against "In hstack", which lets a lint or type fix go without one | "Fix what fails (a fix gets a test)." | "Fix what fails: a fix gets a test that fails first, but a lint, format or type fix, which no test can show." | bun: the sentence |
+
+The text of `skills/build-implement/SKILL.md` in Task 2 above is the text after this fix.
+
+Seen in Task 5's transcript afterwards and not changed: the first mutation agent refused to start because the tree had two untracked cache folders, left there by the fixture's own preparation, and the builder started a second one after clearing the status. A project whose test runs leave untracked files and ignores none of them would meet the same refusal; telling the builder to delete untracked files could delete something the user keeps, so the playbook is left as it is.
 
 ## Results
 

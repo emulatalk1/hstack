@@ -70,7 +70,7 @@ The tree must be clean (commit first). Start `hstack:mutator` with the base comm
 
 ## 9. Final
 
-1. Run the oracle's tests, the widest suite the time allows, and build, type-check and lint as the capabilities have them. Fix what fails (a fix gets a test).
+1. Run the oracle's tests, the widest suite the time allows, and build, type-check and lint as the capabilities have them. Fix what fails: a fix gets a test that fails first, but a lint, format or type fix, which no test can show.
 2. `$H gate` again, as in step 5.
 3. Write `$S/summary.md`: what was built, the decisions, the findings of each step and what became of them.
 4. Commit. `$H phase final`, then `$H done` (it refuses while a step is unrecorded or a change is uncommitted).
