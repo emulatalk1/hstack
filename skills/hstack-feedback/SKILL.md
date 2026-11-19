@@ -22,7 +22,7 @@ Arguments: what the user found (the default: write it up and post), or `collect`
 
 ## Write it up
 
-1. Run `$H feedback draft` to see what is waiting: `undescribed <id>: <kind> at <phase>` lines are stumbles the build loop recorded by itself; `entry <id>` blocks already have a text. Tell the user about the `undescribed` ones. For each they do not want as an issue, and only on their word, run `$H feedback dismiss <id>`: it leaves the list and stays on disk, under `feedback/dismissed/`.
+1. Run `$H feedback draft` to see what is waiting: `undescribed <id>: <kind> at <phase>` lines are stumbles the build loop recorded by itself; `entry <id>` blocks already have a text. Tell the user about the `undescribed` ones. For those they do not want as issues, and only on their word, run `$H feedback dismiss <id>` (it takes several ids in one call): they leave the list and stay on disk, under `feedback/dismissed/`.
 2. Decide the kind and the phase from what the user said and what happened in this session. If you cannot tell, ask.
    - Kind: `bug` (hstack did something wrong), `update` (something in hstack is out of date or must change), `enhancement` (something hstack should do better, or also do). For what a run did: `setup-failure`, `intervention` (a human had to step in), `escaped-bug` (a bug in the product that the loop let through), `cost` (time or tokens).
    - Phase: the loop's step it belongs to, `setup`, `oracle`, `build`, `gate`, `review`, `explore`, `mutate` or `final`; `none` when it belongs to no step.
@@ -41,7 +41,7 @@ For an `undescribed` entry the user wants posted, give it its text the same way 
 
 ## Show it, then post
 
-1. Run `$H feedback draft`. Each entry with a text prints `entry <id>`, `local: <path>`, `to: <repository>`, perhaps a `warning:` line, `title: …`, the body with every line behind `| `, and `confirm: <code>`. A `refused: <path>: <reason>` line is an entry the script will not post: tell the user the path and the reason, and if the reason is about the description, write a better one with `describe`.
+1. Run `$H feedback draft`. Each entry with a text prints `entry <id>`, `local: <path>`, `to: <repository>`, perhaps a `warning:` line, `title: …`, the body with every line behind `| `, and `confirm: <code>`. A `refused: <path>: <reason>` line, with its `id:` line under it, is an entry the script will not post: tell the user the path and the reason. If the reason is about the description, write a better one with `describe <id>`. If it is about a field, the entry cannot be repaired: on the user's word, dismiss it.
 2. Ask with the question tool, one question per entry, at most 4 per call. Put inside the question itself: the repository (the `to:` line), the exact title, the exact body without the `| ` marks, and any `warning:` line; text printed before a question may be hidden while it is open. Options: post it, change it, keep it local for later, dismiss it (`$H feedback dismiss <id>`: off the list for good, still on disk).
 3. **If you have no question tool** (a headless run), print the drafts and the local paths, post nothing, and stop.
 4. "Change it": take the user's changes, run `describe` with the new text, then `draft` and the question again.

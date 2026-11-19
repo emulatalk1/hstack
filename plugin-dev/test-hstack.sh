@@ -293,6 +293,13 @@ e=$(entries); idd="${S##*/}/$e"
 ok 'the reason of a dismissed stumble is still netted' 'refused_text "copies from an entry"'
 desc 'explore was skipped' '' 'A service the product needs could not start.'
 flush
+out=$(text 'a summary' '' "it failed in $HOME/work" | F add bug none)
+e=$(entries); idd="${S##*/}/$e"
+ok 'add prints the id of the entry' 'echo "$out" | grep -qx "id: $idd"'
+ok 'a refused entry shows its id, so it can be described again or dismissed' 'F draft | grep -q "^refused: $FB/$e: " && F draft | grep -qx "id: $idd" && F dismiss "$idd" >/dev/null && [ -z "$(entries)" ] && [ -f "$FB/dismissed/$e" ]'
+sh "$H" phase explore skipped: nothing here; sh "$H" phase mutate skipped: time
+ok 'dismiss takes several ids' '[ "$(entries | wc -l | tr -d " ")" = 2 ] && F dismiss $(F draft | sed -n "s/^undescribed \(.*\): .*/\1/p") >/dev/null && [ -z "$(entries)" ]'
+ok 'dismiss with no id is a usage error' 'F dismiss 2>&1 | grep -q "usage:"'
 
 # a description in another script than ASCII is text like any other
 text 'a summary' '' "$(printf 'caf\303\251 \342\200\224 ti\341\272\277ng Vi\341\273\207t')" | F add bug none >/dev/null

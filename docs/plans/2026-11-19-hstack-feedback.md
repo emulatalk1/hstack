@@ -123,7 +123,7 @@ The skill passes the text only through a quoted heredoc with its own delimiter (
 - `state()` also writes `S/top`, the work tree's folder as git prints it, for the description's path check.
 - `S` is keyed by the absolute git dir, so each worktree has its own. `draft` and `post` read `${HSTACK_STATE:-$HOME/.hstack}/*/feedback/` and work from any folder, inside a git repository or not. An entry's id is `<cksum>/<file name>`.
 - A posted entry gets a last line `posted: <issue URL>` and moves with its description to `feedback/posted/`. Nothing is deleted.
-- `hstack.sh feedback dismiss <id>` (added after the merge, plugin 0.3.1) moves an unposted entry, and its description if it has one, to `feedback/dismissed/`: off `draft`'s list, still on disk. It calls no `gh`. The description net reads dismissed entries too, so a dismissed stumble's reason still cannot be pasted into a new report. The skill runs it only on the user's word.
+- `hstack.sh feedback dismiss <id>...` (added after the merge, plugin 0.3.1; several ids in one call) moves an unposted entry, and its description if it has one, to `feedback/dismissed/`: off `draft`'s list, still on disk. It calls no `gh`. The description net reads dismissed entries too, so a dismissed stumble's reason still cannot be pasted into a new report. The skill runs it only on the user's word.
 
 ### The draft and its check
 
@@ -131,7 +131,7 @@ The skill passes the text only through a quoted heredoc with its own delimiter (
 
 - with a description: `entry <id>`, `local: <path>`, `to: <repository>`, perhaps a `warning:` line, `title: …`, the body with every line behind `| `, and `confirm: <code>`;
 - without one: `undescribed <id>: <kind> at <phase>` and its path;
-- refused: `refused: <path>: <reason>`, never the offending line.
+- refused: `refused: <path>: <reason>` and its `id:` line, never the offending line. A refusal about the description is answered with a new `describe`; one about a field can only be dismissed.
 
 The title is `[feedback] <phase> <kind>: <summary>`. The body is the description, an empty line, a `---` line, then the fixed-field lines. Body lines stand behind `| `, so no line of a description can pass for one of the script's own lines. The confirm code is the `cksum` of repository, title and body, so the yes covers the text and where it goes. Entries are read as bytes (`LC_ALL=C`). Only a file whose state dir and name have the id's shape (digits and `-`) is an entry: a name is never printed as text.
 
@@ -192,7 +192,7 @@ Invoked with what the user found, it decides the kind and the phase, writes the 
 
 ## Tests
 
-In `plugin-dev/test-hstack.sh` (136 checks with the hook tests) and `tests/skills.test.mjs`. A fake `gh` first on `PATH` appends its arguments to a log and answers from files in the temp dir. No test can reach GitHub even if `PATH` slips (the real `gh` may read its token from the keychain): for the whole file, `HTTPS_PROXY` points at a dead local port, `GH_TOKEN` and `GITHUB_TOKEN` hold junk and `GH_CONFIG_DIR` is under the temp dir; the feedback tests abort unless `command -v gh` is the fake. Tests delete nothing: entries are cleared by posting them through the fake.
+In `plugin-dev/test-hstack.sh` (140 checks with the hook tests) and `tests/skills.test.mjs`. A fake `gh` first on `PATH` appends its arguments to a log and answers from files in the temp dir. No test can reach GitHub even if `PATH` slips (the real `gh` may read its token from the keychain): for the whole file, `HTTPS_PROXY` points at a dead local port, `GH_TOKEN` and `GITHUB_TOKEN` hold junk and `GH_CONFIG_DIR` is under the temp dir; the feedback tests abort unless `command -v gh` is the fake. Tests delete nothing: entries are cleared by posting them through the fake.
 
 Baseline on the clean branch, before any change: `bun test ./tests` 727 pass, 65 skip, 0 fail; `sh` and `dash plugin-dev/test-hstack.sh` 0 failures.
 
@@ -205,7 +205,7 @@ Baseline on the clean branch, before any change: `bun test ./tests` 727 pass, 65
 - [x] **The loop is not disturbed.** A plain and a skipped `phase` exit 0 and print nothing; `phase` fails when its line cannot be written; the capped stop prints nothing, records one `intervention` only on a started run and none the second time; an empty `started` breaks neither the capped stop nor `phase`.
 - [x] **The pass.** One stop goes through and the next blocks; a pass on a finished run is consumed by that stop; a new process drops a stale one; a mistyped verb writes none; it goes to the session's repository wherever the verb ran.
 - [x] **The state dir.** Entries and `top` survive `start`; nothing is written inside the project repository (`git status --porcelain --ignored` unchanged); a file whose name is not an entry id is no entry and its name is not printed; an id that is not an entry id is refused.
-- [x] **Dismiss** takes an entry off the list with its text, keeps both files, calls no `gh`, refuses an unknown id, a posted entry and one already dismissed; the reason of a dismissed stumble is still netted; dismissed entries survive `start`.
+- [x] **Dismiss** takes an entry off the list with its text, keeps both files, calls no `gh`, takes several ids, clears a refused entry (whose id `draft` prints), refuses an unknown id, a posted entry and one already dismissed; the reason of a dismissed stumble is still netted; dismissed entries survive `start`.
 - [x] **Collect** groups by phase and kind, lists each issue's summary, and asks for the open issues with the label on the repository.
 - [x] **The skill file** has its name, `disable-model-invocation: true`, the quoted heredoc for `add` and `describe`, and the README names the plugin's version.
 

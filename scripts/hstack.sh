@@ -7,7 +7,7 @@
 # fields; never an entry's detail. gh is needed by post, label and collect only.
 # usage: hstack.sh dir|start|phase <name> [skipped: <why>]|missing|lock <file>...|gate|elapsed|done|hook-start|hook-stop
 #        hstack.sh feedback add <kind> <phase|none> <description on stdin|describe <id> <description on stdin
-#        hstack.sh feedback draft|post <id> <code>|dismiss <id>|label|collect
+#        hstack.sh feedback draft|post <id> <code>|dismiss <id>...|label|collect
 
 PHASES='setup oracle build gate review explore mutate final'
 # the first four are what a run does (escaped-bug: a bug in the product that the loop let through); the last three are
@@ -224,6 +224,7 @@ if [ "$cmd" = feedback ]; then
       record "$1" "$2" '' $bare
       [ -f "$E" ] || { echo "hstack: could not write $E" >&2; exit 1; }
       echo "recorded: $E"
+      echo "id: ${S##*/}/${E##*/}"
       describe "$E" || echo "no description yet: give one with feedback describe ${S##*/}/${E##*/}" ;;
 
     describe)
@@ -247,7 +248,7 @@ if [ "$cmd" = feedback ]; then
              printf 'title: %s\n%s\nconfirm: %s\n\n' "$title" "$(printf '%s\n' "$body" | sed 's/^/| /')" "$(code)" ;;
           2) printf 'undescribed %s: %s at %s\nlocal: %s\n\n' "$id" "$kind" "$phase" "$f" ;;
           # a refused entry is named, never shown: its lines may hold what must not be printed
-          *) printf 'refused: %s: %s\n\n' "$f" "$why" ;;
+          *) printf 'refused: %s: %s\nid: %s\n\n' "$f" "$why" "$id" ;;
         esac
       done
       [ $none -eq 0 ] || echo "no unposted feedback entry" ;;
@@ -269,11 +270,14 @@ if [ "$cmd" = feedback ]; then
       mkdir -p "${f%/*}/posted" && echo "posted: $url" >> "$f" && mv "$f" "$f.md" "${f%/*}/posted/"
       echo "$url" ;;
 
-    dismiss) # off the list, not off the disk: a stumble the user will not post
-      entry "$1"
-      mkdir -p "${f%/*}/dismissed" && mv "$f" "${f%/*}/dismissed/" || { echo "hstack: could not dismiss $f" >&2; exit 1; }
-      [ ! -e "$f.md" ] && [ ! -L "$f.md" ] || mv "$f.md" "${f%/*}/dismissed/"
-      echo "dismissed: ${f%/*}/dismissed/${f##*/}" ;;
+    dismiss) # off the list, not off the disk: stumbles the user will not post, or entries the script refuses
+      [ $# -gt 0 ] || { echo "usage: hstack.sh feedback dismiss <id>..., each id as feedback draft printed it" >&2; exit 1; }
+      for i in "$@"; do
+        entry "$i"
+        mkdir -p "${f%/*}/dismissed" && mv "$f" "${f%/*}/dismissed/" || { echo "hstack: could not dismiss $f" >&2; exit 1; }
+        [ ! -e "$f.md" ] && [ ! -L "$f.md" ] || mv "$f.md" "${f%/*}/dismissed/"
+        echo "dismissed: ${f%/*}/dismissed/${f##*/}"
+      done ;;
 
     label) f=''; need_gh; gh label create feedback --repo "$REPO" --description 'Reports posted by hstack-feedback' ;;
 
@@ -289,7 +293,7 @@ if [ "$cmd" = feedback ]; then
         awk -F'\t' '$1 != k { if (k != "") printf "%s: %d%s\n", k, n, l; k = $1; n = 0; l = "" }
           { n++; l = l "\n  #" $2 " " $3 } END { if (k != "") printf "%s: %d%s\n", k, n, l }' ;;
 
-    *) echo "usage: hstack.sh feedback add <kind> <phase|none>|describe <id>|draft|post <id> <code>|dismiss <id>|label|collect" >&2; exit 1 ;;
+    *) echo "usage: hstack.sh feedback add <kind> <phase|none>|describe <id>|draft|post <id> <code>|dismiss <id>...|label|collect" >&2; exit 1 ;;
   esac
   exit
 fi
