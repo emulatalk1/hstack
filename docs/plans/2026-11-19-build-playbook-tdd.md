@@ -224,6 +224,8 @@ test('hstack:build-implement is step 4: the loop can invoke it, and it sends any
   expect(front).toMatch(/^name: build-implement$/m);
   expect(front).toMatch(/^description: .*invoke hstack:build, not this\.$/m);
   expect(front).not.toMatch(/disable-model-invocation/); // the playbook must be able to trigger it
+  // the cycle is one test at a time, and a change after green starts a new one: the first run did neither
+  for (const s of ['one decided edge or rule per cycle', 'Only then write the next test', 'is a new cycle and starts with a test that fails', "the cycle's refactor step changes none of these"]) expect(text).toContain(s);
   for (const s of ['do nothing here and invoke `hstack:build`', 'its first word must be `implement`', 'never run `$H start` again', 'tdd.md', 'writing-good-tests.md', '$S/spec.md', 'without editing them', 'type-check']) expect(text).toContain(s);
 });
 ```
@@ -247,7 +249,7 @@ Do the items below in order, then go back to the loop for the commit and `$H pha
 1. **Read** the code the requirement touches and the neighbouring features that do similar things.
 2. **Spec.** Write `$S/spec.md`: numbered behaviours; every entry point the feature is reached by (each page, endpoint, command, public function, import or export path, serializer, setting); each open edge from the oracle report and every other edge you see (empty, missing, invalid, boundary values, errors, permissions, existing data, repeated actions, ordering, other entry points) with a decision that cites the requirement or the existing code it follows. Decide an edge the way this codebase already decides the same case.
 3. **The test rules.** Read `tdd.md` and `writing-good-tests.md` in this skill's base directory, both to the end. From here to the end of the run they are the rules for every test and every line of product code you write.
-4. **Implement,** in the style of the neighbouring code, by the cycle of the test rules, one decided edge or rule per cycle: write one test where the project's test command finds it, run it and see it fail on the missing behaviour, write the code for that one test, run it and see it pass. Only then write the next test: never several tests before their code. A change to product code after its test passes is a new cycle and starts with a test that fails. Run tests in their single-file or single-target form from the capabilities.
+4. **Implement,** in the style of the neighbouring code, by the cycle of the test rules, one decided edge or rule per cycle: write one test where the project's test command finds it, run it and see it fail on the missing behaviour, write the code for that one test, run it and see it pass. Only then write the next test: never several tests before their code. A change to what the product does after its test passes (an output, a message, an exit code) is a new cycle and starts with a test that fails; the cycle's refactor step changes none of these. Run tests in their single-file or single-target form from the capabilities.
 5. **The oracle's tests.** Make them pass **without editing them**. If one contradicts the requirement or a fact of the existing public interface, use the dispute rule of step 4 in the loop.
 6. **Check.** Run the tests near the change, then the widest suite the time allows, then build, type-check and lint as the capabilities have them. No failure the base did not have.
 ```
@@ -277,6 +279,7 @@ test('build is a playbook: step 4 invokes hstack:build-implement', async () => {
   expect(await skill('hstack-feedback')).toContain('`setup`, `oracle`, `implement`, `gate`');
   expect(loop).toContain('(or dispute it, step 4)');
   expect(loop).toContain('**Dispute** (at most 2 rounds)');
+  expect(loop).toContain('a fix gets a test that fails first, but a lint, format or type fix'); // step 9 agrees with the test rules
   expect(loop).not.toContain('numbered behaviours'); // the how of step 4 lives in hstack:build-implement
 });
 ```
@@ -346,7 +349,7 @@ HSTACK_STATE=<state> claude -p "<the task, its interface sheet and the DONE line
 
 ## After the review
 
-Task 4's review (one fresh reviewer on the most capable model, read-only) found no Critical defect, 4 Important and 5 Minor. Each was fixed with a check that failed first, but the last two. The exact texts above are the texts as built, after these fixes; the expected counts in the tasks' steps are those of the plan as approved, and "Results" has the counts measured.
+Task 4's review (one fresh reviewer on the most capable model, read-only) found no Critical defect, 4 Important and 5 Minor. Each was fixed with a check that failed first, but the last two. The exact texts above, the three test blocks included, are the texts as they stand at the branch's tip; the expected counts in the tasks' steps are those of the plan as approved, and "Results" has the counts measured.
 
 | # | Finding | What was done | Its check |
 |---|---|---|---|
@@ -368,10 +371,24 @@ Task 5 found two places where the builder left the test rules, and the review ha
 | What | Before | After | Its check |
 |---|---|---|---|
 | Six tests written in one batch, then the code in one edit | item 4 of `hstack:build-implement`: "one decided edge or rule at a time, by the cycle of the test rules: its test …, the run that fails …, the code, the run that passes" | "one decided edge or rule per cycle: write one test …, run it and see it fail …, write the code for that one test, run it and see it pass. Only then write the next test: never several tests before their code." | bun: both sentences |
-| A change to the code after green with no failing test | nothing said | "A change to product code after its test passes is a new cycle and starts with a test that fails." | bun: the sentence |
+| A change to the code after green with no failing test | nothing said | "A change to what the product does after its test passes (an output, a message, an exit code) is a new cycle and starts with a test that fails; the cycle's refactor step changes none of these." | bun: both halves |
 | Step 9 of the playbook said "a fix gets a test", against "In hstack", which lets a lint or type fix go without one | "Fix what fails (a fix gets a test)." | "Fix what fails: a fix gets a test that fails first, but a lint, format or type fix, which no test can show." | bun: the sentence |
 
 The text of `skills/build-implement/SKILL.md` in Task 2 above is the text after this fix.
+
+The second row was first written as "A change to product code after its test passes is a new cycle", which contradicted the refactor step of the copied rules: a refactor is a change to product code after green. The second run below ran on that first wording; the sentence was corrected after it, and no run has read the corrected sentence.
+
+### The second run
+
+The user's word covered the fixes; this run was the author's own decision, not asked for, and it cost USD 3.05 (USD 5.87 for both runs). One more run of Task 5's command, on commit `dadc45c` and on a clean clone of the fixture at its first commit (no untracked cache folders this time), to see whether the new wording of item 4 changed what the builder does. It replied `DONE`: 5 minutes 24 seconds, USD 3.05, 22 turns, 0 permission denials, 8 steps recorded, `done` equals HEAD, 0 Stop blocks; agents: oracle 1, reviewer 1, explorer 1, mutator 1.
+
+- **The skill and the rules:** as in the first run (the Skill call, `$H missing`, both files printed by one `cat`).
+- **One test, then its code: yes, for the one edge that needed code.** The oracle's tests ran first and failed (7 of 8). After the code for them, the builder wrote one test (a negative N), ran it alone (1 test, 1 failure: exit code 0 where 2 was expected), then wrote the code for it. The first run had written six tests at once.
+- **The other three edge tests were written together,** in the same edit as that code, and passed on their first run; they were never seen failing. `spec.md` marks each as a guard ("Holds from … (guard test)"). This is an open point, not compliance: the guard item of "In hstack" says "the codebase already handles", and here the edges were handled by code the builder had written one call earlier, not by the base. In this run only the mutation step checked those three tests.
+- **A change after green with no failing test: again.** Before the commit of step 4 the builder moved the check for a negative N from one place to another, and with it the wording of the message for a value that is not an integer changed. No test asserts that wording, and none failed first. Under the corrected sentence this is either a refactor that should not have changed a message, or a change of behaviour that needed a test.
+- **Parts of "In hstack" this run exercised, which the first did not:** guards (above); a fix from review or explore with its test first (a test added and failing, 1 of 5, then the code, then 14 passing); a mutant-killing test (written, the mutant applied and the test failing, the file restored with `git checkout`, the suite passing). Still not exercised by either run: an empty interface, a base with failures, a lint or type fix.
+
+Two runs on one small fixture: they show what the builder did twice, not what it will do on another project.
 
 Seen in Task 5's transcript afterwards and not changed: the first mutation agent refused to start because the tree had two untracked cache folders, left there by the fixture's own preparation, and the builder started a second one after clearing the status. A project whose test runs leave untracked files and ignores none of them would meet the same refusal; telling the builder to delete untracked files could delete something the user keeps, so the playbook is left as it is.
 
@@ -383,11 +400,11 @@ Seen in Task 5's transcript afterwards and not changed: the first mutation agent
 - **Task 2:** the skill written; `bun test ./tests/skills.test.mjs` 4 pass.
 - **Task 3:** before the edits the new bun test failed and 18 sh checks failed on the step's name; after them `bun test ./tests/skills.test.mjs` 5 pass, `sh` and `dash` 140 ok, 0 FAIL; `grep -rn 'phase build' skills scripts agents` prints nothing.
 - **Task 4:** version 0.3.2. After the review's fixes: `bun test ./tests` 731 pass, 65 skip, 0 fail; `sh plugin-dev/test-hstack.sh` and `dash plugin-dev/test-hstack.sh` 141 ok, 0 FAIL each; `bun scripts/okf-check.mjs docs` OK.
-- **Task 5** (2026-11-19, on commit `f03aef7`, one run, not repeated). The fixture: a word-count program in one file with one test in the language's own test runner; the task: add `--top N`, with an interface sheet of three lines and the DONE line. The command of step 2 as written, in the background. The first event listed plugin `hstack` with the skills `hstack:build` and `hstack:build-implement`, the harness's own built-in plugins and no other; mode `dontAsk`; the model was the session's default (its name is kept out of the repository). The run replied `DONE`. No call was refused, so the list of allowed tools did not get in the way.
+- **Task 5** (2026-11-19, on commit `f03aef7`; a second run after the fix is under "After the run"). The fixture: a word-count program in one file with one test in the language's own test runner; the task: add `--top N`, with an interface sheet of three lines and the DONE line. The command of step 2 as written, in the background. The first event listed plugin `hstack` with the skills `hstack:build` and `hstack:build-implement`, the harness's own built-in plugins and no other; mode `dontAsk`; the model was the session's default (its name is kept out of the repository). The run replied `DONE`. No call was refused, so the list of allowed tools did not get in the way.
   1. **The skill and the rules: yes.** After `phase oracle` the builder called the Skill tool with `hstack:build-implement`, then ran `$H missing` (first word `implement`) and printed `tdd.md` and `writing-good-tests.md` with one Bash `cat`: 19,539 characters, the last line of each file in the result, not cut. It used no Read call.
   2. **A failing run before the code: yes, with two things the wording did not get.** The builder wrote one test file of 6 tests, ran it (6 failures, 1 error) and only then edited the source file for the first time; the suite then passed (14 tests). But it wrote the six tests in one batch and the code in one edit, not "one decided edge or rule at a time". And after the suite was green it changed the code once more (a clearer message for a value that is not an integer) with no failing test before that change: the existing test of that edge passed before and after.
   3. **Build and lint in step 4: yes.** `capabilities.md` has a build command (a syntax check; the project has no type checker) and `lint | unavailable`. The build command ran twice inside step 4, after each code edit.
   4. **The run as a whole: yes.** 8 steps recorded (`setup oracle implement gate review explore mutate final`), `done` equals HEAD, the tree clean, 0 Stop blocks, 0 permission denials; no file was deleted whole and written again. Agents called: oracle 1, reviewer 1, explorer 1, mutator 2. One tool result was an error: the first command ended on a `cat` of a file that does not exist. The loop recorded one stumble by itself, `setup-failure at setup` (the unavailable linter).
   5. **Scale:** 4 minutes 55 seconds, USD 2.82, 24 turns. Run 2 of 2026-11-10 was about 3 minutes and USD 1.09 on another model and plugin version; this is not a comparison.
 
-  What the run does not show: anything about a project with a slow suite, a compiled language, or a base with failures; whether a second run would behave the same; whether the product is better than without the rules. Reading 2's two misses are the wording's to answer (Task 5 step 4): a proposal, not built, is to say in step 4's item 4 "one test, its failing run, its code; then the next", and to name a change made after green as a new cycle.
+  What the run does not show: anything about a project with a slow suite, a compiled language, or a base with failures; whether a second run would behave the same; whether the product is better than without the rules. Reading 2's two misses were the wording's to answer (Task 5 step 4); the wording was changed afterwards, in `dadc45c` and the commit after it ("After the run").

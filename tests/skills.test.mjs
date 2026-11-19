@@ -66,7 +66,7 @@ test('hstack:build-implement is step 4: the loop can invoke it, and it sends any
   expect(front).toMatch(/^description: .*invoke hstack:build, not this\.$/m);
   expect(front).not.toMatch(/disable-model-invocation/); // the playbook must be able to trigger it
   // the cycle is one test at a time, and a change after green starts a new one: the first run did neither
-  for (const s of ['one decided edge or rule per cycle', 'Only then write the next test', 'is a new cycle and starts with a test that fails']) expect(text).toContain(s);
+  for (const s of ['one decided edge or rule per cycle', 'Only then write the next test', 'is a new cycle and starts with a test that fails', "the cycle's refactor step changes none of these"]) expect(text).toContain(s);
   for (const s of ['do nothing here and invoke `hstack:build`', 'its first word must be `implement`', 'never run `$H start` again', 'tdd.md', 'writing-good-tests.md', '$S/spec.md', 'without editing them', 'type-check']) expect(text).toContain(s);
 });
 
