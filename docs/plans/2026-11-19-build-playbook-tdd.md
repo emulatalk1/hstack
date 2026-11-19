@@ -12,6 +12,7 @@ verified:
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T17:22:42+07:00" }
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T20:45:11+07:00" }
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T20:58:58+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-19T21:34:30+07:00" }
 ---
 
 # Build Playbook and TDD Implementation Plan
@@ -72,6 +73,8 @@ Approved by the user on 2026-11-19, on a condition: "nếu advisor không có v�
 5. this section, the plan's `status` and its `verified` list.
 
 The approval covers a commit on branch `build-playbook` when Task 4 ends and a second one for Task 5's results; push and merge wait for the user's word.
+
+**Merge.** On 2026-11-19, after the three runs and the advisor's last read (nothing blocking), the user asked for it: "Merge và push". The rule for a test that passes at once on the run's own code (prove it by breaking the code) was put to the user several times and the user did not rule on it; the author kept it on the advisor's recommendation, told the user so, and the user then asked for the merge.
 
 ## Global Constraints
 
