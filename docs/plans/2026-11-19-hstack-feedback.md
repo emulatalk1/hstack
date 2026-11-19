@@ -6,6 +6,7 @@ status: draft
 generated: { by: claude-code/2.1.327, at: "2026-11-19T10:28:18+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T10:52:00+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-19T11:09:12+07:00" }
 ---
 
 # hstack-feedback Plan
@@ -181,9 +182,11 @@ Baseline on the clean branch (159a89c plus this plan), before any change: `bun t
 
 ## Approval
 
-The user's own word is needed on the plan, and on these four:
+Approved by the user on 2026-11-19 ("duyệt"), as written. The four rulings stand as the plan recommends, which was also the advisor's suggestion:
 
-1. **The cap entry.** Record an `intervention` automatically when the stop gate gives up on a started run (recommended), or keep `intervention` flag-only.
-2. **The bench ref.** Push `refs/bench/plugins/hstack-653af83` to origin so the README's pin resolves for everyone (recommended, with the push the user approves at the end), or leave it local and have the note say so.
-3. **The pass.** A `feedback` verb lets the turn it runs in end once without a stop-hook block (recommended: without it, a feedback turn on a stalled run is blocked 3 times and pushed to resume the build), or no pass, and the skill only tells the agent to ignore the blocks.
+1. **The cap entry.** An `intervention` is recorded automatically when the stop gate gives up on a started run.
+2. **The bench ref.** `refs/bench/plugins/hstack-653af83` is pushed to origin inside the final push, which the user approves separately: one explicit refspec for that ref alone, no force, prune or mirror, after a dry run that lists only that one new ref. The README gives the fetch line, because a plain clone does not fetch that namespace. If the user declines the push, the note says the ref is local.
+3. **The pass.** A `feedback` verb lets the turn it runs in end once without a stop-hook block.
 4. **The version.** 0.3.0.
+
+Offered and not taken: `collect` printing the local entry's path beside each issue posted from this machine.
