@@ -4,6 +4,8 @@ set -u
 H="${HSTACK_SH:-$(cd "$(dirname "$0")/.." && pwd)/scripts/hstack.sh}"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 export HSTACK_STATE="$T/state"
+# No test may reach GitHub, even if PATH slips past the fake gh below: a dead proxy and junk tokens.
+export HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 GH_TOKEN=junk GITHUB_TOKEN=junk GH_CONFIG_DIR="$T/ghconfig"
 fails=0
 ok() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 1)); fi; }
 stop() { printf '{"hook_event_name":"Stop","stop_hook_active":false}' | CLAUDE_PROJECT_DIR="$T/r" sh "$H" hook-stop; }
@@ -31,6 +33,7 @@ start compact
 ok 'a compaction does not give the blocks back' '[ -z "$(stop)" ]'
 start resume
 ok 'a new process gets its blocks back' 'stop | grep -q block'
+ok 'a capped stop with no run records no feedback' '[ ! -d "$S/feedback" ]'
 git checkout -q -- src/a.txt
 
 # a run
@@ -81,6 +84,160 @@ ok 'elapsed prints minutes' '[ "$(sh "$H" elapsed)" = 0 ]'
 sh "$H" start >/dev/null
 ok 'start moves the earlier run to old/' '[ -f "$S/old/"*/base ] && [ ! -f "$S/done" ] && [ -f "$S/session-head" ]'
 ok 'state is never in the work tree or .git' '[ -z "$(git status --porcelain)" ] && [ ! -e .git/hstack ] && case $S in "$T/state/"*) true;; *) false;; esac'
+
+# feedback: entries in the state dir, drafts from an allow-list, a fake gh that logs its arguments
+mkdir -p "$T/bin"
+cat > "$T/bin/gh" <<'EOF'
+#!/bin/sh
+D=$(dirname "$0")
+{ printf 'gh'; for a in "$@"; do printf ' [%s]' "$a"; done; echo; } >> "$D/log"
+case "$1 $2" in
+  'auth status') ! grep -q logged-out "$D/mode" ;;
+  'label list') ! grep -q label-fail "$D/mode" && cat "$D/labels" ;;
+  'label create') echo feedback >> "$D/labels" ;;
+  'issue create') echo 'https://github.com/x/y/issues/7' ;;
+  'issue list') cat "$D/issues" ;;
+esac
+EOF
+chmod +x "$T/bin/gh"
+PATH="$T/bin:$PATH"; export PATH
+[ "$(command -v gh)" = "$T/bin/gh" ] || { echo "FAIL the fake gh is not first on PATH: feedback tests not run"; exit 1; }
+echo feedback > "$T/bin/labels"; : > "$T/bin/mode"; : > "$T/bin/log"
+log() { cat "$T/bin/log"; }
+FB="$S/feedback"
+entries() { ls "$FB" 2>/dev/null | grep -v '^posted$'; }
+F() { sh "$H" feedback "$@"; }
+head_of() { sed -n '/^$/q;p' "$1"; }
+# posts every unposted entry through the fake gh, so the next test starts with none (tests delete nothing)
+flush() { F draft | sed -n 's/^entry //p;s/^confirm: //p' | while read -r i && read -r c; do F post "$i" "$c" >/dev/null; done; }
+before=$(git status --porcelain --ignored)
+
+# capture inside the loop (the run above already skipped explore)
+ok 'the first run recorded its skipped step' '[ "$(entries | wc -l | tr -d " ")" = 1 ]'
+flush
+ok 'a plain phase prints nothing and records nothing' '[ -z "$(sh "$H" phase setup 2>&1)" ] && [ -z "$(entries)" ]'
+sh "$H" phase mutatex skipped: time
+ok 'a name outside PHASES records nothing' '[ -z "$(entries)" ]'
+sh "$H" lock tests/new_test.txt >/dev/null; sh "$H" lock tests/new_test.txt >/dev/null
+ok 'a skipped phase still exits 0 and prints nothing' '[ -z "$(sh "$H" phase explore skipped: /Users/acme/secret-app cannot run 2>&1)" ]'
+e1=$(entries)
+ok 'a skipped step records a setup-failure, the why in the detail only' 'head_of "$FB/$e1" | grep -qx "kind=setup-failure" && head_of "$FB/$e1" | grep -qx "phase=explore" && grep -q "secret-app" "$FB/$e1" && ! head_of "$FB/$e1" | grep -q secret'
+ok 'the counts come from the state files' 'head_of "$FB/$e1" | grep -qx "oracle_files=1" && head_of "$FB/$e1" | grep -qx "dispute_rounds=1" && head_of "$FB/$e1" | grep -qx "skipped_phases=2" && head_of "$FB/$e1" | grep -qx "elapsed=0"'
+ok 'a skip reason never reaches a draft' 'F draft | grep -qx "phase: explore" && ! F draft | grep -Eq "acme|secret|cannot|Users"'
+ok 'draft names the local file and works outside a repository' '(cd "$T" && sh "$H" feedback draft | grep -qx "local: $FB/$e1")'
+id=$(F draft | sed -n 's/^entry //p'); code=$(F draft | sed -n 's/^confirm: //p')
+: > "$T/bin/log"
+
+# nothing is posted without gh, a login, the label, or the code the user saw
+mkdir "$T/nogh"; for f in /usr/bin/* /bin/*; do [ "${f##*/}" = gh ] || ln -s "$f" "$T/nogh/" 2>/dev/null; done
+[ -e "$T/nogh/git" ] || ln -s "$(command -v git)" "$T/nogh/git"
+ok 'the no-gh PATH holds no gh' '! PATH="$T/nogh" command -v gh >/dev/null 2>&1'
+ok 'no gh keeps the file and prints its path' 'PATH="$T/nogh" sh "$H" feedback post "$id" "$code" | grep -q "kept: $FB/$e1" && [ -f "$FB/$e1" ] && ! log | grep -q create'
+echo logged-out > "$T/bin/mode"
+ok 'a logged-out gh keeps the file and prints its path' 'F post "$id" "$code" | grep -q "kept: $FB/$e1" && [ -f "$FB/$e1" ] && ! log | grep -q create'
+: > "$T/bin/mode"
+ok 'a wrong confirm code posts nothing' '! F post "$id" 123 >/dev/null 2>&1 && ! log | grep -q create'
+ok 'an id that is not an entry id is refused' '! F post "../$e1" "$code" >/dev/null 2>&1 && ! F post "$id/../x" "$code" >/dev/null 2>&1'
+echo bug > "$T/bin/labels"
+ok 'a missing label posts nothing and creates none' '! F post "$id" "$code" >/dev/null && F post "$id" "$code" | grep -q "feedback label" && [ -f "$FB/$e1" ] && ! log | grep -q create'
+echo label-fail > "$T/bin/mode"
+ok 'a failed label list posts nothing' '! F post "$id" "$code" >/dev/null && [ -f "$FB/$e1" ] && ! log | grep -q create'
+: > "$T/bin/mode"
+F label >/dev/null
+ok 'only feedback label creates the label' 'log | grep -q "^gh \[label\] \[create\] \[feedback\] \[--repo\] \[emulatalk1/hstack\]"'
+
+# the post
+: > "$T/bin/log"
+shown=$(F draft | sed -n '/^title: /,/^confirm: /p' | sed -e '1d' -e '$d')
+out=$(F post "$id" "$code")
+ok 'post creates the issue with the repo, the label and the shown title' 'log | grep -q "^gh \[issue\] \[create\] \[--repo\] \[emulatalk1/hstack\] \[--label\] \[feedback\] \[--title\] \[\[feedback\] explore setup-failure (hstack [0-9.]*)\] \[--body\] \[plugin version: "'
+ok 'the posted body is the shown body' '[ -n "$shown" ] && [ "$(log | sed -n "/issue\] \[create\]/,\$p" | sed -e "1s/.*\[--body\] \[//" -e "\$s/\]\$//")" = "$shown" ]'
+ok 'the posted text holds nothing of the why' '! log | grep -Eq "acme|secret|cannot|Users"'
+ok 'the posted entry moves to posted/ with its URL' '[ -f "$FB/posted/$e1" ] && grep -qx "posted: https://github.com/x/y/issues/7" "$FB/posted/$e1" && echo "$out" | grep -q "issues/7" && [ -z "$(entries)" ]'
+ok 'every gh call names the repo' '! log | grep "^gh " | grep -v "^gh \[auth\]" | grep -vq "\[--repo\] \[emulatalk1/hstack\]"'
+
+# a time skip is a cost; another repo by the setting
+sh "$H" phase mutate skipped: time, 185 min
+e2=$(entries)
+ok 'a time skip records a cost' 'head_of "$FB/$e2" | grep -qx "kind=cost" && head_of "$FB/$e2" | grep -qx "phase=mutate"'
+: > "$T/bin/log"
+HSTACK_FEEDBACK_REPO=me/fork sh "$H" feedback post "$(F draft | sed -n 's/^entry //p')" "$(F draft | sed -n 's/^confirm: //p')" >/dev/null
+ok 'HSTACK_FEEDBACK_REPO changes the repo on every call' 'log | grep -q "\[issue\] \[create\] \[--repo\] \[me/fork\]" && ! log | grep "^gh " | grep -v "^gh \[auth\]" | grep -vq "\[--repo\] \[me/fork\]"'
+ok 'a repo that is not owner/name is refused' '! HSTACK_FEEDBACK_REPO="a b" sh "$H" feedback collect >/dev/null 2>&1 && ! HSTACK_FEEDBACK_REPO="a/b/c" sh "$H" feedback collect >/dev/null 2>&1'
+
+# the allow-list: a head with anything else is refused, by draft and by post
+: > "$T/bin/log"
+B="$FB/20000101-000000-1"
+bad() { printf '%s\n' "$@" '' 'detail hello' > "$B"; }
+refused() { F draft | grep -qx "refused: $B" && ! F draft | grep -Eq "^entry .*20000101|hello" && F post "${S##*/}/20000101-000000-1" 0 2>&1 | grep -q refused && ! log | grep -q create; }
+bad version=0.3.0 kind=cost phase=/a/path;                 ok 'a path as a value is refused' refused
+bad version=0.3.0 kind=cost phase=build note=hello;        ok 'a field outside the list is refused' refused
+bad version=0.3.0 kind=cost phase=build elapsed=12x;       ok 'a count that is not a number is refused' refused
+bad version=0.3.0 kind=cost kind=cost phase=build;         ok 'a field given twice is refused' refused
+bad kind=cost phase=build;                                 ok 'a missing version is refused' refused
+bad version=0.3.0 kind=bug phase=build;                    ok 'a kind outside the four is refused' refused
+bad version=0.3.0 kind=cost 'phase=build and more';        ok 'text after a phase name is refused' refused
+: > "$B";                                                  ok 'an empty entry is refused' refused
+bad version=0.3.0 kind=cost phase=build elapsed=12
+ok 'the same entry with only listed fields is accepted' 'F draft | grep -q "^entry .*/20000101-000000-1\$" && F draft | grep -qx "title: \[feedback\] build cost (hstack 0.3.0)"'
+flush
+
+# unavailable capabilities at setup
+printf 'suite | x | probe: pass | canary: pass |\nui | unavailable: no headless driver in /opt/acme\n' > "$S/capabilities.md"
+sh "$H" phase setup
+e=$(entries)
+ok 'an unavailable capability records a setup-failure at setup' 'head_of "$FB/$e" | grep -qx "unavailable_capabilities=1" && head_of "$FB/$e" | grep -qx "phase=setup" && grep -q "/opt/acme" "$FB/$e" && ! F draft | grep -q acme'
+flush
+
+# the capped stop on a started run
+start resume; stop >/dev/null; stop >/dev/null; stop >/dev/null
+out=$(stop)
+e=$(entries)
+ok 'the capped stop prints nothing and records one intervention' '[ -z "$out" ] && [ "$(echo "$e" | wc -l | tr -d " ")" = 1 ] && head_of "$FB/$e" | grep -qx "kind=intervention" && head_of "$FB/$e" | grep -qx "phase=oracle" && head_of "$FB/$e" | grep -qx "stop_blocks=3"'
+out=$(stop)
+ok 'a second capped stop prints nothing and records none' '[ -z "$out" ] && [ "$(entries)" = "$e" ]'
+start compact
+ok 'a compaction still does not give the blocks back' '[ -z "$(stop)" ] && [ "$(entries)" = "$e" ]'
+
+# the pass: a turn the user spends on feedback ends once
+start resume
+flush
+ok 'a feedback verb lets the turn end once, with no block counted' '[ -z "$(stop)" ] && [ "$(cat "$S/stop-blocks")" = 0 ] && [ -z "$(entries)" ]'
+ok 'the next stop blocks again' 'stop | grep -q block'
+F draft >/dev/null; start resume
+ok 'a new process drops a stale pass' '[ ! -f "$S/pass" ]'
+
+# flags
+echo $(( $(date +%s) - 200000 )) > "$S/started"
+F add intervention build I had to restart it >/dev/null
+e=$(entries)
+ok 'a flag writes its words to the detail only' 'head_of "$FB/$e" | grep -qx "kind=intervention" && grep -q "restart it" "$FB/$e" && ! head_of "$FB/$e" | grep -q restart'
+ok 'an elapsed over a day is left out, the counts stay' '! head_of "$FB/$e" | grep -q "^elapsed=" && head_of "$FB/$e" | grep -q "^oracle_files="'
+flush
+F add escaped-bug review the form took an empty name >/dev/null
+e3=$(entries)
+ok 'a flagged escaped-bug on an unfinished run has no elapsed and no counts' '[ "$(head_of "$FB/$e3" | wc -l | tr -d " ")" = 3 ] && grep -q "empty name" "$FB/$e3"'
+ok 'add refuses a kind or a phase outside the lists' '! F add bug review x >/dev/null 2>&1 && ! F add cost nowhere x >/dev/null 2>&1 && ! F add "escaped-bug cost" review x >/dev/null 2>&1 && [ "$(entries)" = "$e3" ]'
+
+# entries survive start; a finished run gives an escaped bug its numbers
+sh "$H" start >/dev/null
+ok 'entries survive start' '[ -f "$FB/$e3" ] && [ -f "$FB/posted/$e1" ] && [ -z "$(ls -d "$S"/old/*/feedback 2>/dev/null)" ]'
+flush
+for p in setup oracle build gate review explore mutate final; do sh "$H" phase $p; done
+sh "$H" done >/dev/null
+echo $(( $(cat "$S/ended") - 600 )) > "$S/started"
+ok 'add prints the path of the entry' 'F add escaped-bug review found a week later | grep -q "$FB/"'
+e=$(entries)
+ok 'with done, elapsed is ended minus started and the counts are there' 'head_of "$FB/$e" | grep -qx "elapsed=10" && head_of "$FB/$e" | grep -qx "oracle_files=0" && head_of "$FB/$e" | grep -qx "skipped_phases=0"'
+ok 'a pass written on a finished run is consumed by that stop' '[ -f "$S/pass" ] && [ -z "$(stop)" ] && [ ! -f "$S/pass" ]'
+
+# collect
+printf '12\t[feedback] explore setup-failure (hstack 0.3.0)\n15\t[feedback] explore setup-failure (hstack 0.3.1)\n9\t[feedback] final intervention (hstack 0.3.0)\n3\tsomething else\n' > "$T/bin/issues"
+: > "$T/bin/log"
+ok 'collect groups the open issues by phase and kind' 'F collect | grep -qx "explore setup-failure: 2: #12 #15" && F collect | grep -qx "final intervention: 1: #9" && F collect | grep -qx "something else: 1: #3"'
+ok 'collect asks for the open issues with the label, on the repo' 'log | grep -q "^gh \[issue\] \[list\] \[--repo\] \[emulatalk1/hstack\] \[--label\] \[feedback\] \[--state\] \[open\]"'
+
+ok 'feedback wrote nothing inside the project repository' '[ "$(git status --porcelain --ignored)" = "$before" ] && [ ! -e .git/hstack ] && case $FB in "$T/state/"*) true;; *) false;; esac'
 
 echo "$fails failure(s)"
 [ $fails -eq 0 ]

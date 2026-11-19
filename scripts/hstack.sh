@@ -2,16 +2,66 @@
 # hstack run state and the two hooks. POSIX sh + git only: the project's box may have no other runtime.
 # State lives outside the work tree and outside .git (Claude Code guards writes into .git), in
 # ${HSTACK_STATE:-$HOME/.hstack} (or /tmp/.hstack without HOME)/<checksum of the git dir>, so it is never committed and never part of the product.
+# Feedback: each stumble of a run is recorded in S/feedback/, and only `feedback post`, which the user invokes, sends
+# anything out: a draft built from fixed fields, never from an entry's detail. gh is needed by post, label and collect only.
 # usage: hstack.sh dir|start|phase <name> [skipped: <why>]|missing|lock <file>...|gate|elapsed|done|hook-start|hook-stop
+#        hstack.sh feedback add <kind> <phase> [what happened]|draft|post <id> <code>|label|collect
 
 PHASES='setup oracle build gate review explore mutate final'
+KINDS='setup-failure intervention escaped-bug cost'
 MAX_BLOCKS=3
+ROOT="${HSTACK_STATE:-${HOME:-/tmp}/.hstack}"
 
 state() {
   G=$(git rev-parse --absolute-git-dir 2>/dev/null) || return 1
-  S="${HSTACK_STATE:-${HOME:-/tmp}/.hstack}/$(printf '%s' "$G" | cksum | cut -d' ' -f1)"
+  S="$ROOT/$(printf '%s' "$G" | cksum | cut -d' ' -f1)"
   mkdir -p "$S" && printf '%s\n' "$G" > "$S/repo"
 }
+
+in_list() { case $1 in ''|*[!a-z-]*) return 1 ;; esac; case " $2 " in *" $1 "*) ;; *) return 1 ;; esac; }
+count() { n=$(grep -c "$1" "$2" 2>/dev/null); echo "${n:-0}"; }
+
+# A feedback entry: the fields a posted draft may hold, an empty line, then detail that never leaves this machine.
+# The fields are a snapshot, because start moves the state they come from. Silent: its callers are phase and the stop hook.
+record() { # <kind> <phase> <detail> [any word: no elapsed, no counts]
+  E="$S/feedback/$(date +%Y%m%d-%H%M%S)-$$"
+  mkdir -p "$S/feedback" 2>/dev/null || return 0
+  {
+    echo "version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "$0")/../.claude-plugin/plugin.json")"
+    echo "kind=$1"; echo "phase=$2"
+    if [ -f "$S/started" ] && [ -z "$4" ]; then
+      e=$(( ($(cat "$S/ended" 2>/dev/null || date +%s) - $(cat "$S/started")) / 60 ))
+      [ "$e" -le 1440 ] && echo "elapsed=$e" # past a day it is the age of a stalled run, not a run's time
+      b=$(cat "$S/stop-blocks" 2>/dev/null || echo 0); [ "$b" -gt "$MAX_BLOCKS" ] && b=$MAX_BLOCKS
+      l=$(count '' "$S/locks"); [ "$l" -gt 0 ] && l=$((l - 1)) # the loop locks once, then once per dispute round
+      echo "oracle_files=$(count '' "$S/oracle.lock")"
+      echo "stop_blocks=$b"
+      echo "dispute_rounds=$l"
+      echo "skipped_phases=$(count ' skipped: ' "$S/phases")"
+      echo "review_rounds=$(ls "$S"/review-*.md 2>/dev/null | grep -c '')"
+      echo "unavailable_capabilities=$(count unavailable "$S/capabilities.md")"
+    fi
+    echo; printf '%s\n' "$3"
+  } > "$E" 2>/dev/null
+  :
+}
+
+# The only gate between an entry and GitHub. The draft is the entry's head under fixed labels, and every line of it must
+# be an allowed label with a value of the allowed shape: a path, a name or any other text refuses the whole entry.
+draft() { # <entry file>: sets title and body, or returns 1
+  body=$(sed -n '/^$/q;p' "$1" | sed -e 's/^version=/plugin version: /' -e 's/^kind=/kind: /' -e 's/^phase=/phase: /' \
+    -e 's/^elapsed=/elapsed minutes: /' -e 's/^oracle_files=/locked oracle files: /' -e 's/^stop_blocks=/stop-hook blocks: /' \
+    -e 's/^dispute_rounds=/dispute rounds: /' -e 's/^skipped_phases=/skipped phases: /' -e 's/^review_rounds=/review rounds: /' \
+    -e 's/^unavailable_capabilities=/unavailable capabilities: /')
+  allowed="^(plugin version: [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|phase: ($(echo $PHASES | tr ' ' '|'))|kind: ($(echo $KINDS | tr ' ' '|'))|(elapsed minutes|locked oracle files|stop-hook blocks|dispute rounds|skipped phases|review rounds|unavailable capabilities): [0-9]{1,5})\$"
+  [ -n "$body" ] || return 1
+  printf '%s\n' "$body" | grep -Evq "$allowed" && return 1
+  [ -z "$(printf '%s\n' "$body" | cut -d: -f1 | sort | uniq -d)" ] || return 1
+  for k in 'plugin version' phase kind; do printf '%s\n' "$body" | grep -q "^$k: " || return 1; done
+  field() { printf '%s\n' "$body" | sed -n "s/^$1: //p"; }
+  title="[feedback] $(field phase) $(field kind) (hstack $(field 'plugin version'))"
+}
+code() { printf '%s\n%s\n' "$title" "$body" | cksum | cut -d' ' -f1; }
 
 fingerprint() { printf '%s %s\n' "$(git rev-parse -q --verify HEAD 2>/dev/null)" "$(git status --porcelain | git hash-object --stdin)"; }
 
@@ -32,7 +82,7 @@ case $cmd in
     input=$(cat)
     if cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && state; then
       # a new process gets its blocks back; a compaction inside one does not
-      case $input in *'"source":"startup"'*|*'"source":"resume"'*) echo 0 > "$S/stop-blocks" ;; esac
+      case $input in *'"source":"startup"'*|*'"source":"resume"'*) echo 0 > "$S/stop-blocks"; rm -f "$S/pass" ;; esac
       # only a new session sets the reference; a resume must keep it
       case $input in *'"source":"startup"'*) fingerprint > "$S/session-head" ;; esac
     fi
@@ -44,6 +94,9 @@ EOF
   hook-stop)
     cat > /dev/null
     { cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && state; } || exit 0
+    # a turn the user spent on a feedback verb is not a build turn: it ends once, unblocked. Consumed on every stop,
+    # so a pass never waits for a later one.
+    if [ -f "$S/pass" ]; then rm -f "$S/pass"; exit 0; fi
     head=$(git rev-parse -q --verify HEAD 2>/dev/null)
     if [ -f "$S/done" ] && [ "$(cat "$S/done")" = "$head" ] && [ -z "$(git status --porcelain)" ]; then exit 0; fi
     if [ -f "$S/base" ]; then
@@ -55,11 +108,87 @@ EOF
       why="the repository changed without the hstack:build workflow. Invoke the hstack:build skill and follow it to the end."
     fi
     n=$(cat "$S/stop-blocks" 2>/dev/null || echo 0)
-    [ "$n" -ge "$MAX_BLOCKS" ] 2>/dev/null && exit 0 # never loop: a capped gate costs less than a run that never ends
+    if [ "$n" -ge "$MAX_BLOCKS" ] 2>/dev/null; then # never loop: a capped gate costs less than a run that never ends
+      # the gate giving up on a started run leaves it to a human: one entry per cap (the bump past the cap marks it)
+      if [ "$n" -eq "$MAX_BLOCKS" ] && [ -f "$S/base" ]; then
+        set -- ${m:-final}
+        record intervention "$1" 'the stop gate gave up on an unfinished run' > /dev/null 2>&1
+        echo $((n + 1)) > "$S/stop-blocks"
+      fi
+      exit 0
+    fi
     echo $((n + 1)) > "$S/stop-blocks"
     printf '{"decision":"block","reason":"hstack: %s No human will answer; decide from the requirement and the code. When finished, end with exactly the reply the task asked for."}\n' "$why"
     exit 0 ;;
 esac
+
+if [ "$cmd" = feedback ]; then
+  REPO="${HSTACK_FEEDBACK_REPO:-emulatalk1/hstack}"
+  case $REPO in
+    *[!A-Za-z0-9_./-]*|*/*/*|/*|*/) echo "hstack: HSTACK_FEEDBACK_REPO must be owner/name" >&2; exit 1 ;;
+    */*) ;;
+    *) echo "hstack: HSTACK_FEEDBACK_REPO must be owner/name" >&2; exit 1 ;;
+  esac
+  S=''
+  state && : > "$S/pass" # the user is in this turn: the stop hook lets it end once
+  verb=$1
+  [ $# -gt 0 ] && shift
+  need_gh() {
+    command -v gh >/dev/null 2>&1 || kept "gh is not installed"
+    gh auth status >/dev/null 2>&1 || kept "gh is not logged in"
+  }
+  kept() { echo "hstack: $1; nothing posted.${f:+ kept: $f}"; exit 1; }
+  case $verb in
+    add)
+      [ -n "$S" ] || { echo "hstack: not inside a git repository" >&2; exit 1; }
+      { in_list "$1" "$KINDS" && in_list "$2" "$PHASES"; } || { echo "usage: hstack.sh feedback add <$(echo $KINDS | tr ' ' '|')> <$(echo $PHASES | tr ' ' '|')> [what happened]" >&2; exit 1; }
+      kind=$1 phase=$2 bare=''
+      shift 2
+      # an escaped bug belongs to a finished run: without done, the state is a newer run's
+      [ "$kind" = escaped-bug ] && [ ! -f "$S/done" ] && bare=1
+      record "$kind" "$phase" "$*" $bare
+      echo "recorded: $E" ;;
+
+    draft)
+      none=1
+      for f in "$ROOT"/*/feedback/*; do
+        [ -f "$f" ] || continue
+        none=0
+        d=${f%/feedback/*}
+        # a refused entry is named, never shown: its lines may hold what must not be printed
+        if draft "$f"; then printf 'entry %s/%s\nlocal: %s\ntitle: %s\n%s\nconfirm: %s\n\n' "${d##*/}" "${f##*/}" "$f" "$title" "$body" "$(code)"
+        else printf 'refused: %s\n\n' "$f"; fi
+      done
+      [ $none -eq 0 ] || echo "no unposted feedback entry" ;;
+
+    post)
+      # the id is checked before a path is built from it; no text can be passed in, only an id and the code draft printed
+      case $1 in ''|*[!0-9/-]*) echo "usage: hstack.sh feedback post <id> <code>, both as feedback draft printed them" >&2; exit 1 ;; esac
+      printf '%s\n' "$1" | grep -Eq '^[0-9]+/[0-9]{8}-[0-9]{6}-[0-9]+$' || { echo "hstack: $1 is not an entry id" >&2; exit 1; }
+      f="$ROOT/${1%/*}/feedback/${1#*/}"
+      [ -f "$f" ] || { echo "hstack: no unposted entry $1" >&2; exit 1; }
+      draft "$f" || { echo "hstack: refused: the entry holds something outside the allowed fields. kept: $f" >&2; exit 1; }
+      [ "$(code)" = "$2" ] || { echo "hstack: the code is not the one of this draft: run feedback draft and show it again. kept: $f" >&2; exit 1; }
+      need_gh
+      labels=$(gh label list --repo "$REPO" --limit 1000 --json name --jq '.[].name' 2>/dev/null) || kept "could not read the labels of $REPO"
+      printf '%s\n' "$labels" | grep -qx feedback || kept "the label 'feedback' does not exist on $REPO. Ask the user; only on their yes run: hstack.sh feedback label"
+      url=$(gh issue create --repo "$REPO" --label feedback --title "$title" --body "$body") || kept "gh could not create the issue"
+      mkdir -p "${f%/*}/posted" && echo "posted: $url" >> "$f" && mv "$f" "${f%/*}/posted/"
+      echo "$url" ;;
+
+    label) f=''; need_gh; gh label create feedback --repo "$REPO" --description 'Reports posted by hstack-feedback' ;;
+
+    collect)
+      f=''; need_gh
+      open=$(gh issue list --repo "$REPO" --label feedback --state open --limit 1000 --json number,title --jq '.[] | "\(.number)\t\(.title)"') || kept "could not list the issues of $REPO"
+      [ -n "$open" ] || { echo "no open feedback issue on $REPO"; exit 0; }
+      printf '%s\n' "$open" | awk -F'\t' '{ k = $2; sub(/^\[feedback\] /, "", k); sub(/ \(hstack [^)]*\)$/, "", k); n[k]++; ids[k] = ids[k] " #" $1 }
+          END { for (k in n) print k ": " n[k] ":" ids[k] }' | sort ;;
+
+    *) echo "usage: hstack.sh feedback add <kind> <phase> [what happened]|draft|post <id> <code>|label|collect" >&2; exit 1 ;;
+  esac
+  exit
+fi
 
 state || { echo "hstack: not inside a git repository" >&2; exit 1; }
 
@@ -70,7 +199,7 @@ case $cmd in
     if [ -f "$S/base" ]; then
       old="$S/old/$(date +%Y%m%d-%H%M%S)"
       mkdir -p "$old"
-      for f in "$S"/*; do case ${f##*/} in old|repo|session-head|stop-blocks) ;; *) mv "$f" "$old/" ;; esac; done
+      for f in "$S"/*; do case ${f##*/} in old|repo|session-head|stop-blocks|feedback) ;; *) mv "$f" "$old/" ;; esac; done
     fi
     git rev-parse -q --verify HEAD > "$S/base" || { echo "hstack: the repository has no commit" >&2; exit 1; }
     date +%s > "$S/started"
@@ -81,7 +210,17 @@ case $cmd in
     [ -n "$1" ] || { echo "usage: hstack.sh phase <name> [skipped: <why>]" >&2; exit 1; }
     line="$*"
     printf '%s\n' "$line" | grep -Eq '^[a-z]+( skipped: .+)?$' || { echo "hstack: a phase is '<name>' or '<name> skipped: <why>'" >&2; exit 1; }
-    printf '%s\n' "$line" >> "$S/phases" ;;
+    printf '%s\n' "$line" >> "$S/phases"
+    # a skipped step or an unavailable capability is a stumble. The why goes to the entry's detail only.
+    name=${line%% *}
+    if in_list "$name" "$PHASES"; then
+      case $line in
+        *' skipped: time'|*' skipped: time'[!a-z]*) record cost "$name" "$line" ;;
+        *' skipped: '*) record setup-failure "$name" "$line" ;; # a guess: the loop names one such skip, a product nothing can run
+        setup) u=$(grep unavailable "$S/capabilities.md" 2>/dev/null) && record setup-failure setup "$u" ;;
+      esac
+    fi > /dev/null 2>&1
+    : ;;
 
   missing) missing ;;
 
@@ -93,6 +232,7 @@ case $cmd in
       printf '%s %s\n' "$(git hash-object -- "$f")" "$f" >> "$S/oracle.lock.new"
     done
     mv "$S/oracle.lock.new" "$S/oracle.lock"
+    echo >> "$S/locks"
     echo "locked $# file(s)" ;;
 
   gate)
@@ -123,7 +263,8 @@ case $cmd in
     [ -z "$m" ] || { echo "hstack: steps not recorded: $m" >&2; exit 1; }
     [ -z "$(git status --porcelain)" ] || { echo "hstack: commit every change first" >&2; exit 1; }
     git rev-parse HEAD > "$S/done"
+    date +%s > "$S/ended"
     echo "done at $(cat "$S/done")" ;;
 
-  *) echo "usage: hstack.sh dir|start|phase|missing|lock|gate|elapsed|done|hook-start|hook-stop" >&2; exit 1 ;;
+  *) echo "usage: hstack.sh dir|start|phase|missing|lock|gate|elapsed|done|feedback|hook-start|hook-stop" >&2; exit 1 ;;
 esac
