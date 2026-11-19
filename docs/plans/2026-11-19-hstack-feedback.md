@@ -173,6 +173,8 @@ Baseline on the clean branch (159a89c plus this plan), before any change: `bun t
 ## Limits
 
 - No real issue and no label is created on GitHub by this work; tests use the fake `gh`.
+- The real `gh` is on this machine's `PATH` and may be logged in. During the build no `feedback` verb is run by hand outside the tests' guarded environment (fake `gh`, dead proxy, junk token), and any hand run sets `HSTACK_STATE` to the scratchpad, so the user's real `~/.hstack` is never read or written.
+- No bench test reads the plugin's own files from the work tree (`tests/bench-arm`, `bench-box` and `bench-diagnose` build their own temp plugins or use strings), so a new skill folder and the version bump cannot turn one red.
 - Nothing under `.evidence/`, `refs/bench/plugins/*` or `plugin-w` is changed, moved or deleted; no `git clean`.
 - No customer content, token or `.evidence/` data in anything pushed or posted.
 - Not built: posting from the hook or the build loop, an edit step for drafts, a `close` verb, deleting entries, reading entries from `old/`.
