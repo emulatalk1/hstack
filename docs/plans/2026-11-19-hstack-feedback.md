@@ -2,73 +2,39 @@
 type: plan
 title: "hstack-feedback plan"
 description: "A small skill and a `feedback` subcommand of hstack.sh: when the user finds a problem with hstack, the skill writes it up as an issue that can be fixed from (a description plus fixed fields from the run), shows the exact text and posts it to GitHub only after the user's yes; the build loop also records each stumble locally; a collect command lists the open issues."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.327, at: "2026-11-19T10:28:18+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T10:52:00+07:00" }
   - { by: human:emulatalk1, at: "2026-11-19T11:09:12+07:00" }
-  - { by: claude-code-advisor/2.1.327, at: "2026-11-19T12:47:14+07:00" }
+  - { by: claude-code-advisor/2.1.327, at: "2026-11-19T12:51:05+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-19T13:08:38+07:00" }
 ---
 
 # hstack-feedback Plan
 
-> Built natively in one session, test-first, on branch `hstack-feedback` from main. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Built natively in one session, test-first, on branch `hstack-feedback` from main. Every step below is done.
 
 **Goal:** when the user finds a problem with hstack on a real project (a bug, something to update, something to enhance), the skill collects what the problem is and posts it to `emulatalk1/hstack` as an issue someone can fix from, with no customer content in it; the open issues can be listed by phase and kind and closed by the fixing commit.
 
 **Why:** hstack v0.2.0 is about to run on customer work. The benchmark is closed (`progress/final-report.md`) and measured plugin 653af83 only; every later version, this one included, is unmeasured.
 
-**Decided by the user (not reopened here):** public issues on `emulatalk1/hstack` with the label `feedback` (a setting may override the repo; the label is never created without asking); capture is local and automatic, in `${HSTACK_STATE:-$HOME/.hstack}/<cksum>/`; posting only by a command the user invokes, after the exact title and body are shown and the user says yes; the posted draft is built from an allow-list of fixed fields and has no free text; without `gh`, or with `gh` logged out, the file is kept, its path printed and nothing posted; collect is `gh issue list --label feedback --state open` grouped by phase and kind.
+**Decided by the user:**
 
-## Revision (2026-11-19, after the first build)
+- Public issues on `emulatalk1/hstack` with the label `feedback`. A setting may override the repository. The label is never created without asking.
+- Capture is local and automatic, in `${HSTACK_STATE:-$HOME/.hstack}/<cksum>/`, outside the project's work tree and history.
+- Posting is never automatic: only a command the user invokes posts, after the exact title and body are shown and the user says yes.
+- Without `gh`, or with `gh` logged out: the file is kept, its path printed, nothing posted.
+- Collect is `gh issue list --label feedback --state open`, grouped by phase and kind. Each fix closes its issues with a reference to the fixing commit.
+- **An issue describes the problem** (2026-11-19, replacing the brief's "a draft has no free-text field"; see History): a description in words, written by the skill and approved verbatim by the user, beside fixed fields from the run.
 
-The first build posted fixed fields only: a version, a phase, a kind and counts. The user rejected it: such an issue says where hstack stumbled but not what the problem is, so nobody can fix from it. The user's words: the skill is to "collect the problem when the user finds an error and create the issue to fix, update, enhance". Asked whether an issue may then carry a description in words, written by the skill and approved verbatim before posting, the user answered "đúng vậy".
+## History
 
-**This lifts one decided item, on the user's word:** "a draft has no free-text field". Everything else decided stands: where issues go, the label, local capture, never posting automatically, the exact title and body shown before the yes, `gh` absent or logged out keeps the file, collect.
+The brief asked for an allow-list: a posted draft built from fixed fields only (version, phase, kind, minutes, counts), with no free text. The first build did exactly that. The user rejected it: such an issue says where hstack stumbled but not what the problem is, so nobody can fix from it. Their words: the skill is to "collect the problem when the user finds an error and create the issue to fix, update, enhance". Asked whether an issue may then carry a description in words, written by the skill and approved verbatim before posting, the user answered "đúng vậy". The design below is the second build. The fixed fields and their check are kept from the first.
 
-What replaces the allow-list as the guard for customer content, in order of weight:
+## What the state held before this work
 
-1. **The user reads the exact text.** Unchanged: the title and body sit inside the question, and the confirm code binds the yes to that text and that repository.
-2. **The skill writes about hstack, not about the project.** Its rules: describe what hstack did and what it should have done; never copy a path, a project, customer or repository name, requirement text, code, a log or error line, a branch name or a commit hash of the project; paraphrase.
-3. **A mechanical net in the script**, for the commonest leaks only. Refused:
-   - a description that contains the user's home path, or the folder path of the entry's project or of the session's project (the main checkout's and the work tree's, as git prints them);
-   - one that repeats, from any entry of that project (posted ones too), a whole detail line or what follows `skipped: ` or `unavailable: ` in it, when that is over 24 bytes; shorter reasons ("no way to run it") are too generic to refuse;
-   - one with a control character other than a newline or a tab: a carriage return or an escape would show the user another text than the one posted;
-   - one over 1500 bytes, with a first line over 200 bytes, or with no summary (it must fit inside the question, and a log does not);
-   - one whose text file is a symbolic link.
-
-   Flagged with a `warning:` line the skill must show in the question: a description that contains the name of the project's folder, or of the main checkout's when the entry comes from a worktree (names under 4 bytes are not looked for).
-
-   What the net misses, found by the review of this build: a path through a symlink or an alias (`/tmp` for `/private/tmp`), a `~/` or repo-relative path, a path outside home and the project, a path in another letter case; a reason that is reworded, under 25 bytes, or held only in the session's memory and never recorded; a customer's name that is not the folder's name.
-
-The net cannot tell customer content from other words. Guards 1 and 2 carry the weight, and the plan says so.
-
-**What changes in the design below** (the sections keep their text where it still holds; where it conflicts with this section, this section rules):
-
-- **Kinds.** Three more, for what the user reports: `bug` (hstack did something wrong), `update` (something in hstack is out of date or must change), `enhancement` (something hstack should do better or also do). The four stumble kinds stay for what the script records by itself. `escaped-bug` is a bug in the product that the loop let through; `bug` is a bug in hstack.
-- **Phase.** A report that belongs to no step of the loop takes the phase `none`.
-- **The description.** A text beside the entry, `S/feedback/<entry>.md`: a first line that is the summary, an empty line, then the description. It is the only text that is posted. The entry's own detail (a skip reason, `unavailable:` lines, a private note) is still never posted and never printed.
-  - `feedback add <kind> <phase>` reads the description from stdin and writes the entry and its text. There is no private note any more: one text channel.
-  - The skill passes the text only through a quoted heredoc with its own delimiter (`<<'HSTACK_FEEDBACK_TEXT'`): a description of hstack holds `$H` and backticks, and an unquoted one would be expanded and run. It writes the issue in English.
-  - **Run numbers** (elapsed and the counts) are written only where a run stands behind the report: not for `update` or `enhancement`, not for the phase `none`, and for `escaped-bug` only when the run is done, as before.
-  - `feedback describe <id>` reads a description from stdin for an unposted entry: for a stumble the script recorded, or to replace a text the user wants changed. An edit is a `describe`, then `draft` again.
-- **The draft.** Title: `[feedback] <phase> <kind>: <summary>`. Body: the description, an empty line, a `---` line, then the fixed-field lines, checked exactly as before. `draft` prints body lines behind `| `, so no line of a description can pass for one of the script's own lines (`entry`, `to:`, `title:`, `confirm:`).
-- **No description, no post.** An entry without a text is listed by `draft` as `undescribed <id>: <kind> at <phase>` with its local path, and `post` refuses it. The numbers alone are never an issue again.
-- **Still no text at post time.** `post` takes an id and a code. Text enters only through `add` and `describe`, is stored, and is shown by `draft` before any yes.
-- **Collect.** One line per phase and kind with its count, then one line per issue under it: `#<n> <summary>`, so an issue can be picked up to fix.
-- **The skill.** Invoked with what the user found, it writes the kind, the phase, the summary and the description from what happened in this session and the user's words, runs `add`, then the draft, the question and the post as before. It lists the recorded stumbles that have no description and writes one for those the user wants posted. It reads an entry's detail only when the user asks it to, and never copies from it.
-
-**Tests added after the review of this build:** the code covers the title; each no-run-numbers rule alone; a worktree (the main checkout's path and name, the worktree's own path); no warning when the name is absent; a reason copied without its prefix, from a later detail line, or into a new report after the stumble was posted; a short generic reason is accepted; a carriage return and an escape are refused, a tab is not; a summary of spaces is refused; `start` keeps `top`; each refusal is checked for its reason.
-
-**Tests added:** a description is posted as shown, after the fields' check, with `$` and backticks kept; an entry without one is not postable; a description with the home path or the project path is refused; one that copies a line of the entry's detail is refused, and the same stumble in other words is accepted; the project folder's name gives the warning; an oversized one is refused; a description line that imitates `confirm:`, `title:` or `entry` cannot pass for one of the script's lines; `describe` replaces a text and the old code no longer posts; `describe` refuses a posted entry, an unknown id and an empty text; `update`, `enhancement` and the phase `none` carry no run numbers; collect lists each issue's summary.
-
-**Sections below that this revision overrides, so they are not read as current:** "Decided by the user" (the allow-list and "no free text" clause); in Recording, "the skill never reads an entry file" and "`feedback add <kind> <phase> [what happened]`"; in Posting, the title's shape, "There is no way to pass text in" (still true of `post`, no longer of the skill), and the 4 kinds; in Collect, the line format; in The skill, its arguments and rules; in Limits, "an edit step for drafts" (an edit is now a `describe`).
-
-**Not verified by the user as a plan:** the user confirmed the direction in one message; the build of this revision is shown to them before any merge. The `human:` entry above is their approval of the plan before this revision; the second advisor entry is the advisor's review of the revision and its build.
-
-## What the state holds today
-
-Read from `scripts/hstack.sh` at 159a89c, not from memory:
+Read from `scripts/hstack.sh` at 159a89c:
 
 | File in `S` | Written by | Holds |
 |---|---|---|
@@ -79,15 +45,15 @@ Read from `scripts/hstack.sh` at 159a89c, not from memory:
 | `done` | `done` | HEAD at the final check |
 | `capabilities.md`, `review-<n>.md`, `disputes.md` and the other `.md` files | the build agent | model-written text |
 
-`start` moves every file except `old`, `repo`, `session-head` and `stop-blocks` to `S/old/<time>/`. Nothing counts dispute rounds, and nothing records when a run ended.
+`start` moved every file except `old`, `repo`, `session-head` and `stop-blocks` to `S/old/<time>/`. Nothing counted dispute rounds, and nothing recorded when a run ended.
 
 ## Design
 
 Everything is in `scripts/hstack.sh` (POSIX sh, git; `gh` only for the three verbs that talk to GitHub). `skills/build/SKILL.md` and the agents do not change: the build agent is never told that feedback exists.
 
-### Recording
+### An entry
 
-An entry is one file, `S/feedback/<YYYYmmdd-HHMMSS>-<pid>`:
+An entry is a file `S/feedback/<YYYYmmdd-HHMMSS>-<pid>`, and beside it, once it has one, its description `<entry>.md`.
 
 ```
 version=0.3.0
@@ -104,31 +70,20 @@ unavailable_capabilities=0
 explore skipped: <the why, as the agent wrote it>
 ```
 
-The head (up to the first empty line) holds only the allow-listed fields, snapshotted when the entry is written, because `start` later moves the state they come from. Everything after the empty line is detail. It stays on the machine: no command prints it, and the skill never reads an entry file (reading one would send its text to the model).
+- **The head** (up to the first empty line) holds only the fixed fields, snapshotted when the entry is written, because `start` later moves the state they come from.
+- **The detail** (after the empty line) is what the script saw: a skip reason, `unavailable:` lines. It may hold a customer's paths and names. It is never posted and never printed, and the skill does not read it unless the user asks.
+- **The description** (`<entry>.md`) is the only text that is posted: a first line that is the summary, an empty line, then what happened, what was expected, and what helps to reproduce or fix it in hstack.
 
-**Written automatically, by the script itself** (no step of the skill, so no model has to remember):
+**Kinds.** Four for what a run does, which the script can record by itself: `setup-failure`, `intervention`, `escaped-bug` (a bug in the product that the loop let through), `cost`. Three for what the user reports about hstack: `bug` (hstack did something wrong), `update` (something is out of date or must change), `enhancement` (something hstack should do better, or also do).
 
-| Where | When | Kind | Phase | Detail (local) |
-|---|---|---|---|---|
-| `phase` | the line is `<name> skipped: time…` (the why starts with `time`) | `cost` | `<name>` | the line |
-| `phase` | the line is `<name> skipped: <anything else>` | `setup-failure` | `<name>` | the line |
-| `phase` | the line is `setup` and `capabilities.md` has `unavailable` lines | `setup-failure` | `setup` | those lines |
-| `hook-stop` | the gate gives up (3 blocks used) on a started run, once per cap | `intervention` | the first step not recorded, or `final` | none |
-
-- Only a name in PHASES records an entry (`phase` accepts any `[a-z]+`).
-- Capture is silent and never changes an exit code or the hooks' output: `hook-stop`'s stdout is the JSON decision.
-- Mapping every non-`time` skip to `setup-failure` is a guess: the skill names one such skip (explore, when nothing can run the product). The kind is fixed at capture and the user sees it in the draft before posting.
-- The cap entry is recorded only when `base` exists. A capped gate with no run has no honest phase. **This row needs the user's ruling** (see Approval): the user's example lists an intervention as flag-only, and the design says a block is not an intervention. The case for it: a capped gate on an unfinished run is exactly the benchmark's intervention (the turn ended unfinished, a human must resume). Its cost: a run left unfinished and never resumed makes each new session in that repository record one more `intervention` after its 3 blocks.
-
-**Written when the user flags it:** `hstack.sh feedback add <kind> <phase> [what happened]`, through the skill, in the project's session. Any of the four kinds; `intervention` and `escaped-bug` have no other source than the row above. The words go to the detail only.
+**Phase.** One of PHASES, or `none` for a report that belongs to no step of the loop.
 
 **Fields and where each comes from:**
 
 | Field | Source |
 |---|---|
 | `version` | `.claude-plugin/plugin.json` beside the script |
-| `phase` | the phase name alone, one of PHASES |
-| `kind` | `setup-failure`, `intervention`, `escaped-bug` or `cost` |
+| `kind`, `phase` | as above |
 | `elapsed` | minutes from `started` to now, or to `ended` once the run is done (new file: `done` writes the epoch second to `S/ended`). Left out when over 1440: no run lasts a day, so the number would be the age of a stalled run |
 | `oracle_files` | lines of `oracle.lock` |
 | `stop_blocks` | `stop-blocks` (this process), at most 3 |
@@ -137,104 +92,149 @@ The head (up to the first empty line) holds only the allow-listed fields, snapsh
 | `review_rounds` | number of `review-*.md` files |
 | `unavailable_capabilities` | lines of `capabilities.md` with `unavailable:` |
 
-Elapsed and the counts are written only when `started` exists. For a flagged `escaped-bug` they are written only when `done` exists too: without it the state belongs to a newer run, not to the run the bug escaped from. Known limit: after two finished runs, a late `escaped-bug` flag carries the newer run's counts; the draft shows them before posting.
+Elapsed and the counts are written only where a run stands behind the entry: `started` exists; the kind is not `update` or `enhancement`; the phase is not `none`; and for `escaped-bug`, `done` exists (without it the state belongs to a newer run). Known limit: after two finished runs, a late `escaped-bug` carries the newer run's counts; the draft shows them before posting.
+
+### Recording
+
+**By the script itself**, with no description (no step of the skill, so no model has to remember):
+
+| Where | When | Kind | Phase | Detail (local) |
+|---|---|---|---|---|
+| `phase` | the line is `<name> skipped: time…` (the why starts with `time`) | `cost` | `<name>` | the line |
+| `phase` | the line is `<name> skipped: <anything else>` | `setup-failure` | `<name>` | the line |
+| `phase` | the line is `setup` and `capabilities.md` has `unavailable:` lines | `setup-failure` | `setup` | those lines |
+| `hook-stop` | the gate gives up (3 blocks used) on a started run, once per cap | `intervention` | the first step not recorded, or `final` | none |
+
+- Only a name in PHASES records an entry (`phase` accepts any `[a-z]+`).
+- Capture is silent and never changes an exit code or the hooks' output: `hook-stop`'s stdout is the JSON decision. The snapshot runs in a subshell, so a broken state file ends the snapshot, never the phase or the hook.
+- Mapping every non-`time` skip to `setup-failure` is a guess: the loop names one such skip (explore, when nothing can run the product).
+- The cap entry is recorded only when `base` exists. Its cost: a run left unfinished and never resumed makes each new session in that repository record one more `intervention` after its 3 blocks.
+
+**By the user, through the skill:**
+
+- `hstack.sh feedback add <kind> <phase|none>` reads the description from stdin and writes the entry and its text.
+- `hstack.sh feedback describe <id>` reads a description from stdin for an unposted entry: for a stumble the script recorded, or to replace a text the user wants changed. An edit is a `describe`, then `draft` again.
+
+The skill passes the text only through a quoted heredoc with its own delimiter (`<<'HSTACK_FEEDBACK_TEXT'`): a description of hstack holds `$H` and backticks, and an unquoted one would be expanded and run.
 
 ### The state dir
 
-- `start` keeps `feedback` beside `old`, `repo`, `session-head` and `stop-blocks`, so entries survive every later run.
+- `start` keeps `feedback` and `top` beside `old`, `repo`, `session-head` and `stop-blocks`, so entries survive every later run.
+- `state()` also writes `S/top`, the work tree's folder as git prints it, for the description's path check.
 - `S` is keyed by the absolute git dir, so each worktree has its own. `draft` and `post` read `${HSTACK_STATE:-$HOME/.hstack}/*/feedback/` and work from any folder, inside a git repository or not. An entry's id is `<cksum>/<file name>`.
-- A posted entry gets a last line `posted: <issue URL>` and moves to `feedback/posted/`. Nothing is deleted.
+- A posted entry gets a last line `posted: <issue URL>` and moves with its description to `feedback/posted/`. Nothing is deleted.
+
+### The draft and its check
+
+`hstack.sh feedback draft` prints, for each unposted entry:
+
+- with a description: `entry <id>`, `local: <path>`, `to: <repository>`, perhaps a `warning:` line, `title: …`, the body with every line behind `| `, and `confirm: <code>`;
+- without one: `undescribed <id>: <kind> at <phase>` and its path;
+- refused: `refused: <path>: <reason>`, never the offending line.
+
+The title is `[feedback] <phase> <kind>: <summary>`. The body is the description, an empty line, a `---` line, then the fixed-field lines. Body lines stand behind `| `, so no line of a description can pass for one of the script's own lines. The confirm code is the `cksum` of repository, title and body, so the yes covers the text and where it goes. Entries are read as bytes (`LC_ALL=C`). Only a file whose state dir and name have the id's shape (digits and `-`) is an entry: a name is never printed as text.
+
+One function builds and checks the draft, and it is the only gate between an entry and GitHub.
+
+**The fields** are checked as a closed list:
+
+- every field line matches one pattern (counted, so a `grep` that fails refuses the entry too): `plugin version: <n.n.n>`, `phase: <one of PHASES, or none>`, `kind: <one of the seven>`, or one of the seven count labels followed by 1 to 5 digits;
+- `plugin version`, `phase` and `kind` are each present, and no label appears twice.
+
+A head line with any other key, or a value that is not of that shape (a path, a name, text), refuses the whole entry.
+
+**The description** is free text, so what guards customer content is, in order of weight:
+
+1. **The user reads the exact text.** The title and body sit inside the question, and the confirm code binds the yes to that text and that repository.
+2. **The skill writes about hstack, not about the project.** Its rules: describe what hstack did and what it should have done; never copy a path, a project, customer or repository name, requirement text, code, a log or error line, a branch name or a commit hash of the project; paraphrase; write in English; put code, `@name` and `#number` in backticks.
+3. **A mechanical net in the script**, for the commonest leaks only. Refused:
+   - a description that contains the user's home path, or the folder path of the entry's project or of the session's project (the main checkout's and the work tree's, as git prints them);
+   - one that repeats, from any entry of that project (posted ones too), a whole detail line or what follows `skipped: ` or `unavailable: ` in it, when that is over 24 bytes; shorter reasons ("no way to run it") are too generic to refuse;
+   - one with a control character other than a newline or a tab: a carriage return or an escape would show the user another text than the one posted;
+   - one over 1500 bytes, with a first line over 200 bytes, or with no summary (it must fit inside the question, and a log does not);
+   - one whose text file is a symbolic link.
+
+   Flagged with a `warning:` line the skill must show in the question: a description that contains the name of the project's folder, or of the main checkout's when the entry comes from a worktree (names under 4 bytes are not looked for).
+
+   What the net misses, found by the review of the build: a path through a symlink or an alias (`/tmp` for `/private/tmp`), a `~/` or repo-relative path, a path outside home and the project, a path in another letter case; a reason that is reworded, under 25 bytes, or held only in the session's memory and never recorded; a customer's name that is not the folder's name.
+
+The net cannot tell customer content from other words. Guards 1 and 2 carry the weight.
 
 ### Posting
 
-`hstack.sh feedback draft` prints, for each unposted entry: its id, its local path, the repository it would go to, the exact title, the exact body and a confirm code (the `cksum` of repository, title and body, so the yes covers where it goes). It reads the entry's head only, as bytes (`LC_ALL=C`). Only a file whose state dir and name have the id's shape (digits and `-`) is an entry: a name is never printed as text.
+`hstack.sh feedback post <id> <code>` takes an id and a code, never text. In this order, and it stops at the first failure with the entry kept and its path printed:
 
-The draft is built by renaming the head's keys to fixed labels, then checked as a whole by one function, the only gate between an entry and GitHub:
-
-- every body line matches one pattern (counted, so a `grep` that fails refuses the entry too): `plugin version: <n.n.n>`, `phase: <one of PHASES>`, `kind: <one of the four>`, or one of the seven count labels followed by 1 to 5 digits;
-- `plugin version`, `phase` and `kind` are each present, and no label appears twice;
-- the title is `[feedback] <phase> <kind> (hstack <version>)`, built from the checked body.
-
-A head line with any other key, or a value that is not of that shape (a path, a name, text), fails the first rule, so the entry is refused: `draft` prints `refused: <path>` without the line, and `post` exits non-zero. There is no way to pass text in: `post` takes an id and a confirm code, nothing else.
-
-`hstack.sh feedback post <id> <code>`, in this order, and it stops at the first failure with the entry kept and its path printed:
-
-1. Check the id's shape (`<digits>/<file name>`) before any path is built from it. Build the draft again and check it; refuse when the code differs from the one `draft` printed (the entry or the repository changed since the user saw it).
+1. Check the id's shape (`<digits>/<file name>`) before any path is built from it. Build the draft again and check it; refuse an entry without a description; refuse when the code differs from the one `draft` printed (the text or the repository changed since the user saw it).
 2. `gh` on `PATH` and `gh auth status` succeeds; else `kept: <path>`.
 3. `gh label list --repo <repo>` succeeds (a failure is "post nothing", not "label missing") and names `feedback`; else it says the label is missing and that only the user may have it created (`feedback label` runs `gh label create feedback --repo <repo>`).
-4. `gh issue create --repo <repo> --label feedback --title <title> --body <body>`; print the URL; move the entry to `posted/`.
+4. `gh issue create --repo <repo> --label feedback --title <title> --body <body>`; print the URL; move the entry and its description to `posted/`.
 
 `<repo>` is `emulatalk1/hstack`, or `HSTACK_FEEDBACK_REPO` when set (refused unless it is `owner/name`). Every `gh` call carries `--repo`: the working directory is a customer's repository, and `gh` would otherwise use its remote.
 
 **The yes, and the plugin's own hooks.** The stop hook blocks any turn that ends while a run is unfinished, with "No human will answer; decide…", and the session-start text says the same. A feedback turn on a stalled run would be blocked and pushed to decide alone. So:
 
-- each of the five `feedback` verbs (not a mistyped one) writes `S/pass` in the session's repository (`CLAUDE_PROJECT_DIR`, else the current folder). `hook-stop` consumes it first thing on every stop, whatever the stop's outcome would be, and lets that one stop through with no block counted and no entry recorded. `hook-start` removes a stale one on startup and resume. **This changes the stop gate for every user** (see Approval). Known limits, found by the review of the build: a pass waits for the next stop when the feedback turn ended without one (an interrupt, or a verb run by hand in a terminal), so one later stop in that process goes through unblocked; and a build agent that ran a `feedback` verb before each stop would never be blocked. The gate is a reminder capped at 3 blocks, and nothing tells a build agent the verb exists; a time limit on the pass was not built, because a question the user answers late would then end in a block.
-- the skill asks for the yes with the question tool, inside the turn. The exact title and body sit inside the question itself, one question per entry, at most 4 per call: text printed before a question may be hidden while its dialog is open. Where there is no question tool (a headless run), it prints the drafts and the local paths and posts nothing.
+- each `feedback` verb (not a mistyped one) writes `S/pass` in the session's repository (`CLAUDE_PROJECT_DIR`, else the current folder). `hook-stop` consumes it first thing on every stop, whatever the stop's outcome would be, and lets that one stop through with no block counted and no entry recorded. `hook-start` removes a stale one on startup and resume. Known limits, accepted by the user: a pass waits for the next stop when the feedback turn ended without one (an interrupt, or a verb run by hand in a terminal), so one later stop in that process goes through unblocked; and a build agent that ran a `feedback` verb before each stop would never be blocked. The gate is a reminder capped at 3 blocks, and nothing tells a build agent the verb exists; a time limit on the pass was not built, because a question the user answers late would then end in a block.
+- the skill asks for the yes with the question tool, inside the turn. The repository, the exact title and the exact body sit inside the question itself, one question per entry, at most 4 per call: text printed before a question may be hidden while its dialog is open. Where there is no question tool (a headless run), it prints the drafts and the local paths and posts nothing.
 - the skill says: the hook texts do not apply to this skill, a hook block is never a yes, and only an answer the user gave to the shown draft is.
 
 ### Collect and close
 
-`hstack.sh feedback collect` runs `gh issue list --repo <repo> --label feedback --state open --limit 1000 --json number,title` and prints one line per phase and kind, sorted: `<phase> <kind>: <count>: #<n> #<n>`. A title of another shape is listed under itself.
+`hstack.sh feedback collect` runs `gh issue list --repo <repo> --label feedback --state open --limit 1000 --json number,title` and prints one line per phase and kind with its count, sorted, then one line per issue under it: `#<n> <summary>`. A title of another shape goes under `other`.
 
 A fix closes its issues with `gh issue close <n> --repo <repo> --comment "Fixed in <full sha>"`; the skill gives the line. No verb: it is one `gh` command.
 
 ### The skill
 
-`skills/hstack-feedback/SKILL.md`, name `hstack-feedback`, `disable-model-invocation: true`, so only the user starts it: `/hstack:hstack-feedback`, with `flag <kind> <phase> <what happened>`, `post` (the default) or `collect`. No Bun: the script is sh.
+`skills/hstack-feedback/SKILL.md`, name `hstack-feedback`, `disable-model-invocation: true`, so only the user starts it: `/hstack:hstack-feedback <what they found>`, or `collect`. No Bun: the script is sh.
 
-It prints: for `flag`, the entry's path; for `post`, each draft exactly as the script printed it (again inside its question), then the issue URLs, or `kept: <path>` lines and why; for `collect`, the grouped lines.
-
-Its rules: never read or print an entry file; never write or change a title or body; never call `gh issue create` itself; never run `feedback label` without the user's yes to that question; never resume a build from this skill.
+Invoked with what the user found, it decides the kind and the phase, writes the summary and the description from what happened in the session and the user's words, runs `add`, then `draft`, the question (post it, change it, keep it local) and `post`. It lists the recorded stumbles that have no description and writes one for those the user wants posted.
 
 ## Tests
 
-In `plugin-dev/test-hstack.sh`. A fake `gh` first on `PATH` appends its arguments to a log and answers from files in the temp dir. No test can reach GitHub even if `PATH` slips (the real `gh` may read its token from the keychain): for the whole file, `HTTPS_PROXY` points at a dead local port, `GH_TOKEN` and `GITHUB_TOKEN` hold junk and `GH_CONFIG_DIR` is under the temp dir; the feedback tests abort unless `command -v gh` is the fake.
+In `plugin-dev/test-hstack.sh` (132 checks with the hook tests) and `tests/skills.test.mjs`. A fake `gh` first on `PATH` appends its arguments to a log and answers from files in the temp dir. No test can reach GitHub even if `PATH` slips (the real `gh` may read its token from the keychain): for the whole file, `HTTPS_PROXY` points at a dead local port, `GH_TOKEN` and `GITHUB_TOKEN` hold junk and `GH_CONFIG_DIR` is under the temp dir; the feedback tests abort unless `command -v gh` is the fake. Tests delete nothing: entries are cleared by posting them through the fake.
 
-Baseline on the clean branch (159a89c plus this plan), before any change: `bun test ./tests` 727 pass, 65 skip, 0 fail; `sh` and `dash plugin-dev/test-hstack.sh` 0 failures. A test that fails after the change is a finding for the user, never a reason to regenerate something locked.
+Baseline on the clean branch, before any change: `bun test ./tests` 727 pass, 65 skip, 0 fail; `sh` and `dash plugin-dev/test-hstack.sh` 0 failures.
 
-- [x] a skip reason never reaches a draft: `phase explore skipped: <words with a path and a name>` writes an entry whose detail holds the words; `draft`'s output and the fake `gh`'s log after `post` do not.
-- [x] a draft with a path or a field outside the list is refused: an entry whose head has `phase=/a/path`, an extra `note=…` line, `elapsed=12x`, a second `kind=` line, or no `version=` line is refused by `draft` and by `post`, and the log has no `issue create`.
-- [x] a wrong confirm code posts nothing.
-- [x] the happy path: the log shows `issue create --repo emulatalk1/hstack --label feedback` with the shown title and body; the entry is in `posted/` with its URL; `HSTACK_FEEDBACK_REPO` changes `--repo` on every call.
-- [x] no `gh` keeps the file: with a `PATH` checked to hold no `gh` at all, and again with the fake `gh` logged out, `post` prints the path, the entry stays, and the log has no `issue create`.
-- [x] a missing label, and a failed `gh label list`, post nothing and create no label; `feedback label` alone creates it.
-- [x] nothing is written inside the project repo: after every verb above, `git status --porcelain --ignored` is empty and each entry's path starts with the test's state dir.
-- [x] entries survive `start`: after a second `start`, the entry is still in `S/feedback/`, not in `old/`.
-- [x] capture does not disturb the loop: `phase setup` with no `capabilities.md` exits 0 and prints nothing; `phase mutatex` writes no entry; the capped stop prints nothing, records one `intervention` only on a started run, and a second capped stop records none.
-- [x] a flagged `escaped-bug` without `done` has no elapsed and no counts; with `done`, elapsed is `ended` minus `started`.
-- [x] `S/pass` lets one stop through on an unfinished run, and the next stop blocks again; a pass written on a finished run is consumed by that turn's stop and does not excuse a later unfinished one.
-- [x] `phase mutate skipped: time, 185 min` records a `cost`, not a `setup-failure`.
-- [x] `collect` prints the grouped lines from the fake `gh`'s answer.
-- [x] from the review of the build: a `grep` that fails refuses the draft; a file whose name is not an entry id is no entry and its name is not printed; an empty `started` breaks neither the capped stop nor `phase`; `phase` fails when its line cannot be written; a mistyped verb writes no pass; a code shown for one repository does not post to another; a line with an invalid byte is refused; the pass goes to the session's repository; `time` inside another why is not a `cost`.
-- [x] `tests/skills.test.mjs`: the new skill has its name, `disable-model-invocation: true` and the script's `feedback` command (its own check; `checkFrontmatter` demands the Bun line).
+- [x] **The detail never leaves.** A skip reason with a path and a name is in the entry's detail and never in a draft or in the fake `gh`'s log; a description that copies it, whole or without its prefix, from a later detail line, or into a new report after the stumble was posted, is refused; the same stumble in other words is accepted.
+- [x] **The fields are a closed list.** A path as a value, a field outside the list, a count that is not a number, a field given twice, a missing version, a kind outside the list, text after a phase name, a line with an invalid byte, an empty entry: each refused by `draft` and by `post`, with no `issue create` in the log. A `grep` that fails refuses the draft.
+- [x] **The description.** Posted as shown, byte for byte, with `$`, backticks and text beyond ASCII kept. Refused, each for its named reason: the home path, the project path, a worktree's own path and its main checkout's, a summary over 200 bytes or of spaces, a text over 1500 bytes, a carriage return, an escape. A tab is accepted. The folder's name gives the warning, in a worktree the main checkout's name too, and there is none when the name is absent. A line imitating `confirm:`, `title:` or `entry` stays behind `| `.
+- [x] **The yes.** A wrong code posts nothing; a changed summary with the same body, a changed text, or another repository each make the old code useless; an entry without a description is not postable.
+- [x] **`gh`.** No `gh` (a `PATH` checked to hold none) and a logged-out `gh` keep the file and print its path; a missing label and a failed label list post nothing and create no label; only `feedback label` creates it; every call carries `--repo`, and `HSTACK_FEEDBACK_REPO` changes it on every call.
+- [x] **Recording.** A time skip is a `cost`, and `time` inside another why is not; an unavailable capability records a `setup-failure`; a name outside PHASES records nothing; `update`, `enhancement` and the phase `none` carry no run numbers, each rule alone; an unfinished `escaped-bug` has none, a finished one has `ended` minus `started`; an elapsed over a day is left out.
+- [x] **The loop is not disturbed.** A plain and a skipped `phase` exit 0 and print nothing; `phase` fails when its line cannot be written; the capped stop prints nothing, records one `intervention` only on a started run and none the second time; an empty `started` breaks neither the capped stop nor `phase`.
+- [x] **The pass.** One stop goes through and the next blocks; a pass on a finished run is consumed by that stop; a new process drops a stale one; a mistyped verb writes none; it goes to the session's repository wherever the verb ran.
+- [x] **The state dir.** Entries and `top` survive `start`; nothing is written inside the project repository (`git status --porcelain --ignored` unchanged); a file whose name is not an entry id is no entry and its name is not printed; an id that is not an entry id is refused.
+- [x] **Collect** groups by phase and kind, lists each issue's summary, and asks for the open issues with the label on the repository.
+- [x] **The skill file** has its name, `disable-model-invocation: true`, the quoted heredoc for `add` and `describe`, and the README names the plugin's version.
 
 ## Tasks
 
-- [x] 1. Tests first: the cases above in `plugin-dev/test-hstack.sh` and `tests/skills.test.mjs`; see them fail.
-- [x] 2. `scripts/hstack.sh`: `record`, the three capture points, `ended`, `locks`, `feedback` kept by `start`, `pass` in both hooks, and `feedback add|draft|post|label|collect`.
+- [x] 1. Tests first; see them fail.
+- [x] 2. `scripts/hstack.sh`: the capture points, `ended`, `locks`, `top`, `feedback` kept by `start`, `pass` in both hooks, and `feedback add|describe|draft|post|label|collect`.
 - [x] 3. `skills/hstack-feedback/SKILL.md`.
-- [x] 4. Done: `.claude-plugin/plugin.json` to 0.3.0; `README.md`: the status line, the skill's row, the feedback paragraph, the benchmark note below, and line 22 (the repository is public now).
-- [x] 5. `bun test ./tests`, `sh plugin-dev/test-hstack.sh` (also under `dash`), `bun scripts/okf-check.mjs docs`.
-- [x] 6. One review of the diff on the most capable model; the advisor's final review. Still to do: ask the user before any merge or push.
+- [x] 4. `.claude-plugin/plugin.json` to 0.3.0; `README.md`: the status line, the skill's row, the feedback paragraph, the benchmark note, and the repository no longer called private.
+- [x] 5. `bun test ./tests` (728 pass, 65 skip, 0 fail), `sh plugin-dev/test-hstack.sh` under `sh` and `dash` (132 ok), `bun scripts/okf-check.mjs docs`.
+- [x] 6. A review of each build's diff on the most capable model, its findings fixed with tests; the advisor's final review of each.
+- [x] 7. The user's approval of the build, then the merge and the push.
 
-**The README's benchmark note:** "The benchmark (`progress/final-report.md`) measured plugin commit 653af835fd613e3eb25feb48e4ccc9bfb534ae6e only; every later version, this one included, is unmeasured. That commit is in `main`'s history and is pinned by the ref `refs/bench/plugins/hstack-653af83`." Today that ref exists only in the user's local clone (`git ls-remote origin` shows `main` alone), and the note says so unless the user has it pushed.
+**The README's benchmark note:** the benchmark (`progress/final-report.md`) measured plugin commit 653af835fd613e3eb25feb48e4ccc9bfb534ae6e only; every later version is unmeasured. That commit is in `main`'s history and is pinned by the ref `refs/bench/plugins/hstack-653af83`, pushed to origin with this work; the note gives the fetch line, because a plain clone does not fetch that namespace.
 
 ## Limits
 
-- No real issue and no label is created on GitHub by this work; tests use the fake `gh`.
-- The real `gh` is on this machine's `PATH` and may be logged in. During the build no `feedback` verb is run by hand outside the tests' guarded environment (fake `gh`, dead proxy, junk token), and any hand run sets `HSTACK_STATE` to the scratchpad, so the user's real `~/.hstack` is never read or written.
-- No bench test reads the plugin's own files from the work tree (`tests/bench-arm`, `bench-box` and `bench-diagnose` build their own temp plugins or use strings), so a new skill folder and the version bump cannot turn one red.
-- Nothing under `.evidence/`, `refs/bench/plugins/*` or `plugin-w` is changed, moved or deleted; no `git clean`.
-- No customer content, token or `.evidence/` data in anything pushed or posted.
-- Not built: posting from the hook or the build loop, an edit step for drafts, a `close` verb, deleting entries, reading entries from `old/`.
+- No real issue and no label was created on GitHub by this work; tests use the fake `gh`.
+- During the build no `feedback` verb was run by hand outside a guarded environment: the tests' (fake `gh`, dead proxy, junk token), or a scratch repository with `HSTACK_STATE` in the scratchpad and only `add` and `draft`, which call no `gh`.
+- No bench test reads the plugin's own files from the work tree, so the new skill folder and the version bump cannot turn one red.
+- Nothing under `.evidence/`, `refs/bench/plugins/*` or `plugin-w` was changed, moved or deleted; no `git clean`.
+- No customer content, token or `.evidence/` data in anything pushed: the branch's diff was scanned for the home path, the user's address and token shapes before the push.
+- **Not verified:** the real `gh`; the skill in a live session (whether a question shows a full 1500-byte body, and the pass against the real Stop hook); any Linux userland (the new code ran with macOS tools, under `sh` and `dash`).
+- The script cannot prove a yes: the confirm code binds the text and the repository; the yes is held by the skill and the permission prompt.
+- An entry cannot be dismissed, so stumbles the user never describes stay listed by `draft`.
+- Not built: posting from the hook or the build loop, a `close` verb, a `dismiss` verb, reading entries from `old/`, `collect` printing the local entry beside an issue.
 
 ## Approval
 
-Approved by the user on 2026-11-19 ("duyệt"), as written. The four rulings stand as the plan recommends, which was also the advisor's suggestion:
+1. **The plan**, approved by the user on 2026-11-19 ("duyệt") with the advisor's suggestions on four rulings: the cap entry is recorded automatically; the bench ref is pushed with the final push; a feedback verb lets its turn end once; the version is 0.3.0.
+2. **The correction**, the same day: an issue must describe the problem ("đúng vậy" to the restated purpose). See History.
+3. **The second build**, approved by the user on 2026-11-19 ("duyệt") after asking how the skill works. With it: the pass's known limits are accepted; `main` is fast-forwarded and pushed together with the one bench ref, by an explicit refspec after a dry run; `collect` printing local entries is dropped.
 
-1. **The cap entry.** An `intervention` is recorded automatically when the stop gate gives up on a started run.
-2. **The bench ref.** `refs/bench/plugins/hstack-653af83` is pushed to origin inside the final push, which the user approves separately: one explicit refspec for that ref alone, no force, prune or mirror, after a dry run that lists only that one new ref. The README gives the fetch line, because a plain clone does not fetch that namespace. If the user declines the push, the note says the ref is local.
-3. **The pass.** A `feedback` verb lets the turn it runs in end once without a stop-hook block.
-4. **The version.** 0.3.0.
-
-Offered and not taken: `collect` printing the local entry's path beside each issue posted from this machine.
+Chosen by the builder, open to change: seven kinds in one list, the phase `none`, the 200 and 1500 byte limits, issues in English.
