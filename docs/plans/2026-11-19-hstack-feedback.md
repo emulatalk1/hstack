@@ -10,6 +10,7 @@ verified:
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T12:47:14+07:00" }
   - { by: human:emulatalk1, at: "2026-11-19T13:08:38+07:00" }
   - { by: claude-code-advisor/2.1.327, at: "2026-11-19T13:39:35+07:00" }
+  - { by: human:emulatalk1, at: "2026-11-19T13:55:14+07:00" }
 ---
 
 # hstack-feedback Plan
@@ -239,6 +240,6 @@ Baseline on the clean branch, before any change: `bun test ./tests` 727 pass, 65
 2. **The correction**, the same day: an issue must describe the problem ("đúng vậy" to the restated purpose). See History.
 3. **The second build**, approved by the user on 2026-11-19 ("duyệt") after asking how the skill works. With it: the pass's known limits are accepted; `main` is fast-forwarded and pushed together with the one bench ref, by an explicit refspec after a dry run; `collect` printing local entries is dropped.
 
-4. **`dismiss`**, asked for by the user on 2026-11-19 after the merge ("ok làm luôn đi"), built on branch `feedback-dismiss` with plugin 0.3.1. Its merge waits for the user's word.
+4. **`dismiss`**, asked for by the user on 2026-11-19 after the merge ("ok làm luôn đi"), built on branch `feedback-dismiss` with plugin 0.3.1, read by the advisor, and merged and pushed on the user's word the same day ("merge và push").
 
 Chosen by the builder, open to change: seven kinds in one list, the phase `none`, the 200 and 1500 byte limits, issues in English.
