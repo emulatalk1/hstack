@@ -118,6 +118,7 @@ These are observations only. The registered order stops at "little room", so O2 
   - 13.3–13.5, as step 14 set them;
   - a task set with room above the ceiling, on which H and W could be compared again;
   - an independent quality measure of H's and W's products.
+- **Ruled:** The advisor's ruling under the user's delegation ("Theo advisor", 2026-11-19): close the benchmark with a final report under its own registered plan, and start no new run under the delegation. 13.3–13.5 cannot change acceptance, which is already unreachable. A task set with room is a new benchmark (new runs, a new lock, a selection rule blind to the scores now seen) and needs the user's own word. A blind H/W rating would likely be an unreadable null (O2 code shows no difference; the raters' sensitivity is not validated). The close-out plan: no new run, no `table.json` by hand, no H − B number; the verdicts as registered, step 15's outcome and the costs already reported; every unmeasured item listed (13.3–13.5, item 6, the mutation score, the per-layer measures); step 14's open items carried (the 7.3 trigger candidate); a short proposal of what a re-test would need, started only if the user asks. Its plan goes to the user for approval.
 
 ## Approval
 
