@@ -92,4 +92,4 @@ Nothing under `<data>` changes in this step. `stick compare progress/stick-v1-st
 
 ## Approval
 
-Waiting for the user's approval after the advisor's review.
+After the advisor's review, approved by the user ("Duyệt, merge và push", 2026-11-19, asked directly); the close-out plan is `stable` and **the benchmark is closed**. The setup token in `<data>/arm/box.env` is kept, by the user's decision ("Giữ nguyên").

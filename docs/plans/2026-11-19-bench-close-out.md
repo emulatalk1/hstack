@@ -2,7 +2,7 @@
 type: plan
 title: "Benchmark close-out plan"
 description: "Step 16: close the benchmark with one final report that answers section 1 from what steps 1–15 registered and measured, lists everything left unmeasured, and states what a re-test would need. No new run, no new number, no H − B line."
-status: draft
+status: stable
 generated: { by: claude-code/2.1.318, at: "2026-11-19T08:39:36+07:00" }
 verified:
   - { by: claude-code-advisor/2.1.318, at: "2026-11-19T08:52:00+07:00" }
