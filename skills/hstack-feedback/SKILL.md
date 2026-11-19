@@ -31,20 +31,20 @@ $H feedback add <kind> <phase> <what happened>
 
 ## post
 
-1. Run `$H feedback draft`. It prints every unposted entry on this machine: `entry <id>`, `local: <path>`, `title: …`, the body lines, `confirm: <code>`. A `refused: <path>` line is an entry that holds something outside the allowed fields: tell the user its path and go on; never try to repair it.
-2. Ask with the question tool, one question per entry, at most 4 per call. Put the exact title and body inside the question itself, copied from the script's output character for character, with the repository it goes to (`emulatalk1/hstack`, or `HSTACK_FEEDBACK_REPO` when set); text printed before a question may be hidden while it is open. Options: post, or keep it local.
+1. Run `$H feedback draft`. It prints every unposted entry on this machine: `entry <id>`, `local: <path>`, `to: <repository>`, `title: …`, the body lines, `confirm: <code>`. A `refused: <path>` line is an entry that holds something outside the allowed fields: tell the user its path and go on; never try to repair it.
+2. Ask with the question tool, one question per entry, at most 4 per call. Put the repository (the `to:` line), the exact title and the exact body inside the question itself, copied from the script's output character for character; text printed before a question may be hidden while it is open. Options: post, or keep it local.
 3. **If you have no question tool** (a headless run), print the drafts and the local paths, post nothing, and stop.
-4. For each yes: `$H feedback post <id> <code>`. It prints the issue's URL, or a line ending `kept: <path>` when nothing was posted: no `gh`, `gh` not logged in, the labels could not be read, or the code no longer matches (run `draft` and ask again). Report each line as it is.
+4. For each yes: `$H feedback post <id> <code>`. It prints the issue's URL, or a line ending `kept: <path>` when nothing was posted: no `gh`, `gh` not logged in, the labels could not be read, or the code no longer matches the entry and the repository (run `draft` and ask again). Report each line as it is.
 5. If it says the label `feedback` does not exist: ask the user whether to create it on that repository. Only on their yes, run `$H feedback label`, then post again.
 
 ## collect
 
 `$H feedback collect` lists the open `feedback` issues, one line per phase and kind: `<phase> <kind>: <count>: #<n> #<n>`. Print it as it is.
 
-When a commit fixes what an issue reports, close the issue with the commit, on the user's word:
+When a commit fixes what an issue reports, close the issue with the commit, on the user's word. `<repository>` is the one `collect` read: `emulatalk1/hstack`, or `HSTACK_FEEDBACK_REPO` when it is set.
 
 ```
-gh issue close <n> --repo emulatalk1/hstack --comment "Fixed in <full commit sha>"
+gh issue close <n> --repo <repository> --comment "Fixed in <full commit sha>"
 ```
 
 An issue holds numbers only. What happened is in the local entry on the machine that posted it: under `feedback/posted/`, the file whose last line is `posted: <the issue's URL>`.

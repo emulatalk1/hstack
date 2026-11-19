@@ -11,7 +11,7 @@ ok() { if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails + 
 stop() { printf '{"hook_event_name":"Stop","stop_hook_active":false}' | CLAUDE_PROJECT_DIR="$T/r" sh "$H" hook-stop; }
 start() { printf '{"session_id":"x","source":"%s"}' "$1" | CLAUDE_PROJECT_DIR="$T/r" sh "$H" hook-start >/dev/null; }
 
-mkdir -p "$T/r/tests" "$T/r/src" && cd "$T/r" && git init -q && git config user.email t@t && git config user.name t
+mkdir -p "$T/r/tests" "$T/r/src" && cd "$T/r" && git init -q && git config user.email t@t && git config user.name t || exit 1
 echo 'assert a' > tests/old_test.txt; echo 'x = 1' > src/a.txt; git add -A; git commit -qm base
 S=$(sh "$H" dir)
 
@@ -115,11 +115,14 @@ before=$(git status --porcelain --ignored)
 # capture inside the loop (the run above already skipped explore)
 ok 'the first run recorded its skipped step' '[ "$(entries | wc -l | tr -d " ")" = 1 ]'
 flush
-ok 'a plain phase prints nothing and records nothing' '[ -z "$(sh "$H" phase setup 2>&1)" ] && [ -z "$(entries)" ]'
+out=$(sh "$H" phase setup 2>&1); rc=$?
+ok 'a plain phase exits 0, prints nothing and records nothing' '[ $rc -eq 0 ] && [ -z "$out" ] && [ -z "$(entries)" ]'
+[ "$(id -u)" = 0 ] || { chmod a-w "$S/phases"; ok 'phase still fails when its line cannot be written' '! sh "$H" phase gate 2>/dev/null'; chmod u+w "$S/phases"; }
 sh "$H" phase mutatex skipped: time
 ok 'a name outside PHASES records nothing' '[ -z "$(entries)" ]'
 sh "$H" lock tests/new_test.txt >/dev/null; sh "$H" lock tests/new_test.txt >/dev/null
-ok 'a skipped phase still exits 0 and prints nothing' '[ -z "$(sh "$H" phase explore skipped: /Users/acme/secret-app cannot run 2>&1)" ]'
+out=$(sh "$H" phase explore skipped: /Users/acme/secret-app cannot run 2>&1); rc=$?
+ok 'a skipped phase still exits 0 and prints nothing' '[ $rc -eq 0 ] && [ -z "$out" ]'
 e1=$(entries)
 ok 'a skipped step records a setup-failure, the why in the detail only' 'head_of "$FB/$e1" | grep -qx "kind=setup-failure" && head_of "$FB/$e1" | grep -qx "phase=explore" && grep -q "secret-app" "$FB/$e1" && ! head_of "$FB/$e1" | grep -q secret'
 ok 'the counts come from the state files' 'head_of "$FB/$e1" | grep -qx "oracle_files=1" && head_of "$FB/$e1" | grep -qx "dispute_rounds=1" && head_of "$FB/$e1" | grep -qx "skipped_phases=2" && head_of "$FB/$e1" | grep -qx "elapsed=0"'
@@ -137,7 +140,15 @@ echo logged-out > "$T/bin/mode"
 ok 'a logged-out gh keeps the file and prints its path' 'F post "$id" "$code" | grep -q "kept: $FB/$e1" && [ -f "$FB/$e1" ] && ! log | grep -q create'
 : > "$T/bin/mode"
 ok 'a wrong confirm code posts nothing' '! F post "$id" 123 >/dev/null 2>&1 && ! log | grep -q create'
-ok 'an id that is not an entry id is refused' '! F post "../$e1" "$code" >/dev/null 2>&1 && ! F post "$id/../x" "$code" >/dev/null 2>&1'
+ok 'an id that is not an entry id is refused' 'F post "../$e1" "$code" 2>&1 | grep -q "usage:" && F post "$id/../x" "$code" 2>&1 | grep -q "usage:" && F post "1/2" "$code" 2>&1 | grep -q "not an entry id"'
+mkdir -p "$T/state/acme corp/feedback"; printf 'version=0.3.0\nkind=cost\nphase=build\n\n' > "$T/state/acme corp/feedback/20000101-000000-2"
+printf 'version=0.3.0\nkind=cost\nphase=build\n\n' > "$T/state/${S##*/}/feedback/acme-name"
+ok 'a file whose name is not an entry id is no entry, and its name is never printed' '! F draft | grep -q acme'
+mv "$T/state/${S##*/}/feedback/acme-name" "$T/acme-name"
+mkdir "$T/badgrep"; printf '#!/bin/sh\ncase $1 in -Ev*) exit 2 ;; esac\nexec %s "$@"\n' "$(command -v grep)" > "$T/badgrep/grep"; chmod +x "$T/badgrep/grep"
+ok 'a grep that fails refuses the draft' 'PATH="$T/badgrep:$PATH" sh "$H" feedback draft | grep -qx "refused: $FB/$e1" && ! PATH="$T/badgrep:$PATH" sh "$H" feedback draft | grep -q "^entry "'
+stop >/dev/null # consumes the pass the drafts above wrote
+ok 'a verb that does not exist writes no pass' '[ ! -f "$S/pass" ] && ! F bogus 2>/dev/null && [ ! -f "$S/pass" ]'
 echo bug > "$T/bin/labels"
 ok 'a missing label posts nothing and creates none' '! F post "$id" "$code" >/dev/null && F post "$id" "$code" | grep -q "feedback label" && [ -f "$FB/$e1" ] && ! log | grep -q create'
 echo label-fail > "$T/bin/mode"
@@ -161,9 +172,12 @@ sh "$H" phase mutate skipped: time, 185 min
 e2=$(entries)
 ok 'a time skip records a cost' 'head_of "$FB/$e2" | grep -qx "kind=cost" && head_of "$FB/$e2" | grep -qx "phase=mutate"'
 : > "$T/bin/log"
-HSTACK_FEEDBACK_REPO=me/fork sh "$H" feedback post "$(F draft | sed -n 's/^entry //p')" "$(F draft | sed -n 's/^confirm: //p')" >/dev/null
+ok 'the yes covers the repository: a code shown for one repo does not post to another' '! HSTACK_FEEDBACK_REPO=me/fork sh "$H" feedback post "$(F draft | sed -n "s/^entry //p")" "$(F draft | sed -n "s/^confirm: //p")" >/dev/null 2>&1 && ! log | grep -q create'
+ok 'draft names the repository it would post to' 'HSTACK_FEEDBACK_REPO=me/fork sh "$H" feedback draft | grep -qx "to: me/fork" && F draft | grep -qx "to: emulatalk1/hstack"'
+HSTACK_FEEDBACK_REPO=me/fork sh "$H" feedback post "$(F draft | sed -n 's/^entry //p')" "$(HSTACK_FEEDBACK_REPO=me/fork sh "$H" feedback draft | sed -n 's/^confirm: //p')" >/dev/null
 ok 'HSTACK_FEEDBACK_REPO changes the repo on every call' 'log | grep -q "\[issue\] \[create\] \[--repo\] \[me/fork\]" && ! log | grep "^gh " | grep -v "^gh \[auth\]" | grep -vq "\[--repo\] \[me/fork\]"'
-ok 'a repo that is not owner/name is refused' '! HSTACK_FEEDBACK_REPO="a b" sh "$H" feedback collect >/dev/null 2>&1 && ! HSTACK_FEEDBACK_REPO="a/b/c" sh "$H" feedback collect >/dev/null 2>&1'
+: > "$T/bin/log"
+ok 'a repo that is not owner/name is refused before any gh call' 'HSTACK_FEEDBACK_REPO="a b" sh "$H" feedback collect 2>&1 | grep -q "must be owner/name" && HSTACK_FEEDBACK_REPO="a/b/c" sh "$H" feedback collect 2>&1 | grep -q "must be owner/name" && [ ! -s "$T/bin/log" ]'
 
 # the allow-list: a head with anything else is refused, by draft and by post
 : > "$T/bin/log"
@@ -198,6 +212,13 @@ out=$(stop)
 ok 'a second capped stop prints nothing and records none' '[ -z "$out" ] && [ "$(entries)" = "$e" ]'
 start compact
 ok 'a compaction still does not give the blocks back' '[ -z "$(stop)" ] && [ "$(entries)" = "$e" ]'
+# a broken state file (a full disk leaves an empty one) must not break the hook or the loop
+: > "$S/started"
+start resume; stop >/dev/null; stop >/dev/null; stop >/dev/null
+out=$(stop); rc=$?
+ok 'the capped stop survives an empty started' '[ $rc -eq 0 ] && [ -z "$out" ] && [ "$(cat "$S/stop-blocks")" = 4 ]'
+out=$(sh "$H" phase review skipped: nothing to review 2>&1); rc=$?
+ok 'so does a skipped phase' '[ $rc -eq 0 ] && [ -z "$out" ] && sh "$H" missing | grep -vq review'
 
 # the pass: a turn the user spends on feedback ends once
 start resume

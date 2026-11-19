@@ -26,7 +26,7 @@ count() { n=$(grep -c "$1" "$2" 2>/dev/null); echo "${n:-0}"; }
 record() { # <kind> <phase> <detail> [any word: no elapsed, no counts]
   E="$S/feedback/$(date +%Y%m%d-%H%M%S)-$$"
   mkdir -p "$S/feedback" 2>/dev/null || return 0
-  {
+  ( # a subshell: a broken state file ends the snapshot, never the phase or the hook that called
     echo "version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$(dirname "$0")/../.claude-plugin/plugin.json")"
     echo "kind=$1"; echo "phase=$2"
     if [ -f "$S/started" ] && [ -z "$4" ]; then
@@ -39,10 +39,10 @@ record() { # <kind> <phase> <detail> [any word: no elapsed, no counts]
       echo "dispute_rounds=$l"
       echo "skipped_phases=$(count ' skipped: ' "$S/phases")"
       echo "review_rounds=$(ls "$S"/review-*.md 2>/dev/null | grep -c '')"
-      echo "unavailable_capabilities=$(count unavailable "$S/capabilities.md")"
+      echo "unavailable_capabilities=$(count 'unavailable:' "$S/capabilities.md")"
     fi
     echo; printf '%s\n' "$3"
-  } > "$E" 2>/dev/null
+  ) > "$E" 2>/dev/null
   :
 }
 
@@ -55,13 +55,13 @@ draft() { # <entry file>: sets title and body, or returns 1
     -e 's/^unavailable_capabilities=/unavailable capabilities: /')
   allowed="^(plugin version: [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|phase: ($(echo $PHASES | tr ' ' '|'))|kind: ($(echo $KINDS | tr ' ' '|'))|(elapsed minutes|locked oracle files|stop-hook blocks|dispute rounds|skipped phases|review rounds|unavailable capabilities): [0-9]{1,5})\$"
   [ -n "$body" ] || return 1
-  printf '%s\n' "$body" | grep -Evq "$allowed" && return 1
+  [ "$(printf '%s\n' "$body" | grep -Evc "$allowed")" = 0 ] || return 1 # a count, so a grep that fails refuses too
   [ -z "$(printf '%s\n' "$body" | cut -d: -f1 | sort | uniq -d)" ] || return 1
   for k in 'plugin version' phase kind; do printf '%s\n' "$body" | grep -q "^$k: " || return 1; done
   field() { printf '%s\n' "$body" | sed -n "s/^$1: //p"; }
   title="[feedback] $(field phase) $(field kind) (hstack $(field 'plugin version'))"
 }
-code() { printf '%s\n%s\n' "$title" "$body" | cksum | cut -d' ' -f1; }
+code() { printf '%s\n%s\n%s\n' "$REPO" "$title" "$body" | cksum | cut -d' ' -f1; }
 
 fingerprint() { printf '%s %s\n' "$(git rev-parse -q --verify HEAD 2>/dev/null)" "$(git status --porcelain | git hash-object --stdin)"; }
 
@@ -111,9 +111,9 @@ EOF
     if [ "$n" -ge "$MAX_BLOCKS" ] 2>/dev/null; then # never loop: a capped gate costs less than a run that never ends
       # the gate giving up on a started run leaves it to a human: one entry per cap (the bump past the cap marks it)
       if [ "$n" -eq "$MAX_BLOCKS" ] && [ -f "$S/base" ]; then
+        echo $((n + 1)) > "$S/stop-blocks"
         set -- ${m:-final}
         record intervention "$1" 'the stop gate gave up on an unfinished run' > /dev/null 2>&1
-        echo $((n + 1)) > "$S/stop-blocks"
       fi
       exit 0
     fi
@@ -129,10 +129,13 @@ if [ "$cmd" = feedback ]; then
     */*) ;;
     *) echo "hstack: HSTACK_FEEDBACK_REPO must be owner/name" >&2; exit 1 ;;
   esac
-  S=''
-  state && : > "$S/pass" # the user is in this turn: the stop hook lets it end once
+  LC_ALL=C; export LC_ALL # an entry is read as bytes: no locale may drop a line the check should refuse
   verb=$1
   [ $# -gt 0 ] && shift
+  S=''
+  state
+  # the user is in this turn: the stop hook of the session's repository lets it end once
+  case $verb in add|draft|post|label|collect) ( cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && state && : > "$S/pass" ) ;; esac
   need_gh() {
     command -v gh >/dev/null 2>&1 || kept "gh is not installed"
     gh auth status >/dev/null 2>&1 || kept "gh is not logged in"
@@ -153,10 +156,11 @@ if [ "$cmd" = feedback ]; then
       none=1
       for f in "$ROOT"/*/feedback/*; do
         [ -f "$f" ] || continue
-        none=0
         d=${f%/feedback/*}
+        case ${d##*/}/${f##*/} in *[!0-9/-]*) continue ;; esac # not an entry: a name is never printed as text
+        none=0
         # a refused entry is named, never shown: its lines may hold what must not be printed
-        if draft "$f"; then printf 'entry %s/%s\nlocal: %s\ntitle: %s\n%s\nconfirm: %s\n\n' "${d##*/}" "${f##*/}" "$f" "$title" "$body" "$(code)"
+        if draft "$f"; then printf 'entry %s/%s\nlocal: %s\nto: %s\ntitle: %s\n%s\nconfirm: %s\n\n' "${d##*/}" "${f##*/}" "$f" "$REPO" "$title" "$body" "$(code)"
         else printf 'refused: %s\n\n' "$f"; fi
       done
       [ $none -eq 0 ] || echo "no unposted feedback entry" ;;
@@ -168,7 +172,7 @@ if [ "$cmd" = feedback ]; then
       f="$ROOT/${1%/*}/feedback/${1#*/}"
       [ -f "$f" ] || { echo "hstack: no unposted entry $1" >&2; exit 1; }
       draft "$f" || { echo "hstack: refused: the entry holds something outside the allowed fields. kept: $f" >&2; exit 1; }
-      [ "$(code)" = "$2" ] || { echo "hstack: the code is not the one of this draft: run feedback draft and show it again. kept: $f" >&2; exit 1; }
+      [ "$(code)" = "$2" ] || { echo "hstack: the code is not the one of this draft and repository: run feedback draft and show it again. kept: $f" >&2; exit 1; }
       need_gh
       labels=$(gh label list --repo "$REPO" --limit 1000 --json name --jq '.[].name' 2>/dev/null) || kept "could not read the labels of $REPO"
       printf '%s\n' "$labels" | grep -qx feedback || kept "the label 'feedback' does not exist on $REPO. Ask the user; only on their yes run: hstack.sh feedback label"
@@ -210,14 +214,14 @@ case $cmd in
     [ -n "$1" ] || { echo "usage: hstack.sh phase <name> [skipped: <why>]" >&2; exit 1; }
     line="$*"
     printf '%s\n' "$line" | grep -Eq '^[a-z]+( skipped: .+)?$' || { echo "hstack: a phase is '<name>' or '<name> skipped: <why>'" >&2; exit 1; }
-    printf '%s\n' "$line" >> "$S/phases"
+    printf '%s\n' "$line" >> "$S/phases" || exit 1
     # a skipped step or an unavailable capability is a stumble. The why goes to the entry's detail only.
     name=${line%% *}
     if in_list "$name" "$PHASES"; then
       case $line in
-        *' skipped: time'|*' skipped: time'[!a-z]*) record cost "$name" "$line" ;;
+        "$name skipped: time"|"$name skipped: time"[!a-z]*) record cost "$name" "$line" ;;
         *' skipped: '*) record setup-failure "$name" "$line" ;; # a guess: the loop names one such skip, a product nothing can run
-        setup) u=$(grep unavailable "$S/capabilities.md" 2>/dev/null) && record setup-failure setup "$u" ;;
+        setup) u=$(grep 'unavailable:' "$S/capabilities.md" 2>/dev/null) && record setup-failure setup "$u" ;;
       esac
     fi > /dev/null 2>&1
     : ;;

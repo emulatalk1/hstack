@@ -88,7 +88,7 @@ The head (up to the first empty line) holds only the allow-listed fields, snapsh
 | `dispute_rounds` | lines of `S/locks` minus 1, at least 0 (new file: `lock` appends one line per call; the loop locks once, then once per dispute round) |
 | `skipped_phases` | lines of `phases` with ` skipped: ` |
 | `review_rounds` | number of `review-*.md` files |
-| `unavailable_capabilities` | lines of `capabilities.md` with `unavailable` |
+| `unavailable_capabilities` | lines of `capabilities.md` with `unavailable:` |
 
 Elapsed and the counts are written only when `started` exists. For a flagged `escaped-bug` they are written only when `done` exists too: without it the state belongs to a newer run, not to the run the bug escaped from. Known limit: after two finished runs, a late `escaped-bug` flag carries the newer run's counts; the draft shows them before posting.
 
@@ -100,11 +100,11 @@ Elapsed and the counts are written only when `started` exists. For a flagged `es
 
 ### Posting
 
-`hstack.sh feedback draft` prints, for each unposted entry: its id, its local path, the exact title, the exact body and a confirm code (the `cksum` of title and body). It reads the entry's head only.
+`hstack.sh feedback draft` prints, for each unposted entry: its id, its local path, the repository it would go to, the exact title, the exact body and a confirm code (the `cksum` of repository, title and body, so the yes covers where it goes). It reads the entry's head only, as bytes (`LC_ALL=C`). Only a file whose state dir and name have the id's shape (digits and `-`) is an entry: a name is never printed as text.
 
 The draft is built by renaming the head's keys to fixed labels, then checked as a whole by one function, the only gate between an entry and GitHub:
 
-- every body line matches one pattern: `plugin version: <n.n.n>`, `phase: <one of PHASES>`, `kind: <one of the four>`, or one of the seven count labels followed by 1 to 5 digits;
+- every body line matches one pattern (counted, so a `grep` that fails refuses the entry too): `plugin version: <n.n.n>`, `phase: <one of PHASES>`, `kind: <one of the four>`, or one of the seven count labels followed by 1 to 5 digits;
 - `plugin version`, `phase` and `kind` are each present, and no label appears twice;
 - the title is `[feedback] <phase> <kind> (hstack <version>)`, built from the checked body.
 
@@ -112,7 +112,7 @@ A head line with any other key, or a value that is not of that shape (a path, a 
 
 `hstack.sh feedback post <id> <code>`, in this order, and it stops at the first failure with the entry kept and its path printed:
 
-1. Check the id's shape (`<digits>/<file name>`) before any path is built from it. Build the draft again and check it; refuse when the code differs from the one `draft` printed (the entry changed since the user saw it).
+1. Check the id's shape (`<digits>/<file name>`) before any path is built from it. Build the draft again and check it; refuse when the code differs from the one `draft` printed (the entry or the repository changed since the user saw it).
 2. `gh` on `PATH` and `gh auth status` succeeds; else `kept: <path>`.
 3. `gh label list --repo <repo>` succeeds (a failure is "post nothing", not "label missing") and names `feedback`; else it says the label is missing and that only the user may have it created (`feedback label` runs `gh label create feedback --repo <repo>`).
 4. `gh issue create --repo <repo> --label feedback --title <title> --body <body>`; print the URL; move the entry to `posted/`.
@@ -121,7 +121,7 @@ A head line with any other key, or a value that is not of that shape (a path, a 
 
 **The yes, and the plugin's own hooks.** The stop hook blocks any turn that ends while a run is unfinished, with "No human will answer; decide…", and the session-start text says the same. A feedback turn on a stalled run would be blocked and pushed to decide alone. So:
 
-- every `feedback` verb, run inside a repository, writes `S/pass`. `hook-stop` consumes it first thing on every stop, whatever the stop's outcome would be, and lets that one stop through with no block counted and no entry recorded; so a pass can never wait for a later, unfinished stop. `hook-start` removes a stale one on startup and resume. **This changes the stop gate for every user** (see Approval). Known limit: a build agent that ran a `feedback` verb would get one stop through; the gate is capped at 3 anyway, and nothing tells that agent the verb exists.
+- each of the five `feedback` verbs (not a mistyped one) writes `S/pass` in the session's repository (`CLAUDE_PROJECT_DIR`, else the current folder). `hook-stop` consumes it first thing on every stop, whatever the stop's outcome would be, and lets that one stop through with no block counted and no entry recorded. `hook-start` removes a stale one on startup and resume. **This changes the stop gate for every user** (see Approval). Known limits, found by the review of the build: a pass waits for the next stop when the feedback turn ended without one (an interrupt, or a verb run by hand in a terminal), so one later stop in that process goes through unblocked; and a build agent that ran a `feedback` verb before each stop would never be blocked. The gate is a reminder capped at 3 blocks, and nothing tells a build agent the verb exists; a time limit on the pass was not built, because a question the user answers late would then end in a block.
 - the skill asks for the yes with the question tool, inside the turn. The exact title and body sit inside the question itself, one question per entry, at most 4 per call: text printed before a question may be hidden while its dialog is open. Where there is no question tool (a headless run), it prints the drafts and the local paths and posts nothing.
 - the skill says: the hook texts do not apply to this skill, a hook block is never a yes, and only an answer the user gave to the shown draft is.
 
@@ -158,6 +158,7 @@ Baseline on the clean branch (159a89c plus this plan), before any change: `bun t
 - [ ] `S/pass` lets one stop through on an unfinished run, and the next stop blocks again; a pass written on a finished run is consumed by that turn's stop and does not excuse a later unfinished one.
 - [ ] `phase mutate skipped: time, 185 min` records a `cost`, not a `setup-failure`.
 - [ ] `collect` prints the grouped lines from the fake `gh`'s answer.
+- [ ] from the review of the build: a `grep` that fails refuses the draft; a file whose name is not an entry id is no entry and its name is not printed; an empty `started` breaks neither the capped stop nor `phase`; `phase` fails when its line cannot be written; a mistyped verb writes no pass; a code shown for one repository does not post to another.
 - [ ] `tests/skills.test.mjs`: the new skill has its name, `disable-model-invocation: true` and the script's `feedback` command (its own check; `checkFrontmatter` demands the Bun line).
 
 ## Tasks
