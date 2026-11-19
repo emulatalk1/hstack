@@ -4,7 +4,8 @@ title: "hstack-feedback plan"
 description: "A small skill and a `feedback` subcommand of hstack.sh: the build loop records each stumble in the state dir, outside the project; a command the user invokes shows an allow-listed draft and posts it as a GitHub issue only after the user's yes; a collect command groups the open issues."
 status: draft
 generated: { by: claude-code/2.1.327, at: "2026-11-19T10:28:18+07:00" }
-verified: []
+verified:
+  - { by: claude-code-advisor/2.1.327, at: "2026-11-19T10:52:00+07:00" }
 ---
 
 # hstack-feedback Plan
@@ -61,7 +62,7 @@ The head (up to the first empty line) holds only the allow-listed fields, snapsh
 
 | Where | When | Kind | Phase | Detail (local) |
 |---|---|---|---|---|
-| `phase` | the line is `<name> skipped: time` | `cost` | `<name>` | the line |
+| `phase` | the line is `<name> skipped: time…` (the why starts with `time`) | `cost` | `<name>` | the line |
 | `phase` | the line is `<name> skipped: <anything else>` | `setup-failure` | `<name>` | the line |
 | `phase` | the line is `setup` and `capabilities.md` has `unavailable` lines | `setup-failure` | `setup` | those lines |
 | `hook-stop` | the gate gives up (3 blocks used) on a started run, once per cap | `intervention` | the first step not recorded, or `final` | none |
@@ -69,7 +70,7 @@ The head (up to the first empty line) holds only the allow-listed fields, snapsh
 - Only a name in PHASES records an entry (`phase` accepts any `[a-z]+`).
 - Capture is silent and never changes an exit code or the hooks' output: `hook-stop`'s stdout is the JSON decision.
 - Mapping every non-`time` skip to `setup-failure` is a guess: the skill names one such skip (explore, when nothing can run the product). The kind is fixed at capture and the user sees it in the draft before posting.
-- The cap entry is recorded only when `base` exists. A capped gate with no run has no honest phase. **This row needs the user's ruling** (see Approval): the user's example lists an intervention as flag-only, and the design says a block is not an intervention. The case for it: a capped gate on an unfinished run is exactly the benchmark's intervention (the turn ended unfinished, a human must resume).
+- The cap entry is recorded only when `base` exists. A capped gate with no run has no honest phase. **This row needs the user's ruling** (see Approval): the user's example lists an intervention as flag-only, and the design says a block is not an intervention. The case for it: a capped gate on an unfinished run is exactly the benchmark's intervention (the turn ended unfinished, a human must resume). Its cost: a run left unfinished and never resumed makes each new session in that repository record one more `intervention` after its 3 blocks.
 
 **Written when the user flags it:** `hstack.sh feedback add <kind> <phase> [what happened]`, through the skill, in the project's session. Any of the four kinds; `intervention` and `escaped-bug` have no other source than the row above. The words go to the detail only.
 
@@ -110,7 +111,7 @@ A head line with any other key, or a value that is not of that shape (a path, a 
 
 `hstack.sh feedback post <id> <code>`, in this order, and it stops at the first failure with the entry kept and its path printed:
 
-1. Build the draft again and check it; refuse when the code differs from the one `draft` printed (the entry changed since the user saw it).
+1. Check the id's shape (`<digits>/<file name>`) before any path is built from it. Build the draft again and check it; refuse when the code differs from the one `draft` printed (the entry changed since the user saw it).
 2. `gh` on `PATH` and `gh auth status` succeeds; else `kept: <path>`.
 3. `gh label list --repo <repo>` succeeds (a failure is "post nothing", not "label missing") and names `feedback`; else it says the label is missing and that only the user may have it created (`feedback label` runs `gh label create feedback --repo <repo>`).
 4. `gh issue create --repo <repo> --label feedback --title <title> --body <body>`; print the URL; move the entry to `posted/`.
@@ -119,8 +120,8 @@ A head line with any other key, or a value that is not of that shape (a path, a 
 
 **The yes, and the plugin's own hooks.** The stop hook blocks any turn that ends while a run is unfinished, with "No human will answer; decide…", and the session-start text says the same. A feedback turn on a stalled run would be blocked and pushed to decide alone. So:
 
-- every `feedback` verb, run inside a repository, writes `S/pass`; `hook-stop` removes it and lets that one stop through, with no block counted and no entry recorded. `hook-start` removes a stale one on startup and resume. Known limit: a build agent that ran a `feedback` verb would get one stop through; the gate is capped at 3 anyway, and nothing tells that agent the verb exists.
-- the skill asks for the yes with the question tool, inside the turn, after printing the drafts verbatim. Where there is no question tool (a headless run), it prints the drafts and the local paths and posts nothing.
+- every `feedback` verb, run inside a repository, writes `S/pass`. `hook-stop` consumes it first thing on every stop, whatever the stop's outcome would be, and lets that one stop through with no block counted and no entry recorded; so a pass can never wait for a later, unfinished stop. `hook-start` removes a stale one on startup and resume. **This changes the stop gate for every user** (see Approval). Known limit: a build agent that ran a `feedback` verb would get one stop through; the gate is capped at 3 anyway, and nothing tells that agent the verb exists.
+- the skill asks for the yes with the question tool, inside the turn. The exact title and body sit inside the question itself, one question per entry, at most 4 per call: text printed before a question may be hidden while its dialog is open. Where there is no question tool (a headless run), it prints the drafts and the local paths and posts nothing.
 - the skill says: the hook texts do not apply to this skill, a hook block is never a yes, and only an answer the user gave to the shown draft is.
 
 ### Collect and close
@@ -133,13 +134,15 @@ A fix closes its issues with `gh issue close <n> --repo <repo> --comment "Fixed 
 
 `skills/hstack-feedback/SKILL.md`, name `hstack-feedback`, `disable-model-invocation: true`, so only the user starts it: `/hstack:hstack-feedback`, with `flag <kind> <phase> <what happened>`, `post` (the default) or `collect`. No Bun: the script is sh.
 
-It prints: for `flag`, the entry's path; for `post`, each draft exactly as the script printed it, the question, then the issue URLs, or `kept: <path>` lines and why; for `collect`, the grouped lines.
+It prints: for `flag`, the entry's path; for `post`, each draft exactly as the script printed it (again inside its question), then the issue URLs, or `kept: <path>` lines and why; for `collect`, the grouped lines.
 
 Its rules: never read or print an entry file; never write or change a title or body; never call `gh issue create` itself; never run `feedback label` without the user's yes to that question; never resume a build from this skill.
 
 ## Tests
 
-In `plugin-dev/test-hstack.sh`. No test can reach GitHub: the file sets `GH_CONFIG_DIR` under its temp dir, unsets `GH_TOKEN` and `GITHUB_TOKEN`, and puts a fake `gh` first on `PATH` that appends its arguments to a log and answers from files in the temp dir.
+In `plugin-dev/test-hstack.sh`. A fake `gh` first on `PATH` appends its arguments to a log and answers from files in the temp dir. No test can reach GitHub even if `PATH` slips (the real `gh` may read its token from the keychain): for the whole file, `HTTPS_PROXY` points at a dead local port, `GH_TOKEN` and `GITHUB_TOKEN` hold junk and `GH_CONFIG_DIR` is under the temp dir; the feedback tests abort unless `command -v gh` is the fake.
+
+Baseline on the clean branch (159a89c plus this plan), before any change: `bun test ./tests` 727 pass, 65 skip, 0 fail; `sh` and `dash plugin-dev/test-hstack.sh` 0 failures. A test that fails after the change is a finding for the user, never a reason to regenerate something locked.
 
 - [ ] a skip reason never reaches a draft: `phase explore skipped: <words with a path and a name>` writes an entry whose detail holds the words; `draft`'s output and the fake `gh`'s log after `post` do not.
 - [ ] a draft with a path or a field outside the list is refused: an entry whose head has `phase=/a/path`, an extra `note=…` line, `elapsed=12x`, a second `kind=` line, or no `version=` line is refused by `draft` and by `post`, and the log has no `issue create`.
@@ -151,7 +154,8 @@ In `plugin-dev/test-hstack.sh`. No test can reach GitHub: the file sets `GH_CONF
 - [ ] entries survive `start`: after a second `start`, the entry is still in `S/feedback/`, not in `old/`.
 - [ ] capture does not disturb the loop: `phase setup` with no `capabilities.md` exits 0 and prints nothing; `phase mutatex` writes no entry; the capped stop prints nothing, records one `intervention` only on a started run, and a second capped stop records none.
 - [ ] a flagged `escaped-bug` without `done` has no elapsed and no counts; with `done`, elapsed is `ended` minus `started`.
-- [ ] `S/pass` lets one stop through on an unfinished run, and the next stop blocks again.
+- [ ] `S/pass` lets one stop through on an unfinished run, and the next stop blocks again; a pass written on a finished run is consumed by that turn's stop and does not excuse a later unfinished one.
+- [ ] `phase mutate skipped: time, 185 min` records a `cost`, not a `setup-failure`.
 - [ ] `collect` prints the grouped lines from the fake `gh`'s answer.
 - [ ] `tests/skills.test.mjs`: the new skill has its name, `disable-model-invocation: true` and the script's `feedback` command (its own check; `checkFrontmatter` demands the Bun line).
 
@@ -175,8 +179,9 @@ In `plugin-dev/test-hstack.sh`. No test can reach GitHub: the file sets `GH_CONF
 
 ## Approval
 
-The user's own word is needed on the plan, and on these three:
+The user's own word is needed on the plan, and on these four:
 
 1. **The cap entry.** Record an `intervention` automatically when the stop gate gives up on a started run (recommended), or keep `intervention` flag-only.
 2. **The bench ref.** Push `refs/bench/plugins/hstack-653af83` to origin so the README's pin resolves for everyone (recommended, with the push the user approves at the end), or leave it local and have the note say so.
-3. **The version.** 0.3.0.
+3. **The pass.** A `feedback` verb lets the turn it runs in end once without a stop-hook block (recommended: without it, a feedback turn on a stalled run is blocked 3 times and pushed to resume the build), or no pass, and the skill only tells the agent to ignore the blocks.
+4. **The version.** 0.3.0.
