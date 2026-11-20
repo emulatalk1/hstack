@@ -267,4 +267,17 @@ Left, minor: a red test that Setup's one-file probe already recorded gets a base
 
 For the user to confirm: while executing, the design was changed in decisions 3 and 4 to match two rulings (a failed canary is per line; the 5 minutes take the suites shortest first and do not count a first compile), and after this review in decisions 2, 3 and 5.
 
-(Run f2 and tasks 5 to 7 are filled in as they run.)
+### Task 4, run f2 (2026-11-21, plugin at 7ff1242): the changed text of the base check
+
+A fresh clone of the fixture's bundle, the same request and reply. Before turn 1, two worktrees were added by hand: a leftover base checkout of this checkout's own name (`hstack-base-<state folder name>`), and an unrelated worktree `users-other-work` on a branch of its own. Evidence: `f2-1.jsonl`, `f2-2.jsonl`, `state-f2/`, `f2-setup.txt`.
+
+**Turn 1** (36 seconds, USD 0.58): a spec. **Turn 2** (9 minutes 54 seconds, 27 turns, USD 5.26; 0 permission denials):
+
+1. The base check's first command is `git worktree list`. The base checkout is made as `<a new temporary folder>/hstack-base-<state folder name>`. Yes.
+2. The planted leftover was removed, by its exact path as the list printed it, and `users-other-work` is still there after the run with its branch. `git worktree list` after the run: the fixture and `users-other-work`. Yes. The last reply says both. One slip of order: the first of the two calls of the check listed the worktrees and made its own checkout without removing the leftover; the second call removed it. The two could stand side by side because each is under its own temporary folder.
+3. As in f1: the six test lines, no `n.a.` on one, `canary: via slow-one-file` on the slow whole line; `base-check.md` with both runs and "red at the base too, with the same message"; no change to `test_z_report.py`; the log names the test first and says "not green: not ready to merge"; the last reply ends with the lines of `times` (total 9.9) and no tracked file holds one; ten lines in `phases`, `done` equals HEAD, 0 Stop blocks. `base-check.md` also says why the test may be checked (it exists at the base, the run did not write or edit it) and that the project has no dependency folder. No `git stash` in this run.
+4. **A reading that says no, and the text that follows.** The slow suite ran whole before the final step: once by the builder in step 4's check, and by the reviewer and the explorer in their own calls. The README says it is run whole once, before a merge; in f1 it ran whole once. On this fixture it costs a tenth of a second; on a suite of 19 minutes it is what the user's rule forbids. Nothing in the playbook or the agents' files said otherwise: decision 4 of the design said "its whole run is the one of step 9" and the text did not. Added, with the sentence test 'a suite with no whole run at the base is run whole by nobody before step 9' first: the line of such a suite carries `whole run: step 9 only`, nobody runs the command before step 9, the builder tells each agent so, and step 4's check runs its files one by one. **Not shown by a run:** no third run is made without the user.
+
+Both runs: USD 11.43 (f1 5.59, f2 5.84).
+
+(Tasks 5 to 7 are filled in as they run.)

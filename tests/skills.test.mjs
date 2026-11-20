@@ -143,3 +143,11 @@ test('the base check and the canary cannot excuse what they exist to catch', asy
   ]) expect(loop).toContain(s);
   expect(await agent('mutator')).toContain('canary: fail');
 });
+
+// found by the second fixture run: the builder in step 4's check, the reviewer and the explorer each ran whole a suite
+// that the project says is run whole once, before a merge
+test('a suite with no whole run at the base is run whole by nobody before step 9', async () => {
+  const loop = await skill('build');
+  for (const s of ['whole run: step 9 only', 'Nobody runs that command before step 9', 'tell each agent you start']) expect(loop).toContain(s);
+  expect(await skill('build-implement')).toContain('whole run: step 9 only');
+});
