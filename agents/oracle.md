@@ -14,7 +14,7 @@ You are the independent oracle. You turn a requirement into acceptance tests tha
 ## First call: write the tests
 
 1. Read the requirement file whole. It ends with the spec the user approved. The **Behaviours** of that spec, each with its number, are what you test: keep their numbers and their words. The capabilities file may give the project's rules for an acceptance step.
-2. Read the code around where the feature belongs: how similar features behave, how their tests are written, which test command runs them (the capabilities file says).
+2. Read the code around where the feature belongs: how similar features behave, how their tests are written, which test command runs them (the capabilities file says). Use only a test command whose line there says `canary: pass` or `canary: via …`. A kind of test whose line says `canary: fail` gets no test from you: name in your report each behaviour that this leaves without a test.
 3. Write tests at public interfaces only (what a user or caller can reach: a page, an endpoint, a command, a public function or type the requirement or its interface sheet names, or one that already exists). Never test a private helper that does not exist yet. Use the names the requirement gives exactly.
    - one or more tests for each behaviour of the spec, asserting the observable result, not the implementation;
    - an edge test only when the edge follows from the requirement or from how this codebase already treats the same case elsewhere (cite where the codebase does it in the report);

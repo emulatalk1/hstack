@@ -86,3 +86,32 @@ test('build is a playbook: step 4 invokes hstack:build-implement', async () => {
   expect(loop).toContain('a fix gets a test that fails first, but a lint, format or type fix'); // step 9 agrees with the test rules
   expect(loop).not.toContain('numbered behaviours'); // the how of step 4 lives in hstack:build-implement
 });
+
+// 0.4.1: the canary of each test command, the whole run at the base, the red test the base did not measure, the times
+const agent = (name) => Bun.file(new URL(`../agents/${name}.md`, import.meta.url)).text();
+
+test('setup: a canary for each test command line, a limit for whole runs at the base', async () => {
+  const loop = await skill('build');
+  for (const s of ['Each of these lines gets its own canary', 'canary: via', 'canary: not run:', 'canary: fail', 'under 5 minutes', 'Leave none running after']) expect(loop).toContain(s);
+  expect(loop).not.toContain('only as wide as the time allows');
+});
+
+test('final: a red test the base did not measure is checked at the base first', async () => {
+  const loop = await skill('build');
+  for (const s of ['**Whose red test**', 'worktree add --detach', 'base-check.md', 'share 10 minutes', 'red at the end, the base not checked']) expect(loop).toContain(s);
+  expect(loop).not.toContain('yours to fix');
+});
+
+test('the times go to the last reply, not to a record', async () => {
+  const loop = await skill('build');
+  const last = loop.split('\n').find((l) => l.startsWith('**The last reply.**'));
+  expect(last).toContain('`$H times`');
+  const records = loop.split('\n## 10. ')[1].split('\n**The last reply.**')[0];
+  expect(records).toContain('No time of a step goes into a record');
+});
+
+test('step 4 and the oracle know the rule', async () => {
+  expect(await skill('build-implement')).toContain('Whose red test');
+  const oracle = await agent('oracle');
+  for (const s of ['canary: pass', 'canary: fail']) expect(oracle).toContain(s);
+});
