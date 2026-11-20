@@ -863,3 +863,41 @@ test('two runs moved away in the same second keep a folder each', () => {
   once(); once(); once()
   expect(n()).toBe(3)
 })
+
+// the time of each step: the state file phase-times and the verb times
+let PT = ''
+const marks = () => lines(`${PT}/phase-times`)
+const timesOf = (started: string, text: string) => { writeFileSync(`${PT}/started`, started); writeFileSync(`${PT}/phase-times`, text); return h(['times']) }
+test('approve and phase append a mark to phase-times', () => {
+  PT = fresh('pt'); h(['start']); specced(); expect(h(['phase', 'setup']).code).toBe(0)
+  const m = marks(); expect(m.length).toBe(2); expect(m[0]).toMatch(/^\d+ spec$/); expect(m[1]).toMatch(/^\d+ setup$/)
+})
+test('a skipped step is marked with its whole line', () => {
+  expect(h(['phase', 'explore', 'skipped:', 'time']).code).toBe(0); expect(marks().at(-1)).toMatch(/^\d+ explore skipped: time$/)
+})
+test('phases is unchanged by the marks', () => { expect(read(`${PT}/phases`)).toBe('spec\nsetup\nexplore skipped: time\n') })
+test('times prints the minutes of each mark and the total', () => {
+  const r = timesOf('1000\n', '1120 spec\n1330 setup\n1330 explore skipped: time\n1870 final\n1930 final\n')
+  expect(r.code).toBe(0); expect(r.out).toBe('spec 2.0\nsetup 3.5\nexplore 0.0 skipped\nfinal 9.0\nfinal 1.0\ntotal 15.5')
+})
+test('a mark before the one before it counts as zero', () => { expect(timesOf('1000\n', '1120 spec\n1100 setup\n').out).toBe('spec 2.0\nsetup 0.0\ntotal 1.7') })
+test('a line that is no mark is left out', () => { expect(timesOf('1000\n', 'junk\n1120 spec\n').out).toBe('spec 2.0\ntotal 2.0') })
+test('times without marks says so', () => {
+  const none = (r: { code: number | null; out: string }) => { expect(r.code).toBe(0); expect(r.out).toBe('no times recorded') }
+  none(timesOf('1000\n', '')); none(timesOf('', '1120 spec\n'))
+  writeFileSync(`${PT}/started`, '1000\n'); rmSync(`${PT}/phase-times`); none(h(['times']))
+})
+test('phase records the step when phase-times cannot be written', () => {
+  mkdirSync(`${PT}/phase-times`)
+  expect(h(['phase', 'oracle']).code).toBe(0); expect(lines(`${PT}/phases`).at(-1)).toBe('oracle')
+  rmSync(`${PT}/phase-times`, { recursive: true })
+})
+let ptOld = ''
+test('start moves the marks to old/ with the run', () => {
+  writeFileSync(`${PT}/phase-times`, '1120 spec\n'); start('startup'); expect(h(['start']).code).toBe(0)
+  const olds = readdirSync(`${PT}/old`); expect(olds.length).toBe(1); ptOld = olds[0]
+  expect(read(`${PT}/old/${ptOld}/phase-times`)).toBe('1120 spec\n'); expect(existsSync(`${PT}/phase-times`)).toBe(false)
+})
+test('times --all prints each run under its folder', () => {
+  expect(h(['times', '--all']).out).toBe(`run old/${ptOld}\nspec 2.0\ntotal 2.0\nrun current\nno times recorded`)
+})

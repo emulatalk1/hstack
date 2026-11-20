@@ -8,7 +8,7 @@
 // fields; never an entry's detail.
 // Every string in this file is a byte string (one char per byte, latin1): an entry or a description is checked as
 // bytes, so no encoding can drop or change what the checks should refuse. b() and u() convert at the edges.
-// usage: hstack.ts dir|repo [<path>]|home|start|spec <file>|spec --drop|approve|phase <name> [skipped: <why>]|records-check <feature list> <coverage file>|ruled|missing|lock <file>...|gate|elapsed|done|hook-start|hook-stop
+// usage: hstack.ts dir|repo [<path>]|home|start|spec <file>|spec --drop|approve|phase <name> [skipped: <why>]|records-check <feature list> <coverage file>|ruled|missing|lock <file>...|gate|elapsed|times [--all]|done|hook-start|hook-stop
 //        hstack.ts feedback add <kind> <phase|none> <description on stdin|describe <id> <description on stdin
 //        hstack.ts feedback draft|post <id> <code>|dismiss <id>...|label|collect
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -182,6 +182,24 @@ function missing(): string {
   const have = lines(rdOr(`${S}/phases`))
   // a phase line is "<name>" or "<name> skipped: <why>"; a run recorded by 0.3.1 or earlier named implement "build"
   return PHASES.filter((p) => !have.some((l) => new RegExp(`^${p === 'implement' ? '(implement|build)' : p}( skipped: .+)?$`).test(l))).join(' ')
+}
+// the time of each step: a mark per line of phases, in a file of its own (the Stop gate compares the lines of phases whole).
+// Silent: a mark that cannot be written never stops the step from being recorded.
+const mark = (line: string) => { try { ap(`${S}/phase-times`, `${now()} ${line}\n`) } catch { /* the time is the lesser file */ } }
+// one run's lines for `times`: a line per mark, then the total; the first mark is measured from `started`
+const timesOf = (dir: string): string[] => {
+  let prev: number
+  try { prev = int(rd(`${dir}/started`)) } catch { return ['no times recorded'] }
+  const start = prev, out: string[] = []
+  let last = prev
+  for (const l of lines(rdOr(`${dir}/phase-times`))) {
+    const m = /^([0-9]+) (.+)$/.exec(l)
+    if (!m) continue
+    const t = Number(m[1])
+    out.push(`${m[2].split(' ')[0]} ${(Math.max(0, t - prev) / 60).toFixed(1)}${m[2].includes(' skipped: ') ? ' skipped' : ''}`)
+    prev = t; last = t
+  }
+  return out.length ? [...out, `total ${(Math.max(0, last - start) / 60).toFixed(1)}`] : ['no times recorded']
 }
 const recorded = (step: string) => lines(rdOr(`${S}/phases`)).some((l) => l === step || l.startsWith(`${step} skipped: `))
 // a spec waits from `spec <file>` until `approve`: state file `spec` holds its path, its hash and the code repository's fingerprint
@@ -440,6 +458,7 @@ switch (cmd) {
     }
     if (!recorded('spec')) die('hstack: no approved spec: show the user a spec (spec <file>), end the turn with its text, and run approve when they approve it')
     try { ap(`${S}/phases`, line + '\n') } catch { process.exit(1) }
+    mark(line)
     // a skipped step or an unavailable capability is a stumble. The why goes to the entry's detail only.
     const name = line.split(' ')[0]
     if (inList(name, PHASES)) {
@@ -480,7 +499,7 @@ switch (cmd) {
     // the run's base is the commit at start: what changed since is not this run's, and must not be judged as its work
     if (fingerprint() !== (lines(rd(`${S}/spec`))[2] ?? '')) die('hstack: the code repository changed while the spec waited. If the changes are yours, undo them; if the user made them, delete the spec file unless they want it kept, run spec --drop, and start again')
     offClock()
-    ap(`${S}/phases`, 'spec\n')
+    ap(`${S}/phases`, 'spec\n'); mark('spec')
     for (const f of ['stale', 'spec-asked', 'spec-shown']) rmSync(u(`${S}/${f}`), { force: true })
     put('approved')
     break
@@ -585,6 +604,13 @@ switch (cmd) {
 
   case 'elapsed': put(String(Math.trunc((now() - int(rd(`${S}/started`))) / 60))); break
 
+  case 'times': { // minutes of each step of this run; --all: of each run under old/ too, oldest first
+    if (argv[0] === '--all') for (const d of ls(`${S}/old`)) { put(`run old/${d}`); for (const l of timesOf(`${S}/old/${d}`)) put(l) }
+    if (argv[0] === '--all') put('run current')
+    for (const l of timesOf(S)) put(l)
+    break
+  }
+
   case 'done': {
     const m = missing()
     if (m) die(`hstack: steps not recorded: ${m}`)
@@ -597,5 +623,5 @@ switch (cmd) {
     break
   }
 
-  default: die('usage: hstack.ts dir|repo [<path>]|home|start|spec|approve|phase|records-check|ruled|missing|lock|gate|elapsed|done|feedback|hook-start|hook-stop')
+  default: die('usage: hstack.ts dir|repo [<path>]|home|start|spec|approve|phase|records-check|ruled|missing|lock|gate|elapsed|times|done|feedback|hook-start|hook-stop')
 }
