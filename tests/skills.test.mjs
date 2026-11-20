@@ -130,3 +130,16 @@ test('setup and the base check leave the builder no guess on five points', async
   expect(oracle).toContain('Never use a command whose line says `canary: fail`');
   expect(oracle).toContain('A kind of test with no line whose canary passed');
 });
+
+// found by the review of the whole branch: three places where the base check or the canary could give a wrong verdict
+test('the base check and the canary cannot excuse what they exist to catch', async () => {
+  const loop = await skill('build');
+  for (const s of [
+    'hstack-base-<the last part of $S>', // one fixed name: a run in another worktree of the repository would remove this run's base checkout
+    'Never remove, move or change any other worktree', "git -C <the code repository> worktree remove --force",
+    'points back into the code repository', // a linked dependency folder that makes the base checkout run this run's code
+    'and whose canary passed', // `via` a line that itself failed
+    'is not run in step 9 either', // a whole-suite command that cannot report a failure, run "whatever the clock"
+  ]) expect(loop).toContain(s);
+  expect(await agent('mutator')).toContain('canary: fail');
+});

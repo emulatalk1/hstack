@@ -242,7 +242,7 @@ The fixture as Step 1 has it, one commit; tried by hand first (Step 1b): the six
 1. `capabilities.md` has the six test lines. The three unit lines and the two narrow slow lines say `canary: pass`; the slow whole line says `probe: not run whole`, with the README's rule quoted, and `canary: via slow-file`. `n.a.` stands only on the lines that run no test. Yes. The unit whole run was made with the throwaway test in place: probe and canary in one.
 2. No whole run of the slow suite before the first edit of `wordcount.py`, and none in the background. The only one in the transcript is in the final step. Yes.
 3. The slow suite ran whole in step 9: 24 tests, 23 green, `test_z_report.py` red. Yes.
-4. The red test was met in step 4's check and checked at the base then: `git worktree add --detach` under the temporary folder, in a folder named `hstack-base`, only that test run there, `base-check.md` with the command, the output and the exit code at the base and at the end, and the line "red at the base too, with the same message". Yes. The check was written twice (the first call's shell form did not split the command); each call removed its worktree.
+4. The red test was met in step 4's check and checked at the base then: `git worktree add --detach` under the temporary folder, in a folder named `hstack-base`, only that test run there, `base-check.md` with the command, the output and the exit code at the base and at the end, and the line "red at the base too, with the same message". Yes. The check was written twice (the first call's shell form did not split the command); each call removed its worktree. **Not done:** the text asked the builder to look for a leftover base checkout first, and in neither call did it run `worktree list` before `worktree add` (found by the review of the whole branch, below).
 5. No commit changes `test_z_report.py`, and the line of `wordcount.py` that prints the message changed only in the name of its variable. The log entry names the test first, says nothing was changed for it and "not green: not ready to merge", and lists it under "Needs your ruling" with two options. Yes.
 6. `git worktree list` in the fixture after the run: one line. Yes.
 7. The last reply ends with the eleven lines of `times` (`spec 0.3`, `setup 0.3`, `oracle 1.4`, `implement 1.7`, `gate 0.2`, `review 1.1`, `explore 1.3`, `mutate 1.7`, `final 0.5`, `records 0.1`, `total 8.7`). No tracked file of the fixture holds such a line. Yes.
@@ -253,4 +253,18 @@ Seen and not part of this plan: the builder made a `git stash` of one file durin
 
 No second run: decision 5 was reached in the first. What no run reached: a canary that fails; the 10 minutes of the base checks; a whole run cut at 5 minutes; a red test that is green at the base, or not checked; the walk of an earlier step at the base (step 7).
 
-(Tasks 5 to 7 are filled in as they run.)
+### The review of the whole branch (2026-11-20, one reviewer with a fresh context, range 452e0b7..e236a29)
+
+Nothing critical. The script: `phases` cannot be changed by the new code; `times` and `times --all` did not crash on any odd file the reviewer tried and always exit 0. Three important findings, all in the text, each fixed with the sentence test 'the base check and the canary cannot excuse what they exist to catch' written first:
+
+1. A linked dependency folder can point back into the code repository (a workspace package, an editable install). The base checkout then runs this run's code, and the run's own regression reads "red at the base too". Now: such a result is "not checked".
+2. The base checkout had one fixed name, and `worktree list` is the whole repository's: a run in another worktree of the same repository could remove this run's base checkout as a "leftover". And run f1's builder skipped the look for a leftover. Now: the folder is named after this checkout's state folder, the look is the first command of the check, and only that exact name is ever removed.
+3. `canary: fail` per line left three gaps: a whole-suite command that cannot report a failure would still run "whatever the clock" at the end; `via` could name a line that itself failed; the mutator was not told. Now: such a suite is reported as not run (and "not green: not ready to merge" when it must be green), `via` names a line whose canary passed, and the mutator never uses a failed command.
+
+One finding settled in the design, not the code: the design said `times --all` heads each run with its start date; the script prints `run old/<folder>`, as this plan's Task 1 has it. The design's sentence now says so.
+
+Left, minor: a red test that Setup's one-file probe already recorded gets a base check it does not need; a run started by 0.4.0 and continued charges its earlier time to its first mark; `old/…-10` sorts before `…-2` in `times --all`; no test for the order of two old runs, nor for the wait taken off the clock as seen by `times`; in step 4 the gate has not run when "a test the gate lists as changed" is asked; no place where the used minutes of the shared 10 are written; no field value named for a whole-suite command narrowed through its own arguments.
+
+For the user to confirm: while executing, the design was changed in decisions 3 and 4 to match two rulings (a failed canary is per line; the 5 minutes take the suites shortest first and do not count a first compile), and after this review in decisions 2, 3 and 5.
+
+(Run f2 and tasks 5 to 7 are filled in as they run.)
