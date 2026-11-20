@@ -227,4 +227,30 @@ Left as they are, for the user to see:
 7. "Every checkpoint is a plain `git commit` of all changes" (the code repository) beside "Commit by path, never with `-A`" (the records home), when both are one folder. In the text since 0.4.0; not part of this change.
 8. "The widest suite the time allows" in step 4's check and step 9 has no cap of its own, and it is not said whether a CI workflow that runs every suite on a pull request is a "rule" that a suite must be green before a merge. Both in the text since 0.4.0; not part of this change.
 
-(Later tasks are filled in as they run.)
+### Task 3 (2026-11-20)
+
+README and `plugin.json` at 0.4.1. Whole suite: 984 pass, 67 skip, 0 fail; `tsc` 0.
+
+### Task 4, run f1 on the fixture (2026-11-20, plugin at 7d38662, CLI 2.1.328)
+
+The fixture as Step 1 has it, one commit; tried by hand first (Step 1b): the six commands gave what the plan says, a canary was red through the slow one-file command, and the red test was red in a detached worktree of the first commit, which was then removed. Evidence: `.evidence/plan-step-times-2026-11-20/` (`requests.md`, `fixture-f1.bundle`, `f1-1.jsonl`, `f1-2.jsonl`, `state-f1/`).
+
+**Turn 1** (37 seconds, 8 turns, USD 0.58): a spec of 7 behaviours, the notification call, no commit. The spec puts the message for a file that cannot be opened outside itself.
+
+**Turn 2**, resumed with `Approved.` (8 minutes 42 seconds, 28 turns, USD 5.02; 4 agents, one each; 0 permission denials):
+
+1. `capabilities.md` has the six test lines. The three unit lines and the two narrow slow lines say `canary: pass`; the slow whole line says `probe: not run whole`, with the README's rule quoted, and `canary: via slow-file`. `n.a.` stands only on the lines that run no test. Yes. The unit whole run was made with the throwaway test in place: probe and canary in one.
+2. No whole run of the slow suite before the first edit of `wordcount.py`, and none in the background. The only one in the transcript is in the final step. Yes.
+3. The slow suite ran whole in step 9: 24 tests, 23 green, `test_z_report.py` red. Yes.
+4. The red test was met in step 4's check and checked at the base then: `git worktree add --detach` under the temporary folder, in a folder named `hstack-base`, only that test run there, `base-check.md` with the command, the output and the exit code at the base and at the end, and the line "red at the base too, with the same message". Yes. The check was written twice (the first call's shell form did not split the command); each call removed its worktree.
+5. No commit changes `test_z_report.py`, and the line of `wordcount.py` that prints the message changed only in the name of its variable. The log entry names the test first, says nothing was changed for it and "not green: not ready to merge", and lists it under "Needs your ruling" with two options. Yes.
+6. `git worktree list` in the fixture after the run: one line. Yes.
+7. The last reply ends with the eleven lines of `times` (`spec 0.3`, `setup 0.3`, `oracle 1.4`, `implement 1.7`, `gate 0.2`, `review 1.1`, `explore 1.3`, `mutate 1.7`, `final 0.5`, `records 0.1`, `total 8.7`). No tracked file of the fixture holds such a line. Yes.
+8. Ten lines in `phases`, `done` equals HEAD, the tree clean, 0 Stop blocks. Yes.
+9. Both turns: 9 minutes 19 seconds, USD 5.59.
+
+Seen and not part of this plan: the builder made a `git stash` of one file during the implementation, against the playbook's git rule, popped it in its next call, and said so in its summary and its last reply.
+
+No second run: decision 5 was reached in the first. What no run reached: a canary that fails; the 10 minutes of the base checks; a whole run cut at 5 minutes; a red test that is green at the base, or not checked; the walk of an earlier step at the base (step 7).
+
+(Tasks 5 to 7 are filled in as they run.)
