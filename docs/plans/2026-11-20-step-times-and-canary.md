@@ -203,4 +203,28 @@ What is left of this issue: the first run in a new worktree has no build cache a
 
 ## Results
 
-(Filled in as the tasks run.)
+### Tasks 1 and 2 (2026-11-20)
+
+- Task 1: the ten tests were written first. Eight failed before the code; two passed at once, being guards of what the script already did (`phases` unchanged, the marks moved to `old/`), and were then seen failing on a broken copy (a time written into `phases`; `phase-times` kept at `start`), with the first test failing on a copy that makes no mark in `approve`. Whole suite after the task: 979 pass, 67 skip, 0 fail; `tsc` 0.
+- One whole-suite run in between had 3 fails, none in a file this plan touches: two tests of `tests/bench-h5.test.mjs` and one of `tests/bench-diagnose.test.mjs`, two of them at their 5-second limit. The two files alone passed twice (37 pass), and the next whole run passed. Taken as intermittent under the load of the whole suite; not fixed here.
+- Task 2: the four sentence tests failed first, then passed. The capabilities line writes the canary's values with ` / ` between them, not ` | `: that is the separator of the line's own fields. Whole suite: 983 pass, 67 skip, 0 fail.
+
+### Task 2b, the fresh reader (2026-11-20)
+
+One agent with none of this work's context read the three files as the builder and followed them in thought on three projects (one test command; unit, integration and a 19-minute end-to-end suite; a first compile of 10 minutes). Eight findings.
+
+Changed in the text, each pinned first by the test 'setup and the base check leave the builder no guess on five points':
+
+1. A test can be red in the base checkout because of the checkout (a database the run has already changed). The text now says that red at the base counts only when the test ran there as the base would run it; else it is "not checked".
+2. `canary: fail` on one line could be read as the loss of the whole kind of test, which on a project with one kind leaves no test at all. Now: the line's command is not used, and a kind is no evidence only when no line of it passed. The oracle's sentence says the same.
+3. "All of them together under 5 minutes" could be read as a sum that stops every whole run once one slow suite is in it. Now: shortest first, and no whole run for the suite that would take the sum past 5 minutes, nor for any after it.
+4. The 5 minutes could cut a first whole run in the middle of its first compile. Now: a first compile is not counted, as for the step's own cap.
+5. Canaries could be dropped when Setup ran out of time, leaving the oracle with no command it may use. Now: the canaries of the one-file and one-test lines are required whatever the clock.
+
+Left as they are, for the user to see:
+
+6. On a project with a long first compile, the base checkout has no build output, the compile uses the 10 minutes, and every red test ends "not checked" and is the builder's to fix. This is the risk the user accepted with the cap (answer 8 of the design), with this very case as the example.
+7. "Every checkpoint is a plain `git commit` of all changes" (the code repository) beside "Commit by path, never with `-A`" (the records home), when both are one folder. In the text since 0.4.0; not part of this change.
+8. "The widest suite the time allows" in step 4's check and step 9 has no cap of its own, and it is not said whether a CI workflow that runs every suite on a pull request is a "rule" that a suite must be green before a merge. Both in the text since 0.4.0; not part of this change.
+
+(Later tasks are filled in as they run.)

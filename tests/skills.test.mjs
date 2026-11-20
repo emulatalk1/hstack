@@ -115,3 +115,18 @@ test('step 4 and the oracle know the rule', async () => {
   const oracle = await agent('oracle');
   for (const s of ['canary: pass', 'canary: fail']) expect(oracle).toContain(s);
 });
+
+// found by a reader with no context, before any paid run: five places where the builder had to guess
+test('setup and the base check leave the builder no guess on five points', async () => {
+  const loop = await skill('build');
+  for (const s of [
+    'take the suites shortest first', // "all of them together" read as a sum that stops every whole run
+    'A first compile is not counted', // the 5 minutes cut a first whole run in the middle of its compile
+    'whatever the clock: only a whole-suite line may say `via` or `not run`', // canaries dropped when the step ran out of time
+    'A kind of test with no line whose canary passed', // one failed line read as the whole kind
+    'is not checked, not red at the base', // red in the base checkout because of the checkout
+  ]) expect(loop).toContain(s);
+  const oracle = await agent('oracle');
+  expect(oracle).toContain('Never use a command whose line says `canary: fail`');
+  expect(oracle).toContain('A kind of test with no line whose canary passed');
+});
