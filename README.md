@@ -2,7 +2,7 @@
 
 A Claude Code plugin for an evidence-led build loop: review, mutation testing and blind evaluators, run per project.
 
-**Status: v0.3.2.** `hstack:build` is an autonomous build loop for any stack: it finds how to test and run the project (each capability proven by a probe and a canary), has an independent oracle write acceptance tests from the requirement before any code, builds, gates against weakened tests, then runs a reviewer, an exploratory tester and a mutation check, each in its own context. Step 4 is a skill of its own, `hstack:build-implement`, which the loop invokes, with its test rules beside it (`tdd.md`, `writing-good-tests.md`; third-party text, licence in `skills/build-implement/LICENSE-tdd`). Two hooks keep it going: a session-start nudge and a stop gate that refuses to end an unfinished run (at most 3 times per process; a turn you spend on `/hstack:hstack-feedback` ends once without that block). Everything it runs is POSIX `sh` and `git`; its run state lives in `~/.hstack/<checksum of the git dir>/`, never in the work tree or `.git`. Design: [`plugin-dev/2026-11-10-hstack-plugin-design.md`](plugin-dev/2026-11-10-hstack-plugin-design.md); hook tests: `sh plugin-dev/test-hstack.sh`.
+**Status: v0.4.0.** `hstack:build` is a build loop for any stack. It starts with a **spec**: the feature's behaviours, in sentences a user can check, and every place where the request goes against the project's record. Nothing is built before you approve it; after that the loop runs to the end on its own. It finds how to test and run the project (each capability proven by a probe and a canary), has an independent oracle write acceptance tests from the approved spec before any code, builds, gates against weakened tests, then runs a reviewer, an exploratory tester and a mutation check, each in its own context. Its last step keeps the project's **records**: the acceptance steps with the tests that check each, whether it passed, and whether it is left to its tests from now on (`full`: a reviewer found an assertion for every point of the step, and a planted fault made its test fail; else `partial`), a log entry, and, beside the spec, the decisions the builder made alone (`<spec>.decisions.md`). A project with no records gets `docs/specs/`, `progress/feature_list.json` (features and their steps), `progress/test-coverage.md` (how each step is checked) and `progress/progress.md` (the log); the script checks that the first two agree before a run can end. When the code is in a repository of its own, a one-line file `.hstack/repo` in the folder you launch from points to it, and the spec and the records stay out of the code repository. Step 4 is a skill of its own, `hstack:build-implement`, which the loop invokes, with its test rules beside it (`tdd.md`, `writing-good-tests.md`; third-party text, licence in `skills/build-implement/LICENSE-tdd`). Two hooks keep it going: a session-start nudge and a stop gate that refuses to end an unfinished run (at most 3 times per process; a turn that ends with a spec for you to approve is let through, and so is a turn you spend on `/hstack:hstack-feedback`; a run that a new session finds, finished or abandoned, is judged only by what that session changes). The script is TypeScript run with Bun (`scripts/hstack.ts`); its run state lives in `~/.hstack/<checksum of the git dir>/`, never in the work tree or `.git`. Designs: [`plugin-dev/2026-11-20-records-and-questions.md`](plugin-dev/2026-11-20-records-and-questions.md) (0.4.0) and [`plugin-dev/2026-11-10-hstack-plugin-design.md`](plugin-dev/2026-11-10-hstack-plugin-design.md) (0.2); tests of the script: `bun test tests/hstack.test.ts`.
 
 **Benchmark.** The benchmark ([`progress/final-report.md`](progress/final-report.md)) measured plugin commit `653af835fd613e3eb25feb48e4ccc9bfb534ae6e` only; every later version, this one included, is unmeasured. That commit is in `main`'s history and is pinned by the ref `refs/bench/plugins/hstack-653af83`. A plain clone does not fetch that namespace: `git fetch origin refs/bench/plugins/hstack-653af83:refs/bench/plugins/hstack-653af83`.
 
@@ -10,11 +10,21 @@ A Claude Code plugin for an evidence-led build loop: review, mutation testing an
 
 The older stack A/B tools below (`init`, the safety checks) are kept as they were; their skills are user-invoked only (`disable-model-invocation`), because they need Bun and a manifest.
 
-## Requirements
+## Prerequisites
 
-- Claude Code
-- Bun 1.4.4 or later. The scripts use Bun's own APIs; there is nothing to install.
+To use the plugin:
+
+- Claude Code.
+- git.
+- [Bun](https://bun.sh) 1.4.4 or later, on the `PATH` of the machine where Claude Code runs, whatever the project's own stack is. The harness's scripts run with Bun and use Bun's own APIs; the plugin itself has nothing to install.
 - macOS or Linux. The port check uses `lsof`, and the `docker` and `port` checks read `docker ps`.
+
+Both hooks of `hstack:build` (the session-start nudge and the stop gate) are `bun` commands. On a machine where `bun` is not on the `PATH` of the Claude Code process, both hooks fail (`bun: command not found`) and the stop gate is off. Claude Code shows the person "stop hook problem" at each stop; the agent is told nothing and goes on without the gate (seen on 2026-11-20, Claude Code 2.1.329).
+
+To develop the plugin:
+
+- The same, plus `bun install` once, for the two development dependencies (`typescript`, `@types/bun`). The plugin itself needs neither.
+- **Every script of the harness and every test is TypeScript, run with Bun** (`bun <file>.ts`, `bun test`). Add no new `.sh` or `.mjs` file. The `.mjs` files that exist (the older `init`, `check` and `okf-check` tools, and the closed benchmark under `bench/`) stay as they are until they are converted or retired.
 
 ## Install
 
@@ -29,8 +39,8 @@ You can also add a local clone: `/plugin marketplace add /path/to/hstack`.
 
 | Skill | Use it |
 |---|---|
-| `build` | Any request to build, change or fix code. Runs to the end without asking. Loop agents: `oracle`, `reviewer`, `explorer`, `mutator`. |
-| `build-implement` | Step 4 of `build`: the spec, the feature written test-first, the checks. Invoked by the loop, not by you. |
+| `build` | Any request to build, change or fix code. Asks once, for the spec; then runs to the end. Loop agents: `oracle`, `reviewer`, `explorer`, `mutator`. |
+| `build-implement` | Step 4 of `build`: the entry points and edges, the feature written test-first, the checks. Invoked by the loop, not by you. |
 | `hstack-feedback` | When you find a problem with hstack and want it written up as an issue, or want the open ones listed. User-invoked only; posting needs `gh`. |
 | `hstack-init` | Once per project, and again after the project folder is copied or moved. |
 | `hstack-safety` | Before any Docker command, port stop, database drop or folder wipe. |
@@ -98,16 +108,21 @@ It exits 1 when there are errors. It also warns about docs past their `stale_aft
 
 ```
 bun test ./tests
+bun x tsc --noEmit
 ```
 
-This runs the tests with `bun:test`, 61 tests. The tests leave nothing behind on the machine: they read `docker ps`, make temp folders they remove, and open short-lived local listeners.
+The first runs every test with `bun:test`; it takes about 3 minutes (`bun test tests/hstack.test.ts` runs only the tests of the build loop's script, in half a minute). The second type-checks the TypeScript files. The tests leave nothing behind on the machine: they read `docker ps`, make temp folders they remove, and open short-lived local listeners.
 
 | Path | What it holds |
 |---|---|
 | `.claude-plugin/` | plugin and marketplace manifests |
 | `scripts/` | the command-line scripts; `scripts/lib/` holds one module per job |
-| `skills/` | `hstack-init`, `hstack-safety` |
+| `skills/` | `build`, `build-implement`, `hstack-feedback`, `hstack-init`, `hstack-safety` |
+| `agents/` | the four agents of the build loop: `oracle`, `reviewer`, `explorer`, `mutator` |
+| `hooks/` | the SessionStart and Stop hooks of the build loop |
+| `plugin-dev/` | the designs of the build loop |
 | `tests/` | tests, and their fixtures in `tests/fixtures/` |
+| `bench/` | the closed benchmark's code; its report is `progress/final-report.md` |
 | `fixtures/electron/` | the stack B probe app |
 | `docs/` | design, plans, decisions and stack adapters (an OKF v0.2 bundle) |
 | `progress/` | the working log: review cost per task, the build ledger |

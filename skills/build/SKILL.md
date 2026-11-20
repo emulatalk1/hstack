@@ -1,28 +1,51 @@
 ---
 name: build
-description: Use for any request to build, change or fix code in a repository - a feature, an issue, a plan, a bug. Runs the hstack loop - capabilities, an independent oracle written before the code, the implementation, a gate against weakened tests, review, exploratory testing, mutation - and finishes on its own without asking a human.
+description: Use for any request to build, change or fix code in a repository - a feature, an issue, a plan, a bug. Runs the hstack loop - a spec the user approves, capabilities, an independent oracle written before the code, the implementation, a gate against weakened tests, review, exploratory testing, mutation, the project's records - and asks the user once, for the spec.
 ---
 
 # hstack build loop
 
-You are the builder. You run every step below, in order, to the end, then reply exactly what the task asked for (for example `DONE`). Nobody will answer a question: decide from the requirement, the code and the way this codebase already does things, write the decision in `$S/decisions.md`, and go on. A stop before the last step is a failure.
+You are the builder. You run every step below, in order, to the end. You ask the user once: step 1 ends with a spec, and nothing is built before the user approves it. After the approval nobody answers a question: decide from the approved spec, the code and the way this codebase already does things, write the decision in `$S/decisions.md`, and go on. A stop after the approval and before the last step is a failure.
 
 This file is the playbook: which step runs, in what order, who does it, what goes in, what comes out and how long it may take. How a step is done is in its own file: an agent's file, or a skill this playbook invokes.
 
-`H` below is `sh "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.sh"`; if that variable is empty, the script is `../../scripts/hstack.sh` from this skill's base directory. Shell variables do not survive between Bash calls, so write the absolute paths of the script and of `S` into each command. Pass both to every agent you start.
+`H` below is `bun "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts"`; if that variable is empty, the script is `../../scripts/hstack.ts` from this skill's base directory. In a command, call it through a shell function (`H() { bun "<the path>/scripts/hstack.ts" "$@"; }`) or write both words out: a variable that holds `bun <path>` is not split into two words by every shell. Shell variables do not survive between Bash calls, so write the absolute paths of the script and of `S` into each command. Pass both to every agent you start.
 
 ## Rules for the whole run
 
-- **Git.** Stay on the current branch. Every checkpoint is a plain `git commit` of all changes. Never stash, reset, rebase, amend or switch branches. Commit messages say what changed in the product; never name hstack or these steps. (On a project of your own, branch before you start.)
+- **Two folders.** The **records home** is the folder this session started in (`$H home` prints it): the spec, the decisions file and the project's records live there. The **code repository** is where the product is (`$H repo` prints it). They are the same folder unless the project keeps its code in a repository of its own. Every git command and every project command of this playbook and of its agents runs in the code repository: `git -C <it> …`, or `( cd <it> && … )` in a subshell; never a bare `cd`, which would stay in effect. Paths given to `$H lock` are relative to the code repository. Give each agent the code repository's path.
+- **Git, in the code repository.** Stay on the current branch. Every checkpoint is a plain `git commit` of all changes. Never stash, reset, rebase, amend or switch branches. Commit messages say what changed in the product; never name hstack or these steps. (On a project of your own, branch before you start.)
+- **Git, in the records home.** Commit by path (`git -C <home> add <paths>`), never with `-A` or `.`: other files there are not yours. Messages name the change, never hstack. When the two folders are different, no spec, decisions file, record or agent file ever goes into the code repository.
 - **No network installs.** Use what is installed. Never drop, wipe or overwrite data the repository did not create.
 - **Names.** When the task gives names (an interface sheet: labels, URLs, parameters, fields, commands), use them exactly.
-- **Time.** `$H elapsed` prints minutes since start. Check it before each step. Start-time rules: review always runs (one round only past 180); explore only if elapsed < 150; mutate only if elapsed < 180; start final by 210 whatever is left. A skipped step is recorded as `$H phase <name> skipped: time`.
-- **Agents.** Start each agent with the Agent tool, `subagent_type` `hstack:<agent>`. Give it the absolute paths it needs, the path of `H`, and its deadline in epoch seconds (`$(( $(cat $S/started) + <minutes since start at which it must end> * 60 ))`, or now plus its cap). Never paste your own plan or reasoning into an oracle prompt.
-- **Recording.** After each step, `$H phase <name>` (or `<name> skipped: <why>`). The stop hook reads these lines.
+- **Time.** `$H elapsed` prints minutes since start; the time a spec waited for the user is not counted. Check it before each step. Start-time rules: review always runs (one round only past 180); explore only if elapsed < 150; mutate only if elapsed < 180; start final by 210 whatever is left. A skipped step is recorded as `$H phase <name> skipped: time`. **Records (step 10) always runs**, whatever the clock says, and cannot be recorded as skipped.
+- **Agents.** Start each agent with the Agent tool, `subagent_type` `hstack:<agent>`. Give it the absolute paths it needs, the code repository, the path of `H`, and its deadline in epoch seconds (`$(( $(cat $S/started) + <minutes since start at which it must end> * 60 ))`, or now plus its cap). Never paste your own plan or reasoning into an oracle prompt.
+- **Reports.** An agent's reply is its report. Store it, unchanged, in the state file the step names, with a shell command (a here-document with a quoted mark), before you read it. No agent writes a file in the state folder, but the explorer its evidence (step 7).
+- **Recording.** After each step, `$H phase <name>` (or `<name> skipped: <why>`). The stop hook reads these lines. The step `spec` is recorded by `$H approve` only.
 
-## 1. Start
+## 1. Start: the records and the spec
 
-Run `$H start`; it prints the state folder `S` (outside the repository, under `~/.hstack/`, never committed; `$H dir` prints it again). Write the task's text, verbatim and whole, to `$S/requirement.md` (every word the user gave as the task, the interface sheet included).
+1. **The code repository.** If the project's own instructions say the code is in a repository of its own, and `$H repo` prints the folder this session started in: `$H repo <its path, relative to this folder>`. Do this before `start`: it moves the state folder to the code repository.
+2. **Start.** `$H start` (in a session that already has an approved, unfinished run it refuses: go on with that run); it prints the state folder `S` (outside the repository, under `~/.hstack/`, never committed; `$H dir` prints it again). If it says a spec waits for the user's approval, write nothing and go to item 7 with the user's message. Else write the user's request, verbatim and whole, to `$S/requirement.md` (every word the user gave as the task, the interface sheet included).
+3. **The project's records.** From the project's instructions and README, find: the list of features and acceptance steps, the log a person reads, a coverage file, the place for specs, and the rules the project gives for each. Write `$S/records.md`, one line per record: `<role> | <path> | <its rules, quoted>`, with the roles `features`, `log`, `coverage`, `specs`, and `other` for any further record the project's rules name (a folder of reports, a checklist). Create nothing here: a missing record is made in step 10.
+4. **What goes against the record** (read-only, at most 15 minutes). The record is those files, and the `*.decisions.md` files beside earlier specs. Two routes:
+   - search the record for the request's own terms (its names, its quoted strings, the feature's nouns), read each match, and read the open or carried items of the last log entry;
+   - find the tests of the code the change will touch; through the coverage file, a `test` field or a decisions file, read the step or the decision each of them pins; and search the record for the inputs and texts those tests use.
+5. **The spec file.** Where the project's rules put specs, in the form they ask; else `docs/specs/YYYY-MM-DD-<topic>.md` in the records home. Its title is `Spec <number>: <topic>`: the number after the highest `## Spec` section of the coverage file, or 1 (a project's own rule for numbers comes first). It holds behaviour only, in five sections:
+   1. the request, in the user's words;
+   2. **Behaviours**: each has a number and is one sentence that a user can check by one observation. These are the feature's acceptance steps;
+   3. **Against the record**: each place where the request contradicts a recorded decision or ruling, or would make an earlier step false or weaker; the record's line, quoted; whether it is the user's (a ruling, an approved step) or an earlier decision of a builder; and lettered options, the one you recommend first;
+   4. **Open points**: what the request and the code leave open, each with your proposal;
+   5. **Not in this spec.**
+
+   No tasks, no code design, no file list. A small fix has a spec of a few lines. Write only this one file now: an index or log entry that the project's rules want for a spec is written at the approval (item 7), so that until then the spec file is the only change.
+6. **Show it.** `$H spec <file>`. If the session has a notification tool (it may be among tools that must be loaded first), call it with one line that says a spec waits for approval. Then end your turn with the whole text of the spec and one line: approve it, or say what to change.
+7. **The user's next message.**
+   - Changes: edit the file, then item 6 again.
+   - An approval: `$H approve`. Append the spec and the user's reply, both verbatim, to `$S/requirement.md`. Write the index or log entries the project's rules want for a spec. Commit the spec, those entries and a new `.hstack/repo` in the records home, by path. Go on with step 2. **From this commit on the spec file does not change**: what the user approved gains no line they did not see.
+   - A question, not work to build: answer it; the spec goes on waiting.
+   - Other work to build: delete the spec file you wrote and nobody approved (unless the user asks to keep it), then `$H spec --drop`, which ends this run, and take the new request from item 1.
+   - `$H approve` refuses when the code repository changed while the spec waited. If the user made the changes, the spec was written for another state of the code: drop it as above and start again.
 
 ## 2. Setup: capabilities (cap 20 minutes, plus one slow first compile)
 
@@ -32,46 +55,103 @@ Find out from the repository itself (README, contributing notes, CI workflow fil
 - build or type-check; lint or format-check, if the project has them;
 - run the product from outside: its CLI, its server and an HTTP call, its library from a scratch script, its UI through a headless driver if one is installed.
 
-For each capability: a **probe** (run it at the base: command, exit code, minutes, failures that exist already). For the test commands also a **canary**: write one throwaway test in the project's own style that must fail, confirm the suite command and the single-test command both report it as failed, delete it, confirm `git status` shows nothing left. The canary and the single-test form are required; run the full suite only as wide as the time allows.
+For each capability: a **probe** (run it at the base: command, exit code, minutes, failures that exist already). For the test commands also a **canary**: write one throwaway test in the project's own style that must fail, confirm the suite command and the single-test command both report it as failed, delete it, confirm `git -C <the code repository> status` shows nothing left. The canary and the single-test form are required; run the full suite only as wide as the time allows. One exception: when the project's rules ask for the whole suite before new work, run it whole at the base, outside this step's cap, and record each failure; without that run, a test that already failed cannot be told from a failure of your own at step 9.
 
 A slow command is never `unavailable`: record its time and use its narrowest form (one package, one file, fewer parallel jobs). A command that cannot work (a dependency that is not installed, no network, not enough memory: compare the machine's limit, `nproc` and the memory limit, with what it needs, retry with fewer jobs) is written `unavailable: <reason>`, and you go on with the rest.
 
-Write `$S/capabilities.md`, one line per capability: `<name> | <command> | probe: <pass/fail, minutes, existing failures> | canary: <pass/fail/n.a.> | <note>`. Write `$S/test-paths`: one git pathspec per line that matches the project's test files (for example `:(glob)**/tests/**`). Print `cat $S/capabilities.md`. Then `$H phase setup`.
+Write `$S/capabilities.md`, one line per capability: `<name> | <command> | probe: <pass/fail, minutes, existing failures> | canary: <pass/fail/n.a.> | <note>`. Add one line per rule that `records.md` gives for an acceptance step (for example what makes a step observable), so that the oracle reads it. Write `$S/test-paths`: one git pathspec per line that matches the project's test files (for example `:(glob)**/tests/**`). Print `cat $S/capabilities.md`. Then `$H phase setup`.
 
 ## 3. Oracle (cap 30 minutes)
 
-Start `hstack:oracle` with: `$S/requirement.md`, `$S/capabilities.md`, the path of `$S/oracle-report.md` to write, `H`, the deadline. Nothing else: you have no plan yet, and you must not give it one.
+Start `hstack:oracle` with: `$S/requirement.md` (it now ends with the approved spec), `$S/capabilities.md`, the code repository, `H`, the deadline. Nothing else: you have no notes of your own yet, and you must not give it any.
 
-It writes black-box acceptance tests in new files and returns their paths. Run `$H lock <those files>`, commit them ("Add tests for <the feature>"), and run `git rev-parse HEAD > $S/oracle-commit`. Read `$S/oracle-report.md`: its behaviour list, the tests for each, and its **open edges**. Then `$H phase oracle`.
+It writes black-box acceptance tests in new files, one or more for each behaviour of the spec, and replies with its report, which ends with the list of its files. Store the reply as `$S/oracle-report.md`. Run `$H lock <those files>`, commit them ("Add tests for <the feature>"), and write the commit to `$S/oracle-commit` (`git -C <the code repository> rev-parse HEAD`). Read the report: the tests for each behaviour, and its **open edges**. Write `$S/behaviour-tests.md` from it: one line per behaviour of the spec, its number and its tests (file and test name). It is the list of each behaviour's own tests for the rest of the run: when you add a test for a behaviour (steps 6 to 8), add it to this line. Then `$H phase oracle`.
 
 ## 4. Implement
 
-Invoke the `hstack:build-implement` skill with the Skill tool and do what it says, from its first item to its last. In: `$S/requirement.md`, `$S/capabilities.md`, `$S/oracle-report.md`. Out: `$S/spec.md`; the feature and its tests; the oracle's tests passing, unedited; no failure the base did not have.
+Invoke the `hstack:build-implement` skill with the Skill tool and do what it says, from its first item to its last. In: `$S/requirement.md`, `$S/capabilities.md`, `$S/oracle-report.md`. Out: the sections `## Entry points` and `## Edges` in `$S/decisions.md`; the feature and its tests; the oracle's tests passing, unedited; no failure the base did not have.
 
-**Dispute** (at most 2 rounds): if an oracle test contradicts the requirement or a fact of the existing public interface, write the claim in `$S/disputes.md` (test, claim, the quote or fact it rests on) and start `hstack:oracle` again with `requirement.md`, `capabilities.md`, the test file and that dispute entry only. Only the oracle edits its test. Then `$H lock` all oracle files again, commit, and write the new commit to `$S/oracle-commit`.
+**Dispute** (at most 2 rounds): if an oracle test contradicts the approved spec or a fact of the existing public interface, write the claim in `$S/disputes.md` (test, claim, the quote or fact it rests on) and start `hstack:oracle` again with `requirement.md`, `capabilities.md`, the test file and that dispute entry only. Only the oracle edits its test. Then `$H lock` all oracle files again, commit, and write the new commit to `$S/oracle-commit`.
 
 Commit. `$H phase implement`.
 
 ## 5. Gate
 
-Run `$H gate`. It must exit 0: an `ORACLE CHANGED` or `ORACLE MISSING` line means restore that file with `git checkout $(cat $S/oracle-commit) -- <file>` (or dispute it, step 4). Every `PRE-EXISTING TEST` and `REMOVED` line is a pre-existing test you deleted or weakened: put the test back, or write an entry in `$S/decisions.md` that quotes the part of the requirement that changes that behaviour. Save the output to `$S/gate.txt`. Commit if you changed anything. `$H phase gate`.
+Run `$H gate`. It must exit 0: an `ORACLE CHANGED` or `ORACLE MISSING` line means restore that file with `git -C <the code repository> checkout $(cat $S/oracle-commit) -- <file>` (or dispute it, step 4).
+
+Every `PRE-EXISTING TEST` and `REMOVED` line is a test of earlier behaviour that you deleted or weakened. What is wrong gets fixed:
+
+- The test belongs to an item the user approved under "Against the record" (an earlier step, a ruling, or an earlier decision of a builder): the change stands. Write an entry in `$S/decisions.md` that names the item.
+- Any other: put the test back, and fix your code so that the earlier behaviour and the spec's behaviours both hold.
+- Only when no code can satisfy both: go on with the spec, which is the user's later word. Change the earlier test only as far as the spec's behaviour needs, and write an entry in `$S/conflicts.md`: the earlier step or decision, quoted; the number of the spec's behaviour; why no code satisfies both; the test lines you changed. A changed test of earlier behaviour with neither an approved item nor such an entry is not allowed.
+
+Save the output to `$S/gate.txt`. Commit if you changed anything. `$H phase gate`.
 
 ## 6. Review (at most 2 rounds)
 
-Start `hstack:reviewer` with `requirement.md`, `spec.md`, `decisions.md`, `gate.txt`, the base commit (`cat $S/base`), `H`, the deadline, and the file to write: `$S/review-1.md`. Fix every Critical and Important finding you confirm, each with a test that fails before the fix and passes after; answer each finding in the review file (`fixed`, or `rejected: <why>`). Commit. If you fixed any, run round 2 into `review-2.md` (not past 180 minutes). `$H phase review`.
+Start `hstack:reviewer` with `requirement.md`, `behaviour-tests.md`, `decisions.md`, `gate.txt`, `conflicts.md` if it exists, the base commit (`cat $S/base`), the code repository, `H` and the deadline. Store its reply as `$S/review-1.md`. Fix every Critical and Important finding you confirm, each with a test that fails before the fix and passes after; answer each finding in the review file (`fixed`, or `rejected: <why>`). A finding that a point of a behaviour has no assertion is closed with a test of your own (the oracle's files are locked), and that test goes into the behaviour's line in `behaviour-tests.md`. Commit. If you fixed any, run round 2 into `review-2.md` (not past 180 minutes). `$H phase review`.
 
-## 7. Explore (cap 30 minutes; start only if elapsed < 150)
+An entry of `conflicts.md` that you write after this step (from step 7, 8 or 9) has had no reviewer. If the time rules allow it, start the reviewer once more on that entry alone and store the reply as `review-conflict.md`; else step 10 lists it as "conflict not reviewed".
 
-Start `hstack:explorer` with `requirement.md`, `spec.md`, `capabilities.md`, `H`, the deadline, and the file to write: `$S/explore.md`. For each finding you can reproduce: a failing test at the highest level the capabilities reach (end to end, then integration, then unit), the fix, the test passing. Commit. If no capability can run the product at all, `$H phase explore skipped: <why>`; else `$H phase explore`.
+## 7. Explore (cap 30 minutes, and up to 20 more for earlier steps; start only if elapsed < 150)
+
+Start `hstack:explorer` with `requirement.md`, `decisions.md`, `capabilities.md`, the code repository, `H` and the deadline. Give it also: the `by hand` points of each behaviour from the last review's `## Coverage`; an evidence folder, `$S/evidence/<the spec's file name without .md>/` (the script keeps `$S/evidence/` when a later run starts, so that a log entry can name a file in it); and the earlier steps to walk again, which are the steps the project's record marks as not checked in full by a test (`partial` or `none`), each with its place in the record, its sentence and what its test does not check. Store its reply as `$S/explore.md`: its findings, and a verdict for each behaviour of the spec, `PASS`, `FAIL` or `UNCLEAR`. For each finding you can reproduce: a failing test at the highest level the capabilities reach (end to end, then integration, then unit), the fix, the test passing. Commit. After a fix for a behaviour that got `FAIL`, start the explorer once more on those behaviours only, inside the time rules, and store the reply as `explore-2.md`; that verdict counts. An earlier step that got `FAIL`: find out whether this run's change caused it (does the step hold at the base commit?). If it did, treat it as a finding (a failing test where code can check it, the fix, the test passing); when no code can keep it true beside the spec, it is an entry of `conflicts.md` (step 5). If it did not, change no code for it: it is outside the spec, and step 10 lists it under "Needs your ruling" with the explorer's evidence. If no capability can run the product at all, `$H phase explore skipped: <why>`; else `$H phase explore`.
 
 ## 8. Mutate (cap 20 minutes; start only if elapsed < 180)
 
-The tree must be clean (commit first). Start `hstack:mutator` with the base commit, `capabilities.md`, `H`, the deadline, and the file to write: `$S/mutants.md`. For each surviving mutant that is not equivalent: write a test that kills it, prove it by applying the mutant once more and seeing the test fail, restore the file with `git checkout -- <file>`, and keep the test. Commit. `$H phase mutate`.
+The tree must be clean (commit first). Start `hstack:mutator` with the base commit, `requirement.md`, `behaviour-tests.md`, `capabilities.md`, the code repository, `H` and the deadline. Store its reply as `$S/mutants.md`. For each surviving mutant that is not equivalent: write a test that kills it, prove it by applying the mutant once more and seeing the test fail, restore the file with `git -C <the code repository> checkout -- <file>`, and keep the test. Commit. `$H phase mutate`.
 
 ## 9. Final
 
-1. Run the oracle's tests, the widest suite the time allows, and build, type-check and lint as the capabilities have them. Fix what fails: a fix gets a test that fails first, but a lint, format or type fix, which no test can show.
+1. Run the oracle's tests, the widest suite the time allows, and build, type-check and lint as the capabilities have them. A suite that the project's rules want green before a merge runs here whole, whatever the clock, on the last commit of code, once; after any later change of code it runs again. The base is taken as green for such a suite, so a test of it that fails here is yours to fix. Fix what fails: a fix gets a test that fails first, but a lint, format or type fix, which no test can show.
 2. `$H gate` again, as in step 5.
 3. Write `$S/summary.md`: what was built, the decisions, the findings of each step and what became of them.
-4. Commit. `$H phase final`, then `$H done` (it refuses while a step is unrecorded or a change is uncommitted).
-5. Reply exactly what the task asked for, and nothing else when the task names the reply.
+4. Commit. `$H phase final`.
+
+## 10. Records (always; never skipped)
+
+The records are for a person who was not here: what the project now does, what is checked, and what waits for their decision. Follow the rules in `$S/records.md`. A rule that this run cannot meet is not bent, and what it needs is not invented: write every record you can within the rules (the log entry always), leave the others as they are, and list each under "Needs your ruling" with the rule quoted.
+
+1. **Missing records.** A project that lacks one of the three gets it in the records home. None names a tool or a harness.
+   - `progress/feature_list.json`: what the product does for its users. An array of `{ "description", "spec", "steps": [ "<one sentence>", … ], "passes": false }`.
+   - `progress/test-coverage.md`: how each step is checked. It starts with the rules below, then has one section per spec.
+   - `progress/progress.md`: the log a person reads. One entry per run, appended, never edited.
+
+   ```markdown
+   # Test coverage of feature steps
+
+   Which steps of `feature_list.json` a test checks, and how far.
+
+   - One section per spec: `## Spec <number> (`<the spec's path>`)`. Specs are numbered from 1.
+   - One row per step: `| <ID> | <coverage> | <tests, proofs, rulings> | <check> |`. The ID is `S<spec>-F<feature>-S<step>`: the place of the feature among the entries of that spec in `feature_list.json`, and the place of the step in the feature, both from 1.
+   - Coverage: `full` (a test checks all of the step: a reviewer found an assertion for every point of its sentence, and a planted fault made its test fail), `partial` (a test checks part of it; the note says which part an agent checks by hand, in every run), `none` (no test yet; an agent checks it by hand in every run), `manual` (nothing can run it; the note says why; nobody walks it).
+   - A ruling of the user is written in the row: `Ruling (YYYY-MM-DD): …`.
+   - A step is never dropped. Its words change only when the user approved a spec that replaces it; the row then says so.
+   ```
+2. **The feature and its steps.** Add the feature to the feature list with the spec's path: each behaviour of the spec is one step, in the spec's words, in the spec's order. Add a section `## Spec <number> (`<path>`)` to the coverage file, with one row per step. Never remove an earlier feature, step or row.
+3. **`passes`** is one value for the feature. True only when every step has a test that passed in step 9 and the explorer's last verdict on every step is `PASS`. Otherwise false, and each step that keeps it false goes under "Needs your ruling" with the reason:
+   - `FAIL`, fixed, and walked again with `PASS`: it counts as passed. Fixed and not walked again: "fixed, not walked again".
+   - `UNCLEAR`, or explore skipped for time: the reason.
+   - No capability can run the product from outside at all: the tests alone decide, and the row says "test only".
+4. **The coverage of each row**: how far the step is left to its tests from now on.
+   - `full` only when both hold: the reviewer's last `## Coverage` line for the behaviour says every point has an assertion and none is `by hand`; and the mutator's `## By behaviour` line says a planted fault was killed by one of the step's own tests (`behaviour-tests.md`). A fault that survived and that you then killed in step 8, with a test you added to the behaviour's line and proved by planting the fault once more, counts: the row says "killed after the mutation step".
+   - `partial` otherwise, and the row says which is missing: the points no assertion checks; the `by hand` points, which keep the step `partial` for good, with the explorer's verdict and its evidence file; "no fault check" when the mutation step was skipped or planted none for it.
+   - The row names the step's tests, the reviewer's count ("points 3 of 3, review round 1") and the fault that was killed.
+   - A `partial` or `none` step is walked again by the explorer of every later run (step 7). List it in the log entry under "Left partly to a hand check", with what is missing and the evidence file of this run's check. The evidence stays in the state folder, on this machine, unless the project's rules name a place for it in the records.
+5. **Earlier steps.**
+   - An item the user approved under "Against the record": change the earlier step's words in the feature list so that they state the behaviour after this run, and add to its row `Ruling (<date>): spec <number> changes the behaviour that this step names, approved by the user; the step now states it after spec <number>.` The earlier words stay in the history of the file.
+   - Each entry of `$S/conflicts.md`: do not change the step's words. Add to its row `Decisions in conflict, not ruled (<date>): spec <number>`, set `passes` of its feature to false, and list it under "Needs your ruling" with two options (the spec stands; the earlier step stands), marked "conflict not reviewed" when no reviewer saw the entry.
+   - An earlier step that the explorer walked again and that failed for a cause that is not this run's: change nothing; list it under "Needs your ruling" with the explorer's evidence.
+6. **The decisions file.** Every line under `## Edges` in `$S/decisions.md` ends with `Test: <file> <test name>`, or with `No test: <why>` (the base already decides it and a test of the base pins it, or the spec puts it outside): add what is missing. Now copy `$S/decisions.md` to the records home, beside the spec, as `<the spec's file name without .md>.decisions.md`. Its first line, after any header block the project's rules require: `Decided by the builder while building <spec file>. Not approved by the user.`
+7. **The log.** Append one entry: first, any test that already failed at the base (setup recorded it; the run did not fix it); then the spec and the decisions file (their paths), the user's approving reply, the commit range in the code repository, the test counts and, for a suite that must be green before a merge, the commit it ran on and its result (or, in plain words, "not green: not ready to merge"); what was not run; whether you wrote `.hstack/repo`; "Earlier steps walked again" with each verdict; "Left partly to a hand check"; and "Needs your ruling". Do not repeat the decisions.
+8. **Other records.** Write each record of the role `other` as its rule says (for example a report of this run that the project keeps).
+9. **The two files agree.** Run `$H records-check <the feature list> <the coverage file>`. It must print `records agree`: every step has its one row and no row is without its step. Put right each line it prints, then run it again. Only for a project whose own records have another form: `$H records-check --none <why>`, and say so in the log entry.
+10. **Commit** the records and the decisions file in the records home, by path, in one commit, unless the project's rules say otherwise. Write `$S/record-paths`: one git pathspec per line, relative to the code repository, for each record file and for the decisions files (`<specs folder>/*.decisions.md`) that lie inside the code repository; never a spec file. Leave it empty when the records home is another folder.
+11. `$H phase records` (it refuses when the two files were not checked, or changed after the check), then `$H done` (it refuses while a step is unrecorded or a change in the code repository is uncommitted).
+12. If anything is under "Needs your ruling", call the notification tool once more, with one line that says so.
+
+**The last reply.** When the task names its reply, reply exactly that, and nothing else. When it names none, end with the short form of the log entry: a test that already failed at the base, first; what was built, the test counts, what was not run, and what needs the user's ruling.
+
+## A ruling after the run
+
+When the user's message only rules on a point listed under "Needs your ruling", or says that a decision of the builder is now their ruling, that is not a build: no spec and no run. Write the ruling as the record's rules say (`Ruling (<date>): …` in the step's row of the coverage file, with `passes` of its feature set to match; or beside the decision in its decisions file), append one line to the log, run `$H records-check` on the two files, commit those files by path, and run `$H ruled`. It refuses when a file that is no record file changed, or a test file, or a spec. If the user rules that an earlier step stands against the spec, that is a new request: this playbook from step 1.

@@ -11,7 +11,7 @@ function checkFrontmatter(name, text) {
   expect(text).not.toMatch(/node /);
 }
 
-test('hstack-feedback is user-invoked, runs on sh and passes its text through a quoted heredoc', async () => {
+test('hstack-feedback is user-invoked, runs the script with bun and passes its text through a quoted heredoc', async () => {
   const text = await skill('hstack-feedback');
   const front = text.split('\n---')[0];
   expect(front).toMatch(/^name: hstack-feedback$/m);
@@ -19,7 +19,7 @@ test('hstack-feedback is user-invoked, runs on sh and passes its text through a 
   expect(front).toMatch(/^disable-model-invocation: true$/m);
   expect(front).not.toMatch(/Bun/);
   for (const verb of ["add <kind> <phase> <<'HSTACK_FEEDBACK_TEXT'", "describe <id> <<'HSTACK_FEEDBACK_TEXT'", 'draft', 'post <id> <code>', 'dismiss <id>', 'label', 'collect']) expect(text.includes(`$H feedback ${verb}`)).toBeTruthy();
-  expect(text).toMatch(/sh "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/hstack\.sh"/);
+  expect(text).toMatch(/bun "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/hstack\.ts"/);
   const { version } = await Bun.file(new URL('../.claude-plugin/plugin.json', import.meta.url)).json();
   expect(await Bun.file(new URL('../README.md', import.meta.url)).text()).toContain(`**Status: v${version}.**`);
 });
@@ -69,7 +69,7 @@ test('hstack:build-implement is step 4: the loop can invoke it, and it sends any
   expect(front).not.toMatch(/disable-model-invocation/); // the playbook must be able to trigger it
   // the cycle is one test at a time, and a change after green starts a new one: the first run did neither
   for (const s of ['one decided edge or rule per cycle', 'Only then write the next test', 'is a new cycle and starts with a test that fails', "the cycle's refactor step changes none of these", 'A next test that passes at once', 'break that code, see the test fail, undo that one edit by hand']) expect(text).toContain(s);
-  for (const s of ['do nothing here and invoke `hstack:build`', 'its first word must be `implement`', 'never run `$H start` again', 'tdd.md', 'writing-good-tests.md', '$S/spec.md', 'without editing them', 'type-check']) expect(text).toContain(s);
+  for (const s of ['do nothing here and invoke `hstack:build`', 'its first word must be `implement`', 'never run `$H start` again', 'tdd.md', 'writing-good-tests.md', '## Entry points', '## Edges', 'without editing them', 'type-check']) expect(text).toContain(s);
 });
 
 test('build is a playbook: step 4 invokes hstack:build-implement', async () => {

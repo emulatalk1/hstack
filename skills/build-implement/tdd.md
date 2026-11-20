@@ -10,12 +10,12 @@ Write the test first. Watch it fail. Write minimal code to pass.
 
 ## In hstack
 
-No human is in this run. Where this file would ask one, decide and write the decision in `$S/decisions.md`.
+The user approved the spec before this step, and nobody answers a question now. Where this file would ask a person, decide and write the decision in `$S/decisions.md`.
 
 These rules govern every test and every line of product code the builder writes in step 4, and every fix in steps 6, 7 and 9. Seven things are not violations of them, in the rules, the red flags and the checklist alike:
 
 - **The oracle's tests** (step 3) are the failing tests for the stated behaviours. Make them pass; write no second test for what one of them checks.
-- **A guard.** A test for a decided edge that the code at the base already handles, before this run changed anything, passes at once. Keep it and mark the edge in `$S/spec.md` as already holding. It is the one test you do not watch fail. An edge that holds only because of code this run wrote is not a guard; the next item is for its test.
+- **A guard.** A test for a decided edge that the code at the base already handles, before this run changed anything, passes at once. Keep it and mark the edge in `$S/decisions.md` (its section `## Edges`) as already holding. It is the one test you do not watch fail. An edge that holds only because of code this run wrote is not a guard; the next item is for its test.
 - **A test that passes at once on this run's own code.** One piece of code often settles several decided edges, and the cycle puts one test before its code. The test of a further edge, written after that code, is kept only once you have seen it fail: break the part of your code the edge rests on, run the test and see it fail, then undo that one edit by hand and see it pass. The code of step 4 is not committed yet, so never restore the file with `git checkout` here: that would throw the step's work away. If no break of this run's code makes it fail, it checks nothing this run built: where the base already handles the edge, the test is a guard; otherwise make it check the edge, or drop it.
 - **A mutant-killing test** (step 8) is written after the code. Its failing run is the run with the mutant applied.
 - **An empty interface.** When a test you wrote cannot run because a public interface does not exist yet, add that interface, empty, and run the test again until it fails on the behaviour. The test came first, so this is not code before a test.

@@ -1,5 +1,7 @@
 # hstack plugin v0.2: design
 
+Superseded in part by `2026-11-20-records-and-questions.md` (0.4.0): a run starts with a spec the user approves, the builder's own `spec.md` is gone, a `records` step is required, the script is TypeScript run with Bun, and a pointer file names a code repository that is not the launch folder. Its section "What this replaces in v0.2" lists each point.
+
 Status: approved by the advisor on the user's delegation (2026-11-10): decision 1 (a) with per-layer start gates, decision 2 (a), commits on the current branch. Lives in `plugin-dev/`, outside the benchmark's export list, so no arm ever reads it.
 
 ## Intent
@@ -39,14 +41,14 @@ Development files (`plugin-dev/`): this design and `test-hstack.sh`, the sh test
 
 ### Run state
 
-`S = ${HSTACK_STATE:-$HOME/.hstack}/<cksum of the absolute git dir>`. Never committed, never in the product, private to a worktree. Not inside `.git`: the first end-to-end run (2026-11-10) showed Claude Code refusing Write-tool writes there, and the agent stopped to ask. Files: `base` (commit at start), `started` (epoch seconds), `requirement.md` (the task text, verbatim), `capabilities.md`, `test-paths` (git pathspecs of the project's tests), `oracle.lock` (`<blob> <path>`), `oracle-report.md`, `spec.md`, `decisions.md`, `phases`, `review-<n>.md`, `explore.md`, `mutants.md`, `summary.md`, `done` (HEAD at the final check), `session-head`, `stop-blocks`.
+`S = ${HSTACK_STATE:-$HOME/.hstack}/<cksum of the absolute git dir>`. Never committed, never in the product, private to a worktree. Not inside `.git`: the first end-to-end run (2026-11-10) showed Claude Code refusing Write-tool writes there, and the agent stopped to ask. Files: `base` (commit at start), `started` (epoch seconds), `requirement.md` (the task text, verbatim), `capabilities.md`, `test-paths` (git pathspecs of the project's tests), `oracle.lock` (`<blob> <path>`), `oracle-report.md`, `spec.md`, `decisions.md`, `phases`, `review-<n>.md`, `explore.md`, `mutants.md`, `summary.md`, `done` (HEAD at the final check), `session-head`, `stop-blocks`, `stale` (0.3.3).
 
 `hstack.sh start` moves an earlier run's folder to `S/old/<time>/` and begins a new one.
 
 ### Hooks
 
-- **SessionStart** writes `session-head` (HEAD and a hash of `git status --porcelain`) only when its input says `"source":"startup"` (a resume must not reset what "nothing changed" compares with), resets `stop-blocks` to 0 on `startup` and `resume` only (a compaction inside a process keeps the count), and prints: hstack is installed; for any request to build, change or fix code here, invoke `hstack:build` first and follow it to the end; no human answers questions, so decide from the requirement and the code and record the decision.
-- **Stop** allows the stop when: not a git repo; or `done` equals HEAD and the tree is clean; or no run was started and HEAD and the status hash equal `session-head` (nothing was changed: a probe or a question). Otherwise it blocks with a reason naming the missing phases (or "changed after the final check"), at most 3 times per process (`stop-blocks`), then allows. The reason always ends: when finished, end with exactly the reply the task asked for. A block is the harness's own reminder, not an intervention (prereg 9.3).
+- **SessionStart** writes `session-head` (HEAD and a hash of `git status --porcelain`) only when its input says `"source":"startup"` (a resume must not reset what "nothing changed" compares with), resets `stop-blocks` to 0 on `startup` and `resume` only (a compaction inside a process keeps the count), on `startup` marks a run it finds as an earlier session's (`stale`; `start` moves the mark away with the rest of that run; added in 0.3.3), and prints: hstack is installed; for any request to build, change or fix code here, invoke `hstack:build` first and follow it to the end; no human answers questions, so decide from the requirement and the code and record the decision.
+- **Stop** allows the stop when: not a git repo; or `done` equals HEAD and the tree is clean; or no run was started, or the run is an earlier session's (`stale`), and HEAD and the status hash equal `session-head` (nothing was changed: a probe or a question). Otherwise it blocks with a reason naming the missing phases (or "changed after the final check"), at most 3 times per process (`stop-blocks`), then allows. The reason always ends: when finished, end with exactly the reply the task asked for. A block is the harness's own reminder, not an intervention (prereg 9.3).
 
 ### The loop (`hstack:build`)
 

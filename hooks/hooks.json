@@ -1,6 +1,6 @@
 {
   "hooks": {
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.sh\" hook-start" }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.sh\" hook-stop" }] }]
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-start" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-stop" }] }]
   }
 }

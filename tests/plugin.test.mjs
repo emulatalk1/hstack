@@ -11,5 +11,6 @@ test('plugin and marketplace agree', async () => {
   expect(marketplace.plugins[0].name).toBe('hstack');
   expect(marketplace.plugins[0].source).toBe('./');
   expect(pkg.dependencies).toBe(undefined);
-  expect(pkg.devDependencies).toBe(undefined);
+  // the plugin installs nothing; the two below serve `bun x tsc --noEmit` in development only
+  expect(Object.keys(pkg.devDependencies).sort()).toEqual(['@types/bun', 'typescript']);
 });

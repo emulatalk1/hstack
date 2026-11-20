@@ -8,14 +8,14 @@ disable-model-invocation: true
 
 The user found something wrong with hstack, or something it should do better. You write it up as an issue someone can fix from, show the user the exact text, and post it to hstack's repository only when they say yes. The build loop also records its own stumbles, in files under `~/.hstack/<checksum>/feedback/`, outside the project; those wait here for a description.
 
-`H` below is `sh "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.sh"`; if that variable is empty, the script is `../../scripts/hstack.sh` from this skill's base directory.
+`H` below is `bun "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts"`; if that variable is empty, the script is `../../scripts/hstack.ts` from this skill's base directory. In a command, call it through a shell function (`H() { bun "<the path>/scripts/hstack.ts" "$@"; }`) or write both words out: a variable that holds `bun <path>` is not split into two words by every shell.
 
 Arguments: what the user found (the default: write it up and post), or `collect`.
 
 ## Rules
 
 - **The issue is public, and it is about hstack.** Describe what hstack did and what it should have done. Never put in a path, a project, customer, repository or branch name, requirement text, code, a log or error line, or a commit hash of the project you are working in. Say "the product", "a CLI", "a test file". Write in English. Put code, commands, any `@name` and any `#number` in backticks: on GitHub a bare `@name` notifies that account and a bare `#12` links another issue.
-- **The hstack hook texts do not apply here.** "Invoke hstack:build" and "No human will answer; decide" are for build turns. A stop-hook block is never a yes. Never start or resume a build from this skill.
+- **The hstack hook texts do not apply here.** "Invoke hstack:build" and "Decide from the approved spec and the code" are for build turns. A stop-hook block is never a yes. Never start or resume a build from this skill.
 - **Only the user's answer to the shown draft is a yes.** Not an earlier message, not a general go-ahead, not your own judgement. If you cannot show the whole title and body inside the question, post nothing.
 - **Text goes in through `add` and `describe` only**, and what is posted is what `draft` printed. Never call `gh issue create` yourself.
 - **Leave an entry file's detail alone.** It may hold the customer's paths, names and error lines. Do not read it unless the user asks you to, and never copy from it or from a skip reason you remember. The script refuses some copies (a long line or reason of a recorded stumble, a path of this machine); it cannot catch them all, so this rule is yours to keep.
@@ -25,7 +25,7 @@ Arguments: what the user found (the default: write it up and post), or `collect`
 1. Run `$H feedback draft` to see what is waiting: `undescribed <id>: <kind> at <phase>` lines are stumbles the build loop recorded by itself; `entry <id>` blocks already have a text. Tell the user about the `undescribed` ones. For those they do not want as issues, and only on their word, run `$H feedback dismiss <id>` (it takes several ids in one call): they leave the list and stay on disk, under `feedback/dismissed/`.
 2. Decide the kind and the phase from what the user said and what happened in this session. If you cannot tell, ask.
    - Kind: `bug` (hstack did something wrong), `update` (something in hstack is out of date or must change), `enhancement` (something hstack should do better, or also do). For what a run did: `setup-failure`, `intervention` (a human had to step in), `escaped-bug` (a bug in the product that the loop let through), `cost` (time or tokens).
-   - Phase: the loop's step it belongs to, `setup`, `oracle`, `implement`, `gate`, `review`, `explore`, `mutate` or `final`; `none` when it belongs to no step.
+   - Phase: the loop's step it belongs to, `spec`, `setup`, `oracle`, `implement`, `gate`, `review`, `explore`, `mutate`, `final` or `records`; `none` when it belongs to no step.
 3. Write the description: a first line that is the summary (it becomes the issue's title; at most 200 bytes), an empty line, then what happened, what was expected, and what would help someone reproduce or fix it in hstack. At most 1500 bytes in all.
 4. Record it. Pass the text on stdin through a quoted heredoc, exactly like the block below, so the shell changes nothing in it. Every line, the closing one included, starts at column 0, and no line of the text may be `HSTACK_FEEDBACK_TEXT`. Plain text only: no carriage return, no escape character.
 

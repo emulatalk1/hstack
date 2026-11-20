@@ -1,5 +1,9 @@
 # Update Log
 
+## 2026-11-20
+* **Approve**: the [spec and records plan](/plans/2026-11-20-spec-and-records.md) is `stable`: approved by the user on a condition ("nếu advisor không có ý kiến gì thì duyệt"), which the advisor's review met with no objection. Execution starts on branch `spec-and-records`.
+* **Creation**: Added the [spec and records plan](/plans/2026-11-20-spec-and-records.md) (draft), from the design `plugin-dev/2026-11-20-records-and-questions.md` (draft 3, every decision answered by the user): a spec (the feature's behaviours) the user approves before any build, the builder's decisions committed beside it, a `records` step, and a pointer file for a code repository that is not the launch folder. First task: the run-state script moves from POSIX sh to TypeScript run with Bun (the user's rule of 2026-11-20). 
+
 ## 2026-11-19
 * **Update**: Built the [build playbook and TDD plan](/plans/2026-11-19-build-playbook-tdd.md) on branch `build-playbook`: the skill `hstack:build-implement`, step 4 named `implement`, plugin 0.3.2; after three end-to-end runs on a small fixture its test rules say one test and its code per cycle, a change of behaviour after green is a new cycle, a guard is only for what the base already handled, and a test that passes at once on the run's own code is kept only after it is seen failing with that code broken. Merged into `main` and pushed on the user's word ("Merge và push").
 * **Update**: The [build playbook and TDD plan](/plans/2026-11-19-build-playbook-tdd.md) is `stable`: approved by the user on a condition ("nếu advisor không có vấn đề gì với plan này thì duyệt"), which the advisor's read met after five gaps were closed in the plan; step 4 is the skill `hstack:build-implement` and is named `implement`; the licence file of the copied test rules is kept.
