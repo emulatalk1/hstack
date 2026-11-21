@@ -218,7 +218,9 @@ location.replace('/');
     if (req.method === 'GET' && path === '/') {
       const file = newestScreen()
       let html = file ? ((raw) => (isFullDocument(raw) ? raw : branded(frame).replace('<!-- CONTENT -->', () => raw)))(readFileSync(file, 'utf8')) : waitingPage()
-      html = html.includes('</body>') ? html.replace('</body>', () => `${helper}\n</body>`) : html + helper
+      // at the page's own end: a </body> inside a screen's text or script is the screen's, and stays whole
+      const end = html.lastIndexOf('</body>')
+      html = end < 0 ? html + helper : `${html.slice(0, end)}${helper}\n${html.slice(end)}`
       return new Response(html, { headers: headers({ 'Content-Type': HTML, ...cookie }) })
     }
     if (req.method === 'GET' && path.startsWith('/files/')) {
@@ -278,7 +280,7 @@ location.replace('/');
     timers.set(name, setTimeout(() => {
       timers.delete(name)
       const file = join(CONTENT_DIR, name)
-      if (!existsSync(file)) return
+      if (!existsSync(file) || !insideContent(file)) return // gone again, or a link: never the screen
       touch()
       if (!known.has(name)) {
         known.add(name)
@@ -376,7 +378,10 @@ async function start(args: string[]): Promise<void> {
   if (foreground) {
     const child = spawn(process.execPath, command, { env: childEnv, stdio: 'inherit' })
     writeFileSync(pidFile, `${child.pid}\n`)
-    process.exit(await new Promise<number>((done) => child.on('exit', (code) => done(code ?? 1))))
+    const code = await new Promise<number>((done) => child.on('exit', (c) => done(c ?? 1)))
+    // a server that refused never wrote its line: the session that never was leaves no folder
+    if (code !== 0 && !existsSync(join(state, 'server-info')) && !existsSync(join(state, 'server-stopped'))) rmSync(session, { recursive: true, force: true })
+    process.exit(code)
   }
 
   const logFile = join(state, 'server.log')
@@ -425,7 +430,12 @@ async function stop(session: string | undefined): Promise<void> {
     if (!Number.isInteger(pid) || pid < 2 || !alive(pid) || !/^[A-Za-z0-9_-]{32,64}$/.test(expected)) return false
     try { return execFileSync('ps', ['-ww', '-p', String(pid), '-o', 'command='], { encoding: 'utf8' }).trim().split(/\s+/).includes(`--brainstorm-server-id=${expected}`) } catch { return false }
   }
-  if (!ours()) { rmSync(pidFile, { force: true }); rmSync(idFile, { force: true }); mark('stale_pid'); put({ status: 'stale_pid' }); return }
+  if (!ours()) {
+    rmSync(pidFile, { force: true }); rmSync(idFile, { force: true })
+    // a server that ended by itself wrote why: that is kept
+    if (alive(pid) || !existsSync(join(state, 'server-stopped'))) mark('stale_pid'); else rmSync(join(state, 'server-info'), { force: true })
+    put({ status: 'stale_pid' }); return
+  }
   try { process.kill(pid) } catch { /* it ended meanwhile */ }
   for (let i = 0; i < 20 && alive(pid); i++) await Bun.sleep(100)
   if (alive(pid)) { try { process.kill(pid, 'SIGKILL') } catch { /* gone */ } await Bun.sleep(100) }

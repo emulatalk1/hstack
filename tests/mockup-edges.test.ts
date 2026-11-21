@@ -4,7 +4,7 @@
 // Every test starts the servers it needs on this machine's own address, ends them, and removes its folders.
 // HSTACK_MOCKUP_SCRIPT runs another copy of the script (a broken copy that a test must catch).
 import { afterAll, afterEach, expect, setDefaultTimeout, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -329,12 +329,14 @@ test('E8: the lines with error and status are on standard output', async () => {
   expect((await run(['stop', fresh('nothing')])).out).toContain('"status"')
 })
 
-test('E9: stop for a server that has ended by itself is stale_pid; stop for a folder that does not exist is not_running', async () => {
+test('E9: stop for a server that has ended by itself is stale_pid and keeps the reason the server wrote; stop for a folder that does not exist is not_running', async () => {
   const a = await start(['--dir', fresh('dir')], { BRAINSTORM_IDLE_TIMEOUT_MS: '300', BRAINSTORM_LIFECYCLE_CHECK_MS: '100' })
   const pid = Number(readOr(`${a.info.state_dir}/server.pid`).trim())
-  await until(() => !alive(pid), 8000)
+  await until(() => !alive(pid) && existsSync(`${a.info.state_dir}/server-stopped`), 8000)
   const r = await run(['stop', a.session])
-  expect(r.lines[0]?.status).toBe('stale_pid'); expect(readOr(`${a.info.state_dir}/server-stopped`)).toContain('"reason":"stale_pid"')
+  expect(r.lines[0]?.status).toBe('stale_pid')
+  expect(readOr(`${a.info.state_dir}/server-stopped`)).toContain('"reason":"idle timeout"') // why it ended is not written over
+  expect(existsSync(`${a.info.state_dir}/server.pid`)).toBe(false)
   expect((await run(['stop', fresh('nothing')])).lines[0]?.status).toBe('not_running')
 })
 
@@ -516,9 +518,10 @@ test('45: a start that was refused leaves no session folder behind', async () =>
   const dir = fresh('dir')
   expect((await run(['start', '--dir', dir, '--host', '127.0.0.2'])).code).toBe(1)
   expect(readdirSync(dir).filter((f) => !f.startsWith('.'))).toEqual([])
-  const before = readdirSync(tmpdir()).filter((f) => f.startsWith('brainstorm-')).length
-  expect((await run(['start', '--host', '127.0.0.2'])).code).toBe(1)
-  expect(readdirSync(tmpdir()).filter((f) => f.startsWith('brainstorm-')).length).toBe(before)
+  // without --dir: the folder that start would have made is named after start's own process
+  const p = spawn(['start', '--host', '127.0.0.2']); await Promise.race([p.proc.exited, sleep(15000)])
+  expect(p.proc.exitCode).toBe(1)
+  expect(readdirSync(tmpdir()).filter((f) => f.startsWith(`brainstorm-${p.proc.pid}-`))).toEqual([])
 })
 
 test('24: an answer to a request the server could not serve carries the five headers too', async () => {
@@ -615,4 +618,55 @@ test('42: the licence names the three files it covers, and its copyright holder 
   expect(holder?.length).toBeGreaterThan(2)
   for (const file of ['scripts/mockup.ts', 'scripts/mockup-frame.html', 'scripts/lib/mockup-helper.ts', 'tests/mockup.test.ts', 'tests/mockup-edges.test.ts', 'README.md'])
     expect(`${file}: ${readFileSync(join(ROOT, file), 'utf8').toLowerCase().includes(holder as string)}`).toBe(`${file}: false`)
+})
+
+// ---------- from the review of round 2 ----------
+
+test('34: a server on ::1, one of this machine\'s own addresses, opens the browser at the first screen, with its own address', async () => {
+  const o = opener(), dir = fresh('session')
+  const p = spawn(['serve'], { BRAINSTORM_DIR: dir, BRAINSTORM_TOKEN: KEY, BRAINSTORM_HOST: '::1', BRAINSTORM_OPEN: '1', BRAINSTORM_OPEN_CMD: o.cmd })
+  const info = await until(() => jsonLines(p.out()).find((l) => l.type === 'server-started'))
+  await sleep(300); writeFileSync(`${dir}/content/one.html`, '<p>one</p>')
+  expect(await until(() => o.calls().length > 0 && o.calls())).toEqual([`http://[::1]:${info!.port}/?key=${KEY}`])
+})
+
+test('43: the README\'s section of mockup names the other two names of the foreground and the background', () => {
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+  const from = readme.indexOf('### `mockup`: the mock-up server of a brainstorm'), section = readme.slice(from, readme.indexOf('\n## ', from))
+  expect(from).toBeGreaterThan(0)
+  for (const name of ['--no-daemon', '--daemon']) expect(`${name}: ${new RegExp(`\`${name}\``).test(section)}`).toBe(`${name}: true`)
+})
+
+test('45: a start in the foreground that was refused leaves no session folder behind either', async () => {
+  const dir = fresh('dir')
+  const r = await run(['start', '--dir', dir, '--host', '127.0.0.2', '--foreground'])
+  expect(r.code).toBe(1); expect(r.out).toContain('ask the user first, then add --allow-network')
+  expect(readdirSync(dir).filter((f) => !f.startsWith('.'))).toEqual([])
+})
+
+// ---------- from the exploratory test ----------
+
+test('16: a screen that holds the text </body> is served unchanged, and the page script is put at the page\'s own end', async () => {
+  const fragment = '<h2>Tricky</h2><script>var a="</body>"; window.marker = a.length;</script><p id="after">after</p>'
+  const s = await serve({}, (content) => writeFileSync(`${content}/tricky.html`, fragment))
+  const framed = await (await get(s.base, '/', { Cookie: s.cookie })).text()
+  expect(framed).toContain(fragment) // not cut in two by the page's script
+  expect(framed.indexOf('toggleSelect')).toBeGreaterThan(framed.indexOf('id="after"'))
+  await sleep(50)
+  const whole = '<!DOCTYPE html><html><body><script>var a="</body>";</script><p id="after">whole after</p></body></html>'
+  writeFileSync(`${s.content}/whole.html`, whole); await sleep(50)
+  const served = await (await get(s.base, '/', { Cookie: s.cookie })).text()
+  expect(served.startsWith('<!DOCTYPE html><html><body><script>var a="</body>";</script><p id="after">whole after</p><script>')).toBe(true)
+  expect(served.endsWith('</script>\n</body></html>')).toBe(true)
+})
+
+test('18: a new .html that is a link, and so never the screen, sends no reload, keeps events, and is no screen-added', async () => {
+  const s = await serve({}, (content, state) => { writeFileSync(`${dirname(content)}/outside.html`, '<p>outside</p>'); writeFileSync(`${state}/events`, '{"choice":"keep-me"}\n') })
+  const w = socket(s.port, { Cookie: s.cookie }); expect(await w.opened).toBe(true)
+  await sleep(300)
+  symlinkSync(`${dirname(s.content)}/outside.html`, `${s.content}/sym.html`); linkSync(`${dirname(s.content)}/outside.html`, `${s.content}/hard.html`)
+  await sleep(700)
+  expect(w.messages).toEqual([])
+  expect(readOr(`${s.state}/events`)).toBe('{"choice":"keep-me"}\n')
+  expect(jsonLines(s.out()).filter((l) => l.type === 'screen-added' || l.type === 'screen-updated')).toEqual([])
 })
