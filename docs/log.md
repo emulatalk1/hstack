@@ -1,6 +1,8 @@
 # Update Log
 
 ## 2026-11-21
+* **Approve**: the [brainstorm and grill spec](/specs/2026-11-21-brainstorm-and-grill.md) is `stable`: approved by the user ("Duyệt") after a brainstorm and a grill of three rounds, whose answers are in its section "Agreed in the brainstorm". A run from a one-shot prompt that builds without an approval was put off: feedback issue 7.
+* **Creation**: Added the [brainstorm and grill spec](/specs/2026-11-21-brainstorm-and-grill.md) (draft), part B of feedback issue 6: step 1 of the build loop starts with a brainstorm that ends in the spec, and the spec can be grilled before the approval; 49 behaviours.
 * **Update**: Built the [mock-up server spec](/specs/2026-11-21-mockup-server.md): `scripts/mockup.ts` with its page script, frame and licence, 1122 pass in the whole suite on `2c872cc`; two review rounds, an exploratory test with a real Chrome and 48 planted faults. The builder's own decisions are in the [decisions file](/specs/2026-11-21-mockup-server.decisions.md), not approved by the user. Open: one step waits for a ruling (the list of addresses a server on the network can be reached on was not tried from outside), and part B of feedback issue 6.
 * **Approve**: the [mock-up server spec](/specs/2026-11-21-mockup-server.md) is `stable`: approved by the user ("Duyệt spec A") after a grill of three rounds, whose answers are in its section "Open points". The draft spec for feedback issue 4, never committed, was deleted on the user's word.
 * **Creation**: Added the [mock-up server spec](/specs/2026-11-21-mockup-server.md) (draft), part A of feedback issue 6: the mock-up server of the brainstorm as one TypeScript script run with Bun, 47 behaviours. Part B, the new step 1 with the brainstorm and grill skills, is the next spec.
