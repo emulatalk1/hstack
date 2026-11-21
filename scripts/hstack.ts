@@ -227,8 +227,8 @@ if (cmd === 'hook-start') {
     // a run that a new session finds is an earlier session's (stale): the stop hook judges it only by what this session changes
     if (input.includes('"source":"startup"')) { wr(`${S}/session-head`, fingerprint() + '\n'); if (isFile(`${S}/base`)) wr(`${S}/stale`, '') }
   } else if (pointerError) put(`${pointerError}: the stop gate is off until the file is right.`)
-  put('hstack is installed. For any request to build, change or fix code in this repository, invoke the hstack:build skill first and follow it to its last step before you reply. It starts with a spec that the user approves; after the approval, decide from the spec and the code, and write each decision down. A message that only rules on a point the record of the project lists as waiting for a ruling is not a build: write the ruling as the rules of the record say, commit those files by path, and run hstack.ts ruled.')
-  if (S && waiting()) put(`A spec waits for the user's approval: ${first(`${S}/spec`)}. If the user's message approves it or asks for changes to it, invoke hstack:build: its step 1 finds the waiting spec and takes the message from there (item 7); do not approve it yourself outside that step. If the message is a question, answer it. If it is other work to build, delete the spec file unless the user wants it kept, run \`hstack.ts spec --drop\`, then invoke hstack:build.`)
+  put('hstack is installed. For any request to build, change or fix code in this repository, invoke the hstack:build skill first. It starts with a brainstorm with the user, then a spec that the user approves: your first message says what you understood and what you found, and the user\'s answer decides what comes next. For a build, the brainstorm is hstack\'s own skill, hstack:brainstorm, not another brainstorming skill. Nothing is built before the approval; after the approval, follow it to its last step, decide from the spec and the code, and write each decision down. A message that only rules on a point the record of the project lists as waiting for a ruling is not a build: write the ruling as the rules of the record say, commit those files by path, and run hstack.ts ruled.')
+  if (S && waiting()) put(`A spec waits for the user's approval: ${first(`${S}/spec`)}. If the user's message approves it, asks for changes to it or asks for a grill of it, invoke hstack:build: its step 1 finds the waiting spec and takes the message from there (its item "The user's next message"); do not approve it yourself outside that step. If the message is a question, answer it. If it is other work to build, delete the spec file unless the user wants it kept, run \`hstack.ts spec --drop\`, then invoke hstack:build.`)
   process.exit(0)
 }
 
@@ -249,7 +249,7 @@ if (cmd === 'hook-stop') {
     if (fp === (lines(rd(`${S}/spec`))[2] ?? '')) { if (!isFile(`${S}/spec-shown`)) wr(`${S}/spec-shown`, `${now()}\n`); process.exit(0) }
     // the repository changed while the spec waited, and not in this session: a question is not a build, and approve will refuse
     if (stale && fp === first(`${S}/session-head`)) process.exit(0)
-    why = "a spec waits for the user's approval and nothing is built before it. If the changes made since the spec was shown are yours, undo them and end the turn with the spec's text; if the user made them, run spec --drop and start again."
+    why = "a spec waits for the user's approval and nothing is built before it. If the changes made since the spec was shown are yours, undo them and end the turn as the playbook's item 'Show it' says; if the user made them, run spec --drop and start again."
   } else if (isFile(`${S}/done`) && first(`${S}/done`) === head && git('status', '--porcelain').out === '') process.exit(0)
   // an earlier session's run, finished or abandoned, and nothing changed in this one: a question, not a build
   else if (stale && fingerprint() === first(`${S}/session-head`)) process.exit(0)
@@ -456,7 +456,7 @@ switch (cmd) {
       if (ok.length === 0) die('hstack: run records-check <feature list> <coverage file> first (or records-check --none <why>)')
       if (recordsChanged()) die('hstack: a record changed after the check: run records-check again')
     }
-    if (!recorded('spec')) die('hstack: no approved spec: show the user a spec (spec <file>), end the turn with its text, and run approve when they approve it')
+    if (!recorded('spec')) die('hstack: no approved spec: show the user a spec (spec <file>), end the turn as the playbook says, and run approve when they approve it')
     try { ap(`${S}/phases`, line + '\n') } catch { process.exit(1) }
     mark(line)
     // a skipped step or an unavailable capability is a stumble. The why goes to the entry's detail only.
@@ -487,14 +487,14 @@ switch (cmd) {
     wr(`${S}/spec`, `${file}\n${git('hash-object', '--', file).out}\n${fingerprint()}\n`)
     wr(`${S}/spec-asked`, `${now()}\n`)
     rmSync(u(`${S}/spec-shown`), { force: true })
-    put('the spec waits for the user: end this turn with its text')
+    put('the spec waits for the user: end this turn as the playbook says, and give the user the path of the spec, never its whole text')
     break
   }
 
   case 'approve': {
     if (!waiting()) die('hstack: no spec waits for approval')
     const [file, hash] = lines(rd(`${S}/spec`))
-    if (!isFile(`${S}/spec-shown`)) die('hstack: the user has not seen this spec: end your turn with its text first')
+    if (!isFile(`${S}/spec-shown`)) die('hstack: the user has not seen this spec: end your turn first, as the playbook\'s item "Show it" says')
     if (!isFile(file) || git('hash-object', '--', file).out !== hash) die('hstack: the spec changed after it was shown: run spec again and show it')
     // the run's base is the commit at start: what changed since is not this run's, and must not be judged as its work
     if (fingerprint() !== (lines(rd(`${S}/spec`))[2] ?? '')) die('hstack: the code repository changed while the spec waited. If the changes are yours, undo them; if the user made them, delete the spec file unless they want it kept, run spec --drop, and start again')

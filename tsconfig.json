@@ -18,6 +18,9 @@
     "scripts/lib/cksum.ts",
     "tests/hstack.test.ts",
     "tests/mockup.test.ts",
-    "tests/mockup-edges.test.ts"
+    "tests/mockup-edges.test.ts",
+    "tests/brainstorm-texts.test.ts",
+    "tests/brainstorm-script.test.ts",
+    "tests/brainstorm-edges.test.ts"
   ]
 }
