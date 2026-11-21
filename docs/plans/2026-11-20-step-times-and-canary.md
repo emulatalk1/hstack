@@ -309,4 +309,4 @@ What no run has reached, after all three: a canary that fails; the 10 minutes of
 
 ### Task 7 (2026-11-21)
 
-Whole suite on the last tree: 986 pass, 67 skip, 0 fail; `tsc` 0. The docs check passes. How the branch goes to `main`: asked of the user.
+Whole suite on the last tree: 986 pass, 67 skip, 0 fail; `tsc` 0. The docs check passes. How the branch goes to `main`: the user's word, "Push to main". `main` on GitHub had not moved since the branch was cut (452e0b7), so the branch is pushed to it as it is, with no merge commit.
