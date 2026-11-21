@@ -13,7 +13,11 @@
   },
   "include": [
     "scripts/hstack.ts",
+    "scripts/mockup.ts",
+    "scripts/lib/mockup-helper.ts",
     "scripts/lib/cksum.ts",
-    "tests/hstack.test.ts"
+    "tests/hstack.test.ts",
+    "tests/mockup.test.ts",
+    "tests/mockup-edges.test.ts"
   ]
 }

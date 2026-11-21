@@ -211,7 +211,7 @@ const moveRun = () => { // an earlier run goes to old/<time>/; what belongs to t
   let old = `${S}/old/${stamp()}`
   for (let i = 2; existsSync(u(old)); i++) old = `${S}/old/${stamp()}-${i}` // two runs moved in one second: a folder each, nothing written over
   mkdirp(old)
-  for (const f of ls(S)) if (!f.startsWith('.') && !['old', 'repo', 'top', 'home', 'session-head', 'stop-blocks', 'feedback', 'evidence'].includes(f)) renameSync(u(`${S}/${f}`), u(`${old}/${f}`))
+  for (const f of ls(S)) if (!f.startsWith('.') && !['old', 'repo', 'top', 'home', 'session-head', 'stop-blocks', 'feedback', 'evidence', 'mockups'].includes(f)) renameSync(u(`${S}/${f}`), u(`${old}/${f}`))
 }
 const stdin = () => { const chunks: Buffer[] = [], buf = Buffer.alloc(65536); for (;;) { let n = 0; try { n = readSync(0, buf, 0, buf.length, null) } catch (e) { if ((e as { code?: string }).code === 'EAGAIN') continue; break } if (n <= 0) break; chunks.push(Buffer.from(buf.subarray(0, n))) } return Buffer.concat(chunks).toString('latin1') }
 

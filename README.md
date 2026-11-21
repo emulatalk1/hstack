@@ -104,6 +104,24 @@ It checks a `docs/` folder written in the OKF v0.2 format (Open Knowledge Format
 
 It exits 1 when there are errors. It also warns about docs past their `stale_after` date, and about log entries that link no doc.
 
+### `mockup`: the mock-up server of a brainstorm
+
+```
+bun scripts/mockup.ts start [--dir <folder>] [--open] [--host <host>] [--url-host <host>] [--allow-network]
+                            [--idle-timeout-minutes <n>] [--foreground | --background]
+bun scripts/mockup.ts stop <session folder>
+```
+
+During a brainstorm the agent can show mock-ups in a browser tab. `start` runs a small server and prints one line of JSON with the `url` to open (it carries the session's key, and every request without the key is refused), the folder to write screens into (`screen_dir`) and the folder the server keeps its files in (`state_dir`). The server shows the newest `.html` file of `screen_dir`: a whole page as it is, anything else inside a frame with styles for options, cards and wireframes. A click on a choice is written to `state_dir/events`, one line of JSON each, for the agent to read.
+
+- `--dir <folder>`: keep the sessions in this folder, one sub-folder each. The screens stay after `stop`, and the next `start` takes the same port and key, so an open tab connects again. Without it the session is in the system's temporary folder and `stop` deletes it.
+- `--open`: open the browser at the first screen.
+- `--host <host>`, `--url-host <host>`: the address to listen on (`127.0.0.1` when not given) and the host shown in the `url`. Any address but this machine's own (`127.0.0.1`, `localhost`, `::1`) opens the server to the network, and is refused until `--allow-network` is given: the agent asks you first. The line of JSON then lists, under `reachable_at`, each address the server can be reached on and whether it is a `tailscale` or another `network` address. On a local network the link is plain HTTP, not encrypted; to keep it to your tailnet, give the machine's tailnet address as the host.
+- `--idle-timeout-minutes <n>`: the server ends by itself after this long without use (4 hours when not given), and also when the coding tool that started it has ended.
+- `--foreground`, `--background`: where the server runs. `start` puts it in the background and returns, except on Windows and where background processes are reaped.
+
+`stop <session folder>` ends the server of that session, and no other process. The script and its page are third-party work converted to TypeScript; the licence is in `scripts/LICENSE-mockup`.
+
 ## Development
 
 ```
@@ -116,7 +134,7 @@ The first runs every test with `bun:test`; it takes about 3 minutes (`bun test t
 | Path | What it holds |
 |---|---|
 | `.claude-plugin/` | plugin and marketplace manifests |
-| `scripts/` | the command-line scripts; `scripts/lib/` holds one module per job |
+| `scripts/` | the command-line scripts; `scripts/lib/` holds one module per job; `mockup-frame.html` is the frame of the mock-up server's pages |
 | `skills/` | `build`, `build-implement`, `hstack-feedback`, `hstack-init`, `hstack-safety` |
 | `agents/` | the four agents of the build loop: `oracle`, `reviewer`, `explorer`, `mutator` |
 | `hooks/` | the SessionStart and Stop hooks of the build loop |
@@ -131,6 +149,7 @@ The first runs every test with `bun:test`; it takes about 3 minutes (`bun test t
 
 - The `docker` check refuses any Compose input it does not read, so it may refuse a harmless setup: an override file, `include:`, a `---` line inside a block scalar, or a compose file whose `name:` is not its first line (for example after `version:`). That is on purpose; a wrong "allowed" costs more than a wrong "refused".
 - `init` warns about every `localhost:<port>` in `src/` and `tests/`, including URLs inside unit tests. Narrowing this to the project's own ports comes with the own-services plan.
+- The Windows branch of the mock-up server (`scripts/mockup.ts`: the foreground run, no watch on the process that started it) has not been run on Windows; a test checks the decision only.
 
 ## Roadmap
 
