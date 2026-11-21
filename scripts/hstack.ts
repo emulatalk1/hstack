@@ -602,7 +602,7 @@ switch (cmd) {
     process.exit(bad)
   }
 
-  case 'elapsed': put(String(Math.trunc((now() - int(rd(`${S}/started`))) / 60))); break
+  case 'elapsed': if (!isFile(`${S}/started`)) die('hstack: no run started: run start first'); put(String(Math.trunc((now() - int(rd(`${S}/started`))) / 60))); break
 
   case 'times': { // minutes of each step of this run; --all: of each run under old/ too, oldest first
     if (argv[0] === '--all') for (const d of ls(`${S}/old`)) { put(`run old/${d}`); for (const l of timesOf(`${S}/old/${d}`)) put(l) }

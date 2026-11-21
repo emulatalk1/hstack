@@ -105,9 +105,11 @@ brainstorming:
 - **They didn't:** they may not want a conversation at all. End with a
   light, one-line offer to just get going instead, like
   "Or if you'd rather I just write the spec, say so." If they take you up
-  on it, the conversation is done: state any significant how-it-gets-made
-  choice (platform, language, medium) in one plain line, then write the
-  spec and hand it over for the approval.
+  on it, the questions are done; where there is more than one way that
+  they would see, lay the ways out first and let them pick (see Lay out
+  the approaches). Then write the spec and hand it over for the approval;
+  a how-it-gets-made choice (platform, language, medium) that is yours
+  stands in it under what is left to the builder.
 
 That's the whole message.
 
@@ -140,8 +142,9 @@ talk which of those choices they want to make. Someone who raises the how
 or asks about trade-offs wants the options with your pick. Someone who
 talks about outcomes is handing you the how: make those calls and state
 each in a line. When there's existing work, build on what it already
-uses. Any choice you make goes in the design as your call, never as
-something they agreed to.
+uses. Any choice you make stands in the spec under what is left to the
+builder, without your pick, never as something they agreed to; your
+pick is written with your other decisions after the approval.
 
 **Ground to cover.** This is territory, not a script. Never read these
 out as questions:
@@ -274,11 +277,13 @@ partner you're writing it up, say a reviewer will read it first and you
 may come back once with a few questions. Don't hand over the spec
 until the check is back. Sort what the builder asks into three piles:
 
-- **Answered already** by the conversation or the project: put the answer
-  in the spec.
+- **Answered already by the conversation:** it was agreed; see that the
+  spec says it. What the project answers goes to your human partner too,
+  with the "theirs" pile: say what the project holds, and write it when
+  they have confirmed it.
 - **Minor:** a sensible builder could settle it without changing what gets
-  built. Settle it yourself and name it in the spec under what is left to
-  the builder.
+  built. Do not settle it in the spec: name it in the spec under what is
+  left to the builder, without an answer.
 - **Theirs:** only your human partner can answer it, and the answer changes
   what gets built.
 
@@ -286,8 +291,8 @@ Bring the "theirs" pile to your human partner in a message of its own,
 before you hand the spec over, most important first; run `$H spec <file>`
 before that message, so that the turn can end while they answer. Write
 an answer into the spec only when they have given it, then hand the spec
-over with a short list of the calls you made so they can check those
-while reading. That's the only round of questions the check produces.
+over as the playbook's item "Show it" says. That's the only round of
+questions the check produces.
 Without a subagent tool, read the spec as that builder yourself.
 
 <HARD-GATE>
