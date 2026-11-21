@@ -290,6 +290,21 @@ The nine changes made to the design while it was built were shown to the user on
 
 ### Task 5, the run on the trial copy
 
-Asked for by the user. The work was pushed as branch `step-times-and-canary` (251edfe) so that the other machine could fetch it, and the session there started the run on the user's yes, with run B's request and launch conditions, on new branches cut from run B's start commits. Readings: not yet received.
+Asked for by the user. The work was pushed as branch `step-times-and-canary` (251edfe) so that the other machine could fetch it, and the session there started the run on the user's yes, with run B's request and launch conditions, on new branches cut from run B's start commits. Readings below.
 
-(Task 5's readings and Task 7 are filled in as they run.)
+**Run t1** (2026-11-21, plugin at 251edfe), read by the session on that machine and sent in generic words; its full readings are in that machine's evidence folder. Turn 1: 2.1 minutes, USD 1.88, a spec with three items against the record, each with a recommended option. Turn 2, resumed with an approval that takes each recommended option: 56.8 minutes, USD 13.83. Both turns: USD 15.71.
+
+1. **The canary of each kind of test.** `capabilities.md` has a line for every kind, the integration tests included, and every test line has its canary: `pass` on the one-file and one-test lines of the unit tests, the integration tests and both forms of the end-to-end suite; `via` its own one-file line on the two end-to-end whole lines. `n.a.` stands only on lint, build and run-the-product. Yes. In run B the integration tests had no canary, and in the trial the end-to-end suite had none.
+2. **Nobody runs the end-to-end suite whole before step 9.** Both of its whole lines carry `whole run: step 9 only`. The suite ran whole once, by the builder, after `mutate` and before `final`, on the last commit of code: green, 18.1 minutes. No agent ran any suite whole: the oracle, the reviewer and the mutator ran one file or one test, the explorer no test command. Yes: the rule added after run f2 held on a suite of 18 minutes.
+3. **The unit and integration suite at the base.** Setup ran it whole (3.3 minutes), with the throwaway tests in place, so probe and canary in one; step 4's check ran it whole again. Setup took 6.0 minutes against run B's 2.5. This is what decision 4 says for a suite under 5 minutes, and it is more than run B did. Whether the project's own rule covers this suite is asked of the other session; see below.
+4. **The base check: not reached.** No test was red in step 4's check or in step 9, so no base checkout was made. `git worktree list` after the run: one line in each repository.
+5. **The times.** The last reply ends with the lines of `times`: spec 1.3, setup 6.0, oracle 4.2, implement 6.6, gate 0.1, review 1.3, explore 10.8, mutate 4.9, final 22.0, records 0.4, total 57.7. No tracked file of either repository holds such a line. Yes.
+6. Ten lines in `phases`, `done` equals the code repository's HEAD. One Stop block, by hstack: the builder ended a turn in step 9 while the end-to-end run went on in the background, and was sent on. 0 permission denials, no `git stash`, no push, no drop of a database; the original's database names are the same before and after. The copy's own wait hook did not hold turn 1 this time.
+
+The run's branches are left as they are on that machine; nothing was merged.
+
+All paid runs of this plan: USD 27.14 (f1 5.59, f2 5.84, t1 15.71), under the limit of 40.
+
+What no run has reached, after all three: a canary that fails; the 10 minutes of the base checks; a whole run cut at 5 minutes; a red test that is green at the base, or not checked; the base check on a project with dependencies and services; the walk of an earlier step at the base.
+
+(The answer about the project's rule, and Task 7, are filled in as they come.)
