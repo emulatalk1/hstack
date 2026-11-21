@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-11-22
+* **Update**: Built the [brainstorm and grill spec](/specs/2026-11-21-brainstorm-and-grill.md), hstack 0.4.2: the skills `hstack:brainstorm` and `hstack:grill`, step 1 of the playbook and the script's texts; 1186 pass in the whole suite on `6dff147`; two review rounds, an exploratory test with one real session turn, and 49 planted faults, all killed. The builder's own decisions are in the [decisions file](/specs/2026-11-21-brainstorm-and-grill.decisions.md), not approved by the user. Open: the merge of both parts of feedback issue 6 into `main` and its closing comment, on the user's word.
+
 ## 2026-11-21
 * **Approve**: the [brainstorm and grill spec](/specs/2026-11-21-brainstorm-and-grill.md) is `stable`: approved by the user ("Duyệt") after a brainstorm and a grill of three rounds, whose answers are in its section "Agreed in the brainstorm". A run from a one-shot prompt that builds without an approval was put off: feedback issue 7.
 * **Creation**: Added the [brainstorm and grill spec](/specs/2026-11-21-brainstorm-and-grill.md) (draft), part B of feedback issue 6: step 1 of the build loop starts with a brainstorm that ends in the spec, and the spec can be grilled before the approval; 49 behaviours.
