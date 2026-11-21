@@ -4,11 +4,11 @@
 // Every test starts the servers it needs on this machine's own address, ends them, and removes its folders.
 // HSTACK_MOCKUP_SCRIPT runs another copy of the script (a broken copy that a test must catch).
 import { afterAll, afterEach, expect, setDefaultTimeout, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { addressKind, browserLauncher, foregroundChoice, isOwnHost, windowsLike } from '../scripts/mockup.ts'
+import { addressKind, browserLauncher, foregroundChoice, isOwnHost, opensBrowser, reachableAt, windowsLike } from '../scripts/mockup.ts'
 
 setDefaultTimeout(60000)
 const ROOT = join(import.meta.dir, '..')
@@ -477,4 +477,142 @@ test('E30: the files of a session that hold the key or name the server are reada
   const dir = fresh('dir'), a = await start(['--dir', dir])
   const files = ['server-info', 'server.log', 'server.pid', 'server-instance-id'].map((f) => `${a.info.state_dir}/${f}`).concat(`${dir}/.last-token`)
   expect(files.map((f) => `${f.split('/').pop()} ${mode(f).toString(8)}`)).toEqual(['server-info 600', 'server.log 600', 'server.pid 600', 'server-instance-id 600', '.last-token 600'])
+})
+
+// ---------- from the review of round 1 ----------
+
+test('34: the browser is opened for a server on each of this machine\'s own addresses, ::1 too, and never on another address', () => {
+  const opened = (host: string) => `${host} ${opensBrowser(host, '1', 0)}`
+  expect(['127.0.0.1', 'localhost', '::1', '0.0.0.0', '::', '192.168.1.20', '100.64.0.9'].map(opened))
+    .toEqual(['127.0.0.1 true', 'localhost true', '::1 true', '0.0.0.0 false', ':: false', '192.168.1.20 false', '100.64.0.9 false'])
+  expect([opensBrowser('127.0.0.1', undefined, 0), opensBrowser('127.0.0.1', '', 0), opensBrowser('127.0.0.1', '1', 1)]).toEqual([false, false, false]) // not asked for; a browser is connected already
+})
+
+test('46: reachable_at has one entry for each address of this machine the server can be reached on, with its address, its url with the key, and its kind', () => {
+  const machine = [
+    { address: '127.0.0.1', family: 'IPv4', internal: true }, { address: '::1', family: 'IPv6', internal: true },
+    { address: '192.168.1.20', family: 'IPv4', internal: false }, { address: '100.101.102.103', family: 'IPv4', internal: false },
+    { address: 'fd7a:115c:a1e0::9', family: 'IPv6', internal: false }, { address: 'fe80::1c2d', family: 'IPv6', internal: false },
+  ]
+  const lan = { address: '192.168.1.20', kind: 'network', url: 'http://192.168.1.20:5000/?key=K' }
+  const tail = { address: '100.101.102.103', kind: 'tailscale', url: 'http://100.101.102.103:5000/?key=K' }
+  const tail6 = { address: 'fd7a:115c:a1e0::9', kind: 'tailscale', url: 'http://[fd7a:115c:a1e0::9]:5000/?key=K' }
+  const link6 = { address: 'fe80::1c2d', kind: 'network', url: 'http://[fe80::1c2d]:5000/?key=K' }
+  expect(reachableAt('0.0.0.0', machine, 5000, 'K')).toEqual([lan, tail]) // every address of the IPv4 kind but this machine's own
+  expect(reachableAt('::', machine, 5000, 'K')).toEqual([lan, tail, tail6, link6])
+  expect(reachableAt('100.101.102.103', machine, 5000, 'K')).toEqual([tail]) // one named address: that one alone
+  expect(reachableAt('127.0.0.1', machine, 5000, 'K')).toEqual([])
+  expect(reachableAt('::1', machine, 5000, 'K')).toEqual([])
+})
+
+test('45: start without --allow-network refuses also when the permission is in its own environment', async () => {
+  for (const value of ['0', '1']) {
+    const r = await run(['start', '--dir', fresh('dir'), '--host', '127.0.0.2'], { BRAINSTORM_ALLOW_NETWORK: value })
+    expect([value, r.code]).toEqual([value, 1]); expect(r.lines[0]?.error ?? r.out + r.err).toContain('ask the user first, then add --allow-network')
+  }
+})
+
+test('45: a start that was refused leaves no session folder behind', async () => {
+  const dir = fresh('dir')
+  expect((await run(['start', '--dir', dir, '--host', '127.0.0.2'])).code).toBe(1)
+  expect(readdirSync(dir).filter((f) => !f.startsWith('.'))).toEqual([])
+  const before = readdirSync(tmpdir()).filter((f) => f.startsWith('brainstorm-')).length
+  expect((await run(['start', '--host', '127.0.0.2'])).code).toBe(1)
+  expect(readdirSync(tmpdir()).filter((f) => f.startsWith('brainstorm-')).length).toBe(before)
+})
+
+test('24: an answer to a request the server could not serve carries the five headers too', async () => {
+  const s = await serve()
+  rmSync(s.content, { recursive: true, force: true })
+  const r = await get(s.base, '/', { Cookie: s.cookie })
+  expect(r.status).toBe(500)
+  expect(['referrer-policy', 'cache-control', 'x-frame-options', 'content-security-policy', 'cross-origin-resource-policy'].map((h) => r.headers.get(h)))
+    .toEqual(['no-referrer', 'no-store', 'DENY', "frame-ancestors 'none'", 'same-origin'])
+  expect(s.proc.exitCode).toBeNull()
+})
+
+test('13: stop does not signal a live process whose command line does not carry the id of the state folder, when that id is well-formed', async () => {
+  const other = Bun.spawn(['sleep', '30']); cleanups.push(() => { other.kill() })
+  const session = fresh('stale'); mkdirSync(`${session}/state`, { recursive: true })
+  writeFileSync(`${session}/state/server.pid`, `${other.pid}\n`); writeFileSync(`${session}/state/server-instance-id`, `${'0123456789abcdef'.repeat(3)}\n`)
+  const r = await run(['stop', session])
+  expect(r.lines[0]?.status).toBe('stale_pid')
+  expect(readOr(`${session}/state/server-stopped`)).toContain('"reason":"stale_pid"')
+  expect(alive(other.pid)).toBe(true)
+})
+
+test('31: start names as the owner the process that ran the shell start was called from: the server lives on when that shell ends, and ends when that process dies', async () => {
+  const dir = fresh('dir'), out = fresh('start-out')
+  // the stand-in for the coding tool: it runs start through a shell, as such a tool does, and stays alive
+  const tool = Bun.spawn([process.execPath, '-e', `Bun.spawnSync(['sh', '-c', ${JSON.stringify(`"${process.execPath}" "${SCRIPT}" start --dir "${dir}" > "${out}" 2>&1; exit 0`)}]); setTimeout(() => {}, 60000)`],
+    { env: { ...CLEAN, ...SAFE, BRAINSTORM_LIFECYCLE_CHECK_MS: '100' }, stdout: 'ignore', stderr: 'ignore' })
+  cleanups.push(() => { tool.kill('SIGKILL') })
+  const info = await until(() => jsonLines(readOr(out)).find((l) => l.type === 'server-started'), 10000)
+  expect(info).toBeDefined()
+  const pid = Number(readOr(`${info!.state_dir}/server.pid`).trim())
+  cleanups.push(() => { if (alive(pid)) process.kill(pid, 'SIGKILL') })
+  await sleep(700) // the shell has ended long since; the tool lives
+  expect(alive(pid)).toBe(true)
+  tool.kill('SIGKILL'); await tool.exited
+  expect(await until(() => !alive(pid), 8000)).toBe(true)
+  expect(readOr(`${info!.state_dir}/server-stopped`)).toContain('"reason":"owner process exited"')
+})
+
+test('22: the page of GET /?key=<key> puts that key into the session storage as brainstorm-session-key and goes to /', async () => {
+  const s = await serve()
+  const html = await (await get(s.base, `/?key=${KEY}`)).text()
+  const code = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n')
+  const stored: [string, string][] = [], went: string[] = []
+  new Function('sessionStorage', 'location', code)({ setItem: (k: string, v: string) => stored.push([k, v]) }, { replace: (u: string) => went.push(u) })
+  expect(stored).toEqual([['brainstorm-session-key', KEY]])
+  expect(went).toEqual(['/'])
+})
+
+test('30: a message from a browser puts the end off', async () => {
+  const s = await serve({ BRAINSTORM_IDLE_TIMEOUT_MS: '800', BRAINSTORM_LIFECYCLE_CHECK_MS: '100' })
+  const w = socket(s.port, { Cookie: s.cookie }); expect(await w.opened).toBe(true)
+  for (const end = Date.now() + 2400; Date.now() < end; await sleep(200)) w.ws.send('{"type":"hover"}')
+  expect(s.proc.exitCode).toBeNull() // three times the timeout, and still there
+})
+
+test('30: a new or changed screen puts the end off', async () => {
+  const s = await serve({ BRAINSTORM_IDLE_TIMEOUT_MS: '800', BRAINSTORM_LIFECYCLE_CHECK_MS: '100' })
+  let i = 0
+  for (const end = Date.now() + 2400; Date.now() < end; await sleep(200)) writeFileSync(`${s.content}/${i < 3 ? `new-${i}` : 'same'}.html`, `<p>${i++}</p>`)
+  expect(s.proc.exitCode).toBeNull()
+})
+
+test('6: the server listens on the host it was given and on no other: on ::1 it answers there and not on 127.0.0.1', async () => {
+  const dir = fresh('session')
+  const p = spawn(['serve'], { BRAINSTORM_DIR: dir, BRAINSTORM_TOKEN: KEY, BRAINSTORM_HOST: '::1' })
+  const info = await until(() => jsonLines(p.out()).find((l) => l.type === 'server-started'))
+  expect(info?.url).toBe(`http://[::1]:${info?.port}/?key=${KEY}`)
+  expect((await fetch(`http://[::1]:${info!.port}/`, { headers: { Cookie: `brainstorm-key-${info!.port}=${KEY}` } })).status).toBe(200)
+  expect(await fetch(`http://127.0.0.1:${info!.port}/`).then((r) => `answered ${r.status}`, () => 'no connection')).toBe('no connection')
+})
+
+test('35: toggleSelect marks a card selected, alone among the cards of its container', async () => {
+  const p = await page()
+  const asked: string[] = []
+  const container: any = { dataset: {}, matches: (sel: string) => sel === '.cards' }
+  const a = element({ dataset: { choice: 'a' }, parent: container }), b = element({ dataset: { choice: 'b' }, parent: container })
+  // a container that answers by the selector it is asked with, as a page does
+  container.querySelectorAll = (sel: string) => { asked.push(sel); return sel.split(',').map((x) => x.trim()).includes('.card') ? [a, b] : [] }
+  p.window.toggleSelect(a); p.window.toggleSelect(b)
+  expect([a.classes.has('selected'), b.classes.has('selected')]).toEqual([false, true])
+  expect(asked[0].split(',').map((x) => x.trim()).sort()).toEqual(['.card', '.option'])
+})
+
+test('41: the type-check covers every TypeScript file of the mock-up server and its tests', () => {
+  const include = JSON.parse(readFileSync(join(ROOT, 'tsconfig.json'), 'utf8')).include as string[]
+  for (const file of ['scripts/mockup.ts', 'scripts/lib/mockup-helper.ts', 'tests/mockup.test.ts', 'tests/mockup-edges.test.ts']) expect(`${file}: ${include.includes(file)}`).toBe(`${file}: true`)
+})
+
+test('42: the licence names the three files it covers, and its copyright holder is named in no other file of the server, its page, its tests or the README', () => {
+  const licence = readFileSync(join(ROOT, 'scripts/LICENSE-mockup'), 'utf8')
+  for (const file of ['mockup.ts', 'mockup-frame.html', 'lib/mockup-helper.ts']) expect(`${file}: ${licence.includes(file)}`).toBe(`${file}: true`)
+  const holder = (licence.match(/^\s*Copyright \(c\) \d{4}\s+(.*\S)\s*$/m) ?? [])[1]?.toLowerCase()
+  expect(holder?.length).toBeGreaterThan(2)
+  for (const file of ['scripts/mockup.ts', 'scripts/mockup-frame.html', 'scripts/lib/mockup-helper.ts', 'tests/mockup.test.ts', 'tests/mockup-edges.test.ts', 'README.md'])
+    expect(`${file}: ${readFileSync(join(ROOT, file), 'utf8').toLowerCase().includes(holder as string)}`).toBe(`${file}: false`)
 })

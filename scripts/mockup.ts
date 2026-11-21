@@ -49,7 +49,19 @@ export function addressKind(address: string): 'tailscale' | 'network' {
   if (v4) return Number(v4[1]) === 100 && Number(v4[2]) >= 64 && Number(v4[2]) <= 127 ? 'tailscale' : 'network'
   return /^fd7a:115c:a1e0:/i.test(address) ? 'tailscale' : 'network'
 }
+// The browser is opened only when start was told to (--open), on one of this machine's own addresses, and when no
+// browser has the page open already.
+export function opensBrowser(host: string, open: string | undefined, connected: number): boolean {
+  return Boolean(open) && isOwnHost(host) && connected === 0
+}
 const hostForUrl = (host: string) => (host.startsWith('[') && host.endsWith(']') ? host : host.includes(':') ? `[${host}]` : host)
+// Every address on which a server on this host can be reached from another machine: all of the IPv4 kind for
+// 0.0.0.0, all of both kinds for ::, the one address for a host that is named, none for this machine's own.
+export function reachableAt(host: string, machine: { address: string; family: string | number; internal: boolean }[], port: number, key: string): { address: string; kind: string; url: string }[] {
+  const others = machine.filter((a) => !a.internal)
+  const addresses = host === '0.0.0.0' ? others.filter((a) => a.family === 'IPv4' || a.family === 4).map((a) => a.address) : host === '::' ? others.map((a) => a.address) : isOwnHost(host) ? [] : [host]
+  return addresses.map((address) => ({ address, kind: addressKind(address), url: `http://${hostForUrl(address)}:${port}/?key=${key}` }))
+}
 
 // ---------- serve ----------
 
@@ -190,9 +202,7 @@ location.replace('/');
   const maybeOpenBrowser = () => {
     if (browserOpened) return
     browserOpened = true
-    if (!env.BRAINSTORM_OPEN) return
-    if (HOST !== '127.0.0.1' && HOST !== 'localhost') return
-    if (clients.size > 0) return // the user has it open already
+    if (!opensBrowser(HOST, env.BRAINSTORM_OPEN, clients.size)) return
     if (env.BRAINSTORM_OPEN_CMD) { try { exec(`${env.BRAINSTORM_OPEN_CMD} ${JSON.stringify(url())}`, () => {}) } catch { /* best effort */ } return }
     const launcher = browserLauncher(url(), process.platform, release(), env)
     if (launcher) { try { execFile(launcher.bin, launcher.args, () => {}) } catch { /* best effort */ } }
@@ -231,6 +241,8 @@ location.replace('/');
       }
       return answer(req)
     },
+    // a request the server could not serve (the content folder is gone) is answered like any other, and the server goes on
+    error() { return new Response('Server error', { status: 500, headers: headers() }) },
     websocket: {
       maxPayloadLength: 10 * 1024 * 1024,
       open(ws) { clients.add(ws) },
@@ -298,12 +310,7 @@ location.replace('/');
   if (ownerPid && !alive(ownerPid)) { put({ type: 'owner-pid-invalid', pid: ownerPid, reason: 'dead at startup' }); ownerPid = 0 }
 
   const info: Record<string, unknown> = { type: 'server-started', port: PORT, host: HOST, url_host: URL_HOST, url: url(), screen_dir: CONTENT_DIR, state_dir: STATE_DIR, idle_timeout_ms: IDLE_TIMEOUT_MS }
-  if (env.BRAINSTORM_ALLOW_NETWORK) {
-    // every address of this machine on which the server can be reached from another one
-    const all = Object.values(networkInterfaces()).flatMap((list) => list ?? []).filter((a) => !a.internal)
-    const addresses = HOST === '0.0.0.0' ? all.filter((a) => a.family === 'IPv4').map((a) => a.address) : HOST === '::' ? all.map((a) => a.address) : isOwnHost(HOST) ? [] : [HOST]
-    info.reachable_at = addresses.map((address) => ({ address, kind: addressKind(address), url: `http://${hostForUrl(address)}:${PORT}/?key=${TOKEN}` }))
-  }
+  if (env.BRAINSTORM_ALLOW_NETWORK) info.reachable_at = reachableAt(HOST, Object.values(networkInterfaces()).flatMap((list) => list ?? []), PORT, TOKEN)
   const line = JSON.stringify(info)
   console.log(line)
   writeFileSync(join(STATE_DIR, 'server-info'), line + '\n', { mode: 0o600 }) // it holds the key
@@ -336,7 +343,8 @@ async function start(args: string[]): Promise<void> {
   process.umask(0o077) // the files of a session hold the key
   const id = `${process.pid}-${Math.floor(Date.now() / 1000)}`
   const childEnv: Record<string, string> = {}
-  for (const [k, v] of Object.entries(env)) if (v !== undefined) childEnv[k] = v
+  // the permission to open the server to the network is start's flag alone, never a variable start happens to find
+  for (const [k, v] of Object.entries(env)) if (v !== undefined && k !== 'BRAINSTORM_ALLOW_NETWORK') childEnv[k] = v
   let session = join(tmpdir(), `brainstorm-${id}`)
   if (dir) {
     let folder = ''
@@ -389,9 +397,9 @@ async function start(args: string[]): Promise<void> {
       console.log(line)
       process.exit(0)
     }
-    if (ended) { // the server refused: its own line says why
+    if (ended) { // the server refused: its own line says why, and the session that never was leaves no folder
       const refusal = lines().find((l) => l.startsWith('{"error"'))
-      if (refusal) { console.log(refusal); process.exit(1) }
+      if (refusal) { rmSync(session, { recursive: true, force: true }); console.log(refusal); process.exit(1) }
       fail(`Server failed to start: ${lines().filter(Boolean).pop() ?? 'no output'}`)
     }
     await Bun.sleep(100)
