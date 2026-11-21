@@ -280,4 +280,16 @@ A fresh clone of the fixture's bundle, the same request and reply. Before turn 1
 
 Both runs: USD 11.43 (f1 5.59, f2 5.84).
 
-(Tasks 5 to 7 are filled in as they run.)
+### Task 6, the comment on issue 1 (2026-11-21)
+
+Posted on the user's word ("đăng bình luận"), the text of Task 6 with one closing sentence for the fixture's times: https://github.com/emulatalk1/hstack/issues/1#issuecomment-7054481180. The issue stays open. A first attempt, after the user's shorter answer "theo suggestion", was refused by the session's permission check and nothing was posted then.
+
+### The user's confirmation (2026-11-21)
+
+The nine changes made to the design while it was built were shown to the user one by one and agreed ("Đồng ý với 9 chỗ sửa"); the design's answer 14 lists them.
+
+### Task 5, the run on the trial copy
+
+Asked for by the user. The work was pushed as branch `step-times-and-canary` (251edfe) so that the other machine could fetch it, and the session there started the run on the user's yes, with run B's request and launch conditions, on new branches cut from run B's start commits. Readings: not yet received.
+
+(Task 5's readings and Task 7 are filled in as they run.)

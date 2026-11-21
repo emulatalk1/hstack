@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-21
+* **Update**: The [step times, canary and base check plan](/plans/2026-11-20-step-times-and-canary.md): the user agreed to the nine changes made to the design `plugin-dev/2026-11-20-setup-times-and-canary.md` while it was built; the comment on feedback issue 1 is posted on the user's word; the work is pushed as branch `step-times-and-canary`, and the run on the trial copy is started on the other machine.
 * **Update**: Built the [step times, canary and base check plan](/plans/2026-11-20-step-times-and-canary.md) in the session's worktree branch: the state file `phase-times` and the verb `times`, the playbook's canary for each test command line, whole runs at the base under an estimated 5 minutes, the block "Whose red test" with its base checkout, plugin 0.4.1. A reader with a fresh context and the review of the whole branch each changed the text; two runs on a new fixture (USD 11.43) showed the canary, the base check, the leftover checkout removed with an unrelated worktree untouched, and the times in the last reply. Open: the run on the trial copy, the comment on issue 1, and one sentence that no run has shown (a suite with no whole run at the base is run whole by nobody before step 9).
 
 ## 2026-11-20
