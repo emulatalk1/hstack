@@ -51,6 +51,6 @@
       "With `--allow-network`, the `server-started` line has a field `reachable_at`: one entry for each address of this machine on which the server can be reached, with its `address`, its `url` (the key in it) and its `kind`, which is `tailscale` for an address of the tailnet ranges (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`) and `network` for any other; for a server on this machine's own address the list is empty.",
       "The README's \"Known limits\" says that the Windows branch of the mock-up server has not been run on Windows."
     ],
-    "passes": false
+    "passes": true
   }
 ]
