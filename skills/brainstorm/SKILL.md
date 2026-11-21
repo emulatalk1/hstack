@@ -140,8 +140,8 @@ materials, and resources: the platform, programming language, and
 libraries for an app; the medium for a piece of art. Read from how they
 talk which of those choices they want to make. Someone who raises the how
 or asks about trade-offs wants the options with your pick. Someone who
-talks about outcomes is handing you the how: make those calls and state
-each in a line. When there's existing work, build on what it already
+talks about outcomes is handing you the how of the ways they would not
+see: make those calls and state each in a line. When there's existing work, build on what it already
 uses. Any choice you make stands in the spec under what is left to the
 builder, without your pick, never as something they agreed to; your
 pick is written with your other decisions after the approval.
@@ -178,8 +178,9 @@ ones, including any that work against why they want it and any the
 existing work rules out. Sketch the two or three that remain concretely
 enough to picture, grounded in what the project actually does, with what
 each trades off. Recommend one and say why, then ask which way they want
-to go; if they've handed you the how, say you'll go with your pick
-instead. When there's genuinely one sensible way, say so in that
+to go. The how they handed you covers only ways they would not see: for
+those, say you'll go with your pick instead; a way that changes what
+they would see is always theirs to pick. When there's genuinely one sensible way, say so in that
 message and explain why the others don't fit; the design comes in the
 next one. This is for how it gets built; for what they want, get them
 describing first.
@@ -305,8 +306,8 @@ Reading and exploring are fine.
 One exception. A spike they said yes to may be built, outside the
 repository; it stays labeled throwaway, and keeping what it produced is
 a new request that comes back through this gate. If they opted out of
-the questions, the conversation is done, and the spec is still approved
-before anything is built.
+the questions, the questions are done: the pick of a way they would see
+still comes, and the spec is still approved before anything is built.
 
 After the spec is approved, go on with step 2 of the playbook and no
 other skill.

@@ -137,3 +137,25 @@ test('E13: elapsed with no run started refuses in one line, as the other verbs d
   expect(r.err.trim()).toBe('hstack: no run started: run start first')
   expect(r.out).toBe('')
 })
+
+// ---------- from the review of round 2 ----------
+
+test('42: a way the user would see is always theirs to pick: the how they handed over covers only what they would not see, and opting out of the questions does not end the conversation', () => {
+  const skill = raw('skills/brainstorm/SKILL.md')
+  const ways = part(skill, '**Lay out the approaches.**')
+  holds('the part Lay out the approaches', ways, ['a way that changes what they would see is always theirs to pick'])
+  lacks('the part Lay out the approaches', ways, ["if they've handed you the how, say you'll go with your pick instead"])
+  holds('the part How it gets made', part(skill, '**How it gets made.**'), ['of the ways they would not see'])
+  const gate = skill.slice(skill.indexOf('<HARD-GATE>'), skill.indexOf('</HARD-GATE>'))
+  lacks('the gate', gate, ['the conversation is done'])
+  holds('the gate', gate, ['the pick of a way they would see still comes'])
+})
+
+test('7: the list of the project\'s records is written after start: a file written into the state folder before it is moved away with the earlier run', () => {
+  holds("the item The project's records", item("The project's records."), ['written here, after `start`'])
+  lacks('the item Brainstorm', item('Brainstorm.'), ['that only read'])
+  const s = scene(); s.hookStart(); expect(s.h('start').code).toBe(0) // an earlier run in the state folder
+  writeFileSync(`${s.S()}/records.md`, 'log | progress.md | written before the second start\n')
+  expect(s.h('start').code).toBe(0)
+  expect(existsSync(`${s.S()}/records.md`)).toBe(false)
+})
