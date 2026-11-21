@@ -670,3 +670,37 @@ test('18: a new .html that is a link, and so never the screen, sends no reload, 
   expect(readOr(`${s.state}/events`)).toBe('{"choice":"keep-me"}\n')
   expect(jsonLines(s.out()).filter((l) => l.type === 'screen-added' || l.type === 'screen-updated')).toEqual([])
 })
+
+// ---------- from the planted faults that no test caught ----------
+
+test('3: a server run directly, under the usual umask, writes server-info readable by its owner only', async () => {
+  expect(process.umask() & 0o077).not.toBe(0o077) // this test process lets others read what it writes, unless told
+  const s = await serve()
+  expect(mode(`${s.state}/server-info`).toString(8)).toBe('600')
+})
+
+test('11: stop keeps a session folder that the caller named, also when its name looks like one of start\'s own', async () => {
+  // a session as a caller could have made it: its folder is called brainstorm-…, but it does not lie in the temporary folder itself
+  const session = `${fresh('named')}/brainstorm-1-1`, id = 'a'.repeat(40)
+  mkdirSync(`${session}/content`, { recursive: true }); mkdirSync(`${session}/state`, { recursive: true }); writeFileSync(`${session}/content/kept.html`, '<p>kept</p>')
+  const p = spawn(['serve', `--brainstorm-server-id=${id}`], { BRAINSTORM_DIR: session, BRAINSTORM_TOKEN: KEY })
+  await until(() => jsonLines(p.out()).find((l) => l.type === 'server-started'))
+  writeFileSync(`${session}/state/server.pid`, `${p.proc.pid}\n`); writeFileSync(`${session}/state/server-instance-id`, `${id}\n`)
+  expect((await run(['stop', session])).lines[0]?.status).toBe('stopped')
+  expect(existsSync(`${session}/content/kept.html`)).toBe(true)
+})
+
+test('13: stop does not signal another session\'s server: a live process that carries the argument with another well-formed id', async () => {
+  const theirs = 'b'.repeat(40), ours = 'c'.repeat(40)
+  const other = Bun.spawn([process.execPath, '-e', 'setTimeout(() => {}, 30000)', `--brainstorm-server-id=${theirs}`], { stdout: 'ignore', stderr: 'ignore' }); cleanups.push(() => { other.kill() })
+  const session = fresh('stale'); mkdirSync(`${session}/state`, { recursive: true })
+  writeFileSync(`${session}/state/server.pid`, `${other.pid}\n`); writeFileSync(`${session}/state/server-instance-id`, `${ours}\n`)
+  await sleep(150)
+  expect((await run(['stop', session])).lines[0]?.status).toBe('stale_pid')
+  expect(alive(other.pid)).toBe(true)
+})
+
+test('23: the key\'s cookie is found among the other cookies a browser sends to this machine', async () => {
+  const s = await serve()
+  expect((await get(s.base, '/', { Cookie: `other=1; ${s.cookie}; last=2` })).status).toBe(200)
+})
