@@ -123,5 +123,25 @@
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds `Nothing in the repository changes before the spec is approved but the spec file itself`."
     ],
     "passes": true
+  },
+  {
+    "description": "No stash in a run (feedback issue 4): the two texts a builder reads at step 4 and the playbook's git rule name the way to break and restore code without a stash and forbid every form of it, with the reason; `hstack.ts start` records what the stash holds, and `gate` and `done` print a line for each entry added or gone since, which never fails the gate and never keeps the run from ending; the playbook tells the builder to report such a line and to run no stash command to put it right. The version is not changed by this spec.",
+    "spec": "docs/specs/2026-11-22-no-stash-in-a-run.md",
+    "steps": [
+      "Item 4 of `skills/build-implement/SKILL.md` holds ``Undo a small break by the opposite edit; before a break that takes a whole file's change away, copy the file to a temporary folder outside the repository, and copy it back afterwards.``, after the words `undo that one edit by hand`, which it still holds.",
+      "That item holds ``Never `git stash` for this, in any form: the stash is one stack shared by every worktree of the repository, and a stash or a pop made by a run can take or drop an entry of the user or of another session.``",
+      "In `skills/build-implement/tdd.md`, the item that starts with `**A test that passes at once on this run's own code.**` holds ``Never `git stash` either, in any form: the stash is one stack shared by every worktree of the repository.``, after the words ``never restore the file with `git checkout` ``, which it still holds.",
+      "That item of `tdd.md` holds ``Undo a small break by the opposite edit; before a break that takes a whole file's change away, copy the file to a temporary folder outside the repository, and copy it back afterwards.``",
+      "In `skills/build/SKILL.md`, the rule that starts with `**Git, in the code repository.**` holds ``No `git stash` in any form, with a label or without, whatever else the session is told about stashing: the stash is one stack shared by every worktree of the repository, and a stash or a pop made by a run can take or drop an entry of the user or of another session.``, after the words `Never stash, reset, rebase, amend or switch branches.`, which it still holds.",
+      "That rule holds ``` `$H start` records what the stash holds, and `$H gate` and `$H done` print a line `STASH ADDED` or `STASH GONE` for each entry that has come or gone since (step 5).```",
+      "When an entry is added to the stash of the code repository after `hstack.ts start`, `hstack.ts gate` prints a line that starts with `STASH ADDED: ` and holds that entry's message.",
+      "When an entry that the stash held at `hstack.ts start` is no longer in it, `hstack.ts gate` prints a line that starts with `STASH GONE: ` and holds that entry's message.",
+      "When the stash holds the same entries as at `hstack.ts start`, `hstack.ts gate` and `hstack.ts done` print no line that starts with `STASH`.",
+      "A `STASH` line does not change the exit code of `hstack.ts gate`: with such a line and nothing else wrong, it exits 0.",
+      "`hstack.ts done` prints the same `STASH ADDED: ` and `STASH GONE: ` lines as `gate` would, and still ends the run: it prints `done at <HEAD>` and exits 0.",
+      "Step 5 of `skills/build/SKILL.md` holds ``Run no stash command to put it right: no pop, no apply, no drop.`` and ``Step 10 lists each such line under \"Needs your ruling\", with what you know of it: whether this run made the change.``",
+      "In step 10 of `skills/build/SKILL.md`, the item that starts with `**The log.**` names `STASH ADDED` and `STASH GONE` among what the entry holds under \"Needs your ruling\"."
+    ],
+    "passes": true
   }
 ]
