@@ -96,7 +96,7 @@
       "What `spec <file>` prints holds `give the user the path of the spec, never its whole text`; neither it, nor the refusals of `approve` and of `phase`, nor the stop hook's reason for a spec that waits, holds `with its text` or `the spec's text`.",
       "A turn that ends in a brainstorm (no run started, nothing changed in the repository) is not blocked by the stop hook, and `$H elapsed`, after the `start` that follows, counts no minute of it. 0.4.1 already does this (tried in a throwaway repository); a test of its own now keeps it.",
       "A turn that ends in a grill (a spec waits; the spec file was changed and `$H spec <file>` run again; nothing else changed) is not blocked by the stop hook, and `$H elapsed` does not count the wait. 0.4.1 already does this (tried the same way); a test of its own now keeps it.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.3\"`, and the README's status paragraph starts with `**Status: v0.4.3.**` and holds the words `brainstorm` and `grilled`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.4\"`, and the README's status paragraph starts with `**Status: v0.4.4.**` and holds the words `brainstorm` and `grilled`.",
       "In the README's skills table the `build` row holds `Asks only before the approval` and no longer `Asks once`, and there is a row for `brainstorm` and one for `grill`; the row of `skills/` in the table of folders names both.",
       "The item `**Brainstorm.**` of the playbook holds `The user's \"that is right\" settles what is asked, not how it is built` and `where there is more than one way that the user would see, lay the ways out and let the user pick before you write the spec`.",
       "The item `**The spec file.**` of the playbook says of the section \"Against the record\": `Raise each of them in the brainstorm; the section records what the user chose`, and no longer holds `and lettered options, the one you recommend first`.",
@@ -119,8 +119,38 @@
       "That paragraph holds ``A shell function (`H() { bun \"<the path>/scripts/hstack.ts\" \"$@\"; }`) also works, but a coding tool may refuse a command that defines one``, holds ``a variable that holds `bun <path>` is not split into two words by every shell``, and no longer holds `call it through a shell function`.",
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds ``until the playbook's `start` no command of the loop's script runs but `dir` `` and no longer holds `during the conversation but`.",
       "That section holds ``From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner)``.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.3\"`, and the README's status paragraph starts with `**Status: v0.4.3.**`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.4\"`, and the README's status paragraph starts with `**Status: v0.4.4.**`.",
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds `Nothing in the repository changes before the spec is approved but the spec file itself`."
+    ],
+    "passes": true
+  },
+  {
+    "description": "The stop hook judges a turn by what changed in it (feedback issue 8): a third hook, run when a message is sent, notes the state of the repository when a turn starts, and the stop hook compares the end of the turn with that note. A turn in which nothing changed ends, whatever the user changed before it: before a run, after a finished run of the session, beside a run of an earlier session. A turn in which the repository changed, and a run that is started and not finished, are held as before; a hold's reason names an approved spec only when there is one. Two wordings of the brainstorm skill are put right. hstack 0.4.4.",
+    "spec": "docs/specs/2026-11-22-turn-reference.md",
+    "steps": [
+      "`hooks/hooks.json` holds, beside `SessionStart` and `Stop`, an entry `UserPromptSubmit` whose command is `bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" ` followed by one verb of the script.",
+      "The prompt hook prints nothing and exits 0: in a repository with no run, in one with a run, and outside a git repository.",
+      "With no run started: after the start hook (`startup`), a commit made in the repository, and then the prompt hook, the stop hook lets the turn end.",
+      "The same when the change made before the prompt hook is not committed (a tracked file edited, or a new file): the stop hook lets the turn end.",
+      "With no run started: after the start hook (`resume`) in a repository whose reference was taken by an earlier session, a commit made since, and then the prompt hook, the stop hook lets the turn end.",
+      "In a repository whose state folder holds no reference yet, after the start hook with the source `resume` or `clear` and with no prompt hook, the stop hook lets a turn end in which nothing changed, and holds one in which the repository changed.",
+      "After a run that this session finished (`done`): a commit made in the repository, then the prompt hook, and the stop hook lets the turn end.",
+      "Beside a run of an earlier session, finished or left unfinished: after the start hook (`startup`), a commit made in the repository, and then the prompt hook, the stop hook lets the turn end.",
+      "With no run started: a change made in the repository after the prompt hook is held, with a reason that holds `the repository changed without the hstack:build workflow`.",
+      "After a run that this session finished: a change made in the repository after the prompt hook is held, with a reason that holds `the repository changed after the last final check`.",
+      "Beside a run of an earlier session: a change made in the repository after the prompt hook is held.",
+      "A run that is started and not finished, in the session that started it, is held whether the prompt hook ran or not, with a reason that holds `steps not recorded`: an approved run, and a run with no spec shown yet.",
+      "While a spec waits for the user's approval, a commit made in the repository and then the prompt hook change nothing: the stop hook holds the turn, with a reason that holds `a spec waits for the user's approval`, as 0.4.3 does.",
+      "With no run started: a change made in the repository after the prompt hook, and then the prompt hook once more before any stop hook: the stop hook holds the turn.",
+      "A turn that the stop hook held stays the same turn: the prompt hook after that hold changes nothing, and the next stop hook holds again (up to the cap of three holds).",
+      "After a turn that was interrupted (its prompt hook ran, no stop hook did): a commit, then the prompt hook, and the stop hook holds that turn, as 0.4.3 does.",
+      "In a session in which the prompt hook never runs, the stop hook does what 0.4.3 does: after the start hook (`startup`) and a commit made in the repository, it holds the turn, with a reason that holds `the repository changed without the hstack:build workflow`.",
+      "The reason of a hold holds `Decide from the approved spec and the code` only when the run's spec is approved: the hold with no run started and the hold while a spec waits do not hold it; the hold of an approved, unfinished run does. All three still hold `end with exactly the reply the task asked for`.",
+      "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds ``before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop's stop hook holds a turn in which the repository changed, and a turn that ends after `start` with no spec shown``, and no longer holds `the loop's stop hook would hold such a turn`.",
+      "The paragraph of that file that starts with `**Spike to feel things out.**` ends with `before the spec is approved, nothing in the repository changes but the spec file itself.`",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.4\"`, and the README's status paragraph starts with `**Status: v0.4.4.**`.",
+      "The README's status paragraph holds `Three hooks`, and no longer holds `Two hooks` or `before anything changed`.",
+      "The README's paragraph on a machine where `bun` is not on the `PATH` holds `three hooks`, and no longer holds `Both hooks` or `both hooks`."
     ],
     "passes": true
   }
