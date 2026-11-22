@@ -72,3 +72,16 @@ test('F11: a test that may not change and that reaches the moved code through th
 test('F12: the builder is told, too, that a test which may not change is not "the code this run adds"', () => {
   yes(`${NOTE} holds the sentence`, flat(raw(NOTE)).includes('A test of the oracle, or one that existed at the base, is not such code: it may not change, and the line is there for it.'))
 })
+
+// ---------- from the planted faults that survived ----------
+
+test('F13: the log takes each line of "Design debt" as the section names it', () => {
+  yes(`${PLAYBOOK} holds the words`, flat(raw(PLAYBOOK)).includes('to export the moved code again, as the section `## Design` names it;'))
+})
+
+test('F14: the three sentences on a line that exports again stand in the item on a split, in their order', () => {
+  const item = raw(REVIEW).split('\n').find((l) => l.startsWith('- A split of a file that existed before the run:')) ?? ''
+  const order = ['A split the section does not name is a finding.', 'A line that exports moved code again from the old file, and that the section names as a debt, is no finding; code this run added that reaches the moved code through it is one.', 'A line that exports everything at once from the old file is a finding, whether the section names it or not.', 'A test of the oracle, or one that existed at the base, that reaches the moved code through the line is no finding']
+  let at = 0
+  for (const s of order) { const i = flat(item).indexOf(s, at); yes(`the item on a split of ${REVIEW} holds, after the sentences before it, "${s}"`, i >= 0); if (i < 0) return; at = i + s.length }
+})
