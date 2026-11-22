@@ -9,7 +9,7 @@ You are the builder. You run every step below, in order, to the end. You ask the
 
 This file is the playbook: which step runs, in what order, who does it, what goes in, what comes out and how long it may take. How a step is done is in its own file: an agent's file, or a skill this playbook invokes.
 
-`H` below is `bun "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts"`; if that variable is empty, the script is `../../scripts/hstack.ts` from this skill's base directory. In a command, call it through a shell function (`H() { bun "<the path>/scripts/hstack.ts" "$@"; }`) or write both words out: a variable that holds `bun <path>` is not split into two words by every shell. Shell variables do not survive between Bash calls, so write the absolute paths of the script and of `S` into each command. Pass both to every agent you start.
+`H` below is `bun "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts"`; if that variable is empty, the script is `../../scripts/hstack.ts` from this skill's base directory. In a command, write both words out (`bun "<the path>/scripts/hstack.ts" <verb>`): a variable that holds `bun <path>` is not split into two words by every shell. A shell function (`H() { bun "<the path>/scripts/hstack.ts" "$@"; }`) also works, but a coding tool may refuse a command that defines one. Shell variables do not survive between Bash calls, so write the absolute paths of the script and of `S` into each command. Pass both to every agent you start.
 
 ## Rules for the whole run
 

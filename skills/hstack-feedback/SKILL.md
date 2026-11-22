@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 The user found something wrong with hstack, or something it should do better. You write it up as an issue someone can fix from, show the user the exact text, and post it to hstack's repository only when they say yes. The build loop also records its own stumbles, in files under `~/.hstack/<checksum>/feedback/`, outside the project; those wait here for a description.
 
-`H` below is `bun "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts"`; if that variable is empty, the script is `../../scripts/hstack.ts` from this skill's base directory. In a command, call it through a shell function (`H() { bun "<the path>/scripts/hstack.ts" "$@"; }`) or write both words out: a variable that holds `bun <path>` is not split into two words by every shell.
+`H` below is `bun "${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts"`; if that variable is empty, the script is `../../scripts/hstack.ts` from this skill's base directory. In a command, write both words out (`bun "<the path>/scripts/hstack.ts" <verb>`): a variable that holds `bun <path>` is not split into two words by every shell. A shell function (`H() { bun "<the path>/scripts/hstack.ts" "$@"; }`) also works, but a coding tool may refuse a command that defines one.
 
 Arguments: what the user found (the default: write it up and post), or `collect`.
 
