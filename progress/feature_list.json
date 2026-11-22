@@ -96,7 +96,7 @@
       "What `spec <file>` prints holds `give the user the path of the spec, never its whole text`; neither it, nor the refusals of `approve` and of `phase`, nor the stop hook's reason for a spec that waits, holds `with its text` or `the spec's text`.",
       "A turn that ends in a brainstorm (no run started, nothing changed in the repository) is not blocked by the stop hook, and `$H elapsed`, after the `start` that follows, counts no minute of it. 0.4.1 already does this (tried in a throwaway repository); a test of its own now keeps it.",
       "A turn that ends in a grill (a spec waits; the spec file was changed and `$H spec <file>` run again; nothing else changed) is not blocked by the stop hook, and `$H elapsed` does not count the wait. 0.4.1 already does this (tried the same way); a test of its own now keeps it.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.2\"`, and the README's status paragraph starts with `**Status: v0.4.2.**` and holds the words `brainstorm` and `grilled`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.3\"`, and the README's status paragraph starts with `**Status: v0.4.3.**` and holds the words `brainstorm` and `grilled`.",
       "In the README's skills table the `build` row holds `Asks only before the approval` and no longer `Asks once`, and there is a row for `brainstorm` and one for `grill`; the row of `skills/` in the table of folders names both.",
       "The item `**Brainstorm.**` of the playbook holds `The user's \"that is right\" settles what is asked, not how it is built` and `where there is more than one way that the user would see, lay the ways out and let the user pick before you write the spec`.",
       "The item `**The spec file.**` of the playbook says of the section \"Against the record\": `Raise each of them in the brainstorm; the section records what the user chose`, and no longer holds `and lettered options, the one you recommend first`.",
@@ -106,6 +106,21 @@
       "The item `**Brainstorm.**` of the playbook holds `An approval given before the spec exists is no approval: write the spec, hand it over, and wait`.",
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds `Invoked by the user themselves, it is the start of a build`.",
       "The section `## In hstack` of `skills/grill/SKILL.md` holds `With no spec waiting for the user's approval, say so and do nothing`."
+    ],
+    "passes": true
+  },
+  {
+    "description": "Calling the script and the brainstorm's rule on `dir`: where a builder is told how to call the script (the playbook and the feedback skill) the form with both words comes first and the shell function second; the brainstorm skill's rule that no command of the script runs but `dir` holds until the playbook's `start`, and its rule that nothing in the repository changes before the approval excepts the spec file. hstack 0.4.3.",
+    "spec": "docs/specs/2026-11-22-script-call-and-dir-rule.md",
+    "steps": [
+      "In `skills/build/SKILL.md`, the paragraph that starts with `` `H` below is `` holds ``In a command, write both words out (`bun \"<the path>/scripts/hstack.ts\" <verb>`)``, and these words stand before the words `shell function`.",
+      "That paragraph holds ``A shell function (`H() { bun \"<the path>/scripts/hstack.ts\" \"$@\"; }`) also works, but a coding tool may refuse a command that defines one``, holds ``a variable that holds `bun <path>` is not split into two words by every shell``, and no longer holds `call it through a shell function`.",
+      "In `skills/hstack-feedback/SKILL.md`, the paragraph that starts with `` `H` below is `` holds ``In a command, write both words out (`bun \"<the path>/scripts/hstack.ts\" <verb>`)``, and these words stand before the words `shell function`.",
+      "That paragraph holds ``A shell function (`H() { bun \"<the path>/scripts/hstack.ts\" \"$@\"; }`) also works, but a coding tool may refuse a command that defines one``, holds ``a variable that holds `bun <path>` is not split into two words by every shell``, and no longer holds `call it through a shell function`.",
+      "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds ``until the playbook's `start` no command of the loop's script runs but `dir` `` and no longer holds `during the conversation but`.",
+      "That section holds ``From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner)``.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.3\"`, and the README's status paragraph starts with `**Status: v0.4.3.**`.",
+      "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds `Nothing in the repository changes before the spec is approved but the spec file itself`."
     ],
     "passes": true
   }
