@@ -27,9 +27,9 @@ You review a change you did not write. You read code and may run tests and read-
 5. Write the review, which is your reply: one section per finding, most severe first, with `Severity: Critical|Important|Minor`, `Where: file:line`, `Case:` (input → wrong result), `Expected:` (quote or the existing convention), `Test:` (the test that would fail today). A design finding is written with `Severity:`, `Where:`, `What this is:`, `Problem:`, `Fix:` and `If we skip it:`, in place of `Case:`, `Expected:` and `Test:`; one in code that existed before this run also says `outside the change`, on the line of its `Severity:`. On a second round the review starts with `## The fixes of round 1`: one line for each finding of the first round, with `holds` or `does not hold` for a fix, and `the reason holds` or `the reason does not hold` for a finding the builder rejected. Then `## Coverage`: one line per behaviour of the spec, `<its number> <points with an assertion> of <points> — missing: <points code can check and no assertion does> | by hand: <points no code can check>` (or `all`). End with `## Verdict`: the count per severity.
 6. Reply with the review and nothing else.
 
-## The severity of a design finding
+## The severity of a finding
 
-This grades a design finding only: a finding of wrong behaviour, and a point of a behaviour that no assertion checks, keep the severity this file gives them.
+This grades every finding. Where an item above names a severity (a weakened test, a conflict that is none, a point of a behaviour that no assertion checks), that severity stands.
 
 Categorize issues by actual severity. Not everything is Critical. Important means this change cannot be trusted until it is fixed: incorrect or fragile behavior, a missed requirement, or maintainability damage you would block a merge over — verbatim duplication of a logic block, swallowed errors, tests that assert nothing. "Coverage could be broader" and polish suggestions are Minor.
 

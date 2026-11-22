@@ -31,6 +31,9 @@
     "tests/no-stash-texts.test.ts",
     "tests/no-stash-edges.test.ts",
     "tests/design-before-code-texts.test.ts",
-    "tests/design-before-code-edges.test.ts"
+    "tests/design-before-code-edges.test.ts",
+    "tests/design-follow-ups-texts.test.ts",
+    "tests/design-follow-ups-frame.test.ts",
+    "tests/design-follow-ups-edges.test.ts"
   ]
 }

@@ -14,7 +14,7 @@ A design finding is about code this run added: every line that the diff from the
 - A rule, number or format that the spec brings in and to which the section gives no home is a finding: the section is behind.
 - For a skill, a finding is a copy of a rule that the section does not name, or two copies that say different things; a copy the section names with its reason is not one.
 - Code this run added that breaks one of the project's own written rules is a design finding, graded as any other.
-- A split of a file that existed before the run: the section names it, its reason is a rule of the rules file (`design-note.md`, its last part), and the history shows it as a commit of its own before the feature's code. A split the section does not name is a finding.
+- A split of a file that existed before the run: the section names it, its reason is a rule of the rules file (`design-note.md`, its last part), and the history shows it as a commit of its own before the feature's code. A split the section does not name is a finding. A line that exports moved code again from the old file, and that the section names as a debt, is no finding; code this run added that reaches the moved code through it is one.
 
 ## Leads
 

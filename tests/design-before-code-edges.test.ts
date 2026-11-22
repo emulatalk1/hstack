@@ -109,7 +109,7 @@ test("E3: item 5 of the reviewer's file gives the six labels of a design finding
 
 test('E13: the passage on severity lies in the reviewer\'s file, after the sentence that limits it', () => {
   const t = flat(raw(REVIEWER))
-  const limit = t.indexOf('This grades a design finding only:'), passage = t.indexOf('Categorize issues by actual severity. Not everything is Critical. Important means this change cannot be trusted until it is fixed: incorrect or fragile behavior, a missed requirement, or maintainability damage you would block a merge over — verbatim duplication of a logic block, swallowed errors, tests that assert nothing. "Coverage could be broader" and polish suggestions are Minor.')
+  const limit = t.indexOf('This grades every finding.'), passage = t.indexOf('Categorize issues by actual severity. Not everything is Critical. Important means this change cannot be trusted until it is fixed: incorrect or fragile behavior, a missed requirement, or maintainability damage you would block a merge over — verbatim duplication of a logic block, swallowed errors, tests that assert nothing. "Coverage could be broader" and polish suggestions are Minor.')
   yes(`${REVIEWER} holds the sentence that limits the passage, and the whole passage after it`, limit >= 0 && passage > limit)
   for (const f of DESIGN_FILES) yes(`${f} does not hold the passage on severity`, !has(raw(f), 'Not everything is Critical'))
 })

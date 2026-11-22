@@ -147,7 +147,7 @@ const P = {
   b16not: ['Mysterious Name', 'Data Clumps', 'Primitive Obsession', 'Repeated Switches', 'Refused Bequest'],
   b18: ['Categorize issues by actual severity. Not everything is Critical.', 'maintainability damage you would block a merge over — verbatim duplication of a logic block, swallowed errors, tests that assert nothing.', '"Coverage could be broader" and polish suggestions are Minor.'],
   b18not: ['plan-mandated', 'Acknowledge what was done well'],
-  b18before: ['This grades a design finding only: a finding of wrong behaviour, and a point of a behaviour that no assertion checks, keep the severity this file gives them.'],
+  b18before: ['This grades every finding. Where an item above names a severity (a weakened test, a conflict that is none, a point of a behaviour that no assertion checks), that severity stands.'],
   b19: ['Zero findings is a valid result; do not invent one.'],
   b20: ['**Does this refactor reduce complexity or just relocate it?**', 'Count the concepts a reader must hold to follow the change.'],
   b21: ['reuse: the repo already has this helper (name the path)', 'merge: near-copies that must change together'],
@@ -312,7 +312,7 @@ test('17: the reviewer\'s texts hold the two lines of the binding rules of secti
   setHolds(REVIEW, reviewerTexts(), BINDING)
 })
 
-test('18: the reviewer\'s texts hold the sentences on severity, and none of "plan-mandated" and "Acknowledge what was done well"; before those sentences they hold "This grades a design finding only: a finding of wrong behaviour, and a point of a behaviour that no assertion checks, keep the severity this file gives them."', () => {
+test('18: the reviewer\'s texts hold the sentences on severity, and none of "plan-mandated" and "Acknowledge what was done well"; before those sentences they hold "This grades every finding. Where an item above names a severity (a weakened test, a conflict that is none, a point of a behaviour that no assertion checks), that severity stands."', () => {
   setHolds(REVIEW, reviewerTexts(), P.b18)
   setLacks(REVIEW, reviewerTexts(), P.b18not)
   setHolds(REVIEW, reviewerTexts(), P.b18before)
