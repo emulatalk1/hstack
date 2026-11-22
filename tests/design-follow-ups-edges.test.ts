@@ -66,3 +66,9 @@ test('F10: a line that exports everything at once from the old file is a finding
 test('F11: a test that may not change and that reaches the moved code through the line is no finding', () => {
   yes(`${REVIEW} holds the sentence`, flat(raw(REVIEW)).includes('A test of the oracle, or one that existed at the base, that reaches the moved code through the line is no finding: such a test may not change, and the line is there for it.'))
 })
+
+// ---------- from the exploratory test ----------
+
+test('F12: the builder is told, too, that a test which may not change is not "the code this run adds"', () => {
+  yes(`${NOTE} holds the sentence`, flat(raw(NOTE)).includes('A test of the oracle, or one that existed at the base, is not such code: it may not change, and the line is there for it.'))
+})
