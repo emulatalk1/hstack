@@ -43,3 +43,26 @@ test('F1: the sentence that says what the passage grades stands directly under t
 test('F4: no design file holds the old sentence that limited the passage', () => {
   for (const f of [...DESIGN_FILES, REVIEWER]) yes(`${f} does not hold "grades a design finding only"`, !flat(raw(f)).includes('grades a design finding only'))
 })
+
+// ---------- from the review, round 1 ----------
+
+const FRAME = 'scripts/mockup-frame.html'
+const SIXTEEN = ['options', 'option', 'cards', 'card', 'mockup', 'split', 'pros-cons', 'mock-nav', 'mock-sidebar', 'mock-content', 'mock-button', 'mock-input', 'placeholder', 'subtitle', 'section', 'label']
+// the style sheets of the frame the server serves: the text inside its <style> elements, and nothing of its scripts
+const sheets = () => [...raw(FRAME).matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]).join('\n')
+
+test('F9: each of the sixteen classes of step S1-F1-S38 is a selector in the style sheets of the frame, not only a word of its scripts', () => {
+  const css = sheets()
+  yes(`${FRAME} has a style sheet`, css.trim() !== '')
+  for (const c of SIXTEEN) yes(`a rule of the style sheets of ${FRAME} selects .${c}`, new RegExp(`(^|[\\s,}])\\.${c}(?![\\w-])[^{}]*\\{`, 'm').test(css))
+})
+
+const REVIEW = 'skills/build-implement/design-review.md'
+
+test('F10: a line that exports everything at once from the old file is a finding, named as a debt or not', () => {
+  yes(`${REVIEW} holds the sentence`, flat(raw(REVIEW)).includes('A line that exports everything at once from the old file is a finding, whether the section names it or not.'))
+})
+
+test('F11: a test that may not change and that reaches the moved code through the line is no finding', () => {
+  yes(`${REVIEW} holds the sentence`, flat(raw(REVIEW)).includes('A test of the oracle, or one that existed at the base, that reaches the moved code through the line is no finding: such a test may not change, and the line is there for it.'))
+})
