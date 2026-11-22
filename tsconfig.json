@@ -21,6 +21,8 @@
     "tests/mockup-edges.test.ts",
     "tests/brainstorm-texts.test.ts",
     "tests/brainstorm-script.test.ts",
-    "tests/brainstorm-edges.test.ts"
+    "tests/brainstorm-edges.test.ts",
+    "tests/script-call-and-dir-rule.test.ts",
+    "tests/script-call-edges.test.ts"
   ]
 }

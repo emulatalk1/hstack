@@ -39,3 +39,8 @@ test('E3: the section In hstack keeps its five points, in their order', () => {
     'Looking includes the project\'s records:',
   ])
 })
+
+test('E14: the type-check reads the two test files of this spec', () => {
+  const include = JSON.parse(raw('tsconfig.json')).include as string[]
+  for (const f of ['tests/script-call-and-dir-rule.test.ts', 'tests/script-call-edges.test.ts']) expect(`tsconfig.json includes ${f}: ${include.includes(f)}`).toBe(`tsconfig.json includes ${f}: true`)
+})
