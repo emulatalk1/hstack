@@ -8,7 +8,7 @@ Every line of the section must be one that can be checked against the code.
 
 A project's own written rules come first; then the way the existing code already does it; then the rules file; then everything else in these texts.
 
-- **A project's own written rules.** Look where the project keeps its rules for how code is written: its instructions file, a contributing or coding-standards file, its README. The first line of the section names the files that hold such rules, or says that there are none.
+- **A project's own written rules.** Look where the project keeps its rules for how code is written: its instructions file, a contributing or coding-standards file, its README. The first line of the section names the files that hold such rules, or says that there are none. This first line stands before the design and is not counted in its length: a small change has it, and then its one line.
 - **The way the existing code already does it.** Read the code around the change, and arrange the new code as that code is arranged.
 - **The rules file** binds the code this run adds. Nobody restructures the rest by it.
 - **Everything else in these texts** (this file, `deep-modules.md`, and what the reviewer reads) says how to follow the rules; where it seems to say more than they do, they hold.

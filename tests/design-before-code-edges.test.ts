@@ -119,9 +119,12 @@ const step6 = () => part(PLAYBOOK, raw(PLAYBOOK), '## 6. ', /^## /)
 test("E8: the reviewer's file and step 6 name the four design files, and step 6 says where they lie", () => {
   const input = raw(REVIEWER).split('\n').find((l) => l.startsWith('**Input:**')) ?? ''
   for (const f of DESIGN_FILES) yes(`the input of ${REVIEWER} names ${basename(f)}`, input.includes(`\`${basename(f)}\``))
-  const s = step6()
-  for (const f of DESIGN_FILES) yes(`step 6 of ${PLAYBOOK} names ${basename(f)}`, s.includes(`\`${basename(f)}\``))
-  holds(`step 6 of ${PLAYBOOK}`, s, ['`${CLAUDE_PLUGIN_ROOT}/skills/build-implement/`', "`../build-implement/` from this skill's base directory"])
+  // among what the reviewer is started with: from "Start `hstack:reviewer` with" to "Store its reply", not anywhere in the step
+  const s = step6(), a = s.indexOf('Start `hstack:reviewer` with'), z = s.indexOf('Store its reply', a)
+  yes(`step 6 of ${PLAYBOOK} holds "Start \`hstack:reviewer\` with" and, after it, "Store its reply"`, a >= 0 && z > a)
+  const started = s.slice(a, z)
+  for (const f of DESIGN_FILES) yes(`what step 6 of ${PLAYBOOK} starts the reviewer with names ${basename(f)}`, started.includes(`\`${basename(f)}\``))
+  holds(`what step 6 of ${PLAYBOOK} starts the reviewer with`, started, ['`${CLAUDE_PLUGIN_ROOT}/skills/build-implement/`', "`../build-implement/` from this skill's base directory"])
 })
 
 test('E15: step 6 still runs round 2 after any fix, and the review file says where the question on a fix is asked', () => {
@@ -165,4 +168,24 @@ test("E5: no design file's name is part of another's", () => {
 
 test('E6: the design files are the four files, in the folder itself', () => {
   expect(designFilesFound()).toEqual([...DESIGN_FILES].sort())
+})
+
+// ---------- from the review, round 1 ----------
+
+test('E20: the reviewer of round 2 is started with the first review and the builder\'s answers, and is told to judge each fix', () => {
+  holds(`step 6 of ${PLAYBOOK}`, step6(), ['Start the reviewer of round 2 with what round 1 got and with `review-1.md`, which holds your answer to each finding.'])
+  const input = raw(REVIEWER).split('\n').find((l) => l.startsWith('**Input:**')) ?? ''
+  holds(`the input of ${REVIEWER}`, input, ["On a second round, also the review of the first round, with the builder's answer to each finding (`fixed`, or `rejected: <why>`)."])
+  holds(REVIEWER, raw(REVIEWER), ['On a second round, read each finding the builder answered `fixed`, and judge the fix'])
+})
+
+test('E21: the line on the project\'s rules is not counted in the length of a design', () => {
+  holds(NOTE, raw(NOTE), ['This first line stands before the design and is not counted in its length: a small change has it, and then its one line.'])
+})
+
+test("E22: the reviewer's description and input name the design", () => {
+  const front = raw(REVIEWER).split('\n---')[0]
+  holds(`the header of ${REVIEWER}`, front, ['checked defects, each with the test that would catch it, and design findings by the design rules. Started by the hstack:build skill.'])
+  const input = raw(REVIEWER).split('\n').find((l) => l.startsWith('**Input:**')) ?? ''
+  holds(`the input of ${REVIEWER}`, input, ['`decisions.md`: its entry points, its edges, its design, what it decided alone'])
 })
