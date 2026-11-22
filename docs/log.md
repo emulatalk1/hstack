@@ -1,6 +1,8 @@
 # Update Log
 
 ## 2026-11-22
+* **Approve**: the [script call and `dir` rule spec](/specs/2026-11-22-script-call-and-dir-rule.md) is `stable`: approved by the user ("Duyệt") after a brainstorm and a grill of two rounds, whose answers are in its section "Agreed in the brainstorm".
+* **Creation**: Added the [script call and `dir` rule spec](/specs/2026-11-22-script-call-and-dir-rule.md) (draft): the form with both words comes first in the sentence on calling the script, and the brainstorm skill's rule on `dir` holds until the playbook's `start`; 8 behaviours, hstack 0.4.3.
 * **Update**: Built the [brainstorm and grill spec](/specs/2026-11-21-brainstorm-and-grill.md), hstack 0.4.2: the skills `hstack:brainstorm` and `hstack:grill`, step 1 of the playbook and the script's texts; 1186 pass in the whole suite on `6dff147`; two review rounds, an exploratory test with one real session turn, and 49 planted faults, all killed. The builder's own decisions are in the [decisions file](/specs/2026-11-21-brainstorm-and-grill.decisions.md), not approved by the user. Open: the merge of both parts of feedback issue 6 into `main` and its closing comment, on the user's word.
 
 ## 2026-11-21
