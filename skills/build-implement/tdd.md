@@ -214,7 +214,7 @@ After green only:
 
 Keep tests green. Don't add behavior.
 
-Only in code this run added: leave code and tests that existed at the base as they are.
+Only in code this run added: leave code and tests that existed at the base as they are. One exception: a split that the section `## Design` names (step 4, item 2), made before the first cycle, while every test that passed at the base still passes.
 
 ### Repeat
 
