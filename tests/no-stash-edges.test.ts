@@ -179,6 +179,17 @@ test('E21: a line of the record that is no entry is not called an entry that is 
   expect(stashLines(h(w, ['gate']))).toEqual([])
 })
 
+test('E22: gate prints no empty line for the stash: not when it is as at start, not before a STASH line', () => {
+  const w = world(); started(w)
+  // the output as it is written, its last line break too
+  const gate = () => Bun.spawnSync([process.execPath, SCRIPT, 'gate'], { cwd: w.r, env: w.env, stdout: 'pipe', stderr: 'pipe' }).stdout.toString()
+  const same = gate()
+  expect(same.endsWith('\n')).toBe(true); expect(same.slice(0, -1).split('\n')).not.toContain('')
+  push(w, 'came after start')
+  const changed = gate()
+  expect(changed).toContain('STASH ADDED: '); expect(changed.slice(0, -1).split('\n')).not.toContain('')
+})
+
 // ---------- the texts ----------
 // A phrase is looked for word for word; a line break inside a phrase counts as a space.
 
