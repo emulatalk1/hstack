@@ -42,7 +42,7 @@ Decided by the builder while building docs/specs/2026-11-22-script-call-and-dir-
 
 ## After the review
 
-- E13. The brainstorm skill's paragraph "Spike to feel things out" still ends "before the spec is approved, nothing in the repository changes", without the clause on the spec file (review round 1, finding 1, Minor). Not changed: the user approved the words of the fourth point of "In hstack" only, and the spec's behaviours name no other place. It is put to the user in the log entry. No test: nothing of this spec.
+- E13. The brainstorm skill's paragraph "Spike to feel things out" still ends "before the spec is approved, nothing in the repository changes", without the clause on the spec file (review round 1, finding 1, Minor). Not changed: the user approved the words of the fourth point of "In hstack" only, and the spec's behaviours name no other place. It is put to the user in the log entry. No test: nothing of this spec. Ruling (2026-11-22): the paragraph gets the same clause in the change that fixes feedback issue 8, which touches the same file (the user: "Đồng ý", to the builder's suggestion); it is noted in a comment on that issue.
 - E6, added: the coverage row of S2-F1-S40 takes the test's new name and the new number with the feature list's words, in the records step (review round 1, finding 2). No test: a record of the project, not code; the script's check of the two record files runs in the records step.
 
 ## After the exploratory test
