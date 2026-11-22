@@ -189,3 +189,12 @@ test("E22: the reviewer's description and input name the design", () => {
   const input = raw(REVIEWER).split('\n').find((l) => l.startsWith('**Input:**')) ?? ''
   holds(`the input of ${REVIEWER}`, input, ['`decisions.md`: its entry points, its edges, its design, what it decided alone'])
 })
+
+// ---------- from the review, round 2 ----------
+
+test('E24: what a second round judges is looked for before the review is written, and a fix that does not hold is a finding', () => {
+  const t = raw(REVIEWER), judge = t.indexOf('On a second round, read each finding the builder answered `fixed`'), write = t.indexOf('5. Write the review, which is your reply')
+  yes(`in ${REVIEWER}, the second round's reading stands before the item that writes the review`, judge >= 0 && write > judge)
+  holds(REVIEWER, t, ['A fix that left the defect, or brought a new one, is a finding of this review.'])
+  expect(t.split('\n').map((l) => /^(\d+)\. /.exec(l)).filter((m): m is RegExpExecArray => m !== null).map((m) => m[1])).toEqual(['1', '2', '3', '4', '5', '6'])
+})
