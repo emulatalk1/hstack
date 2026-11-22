@@ -44,3 +44,16 @@ test('E14: the type-check reads the two test files of this spec', () => {
   const include = JSON.parse(raw('tsconfig.json')).include as string[]
   for (const f of ['tests/script-call-and-dir-rule.test.ts', 'tests/script-call-edges.test.ts']) expect(`tsconfig.json includes ${f}: ${include.includes(f)}`).toBe(`tsconfig.json includes ${f}: true`)
 })
+
+// the two sentences on calling the script, as the spec quotes them (section 2, "The words"), word for word
+const CALL = 'In a command, write both words out (`bun "<the path>/scripts/hstack.ts" <verb>`): a variable that holds `bun <path>` is not split into two words by every shell. A shell function (`H() { bun "<the path>/scripts/hstack.ts" "$@"; }`) also works, but a coding tool may refuse a command that defines one.'
+
+test('E15: the playbook holds the two sentences on calling the script word for word', () => {
+  expect(`the playbook holds the two sentences: ${flat(raw('skills/build/SKILL.md')).includes(CALL)}`).toBe('the playbook holds the two sentences: true')
+})
+
+test('E15: the feedback skill holds the two sentences on calling the script word for word, and its paragraph on H ends with them', () => {
+  const found = raw('skills/hstack-feedback/SKILL.md').split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p.startsWith('`H` below is'))
+  expect(found.length).toBe(1)
+  expect(`the paragraph ends with the two sentences: ${flat(found[0]).endsWith(CALL)}`).toBe('the paragraph ends with the two sentences: true')
+})
