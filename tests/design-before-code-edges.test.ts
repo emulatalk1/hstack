@@ -198,3 +198,39 @@ test('E24: what a second round judges is looked for before the review is written
   holds(REVIEWER, t, ['A fix that left the defect, or brought a new one, is a finding of this review.'])
   expect(t.split('\n').map((l) => /^(\d+)\. /.exec(l)).filter((m): m is RegExpExecArray => m !== null).map((m) => m[1])).toEqual(['1', '2', '3', '4', '5', '6'])
 })
+
+// ---------- from the exploratory test ----------
+
+test('E25: what "unwieldy" means for a split, and that a project\'s own rules still come first for it', () => {
+  holds(NOTE, raw(NOTE), ['"Unwieldy", in the line above on existing codebases, means this and nothing about length: by rule 3 of the rules file a module has one capability and one reason to change.', "A project's own written rules still come first: where they speak against such a split, there is none."])
+})
+
+test('E28: what "code this run added" is, how far the reviewer looks into older code, and where "outside the change" is written', () => {
+  holds(REVIEW, raw(REVIEW), ['every line that the diff from the base adds or rewrites', 'report a design problem in older code only where the change runs into it', 'It is written and graded as any design finding, and it counts in `## Verdict`.'])
+  holds(REVIEWER, raw(REVIEWER), ['also says `outside the change`, on the line of its `Severity:`'])
+})
+
+test('E29: look-alike code that is not one rule is no finding before its third copy', () => {
+  holds(REVIEWER, raw(REVIEWER), ['The rules file comes before this passage: by its rule 4, code that only looks alike and is not one rule is no finding before its third copy, however verbatim.'])
+  yes(`${REVIEWER} no longer holds "Where this and the rules file differ"`, !has(raw(REVIEWER), 'Where this and the rules file differ'))
+})
+
+test('E30: the review of a second round says of each finding of the first what became of it, and the log reads both reviews', () => {
+  holds(REVIEWER, raw(REVIEWER), ['On a second round the review starts with `## The fixes of round 1`: one line for each finding of the first round, with `holds` or `does not hold` for a fix, and `the reason holds` or `the reason does not hold` for a finding the builder rejected.', 'each is a finding of its own, graded anew'])
+  const s10 = part(PLAYBOOK, raw(PLAYBOOK), '## 10. ', /^## /)
+  holds(`step 10 of ${PLAYBOOK}`, s10, ['read the review of each round for them: what round 1 marked is not raised again in round 2'])
+})
+
+test('E31: a rule with no home in the section, and code against a project\'s own rule, are findings', () => {
+  holds(REVIEW, raw(REVIEW), ['A rule, number or format that the spec brings in and to which the section gives no home is a finding: the section is behind.', "Code this run added that breaks one of the project's own written rules is a design finding, graded as any other."])
+})
+
+test('E32: a finding closed by a line in the section has its answer, and a correction may be written while a finding is fixed', () => {
+  holds(`step 6 of ${PLAYBOOK}`, step6(), ['Answer it `fixed: the section`; a round in which nothing but the section changed needs no round 2.'])
+  holds(NOTE, raw(NOTE), ['while you write the code or fix a finding of the review'])
+})
+
+test('E33: a split is a commit of its own, so that the reviewer can see it was made first', () => {
+  holds(NOTE, raw(NOTE), ["Commit the split by itself, before the feature's code: the history is where the reviewer sees that it was made first."])
+  holds(REVIEW, raw(REVIEW), ["the section names it, its reason is a rule of the rules file (`design-note.md`, its last part), and the history shows it as a commit of its own before the feature's code"])
+})

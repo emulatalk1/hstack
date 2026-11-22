@@ -4,15 +4,17 @@ How the reviewer of step 6 reads the design of a change: the code this run added
 
 A project's own written rules are in the files that the first line of the section names: read them before you judge the design.
 
-A design finding is about code this run added. A design finding in code that existed before this run is marked "outside the change". The builder does not fix it; it is reported to the user.
+A design finding is about code this run added: every line that the diff from the base adds or rewrites. Read the older code around it to understand the change, not to search it: report a design problem in older code only where the change runs into it. A design finding in code that existed before this run is marked "outside the change". It is written and graded as any design finding, and it counts in `## Verdict`. The builder does not fix it; it is reported to the user.
 
 ## The code against the section
 
 - Is the implementation following the file structure from the section `## Design`?
 - A difference between the code and the section that no line of the section explains is a finding. A difference that a later line of the section explains, with what the builder found and why, is none.
 - Each rule, number or format to which the section gives one home: look for it in the change. In a second place it is a finding, with both places. A test or a document that states a rule in order to check it or to explain it is not a second place. Two pieces of code that look alike and do not have to change together stay apart.
+- A rule, number or format that the spec brings in and to which the section gives no home is a finding: the section is behind.
 - For a skill, a finding is a copy of a rule that the section does not name, or two copies that say different things; a copy the section names with its reason is not one.
-- A split of a file that existed before the run: the section named it before the code, and its reason is a rule of the rules file (`design-note.md`, its last part). A split the section does not name is a finding.
+- Code this run added that breaks one of the project's own written rules is a design finding, graded as any other.
+- A split of a file that existed before the run: the section names it, its reason is a rule of the rules file (`design-note.md`, its last part), and the history shows it as a commit of its own before the feature's code. A split the section does not name is a finding.
 
 ## Leads
 

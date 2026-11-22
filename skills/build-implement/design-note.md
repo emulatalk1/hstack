@@ -34,7 +34,7 @@ When what is built is a skill, the section names the file that owns each rule an
 
 ## When the design proves wrong
 
-When the design proves wrong, or cannot be applied, while you write the code: write the correction into the section first, with what you found and why, and keep the earlier line. Then go on with the code, by the corrected design. The run does not stop for it.
+When the design proves wrong, or cannot be applied, while you write the code or fix a finding of the review: write the correction into the section first, with what you found and why, and keep the earlier line. Then go on with the code, by the corrected design. The run does not stop for it.
 
 ## The split of a file that existed before the run
 
@@ -44,6 +44,8 @@ The test rules leave the code that existed at the base as it is (`tdd.md`, the p
 - Its reason is a rule of the rules file (a file that does several unrelated jobs), never a count of lines.
 - It changes no behaviour: every test that passed before it passes after it, in the forms the capabilities allow at this step, and no line changes in a test that existed at the base or in a test of the oracle. When it would need such a line to change, do not split, and write that in the section.
 
-This split is the one exception to the order of the sources: here the rules file is put before the way the existing code already does it. It is for the file the change must modify and no other, and it is allowed, never required.
+"Unwieldy", in the line above on existing codebases, means this and nothing about length: by rule 3 of the rules file a module has one capability and one reason to change. Commit the split by itself, before the feature's code: the history is where the reviewer sees that it was made first.
+
+This split is the one exception to the order of the sources: here the rules file is put before the way the existing code already does it. It is for the file the change must modify and no other, and it is allowed, never required. A project's own written rules still come first: where they speak against such a split, there is none.
 
 A split that the section named and you did not make is named in the log entry of the run (step 10 of the playbook).
