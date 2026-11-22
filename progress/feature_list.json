@@ -202,7 +202,7 @@
       "The reviewer's texts hold `A design finding in code that existed before this run is marked \"outside the change\".`, and none of `Don't flag pre-existing file sizes` and `already large`.",
       "The reviewer's texts hold each of the seven lines of the smells of section 2, word for word, and none of `Mysterious Name`, `Data Clumps`, `Primitive Obsession`, `Repeated Switches` and `Refused Bequest`.",
       "The reviewer's texts hold the two lines of the binding rules of section 2, word for word.",
-      "The reviewer's texts hold `Categorize issues by actual severity. Not everything is Critical.`, `maintainability damage you would block a merge over — verbatim duplication of a logic block, swallowed errors, tests that assert nothing.` and `\"Coverage could be broader\" and polish suggestions are Minor.`, and none of `plan-mandated` and `Acknowledge what was done well`; before those sentences they hold `This grades a design finding only: a finding of wrong behaviour, and a point of a behaviour that no assertion checks, keep the severity this file gives them.`",
+      "The reviewer's texts hold `Categorize issues by actual severity. Not everything is Critical.`, `maintainability damage you would block a merge over — verbatim duplication of a logic block, swallowed errors, tests that assert nothing.` and `\"Coverage could be broader\" and polish suggestions are Minor.`, and none of `plan-mandated` and `Acknowledge what was done well`; before those sentences they hold `This grades every finding. Where an item above names a severity (a weakened test, a conflict that is none, a point of a behaviour that no assertion checks), that severity stands.`",
       "The reviewer's texts hold `Zero findings is a valid result; do not invent one.`",
       "The reviewer's texts hold `**Does this refactor reduce complexity or just relocate it?**` and `Count the concepts a reader must hold to follow the change.`",
       "The reviewer's texts hold `reuse: the repo already has this helper (name the path)` and `merge: near-copies that must change together`.",
@@ -222,6 +222,24 @@
       "No file of `skills/` and `agents/` other than a licence file holds any of `Pocock`, `Vincent`, `Osmani`, `Gebert`, `superpowers`, `ponytail` and `agent-skills`, in any letter case.",
       "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.5\"`, and the README's status paragraph starts with `**Status: v0.4.5.**` and still holds the words `brainstorm` and `grilled`.",
       "The README's status paragraph holds `## Design` and `design rules`, and the README holds the path of every licence file of `skills/` and `agents/`."
+    ],
+    "passes": true
+  },
+  {
+    "description": "Three follow-ups of the design step: after a split of an old file, a named line that exports the moved code again from the old file is allowed on three conditions and is listed in the log as a debt; the reviewer's passage on severity grades every finding, and a severity that an item of its file names still stands; text typed into a `mock-input` of the mock-up frame has the frame's colour for text in the dark and the light scheme.",
+    "spec": "docs/specs/2026-11-22-design-follow-ups.md",
+    "steps": [
+      "In `scripts/mockup-frame.html`, the rule of `.mock-input` holds the declaration `color: var(--text-primary)`.",
+      "In the frame the server serves, an element of the class `mock-input` with a typed value shows that value in `rgb(245, 245, 247)` in the dark colour scheme and in `rgb(29, 29, 31)` in the light one.",
+      "The frame still has the sixteen classes of step S1-F1-S38.",
+      "The builder's design texts hold `A line that exports the moved code again from the old file, so that an earlier test still reaches it, is part of the split, on three conditions:`, `it names what it exports, never everything at once`, `the code this run adds reaches the moved code at its new place, never through that line` and `the section names the line as a debt`.",
+      "The builder's design texts still hold `When it would need such a line to change, do not split, and write that in the section.`",
+      "The reviewer's texts hold `A line that exports moved code again from the old file, and that the section names as a debt, is no finding; code this run added that reaches the moved code through it is one.`",
+      "In `skills/build/SKILL.md`, step 10, the item that starts with `**The log.**` holds `\"Design debt\", with each line that a split left in an old file to export the moved code again`.",
+      "`agents/reviewer.md` no longer holds `This grades a design finding only`; before its three sentences on severity it holds `This grades every finding. Where an item above names a severity (a weakened test, a conflict that is none, a point of a behaviour that no assertion checks), that severity stands.`",
+      "`agents/reviewer.md` holds the heading `## The severity of a finding`, and no longer `## The severity of a design finding`.",
+      "`agents/reviewer.md` still holds `Categorize issues by actual severity. Not everything is Critical.`, `\"Coverage could be broader\" and polish suggestions are Minor.` and `The rules file comes before this passage`.",
+      "`.claude-plugin/plugin.json` still holds `\"version\": \"0.4.5\"`, and the README's status paragraph still starts with `**Status: v0.4.5.**`."
     ],
     "passes": true
   }

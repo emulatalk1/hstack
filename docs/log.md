@@ -1,5 +1,8 @@
 # Update Log
 
+## 2026-11-23
+* **Update**: Built the [design follow-ups spec](/specs/2026-11-22-design-follow-ups.md), still hstack 0.4.5: one declaration in the mock-up frame, sentences in `design-note.md`, `design-review.md`, the reviewer's file and step 10 of the playbook; 1420 pass in the whole suite on `2edf31b`; two review rounds, an exploratory test with the colour read in headless Chrome (11 behaviours and 11 earlier steps, all PASS) and 20 planted faults, 18 killed and the 2 survivors killed afterwards. The builder's own decisions are in the [decisions file](/specs/2026-11-22-design-follow-ups.decisions.md), not approved by the user. Open: the four rules the builder added alone in the run of spec 6 still wait for a ruling, and the installed plugin is still 0.4.4.
+
 ## 2026-11-22
 * **Approve**: the [design follow-ups spec](/specs/2026-11-22-design-follow-ups.md) is `stable`: approved by the user ("Duyệt") after a brainstorm, whose answers are in its section "Agreed in the brainstorm".
 * **Creation**: Added the [design follow-ups spec](/specs/2026-11-22-design-follow-ups.md) (draft), spec 7: three points the run of spec 6 left for a ruling: a split may keep the old import path by a named line that is listed as a debt, the reviewer's passage on severity grades every finding, and a `mock-input` of the mock-up frame gets the frame's colour for text; 11 behaviours; the version stays 0.4.5.
