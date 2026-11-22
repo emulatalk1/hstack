@@ -23,6 +23,9 @@
     "tests/brainstorm-script.test.ts",
     "tests/brainstorm-edges.test.ts",
     "tests/script-call-and-dir-rule.test.ts",
-    "tests/script-call-edges.test.ts"
+    "tests/script-call-edges.test.ts",
+    "tests/no-stash-script.test.ts",
+    "tests/no-stash-texts.test.ts",
+    "tests/no-stash-edges.test.ts"
   ]
 }
