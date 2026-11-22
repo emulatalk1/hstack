@@ -211,7 +211,7 @@ const moveRun = () => { // an earlier run goes to old/<time>/; what belongs to t
   let old = `${S}/old/${stamp()}`
   for (let i = 2; existsSync(u(old)); i++) old = `${S}/old/${stamp()}-${i}` // two runs moved in one second: a folder each, nothing written over
   mkdirp(old)
-  for (const f of ls(S)) if (!f.startsWith('.') && !['old', 'repo', 'top', 'home', 'session-head', 'stop-blocks', 'feedback', 'evidence', 'mockups'].includes(f)) renameSync(u(`${S}/${f}`), u(`${old}/${f}`))
+  for (const f of ls(S)) if (!f.startsWith('.') && !['old', 'repo', 'top', 'home', 'session-head', 'turn', 'stop-blocks', 'feedback', 'evidence', 'mockups'].includes(f)) renameSync(u(`${S}/${f}`), u(`${old}/${f}`))
 }
 const stdin = () => { const chunks: Buffer[] = [], buf = Buffer.alloc(65536); for (;;) { let n = 0; try { n = readSync(0, buf, 0, buf.length, null) } catch (e) { if ((e as { code?: string }).code === 'EAGAIN') continue; break } if (n <= 0) break; chunks.push(Buffer.from(buf.subarray(0, n))) } return Buffer.concat(chunks).toString('latin1') }
 
@@ -437,7 +437,9 @@ if (cmd === 'repo' && argv.length) { // name the code repository: once, from the
   if (v.startsWith('/') || v.includes('..')) die('hstack: repo takes a path relative to the records home, with no ..')
   const here = b(process.cwd())
   // not once a run is started here: the pointer moves the state folder, and the gate would look away from that run
-  if (state() && isFile(`${S}/base`) && !isFile(`${S}/done`) && !isFile(`${S}/stale`)) die('hstack: a run is started in this folder: name the code repository before start, not in the middle of a run')
+  const inHome = state()
+  if (inHome && isFile(`${S}/base`) && !isFile(`${S}/done`) && !isFile(`${S}/stale`)) die('hstack: a run is started in this folder: name the code repository before start, not in the middle of a run')
+  const homeTurn = inHome ? `${S}/turn` : '', open = homeTurn !== '' && isFile(homeTurn) // the turn this command runs in: its note is in the home's state
   cd(here)
   // the top of a repository of its own: not a folder of the home, and not a folder inside another repository
   if (!cd(`${home}/${v}`) || toplevel() !== `${home}/${v}`.replace(/\/+$/, '')) die(`hstack: ${v} is not the top of a git repository of its own`)
@@ -446,7 +448,10 @@ if (cmd === 'repo' && argv.length) { // name the code repository: once, from the
   if (!state()) die(pointerError)
   // what SessionStart does for a new session, for the code repository: this session started in the home's state
   wr(`${S}/stop-blocks`, '0\n'); wr(`${S}/session-head`, fingerprint() + '\n'); if (isFile(`${S}/base`)) wr(`${S}/stale`, '')
-  rmSync(u(`${S}/turn`), { force: true }) // a note left there by an interrupted turn of an earlier session is not this turn's
+  // the note of the turn this command runs in moves with the session and is taken again here, so that the turn stays
+  // open; a note left here by an interrupted turn of an earlier session is not this turn's
+  rmSync(u(`${S}/turn`), { force: true })
+  if (open) { rmSync(u(homeTurn), { force: true }); wr(`${S}/turn`, fingerprint() + '\n') }
   put(first(`${S}/top`))
   process.exit(0)
 }
@@ -503,7 +508,11 @@ switch (cmd) {
     if (!isFile(`${S}/base`)) die('hstack: no run started: run start first')
     if (argv[0] === '--drop') { // the run ends here: nothing was built, and the session goes on as if no run had been started
       if (!waiting()) die('hstack: no spec waits: nothing to drop')
-      moveRun(); wr(`${S}/session-head`, fingerprint() + '\n'); rmSync(u(`${S}/stale`), { force: true }); put('dropped'); break
+      // in the middle of a turn: the note is taken again with the session's reference, and the turn stays open, so
+      // that a message that arrives later in this turn does not take a note with the builder's later change in it
+      moveRun(); wr(`${S}/session-head`, fingerprint() + '\n'); rmSync(u(`${S}/stale`), { force: true })
+      if (isFile(`${S}/turn`)) wr(`${S}/turn`, fingerprint() + '\n')
+      put('dropped'); break
     }
     if (recorded('setup')) die('hstack: a spec is shown before setup')
     const file = argv[0] ? (argv[0].startsWith('/') ? argv[0] : `${LAUNCH}/${argv[0]}`) : '' // the spec is in the records home

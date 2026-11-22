@@ -134,6 +134,29 @@ function finishedRun(s: Scene) {
   ends('the turn that finishes the run', s.stop())
 }
 
+test('E11: a message that arrives after spec --drop in the same turn does not take the builder\'s change into the note', () => {
+  const s = scene()
+  waitingSpec(s, true)
+  s.prompt() // the next turn
+  rmSync(`${s.repo}/spec.md`); expect(s.h('spec', '--drop').out).toBe('dropped')
+  s.edit() // the builder's change, after the drop, with no run
+  s.prompt() // a message of another session, in the same turn
+  held('the turn of the drop and the change', s.stop(), NO_WORKFLOW)
+})
+
+test('E13: the note outlives a start that moves an earlier run away: a run started and dropped in one turn leaves the turn open', () => {
+  const s = scene()
+  s.hookStart('startup'); finishedRun(s) // an earlier session and its finished run
+  s.hookStart('startup') // a new session
+  s.prompt()
+  expect(s.h('start').code).toBe(0) // the earlier run goes to old/
+  writeFileSync(`${s.repo}/spec.md`, 'what the feature does\n'); expect(s.h('spec', 'spec.md').code).toBe(0)
+  rmSync(`${s.repo}/spec.md`); expect(s.h('spec', '--drop').out).toBe('dropped')
+  s.edit() // the builder's change, with no run
+  s.prompt() // a message of another session, in the same turn
+  held('the turn of the start, the drop and the change', s.stop())
+})
+
 // ---------- a code repository of its own (.hstack/repo) ----------
 
 // a records home with a nested code repository that the home ignores; the hooks are called in the home
@@ -223,6 +246,15 @@ test('E6: the prompt hook takes its note with an empty input, with an input that
     silent(`the prompt hook with ${what}`, call(s))
     ends(`the turn after the prompt hook with ${what}`, s.stop())
   }
+})
+
+test('E12: a message that arrives after repo <path> in the same turn does not take the builder\'s change into the note', () => {
+  const o = outer()
+  o.hookStart(); silent('the prompt hook of the turn', o.prompt())
+  expect(o.h(o.home, 'repo', 'code').out).toBe(o.code)
+  writeFileSync(`${o.code}/src/a.txt`, 'x = 2\n') // the builder's change in the code repository, with no run
+  silent('the prompt hook of a message in the same turn', o.prompt())
+  held('the turn that names the code repository and changes it', o.stop(), NO_WORKFLOW)
 })
 
 test('E7: with a code repository of its own, the prompt hook notes the code repository: the user\'s commit there does not hold a turn, the builder\'s change there does', () => {
