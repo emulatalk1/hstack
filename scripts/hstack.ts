@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// hstack run state and the two hooks. TypeScript, run with Bun; git is the only other program it needs (gh for three
+// hstack run state and the three hooks. TypeScript, run with Bun; git is the only other program it needs (gh for three
 // feedback verbs). State lives outside the work tree and outside .git (Claude Code guards writes into .git), in
 // ${HSTACK_STATE:-$HOME/.hstack} (or /tmp/.hstack without HOME)/<checksum of the git dir>, so it is never committed
 // and never part of the product.
@@ -226,9 +226,10 @@ if (cmd === 'hook-start') {
     // only a new session sets the reference; a resume must keep it
     // a run that a new session finds is an earlier session's (stale): the stop hook judges it only by what this session changes
     if (input.includes('"source":"startup"')) { wr(`${S}/session-head`, fingerprint() + '\n'); if (isFile(`${S}/base`)) wr(`${S}/stale`, '') }
-    // a turn that an interrupt left open (no stop hook ran) is over at a new process and at a clear: the next message
-    // takes a new note. Not at a compaction, which can come in the middle of a turn, nor at a fork
-    if (['startup', 'resume', 'clear'].some((source) => input.includes(`"source":"${source}"`))) rmSync(u(`${S}/turn`), { force: true })
+    // a turn left open (an interrupt: no stop hook ran; or a hold that the process did not outlive) is over when a new
+    // session starts: its first message takes a new note. Like the reference, the note is kept at a resume, a clear, a
+    // compaction and a fork: the builder's change in that turn is still held after them
+    if (input.includes('"source":"startup"')) rmSync(u(`${S}/turn`), { force: true })
     // a session that finds no reference at all takes one, whatever started it: with none, every stop would hold
     if (!isFile(`${S}/session-head`)) wr(`${S}/session-head`, fingerprint() + '\n')
   } else if (pointerError) put(`${pointerError}: the stop gate is off until the file is right.`)
@@ -262,7 +263,9 @@ if (cmd === 'hook-stop') {
   const end = (): never => { rmSync(u(`${S}/turn`), { force: true }); process.exit(0) }
   // a turn the user spent on a feedback verb is not a build turn: it ends once, unblocked. Consumed on every stop,
   // so a pass never waits for a later one.
-  if (isFile(`${S}/pass`)) { rmSync(u(`${S}/pass`), { force: true }); end() }
+  // The turn is over for the note only when nothing changed in it: a change made in the turn of a feedback verb is
+  // judged at the next stop, as it was when the session had one reference.
+  if (isFile(`${S}/pass`)) { rmSync(u(`${S}/pass`), { force: true }); if (fingerprint() === ref) end(); process.exit(0) }
   const head = git('rev-parse', '-q', '--verify', 'HEAD').out
   const stale = isFile(`${S}/stale`)
   let why = '', m = ''
@@ -298,7 +301,7 @@ if (cmd === 'hook-stop') {
   if (n >= MAX_BLOCKS) { // never loop: a capped gate costs less than a run that never ends
     // the gate giving up on a started run leaves it to a human: one entry per cap (the bump past the cap marks it)
     if (n === MAX_BLOCKS && isFile(`${S}/base`) && !stale) { wr(`${S}/stop-blocks`, `${n + 1}\n`); record('intervention', m.split(' ')[0] || 'final', '') }
-    end()
+    process.exit(0) // the gate gives up, the turn is not over for the note: what it held is held again when a new process gets its holds back
   }
   wr(`${S}/stop-blocks`, `${(Number.isNaN(n) ? 0 : n) + 1}\n`)
   // an approved spec is named only where there is one: not with no run, not while a spec waits for the approval

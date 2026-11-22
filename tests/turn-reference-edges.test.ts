@@ -67,14 +67,37 @@ const NO_WORKFLOW = 'the repository changed without the hstack:build workflow'
 
 // ---------- which starts of a session end a turn left open ----------
 
-for (const source of ['resume', 'clear']) test(`E2: a turn left open by an interrupt ends at a ${source}: the next message takes a new note`, () => {
+test('E2: a new session ends a turn left open by an interrupt: its first message takes a new note', () => {
   const s = scene()
   s.hookStart('startup')
   s.prompt() // a turn starts, and is interrupted: no stop hook runs
   s.commit() // the user's own commit
-  s.hookStart(source)
+  s.hookStart('startup') // a new session
   s.prompt()
-  ends(`the first turn after the ${source}`, s.stop())
+  ends('the first turn of the new session', s.stop())
+})
+
+for (const source of ['resume', 'clear']) test(`E2: a ${source} does not end a turn that the stop hook held: the builder's change is held again after it, as 0.4.3 does`, () => {
+  const s = scene()
+  s.hookStart('startup')
+  s.prompt()
+  s.edit() // the builder's change, with no run
+  held('the turn of the change', s.stop(), NO_WORKFLOW)
+  s.hookStart(source) // the process ends there and the session is resumed, or the conversation is cleared
+  s.prompt()
+  held(`the first turn after the ${source}`, s.stop(), NO_WORKFLOW)
+})
+
+test('E1: the silent stop past the cap does not end the turn: after a resume gives the holds back, the builder\'s change is held again, as 0.4.3 does', () => {
+  const s = scene()
+  s.hookStart('startup')
+  s.prompt()
+  s.edit() // the builder's change, with no run
+  for (let hold = 1; hold <= 3; hold++) held(`hold ${hold}`, s.stop(), NO_WORKFLOW)
+  ends('the stop past the cap', s.stop())
+  s.hookStart('resume') // a new process gets its holds back
+  s.prompt()
+  held('the first turn after the resume', s.stop(), NO_WORKFLOW)
 })
 
 for (const source of ['compact', 'fork']) test(`E2: a ${source} in the middle of a turn does not end it: the builder's change before it is still held`, () => {
@@ -98,6 +121,17 @@ test('E8: a turn that ends on a feedback verb\'s pass has ended: the user\'s com
   s.commit() // the user's own commit, between the two turns
   s.prompt()
   ends('the turn after it', s.stop())
+})
+
+test('E8: the builder\'s change in the turn of a feedback verb is held at the next turn, as 0.4.3 does', () => {
+  const s = scene()
+  s.hookStart('startup')
+  s.prompt()
+  s.edit() // the builder's change, with no run
+  expect(s.h('feedback', 'draft').code).toBe(0)
+  ends('the turn of the feedback verb', s.stop()) // the pass lets it end once
+  s.prompt()
+  held('the turn after it', s.stop(), NO_WORKFLOW) // but the change is not forgiven
 })
 
 // a run of the scene's own session up to a spec that waits and was shown: the spec file is in the repository
