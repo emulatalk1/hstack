@@ -26,6 +26,9 @@
     "tests/script-call-edges.test.ts",
     "tests/turn-reference.test.ts",
     "tests/turn-reference-texts.test.ts",
-    "tests/turn-reference-edges.test.ts"
+    "tests/turn-reference-edges.test.ts",
+    "tests/no-stash-script.test.ts",
+    "tests/no-stash-texts.test.ts",
+    "tests/no-stash-edges.test.ts"
   ]
 }

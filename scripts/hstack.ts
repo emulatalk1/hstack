@@ -201,6 +201,24 @@ const timesOf = (dir: string): string[] => {
   }
   return out.length ? [...out, `total ${(Math.max(0, last - start) / 60).toFixed(1)}`] : ['no times recorded']
 }
+// The stash is one stack for the whole repository, shared by every worktree, the user's checkout and every other
+// session. start records its entries in the state file stash-base, one line each, "<commit> <message>"; gate and done
+// print a line for each entry that has come or gone since. A line says what changed, never who did it.
+const stashNow = () => { const l = git('stash', 'list', '--format=%H %gs'); return l.code === 0 ? lines(l.out) : null } // null: git cannot read the stash
+const commitOf = (entry: string) => entry.slice(0, entry.indexOf(' '))
+const messageOf = (entry: string) => entry.slice(entry.indexOf(' ') + 1)
+// changes: the lines of gate and done. note: why nothing was compared, which gate alone says
+const stashReport = (): { note: string; changes: string[] } => {
+  // a run that an earlier version of this script started recorded no stash; an empty stash is a record, an empty one
+  // (with no run started there is no start to speak of, and nothing is said)
+  if (!isFile(`${S}/stash-base`)) return { note: isFile(`${S}/base`) ? 'stash: not recorded at start, not compared' : '', changes: [] }
+  const was = lines(rd(`${S}/stash-base`)).filter((l) => /^[0-9a-f]{40,64} /.test(l)), is = stashNow() // a line that is no entry is not compared
+  if (!is) return { note: 'stash: could not be read, not compared', changes: [] } // never a line that calls every entry gone
+  const not = (list: string[]) => (e: string) => !list.map(commitOf).includes(commitOf(e)) // an entry is its commit, wherever it stands in the stack
+  // the commit stands in the line: an entry that is gone can still be looked at by it while git keeps the commit
+  const line = (what: string) => (e: string) => `STASH ${what}: ${messageOf(e)} (${commitOf(e)})`
+  return { note: '', changes: [...is.filter(not(was)).map(line('ADDED')), ...was.filter(not(is)).map(line('GONE'))] }
+}
 const recorded = (step: string) => lines(rdOr(`${S}/phases`)).some((l) => l === step || l.startsWith(`${step} skipped: `))
 // a spec waits from `spec <file>` until `approve`: state file `spec` holds its path, its hash and the code repository's fingerprint
 const waiting = () => isFile(`${S}/spec`) && !recorded('spec')
@@ -477,6 +495,8 @@ switch (cmd) {
     wr(`${S}/started`, `${now()}\n`)
     wr(`${S}/phases`, '')
     wr(`${S}/base-status`, entries().join('\0')) // what the tree held before the run: spec compares with it
+    const held = stashNow() // what the stash held before the run: gate and done compare with it. Not read, not recorded
+    if (held) wr(`${S}/stash-base`, held.map((e) => e + '\n').join(''))
     put(S)
     break
   }
@@ -641,6 +661,8 @@ switch (cmd) {
         for (const dl of lines(git('diff', '-U0', from, '--', f).out)) if (dl.startsWith('-') && !dl.startsWith('--- ')) put(`REMOVED ${f}: ${dl.slice(1)}`)
       }
     } else put('tests: no test-paths recorded, pre-existing tests not checked')
+    const stash = stashReport()
+    for (const l of [stash.note, ...stash.changes]) if (l) put(l) // information: the exit code is the one of the lines above
     process.exit(bad)
   }
 
@@ -661,6 +683,7 @@ switch (cmd) {
     const head = git('rev-parse', 'HEAD').out
     wr(`${S}/done`, head + '\n')
     wr(`${S}/ended`, `${now()}\n`)
+    for (const l of stashReport().changes) put(l) // the lines gate prints: the run ends all the same
     put(`done at ${head}`)
     break
   }
