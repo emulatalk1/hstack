@@ -23,7 +23,7 @@ This is the conversation before the spec. The text below is followed as it stand
 - **The written design of this skill is the spec of the build loop.** It is one file, in the form the playbook's step 1 gives, and your human partner approves it there. There is no second document beside it and no plan after it: after the approval the loop runs to its end alone.
 - **Your first message always comes,** in every session, however plain the request looks. Their answer to it decides whether you write the spec at once or the conversation goes on. Do not guess whether a person is there.
 - **Only what was discussed and agreed is written.** A question that comes up later, the second reader's too, goes to your human partner first; its answer is written after it is given.
-- **Nothing in the repository changes before the spec is approved but the spec file itself,** and until the playbook's `start` no command of the loop's script runs but `dir`: the loop's stop hook would hold such a turn. From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner). A spike is built outside the repository, and mock-ups live in the loop's state folder.
+- **Nothing in the repository changes before the spec is approved but the spec file itself,** and until the playbook's `start` no command of the loop's script runs but `dir`: before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop's stop hook holds a turn in which the repository changed, and a turn that ends after `start` with no spec shown. From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner). A spike is built outside the repository, and mock-ups live in the loop's state folder.
 - **Looking includes the project's records:** the list of features and their steps, the coverage file, the log, earlier specs and the decisions files beside them. A place where the request goes against one of them is raised in the conversation, not first written into the spec.
 
 ## First: What Do You Actually Know?
@@ -205,7 +205,8 @@ When they just want to spike, get out of the way. Spikes get no tests
 or minimal ones, aren't bulletproof, and skip the plan, implementation,
 and review process. Bring what the spike taught you back into the
 conversation. Build a spike in a scratch folder outside the repository:
-before the spec is approved, nothing in the repository changes.
+before the spec is approved, nothing in the repository changes but the
+spec file itself.
 
 ## Play It Back
 

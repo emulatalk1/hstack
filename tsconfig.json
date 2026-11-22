@@ -25,6 +25,7 @@
     "tests/script-call-and-dir-rule.test.ts",
     "tests/script-call-edges.test.ts",
     "tests/turn-reference.test.ts",
-    "tests/turn-reference-texts.test.ts"
+    "tests/turn-reference-texts.test.ts",
+    "tests/turn-reference-edges.test.ts"
   ]
 }

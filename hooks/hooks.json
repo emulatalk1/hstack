@@ -1,6 +1,7 @@
 {
   "hooks": {
     "SessionStart": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-start" }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-prompt" }] }],
     "Stop": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-stop" }] }]
   }
 }

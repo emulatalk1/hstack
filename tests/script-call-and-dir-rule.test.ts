@@ -96,10 +96,10 @@ test('8: the section "## In hstack" holds "Nothing in the repository changes bef
 
 // ---------- the version and the README ----------
 
-test('7: .claude-plugin/plugin.json holds "version": "0.4.3", and the README\'s status paragraph starts with "**Status: v0.4.3.**"', () => {
-  expect(raw('.claude-plugin/plugin.json')).toContain('"version": "0.4.3"')
+test('7: .claude-plugin/plugin.json holds "version": "0.4.4", and the README\'s status paragraph starts with "**Status: v0.4.4.**"', () => {
+  expect(raw('.claude-plugin/plugin.json')).toContain('"version": "0.4.4"')
   const status = raw('README.md').split(/\n\s*\n/).map((p) => p.trim()).find((p) => p.startsWith('**Status:')) ?? ''
-  expect(`the status paragraph starts with "**Status: v0.4.3.**": ${status.startsWith('**Status: v0.4.3.**')}`).toBe('the status paragraph starts with "**Status: v0.4.3.**": true')
+  expect(`the status paragraph starts with "**Status: v0.4.4.**": ${status.startsWith('**Status: v0.4.4.**')}`).toBe('the status paragraph starts with "**Status: v0.4.4.**": true')
 })
 
 // ---------- kept (the spec, sections 2 and 4): these pass before the change and must stay ----------
