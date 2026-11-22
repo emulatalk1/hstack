@@ -210,8 +210,9 @@ const messageOf = (entry: string) => entry.slice(entry.indexOf(' ') + 1)
 // changes: the lines of gate and done. note: why nothing was compared, which gate alone says
 const stashReport = (): { note: string; changes: string[] } => {
   // a run that an earlier version of this script started recorded no stash; an empty stash is a record, an empty one
-  if (!isFile(`${S}/stash-base`)) return { note: 'stash: not recorded at start, not compared', changes: [] }
-  const was = lines(rd(`${S}/stash-base`)), is = stashNow()
+  // (with no run started there is no start to speak of, and nothing is said)
+  if (!isFile(`${S}/stash-base`)) return { note: isFile(`${S}/base`) ? 'stash: not recorded at start, not compared' : '', changes: [] }
+  const was = lines(rd(`${S}/stash-base`)).filter((l) => /^[0-9a-f]{40,64} /.test(l)), is = stashNow() // a line that is no entry is not compared
   if (!is) return { note: 'stash: could not be read, not compared', changes: [] } // never a line that calls every entry gone
   const not = (list: string[]) => (e: string) => !list.map(commitOf).includes(commitOf(e)) // an entry is its commit, wherever it stands in the stack
   // the commit stands in the line: an entry that is gone can still be looked at by it while git keeps the commit

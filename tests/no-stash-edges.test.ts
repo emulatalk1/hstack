@@ -161,6 +161,24 @@ test('E8: a label with letters outside ASCII stands in the line as it was writte
   expect(stashLines(h(w, ['gate']))).toEqual([`STASH ADDED: On ${git(w, ['branch', '--show-current'])}: cất tạm đồ của tôi (${came})`])
 })
 
+test('E20: gate in a repository where no run was started says nothing about the stash', () => {
+  const w = world()
+  push(w, 'in the stash, and no run')
+  const g = h(w, ['gate'])
+  expect(`${g.out}\n${g.err}`.split('\n').filter((l) => /^stash/i.test(l))).toEqual([])
+  expect(g.code).toBe(0)
+})
+
+test('E21: a line of the record that is no entry is not called an entry that is gone', () => {
+  const w = world()
+  const held = push(w, 'held at start')
+  started(w)
+  const record = `${h(w, ['dir']).out}/stash-base`
+  expect(readFileSync(record, 'utf8')).toBe(`${held} On ${git(w, ['branch', '--show-current'])}: held at start\n`)
+  writeFileSync(record, `\n\nnot a commit line\n${readFileSync(record, 'utf8')}`) // a record somebody edited by hand
+  expect(stashLines(h(w, ['gate']))).toEqual([])
+})
+
 // ---------- the texts ----------
 // A phrase is looked for word for word; a line break inside a phrase counts as a space.
 
