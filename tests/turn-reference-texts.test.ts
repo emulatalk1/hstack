@@ -70,11 +70,11 @@ function status(): string {
   return found[0] ?? ''
 }
 
-test('21: .claude-plugin/plugin.json holds "version": "0.4.5", and the README\'s status paragraph starts with "**Status: v0.4.5.**"', () => {
-  expect(raw('.claude-plugin/plugin.json')).toContain('"version": "0.4.5"')
-  expect((JSON.parse(raw('.claude-plugin/plugin.json')) as { version?: string }).version).toBe('0.4.5')
+test('21: .claude-plugin/plugin.json holds "version": "0.4.6", and the README\'s status paragraph starts with "**Status: v0.4.6.**"', () => {
+  expect(raw('.claude-plugin/plugin.json')).toContain('"version": "0.4.6"')
+  expect((JSON.parse(raw('.claude-plugin/plugin.json')) as { version?: string }).version).toBe('0.4.6')
   const s = status()
-  expect(`the status paragraph starts with "**Status: v0.4.5.**": ${s.startsWith('**Status: v0.4.5.**')}`).toBe('the status paragraph starts with "**Status: v0.4.5.**": true')
+  expect(`the status paragraph starts with "**Status: v0.4.6.**": ${s.startsWith('**Status: v0.4.6.**')}`).toBe('the status paragraph starts with "**Status: v0.4.6.**": true')
 })
 
 test('21: the status paragraph of the README still holds the words "brainstorm" and "grilled" (section 4, item 1)', () => {
