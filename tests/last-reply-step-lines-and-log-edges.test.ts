@@ -50,7 +50,7 @@ test('E1: the paragraph "The last reply." says where last-reply.md lies, as step
   yes('that line holds "(`${CLAUDE_PLUGIN_ROOT}/skills/build/last-reply.md`; if that variable is empty, it lies beside this file, in this skill\'s base directory)"', l.includes("(`${CLAUDE_PLUGIN_ROOT}/skills/build/last-reply.md`; if that variable is empty, it lies beside this file, in this skill's base directory)"))
 })
 
-test('E7: "Saying what you do." is the last item of "Rules for the whole run", after "Recording.", and holds its four sentences and no other', () => {
+test('E7: "Saying what you do." is the last item of "Rules for the whole run", after "Recording.", and holds its three sentences and no other', () => {
   const ls = raw(PLAYBOOK).split('\n'), h = ls.indexOf('## Rules for the whole run')
   yes(`${PLAYBOOK} has the line "## Rules for the whole run"`, h >= 0)
   const rest = ls.slice(h + 1), end = rest.findIndex((l) => l.startsWith('## '))
@@ -77,5 +77,11 @@ test('E15: the README\'s status paragraph says what the three changes do, names 
     'From the approval on the builder says in a line what it is about to do before each step, and in a line what the step found after it.',
     'The last reply is written for a reader who did not see the run, as `skills/build/last-reply.md` says, and the log entry first for the agent of a later session',
   ]) yes(`the status paragraph holds "${s}"`, flat(status).includes(s))
-  yes('the README holds no link whose text or target is last-reply.md', !/\]\([^)]*last-reply\.md\)/.test(raw('README.md')))
+  yes('the README holds no link whose text or target is last-reply.md', !/\[[^\]]*last-reply\.md[^\]]*\]\(|\]\([^)]*last-reply\.md[^)]*\)/.test(raw('README.md')))
+})
+
+test('E16: last-reply.md and the README\'s status paragraph name no source of the text: neither its publisher nor the guide', () => {
+  const status = raw('README.md').split(/\n\s*\n/).map((p) => p.trim()).find((p) => p.startsWith('**Status:')) ?? ''
+  for (const [where, text] of [[LAST_REPLY, raw(LAST_REPLY)], ['the status paragraph of README.md', status]] as const)
+    for (const w of ['anthropic', 'prompting guide', 'communicating clearly', 'make reports easy to follow', 'signal intent']) yes(`${where} does not hold "${w}" in any letter case`, !text.toLowerCase().includes(w))
 })
