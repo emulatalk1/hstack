@@ -196,7 +196,7 @@ test('E14: step 1 of the playbook takes up a waiting spec by its name with no br
 
 test('E15: step 1 sends new work beside an earlier session\'s unfinished run into a new worktree the session moves into, refuses it beside this session\'s run, and says what to do with no worktree tool', () => {
   const t = part('**What the user typed.**', '1. **The code repository.**')
-  for (const p of ['is a new request', 'this session\'s, start nothing', 'never moves it aside', 'new worktree from `HEAD`, on a new branch', '`EnterWorktree`', 'move the session into it', '`$S/worktree-origin`', 'make no worktree and start nothing']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+  for (const p of ['is a new request', 'this session\'s, start nothing', 'never moves it aside', 'new worktree from `HEAD`, on a new branch', '`EnterWorktree`', 'move the session into it', '`$S/worktree-origin`', 'so that no worktree is left, and start nothing']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
 })
 
 test('E16: the last reply of a run made in such a worktree asks before a merge, merges only on the user\'s yes, aborts a conflict and keeps the worktree', () => {
@@ -307,4 +307,45 @@ test('V13: the worktree made as the playbook says leaves the unfinished run\'s f
   expect(readFileSync(`${s.S()}/phases`, 'utf8')).toBe(before.phases)
   expect(existsSync(`${s.S()}/stale`)).toBe(true)
   expect(s.h('missing').out).toBe(before.missing)
+})
+
+// ---------- the exploratory test ----------
+
+test('X2: when the session cannot be moved into the new worktree, the playbook removes the worktree and its branch it made (behaviour 15)', () => {
+  const t = part('**What the user typed.**', '1. **The code repository.**')
+  has('the part What the user typed', t, ['`git -C <this folder> worktree remove <that folder>`', '`git -C <this folder> branch -D <the new branch>`'])
+})
+
+test('X4: a name that matches no spec is a new request: the brainstorm starts with it, with no question whether it is a typo (behaviour 12)', () => {
+  const t = part('**What the user typed.**', '1. **The code repository.**')
+  has('the part What the user typed', t, ['A name that matches no spec is such a request too'])
+})
+
+test('X6: a waiting spec taken up with no answer after its name is shown again, and the user answers in the next message with no command (behaviour 9)', () => {
+  const t = part('**What the user typed.**', '1. **The code repository.**')
+  has('the part What the user typed', t, ['the user answers in the next message, with no command'])
+})
+
+test('X5: beside an earlier session\'s unfinished run, the start text tells the agent not to bring it up unless the user asks', () => {
+  const s = scene(); earlierRun(s)
+  has('the start text', s.hookStart('startup'), ['Do not bring it up unless the user asks about it.'])
+})
+
+test('X7a: takeup refuses an argument it does not know, and changes nothing', () => {
+  const s = scene(); earlierRun(s)
+  for (const args of [['--yes'], ['--with-commits', 'extra']]) {
+    const r = s.h('takeup', ...args)
+    expect(r.code).toBe(1)
+    expect(existsSync(`${s.S()}/stale`)).toBe(true)
+  }
+})
+
+test('X7b: takeup shows the uncommitted changes in the folder, as it shows commits made since: it exits 2 and changes nothing until the user\'s yes', () => {
+  const s = scene(); earlierRun(s)
+  writeFileSync(`${s.repo}/src/a.txt`, 'left uncommitted\n')
+  const r = s.h('takeup')
+  expect(r.code).toBe(2)
+  expect(r.out).toContain('src/a.txt')
+  expect(existsSync(`${s.S()}/stale`)).toBe(true)
+  expect(s.h('takeup', '--with-commits').code).toBe(0)
 })

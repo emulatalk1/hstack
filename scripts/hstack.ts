@@ -274,7 +274,7 @@ if (cmd === 'hook-start') {
   // the name a spec is taken up by: its file name, without its folder and without .md
   const specName = (f: string) => base(f).replace(/\.md$/, '')
   if (S && waiting()) put(`A spec waits for the user's approval: ${first(`${S}/spec`)}. The user takes it up by typing /hstack:build ${specName(first(`${S}/spec`))}: the playbook's step 1 then finds the waiting spec, and the user's answer, whether it approves it, asks for changes to it or asks for a grill of it, is taken as its item "The user's next message". If the user answers it without that command, tell them to type it; do not approve the spec yourself. If the message is a question, answer it. Other work does not need it: the spec goes on waiting, and approve refuses it if the repository changes in the meantime.`)
-  else if (S && isFile(`${S}/stale`) && unfinished()) put(`An approved hstack:build run of an earlier session is not finished: spec ${first(`${S}/spec`)}; steps not recorded: ${missing()}. The user goes on with it by typing /hstack:build ${specName(first(`${S}/spec`))}. Other work does not need it.`)
+  else if (S && isFile(`${S}/stale`) && unfinished()) put(`An approved hstack:build run of an earlier session is not finished: spec ${first(`${S}/spec`)}; steps not recorded: ${missing()}. The user goes on with it by typing /hstack:build ${specName(first(`${S}/spec`))}. Other work does not need it. Do not bring it up unless the user asks about it.`)
   process.exit(0)
 }
 
@@ -583,6 +583,7 @@ switch (cmd) {
   }
 
   case 'takeup': { // an approved run of an earlier session, taken up by this one: the user typed /hstack:build <its spec's name>
+    if (argv.length > 1 || (argv.length === 1 && argv[0] !== '--with-commits')) die('usage: hstack.ts takeup [--with-commits]')
     if (!isFile(`${S}/base`) || !unfinished()) die('hstack: no approved run that is not finished: nothing to take up')
     if (!isFile(`${S}/stale`)) die('hstack: the run is this session\'s: go on with it from its first unrecorded step')
     // the run's own commits (its base, its oracle's tests, where it stood at its last step) must still be in the history:
@@ -590,8 +591,14 @@ switch (cmd) {
     for (const c of [first(`${S}/base`), first(`${S}/oracle-commit`), first(`${S}/last-head`)].filter((c) => c !== ''))
       if (git('merge-base', '--is-ancestor', c, 'HEAD').code !== 0) die(`hstack: the run's commit ${c} is no longer in the history of HEAD: the run cannot go on. Start again with /hstack:build`)
     // the commits made since the run's last step may be another's work: the user decides whether the run takes them in
+    // and so may a change left uncommitted in the folder
     const since = git('log', '--format=%h %s', `${first(`${S}/last-head`) || first(`${S}/base`)}..HEAD`).out
-    if (since !== '' && argv[0] !== '--with-commits') { put(`commits made since the run's last step:\n${since}`); err('hstack: ask the user whether the run goes on with these commits in it; on their yes, run takeup --with-commits'); process.exit(2) }
+    const loose = git('status', '--porcelain').out
+    if ((since !== '' || loose !== '') && argv[0] !== '--with-commits') {
+      if (since !== '') put(`commits made since the run's last step:\n${since}`)
+      if (loose !== '') put(`changes not committed:\n${loose}`)
+      err('hstack: ask the user whether the run goes on with these in it; on their yes, run takeup --with-commits'); process.exit(2)
+    }
     // this session's run from now on: the stop hook holds it, with its holds given back, and this session's reference
     rmSync(u(`${S}/stale`), { force: true }); wr(`${S}/stop-blocks`, '0\n'); wr(`${S}/session-head`, fingerprint() + '\n')
     idleOff()
