@@ -349,3 +349,8 @@ test('X7b: takeup shows the uncommitted changes in the folder, as it shows commi
   expect(existsSync(`${s.S()}/stale`)).toBe(true)
   expect(s.h('takeup', '--with-commits').code).toBe(0)
 })
+
+test('X17: inside this session\'s own unfinished run, the playbook says the run goes on as a fact, offers no choice and no command to take it up, and goes on with it (behaviour 17)', () => {
+  const t = part('**What the user typed.**', '1. **The code repository.**')
+  has('the part What the user typed', t, ['as a fact, not as a choice', 'give no command to take this run up', 'then go on with the run from its first unrecorded step'])
+})
