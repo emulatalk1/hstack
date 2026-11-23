@@ -196,10 +196,82 @@ test('E14: step 1 of the playbook takes up a waiting spec by its name with no br
 
 test('E15: step 1 sends new work beside an earlier session\'s unfinished run into a new worktree the session moves into, refuses it beside this session\'s run, and says what to do with no worktree tool', () => {
   const t = part('**What the user typed.**', '1. **The code repository.**')
-  for (const p of ['is a new request', 'this session\'s, start nothing', 'never moves it aside', 'new worktree from `HEAD`, on a new branch', '`EnterWorktree`', 'moves the session into it', '`$S/worktree-origin`', 'make no worktree and start nothing']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+  for (const p of ['is a new request', 'this session\'s, start nothing', 'never moves it aside', 'new worktree from `HEAD`, on a new branch', '`EnterWorktree`', 'move the session into it', '`$S/worktree-origin`', 'make no worktree and start nothing']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
 })
 
 test('E16: the last reply of a run made in such a worktree asks before a merge, merges only on the user\'s yes, aborts a conflict and keeps the worktree', () => {
   const t = part('**A run made in a new worktree.**', '## A ruling after the run')
   for (const p of ['`$S/worktree-origin` exists', 'Only on their yes', 'merge <this branch>', 'merge --abort', 'The worktree is not removed']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+})
+
+// ---------- review round 1 ----------
+
+test('R1: a turn of a new session beside an earlier session\'s run does not move the run\'s idle time: takeup still takes it all off', () => {
+  const s = scene(); earlierRun(s)
+  writeFileSync(`${s.S()}/started`, `${now() - (3 * 3600 + 600)}\n`) // the run began 3h10m ago, its session stopped 3h ago
+  writeFileSync(`${s.S()}/last-stop`, `${now() - 3 * 3600}\n`)
+  s.prompt(); expect(s.stop()).toBe('') // a question in the new session, before the take-up
+  expect(s.h('takeup').code).toBe(0)
+  expect(minutes(s)).toBeLessThanOrEqual(11)
+})
+
+test('R2: the idle time comes off once: a second resume with no turn between takes nothing more off', () => {
+  const s = scene(); s.hookStart('startup'); approved(s)
+  writeFileSync(`${s.S()}/started`, `${now() - 2 * 3600}\n`)
+  writeFileSync(`${s.S()}/last-stop`, `${now() - 3600}\n`)
+  s.hookStart('resume'); s.hookStart('resume')
+  expect(minutes(s)).toBeGreaterThanOrEqual(59)
+  expect(minutes(s)).toBeLessThanOrEqual(61)
+})
+
+test('R5: takeup refuses when HEAD was reset back past the run\'s last recorded step', () => {
+  const s = scene(); s.hookStart('startup'); approved(s)
+  expect(s.h('phase', 'setup').code).toBe(0); expect(s.h('phase', 'oracle').code).toBe(0)
+  s.commit('the implementation'); const impl = s.git('rev-parse', 'HEAD').out; expect(s.h('phase', 'implement').code).toBe(0)
+  s.hookStart('startup')
+  expect(s.git('reset', '-q', '--hard', 'HEAD~1').code).toBe(0)
+  const r = s.h('takeup')
+  expect(r.code).toBe(1)
+  expect(r.err).toContain(impl)
+  expect(existsSync(`${s.S()}/stale`)).toBe(true)
+})
+
+test('R3: the new worktree for new work is made in a folder outside the repository, with git, and the session is then moved into it', () => {
+  const t = part('**What the user typed.**', '1. **The code repository.**')
+  for (const p of ['in a folder outside the repository', '`git -C <this folder> worktree add -b <a new branch> <that folder> HEAD`', 'move the session into it with its own worktree tool']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+})
+
+const has = (what: string, t: string, ps: string[]) => { for (const p of ps) expect(`${what} holds "${p}": ${t.includes(p)}`).toBe(`${what} holds "${p}": true`) }
+
+test('R4a: beside an earlier session\'s unfinished run, the start text says that other work does not need it (behaviour 4)', () => {
+  const s = scene(); earlierRun(s)
+  has('the start text', s.hookStart('startup'), ['Other work does not need it'])
+})
+
+test('R4b: after takeup, a turn that changed the repository is held with "steps not recorded" (behaviour 11)', () => {
+  const s = scene(); earlierRun(s)
+  expect(s.h('takeup').code).toBe(0)
+  s.prompt(); writeFileSync(`${s.repo}/src/a.txt`, 'changed after the take-up\n')
+  const o = s.stop()
+  expect(o.startsWith(HELD)).toBe(true)
+  has('the reason', o, ['steps not recorded'])
+})
+
+test('R4c: the start hook judges the folder of the input\'s cwd: a startup in a worktree takes that worktree\'s reference, not the main folder\'s (behaviour 14)', () => {
+  const s = scene(); s.hookStart('startup'); approved(s)
+  const wt = `${s.dir}/wt`
+  expect(s.git('worktree', 'add', '-q', '-b', 'side', wt, 'HEAD').code).toBe(0)
+  s.hookStart('startup', wt)
+  expect(existsSync(`${s.S()}/stale`)).toBe(false) // the main folder's run is not made an earlier session's by a start in the worktree
+})
+
+test('R4d: the texts of the playbook name every point of behaviours 9, 12, 13, 15, 17 and 18', () => {
+  const t = part('**What the user typed.**', '1. **The code repository.**')
+  has('the part What the user typed', t, ['without its folder', 'as the item "Show it" says', 'the brainstorm, from item 1', 'Tell the user its path and branch', 'run the whole loop there', 'open a session in a new worktree', 'this run goes on to its end', 'done in another session, in a worktree of its own'])
+  has('the paragraph on a run made in a new worktree', part('**A run made in a new worktree.**', '## A ruling after the run'), ['tell the user which files conflict'])
+})
+
+test('R4e: CLAUDE.md says that the stop gate holds a spec of this session that waits (behaviour 29)', () => {
+  const t = readFileSync(join(import.meta.dir, '../CLAUDE.md'), 'utf8')
+  has('CLAUDE.md', t, ['a spec of this session that waits for your approval, when the repository changed'])
 })
