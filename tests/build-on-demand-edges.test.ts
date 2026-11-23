@@ -354,3 +354,27 @@ test('X17: inside this session\'s own unfinished run, the playbook says the run 
   const t = part('**What the user typed.**', '1. **The code repository.**')
   has('the part What the user typed', t, ['as a fact, not as a choice', 'give no command to take this run up', 'then go on with the run from its first unrecorded step'])
 })
+
+// ---------- the mutation step: faults no test caught ----------
+
+test('K2: the start text tells the agent never to start the loop itself, and tells it to invoke hstack:build in no wording (behaviour 2)', () => {
+  const s = scene()
+  const t = s.hookStart('startup')
+  has('the start text', t, ['never start it yourself'])
+  expect(`the start text tells the agent to invoke hstack:build: ${/invoke (the )?hstack:build/i.test(t)}`).toBe('the start text tells the agent to invoke hstack:build: false')
+})
+
+test('K3: while a spec waits, the start text gives the command with the spec\'s name after it (behaviour 3)', () => {
+  const s = scene(); s.hookStart('startup'); s.prompt()
+  expect(s.h('start').code).toBe(0)
+  const f = `${s.dir}/2026-11-23-feature-z.md`; writeFileSync(f, 'what the feature does\n'); expect(s.h('spec', f).code).toBe(0); expect(s.stop()).toBe('')
+  has('the start text', s.hookStart('startup'), ['/hstack:build 2026-11-23-feature-z'])
+})
+
+test('K12: a name that matches no spec starts the brainstorm, with no question whether it is a typo (behaviour 12)', () => {
+  has('the part What the user typed', part('**What the user typed.**', '1. **The code repository.**'), ['start the brainstorm with it, and do not ask whether it is a typo'])
+})
+
+test('K29: CLAUDE.md says the loop runs only when the user invokes /hstack:build (behaviour 29)', () => {
+  has('CLAUDE.md', readFileSync(join(import.meta.dir, '../CLAUDE.md'), 'utf8'), ['The loop runs only when you invoke it: `/hstack:build`'])
+})
