@@ -90,7 +90,7 @@ The loop's playbook, with every rule of each step, is [`skills/build/SKILL.md`](
 
 | Skill | Use it |
 |---|---|
-| `build` | Any request to build, change or fix code. Asks only before the approval: a brainstorm, the spec, a grill if you want one; then runs to the end. Loop agents: `oracle`, `reviewer`, `explorer`, `mutator`. |
+| `build` | The build loop, typed by you: `/hstack:build` with a request, or with a spec's name to take it up again. Asks only before the approval: a brainstorm, the spec, a grill if you want one; then runs to the end. Loop agents: `oracle`, `reviewer`, `explorer`, `mutator`. |
 | `brainstorm` | Step 1 of `build`: the talk before the spec, which ends by writing it. Typed by you with a request, it is the start of a build. |
 | `grill` | Step 1 of `build`: a relentless interview on the spec that waits for your approval, when you ask for one. |
 | `build-implement` | Step 4 of `build`: the entry points, the edges and the design, the feature written test-first, the checks. Invoked by the loop, not by you. |

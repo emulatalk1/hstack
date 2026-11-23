@@ -77,37 +77,37 @@ test('E2: a new session ends a turn left open by an interrupt: its first message
   ends('the first turn of the new session', s.stop())
 })
 
-for (const source of ['resume', 'clear']) test(`E2: a ${source} does not end a turn that the stop hook held: the builder's change is held again after it, as 0.4.3 does`, () => {
+for (const source of ['resume', 'clear']) test(`E2: a ${source} does not end a turn that the stop hook held: the agent's change with no run is not held, before or after it (spec 9)`, () => {
   const s = scene()
   s.hookStart('startup')
   s.prompt()
   s.edit() // the builder's change, with no run
-  held('the turn of the change', s.stop(), NO_WORKFLOW)
+  ends('the turn of the change', s.stop())
   s.hookStart(source) // the process ends there and the session is resumed, or the conversation is cleared
   s.prompt()
-  held(`the first turn after the ${source}`, s.stop(), NO_WORKFLOW)
+  ends(`the first turn after the ${source}`, s.stop())
 })
 
-test('E1: the silent stop past the cap does not end the turn: after a resume gives the holds back, the builder\'s change is held again, as 0.4.3 does', () => {
+test('E1: the silent stop past the cap does not end the run: after a resume gives the holds back, the run of this session is held again (spec 9: holds are only for a run of this session)', () => {
   const s = scene()
   s.hookStart('startup')
-  s.prompt()
-  s.edit() // the builder's change, with no run
-  for (let hold = 1; hold <= 3; hold++) held(`hold ${hold}`, s.stop(), NO_WORKFLOW)
+  s.prompt(); expect(s.h('start').code).toBe(0) // a run of this session, with no spec shown yet
+  s.edit()
+  for (let hold = 1; hold <= 3; hold++) held(`hold ${hold}`, s.stop(), 'steps not recorded')
   ends('the stop past the cap', s.stop())
   s.hookStart('resume') // a new process gets its holds back
   s.prompt()
-  held('the first turn after the resume', s.stop(), NO_WORKFLOW)
+  held('the first turn after the resume', s.stop(), 'steps not recorded')
 })
 
-for (const source of ['compact', 'fork']) test(`E2: a ${source} in the middle of a turn does not end it: the builder's change before it is still held`, () => {
+for (const source of ['compact', 'fork']) test(`E2: a ${source} in the middle of a turn: a change with no run is not held (spec 9)`, () => {
   const s = scene()
   s.hookStart('startup')
   s.prompt()
   s.edit() // the builder's change, in this turn
   s.hookStart(source)
   s.prompt() // a message that arrives in the same turn
-  held(`the turn with a ${source} in it`, s.stop(), NO_WORKFLOW)
+  ends(`the turn with a ${source} in it`, s.stop())
 })
 
 // ---------- the ways out of the stop hook that end a turn ----------
@@ -123,7 +123,7 @@ test('E8: a turn that ends on a feedback verb\'s pass has ended: the user\'s com
   ends('the turn after it', s.stop())
 })
 
-test('E8: the builder\'s change in the turn of a feedback verb is held at the next turn, as 0.4.3 does', () => {
+test('E8: the agent\'s change in the turn of a feedback verb, with no run, is not held at the next turn either (spec 9)', () => {
   const s = scene()
   s.hookStart('startup')
   s.prompt()
@@ -131,7 +131,7 @@ test('E8: the builder\'s change in the turn of a feedback verb is held at the ne
   expect(s.h('feedback', 'draft').code).toBe(0)
   ends('the turn of the feedback verb', s.stop()) // the pass lets it end once
   s.prompt()
-  held('the turn after it', s.stop(), NO_WORKFLOW) // but the change is not forgiven
+  ends('the turn after it', s.stop()) // but the change is not forgiven
 })
 
 // a run of the scene's own session up to a spec that waits and was shown: the spec file is in the repository
@@ -168,17 +168,17 @@ function finishedRun(s: Scene) {
   ends('the turn that finishes the run', s.stop())
 }
 
-test('E11: a message that arrives after spec --drop in the same turn does not take the builder\'s change into the note', () => {
+test('E11: after spec --drop, a change with no run and a message in the same turn: the turn ends (spec 9)', () => {
   const s = scene()
   waitingSpec(s, true)
   s.prompt() // the next turn
   rmSync(`${s.repo}/spec.md`); expect(s.h('spec', '--drop').out).toBe('dropped')
   s.edit() // the builder's change, after the drop, with no run
   s.prompt() // a message of another session, in the same turn
-  held('the turn of the drop and the change', s.stop(), NO_WORKFLOW)
+  ends('the turn of the drop and the change', s.stop())
 })
 
-test('E13: the note outlives a start that moves an earlier run away: a run started and dropped in one turn leaves the turn open', () => {
+test('E13: a run started and dropped in one turn, then a change with no run: the turn ends (spec 9)', () => {
   const s = scene()
   s.hookStart('startup'); finishedRun(s) // an earlier session and its finished run
   s.hookStart('startup') // a new session
@@ -188,7 +188,7 @@ test('E13: the note outlives a start that moves an earlier run away: a run start
   rmSync(`${s.repo}/spec.md`); expect(s.h('spec', '--drop').out).toBe('dropped')
   s.edit() // the builder's change, with no run
   s.prompt() // a message of another session, in the same turn
-  held('the turn of the start, the drop and the change', s.stop())
+  ends('the turn of the start, the drop and the change, with no run', s.stop())
 })
 
 // ---------- a code repository of its own (.hstack/repo) ----------
@@ -232,13 +232,13 @@ test('E18: the usage line names hook-prompt', () => {
 
 // ---------- the session's reference ----------
 
-test('E3: with no reference yet, the start hook takes one also at a compact and at a fork', () => {
+test('E3: with no reference yet, after a compact or a fork, a turn ends whether or not it changed the repository, with no run (spec 9)', () => {
   for (const source of ['compact', 'fork']) {
     const s = scene() // a state folder that holds no reference: no session started here before
     s.hookStart(source)
     ends(`after the start hook (${source}), a turn in which nothing changed`, s.stop())
     s.edit()
-    held(`after the start hook (${source}), a turn in which the repository changed`, s.stop(), NO_WORKFLOW)
+    ends(`after the start hook (${source}), a turn in which the repository changed`, s.stop())
   }
 })
 
@@ -250,12 +250,12 @@ test('E14: an empty note is no note: the stop hook compares with the session\'s 
   expect(existsSync(`${s.S}/turn`)).toBe(false) // and the turn has ended: the empty note is gone
 })
 
-test('E15: when the prompt hook is the session\'s first hook call, a turn that changed nothing ends and a turn that changed the repository is held', () => {
+test('E15: when the prompt hook is the session\'s first hook call, a turn ends whether or not it changed the repository, with no run (spec 9)', () => {
   const s = scene() // the plugin was turned on in the middle of a session: no start hook ran here
   s.prompt()
   ends('a turn in which nothing changed', s.stop())
   s.prompt(); s.edit()
-  held('a turn in which the repository changed', s.stop(), NO_WORKFLOW)
+  ends('a turn in which the repository changed', s.stop())
 })
 
 test('E16: in a repository with no commit the prompt hook is silent, and a turn that changed nothing ends', () => {
@@ -282,16 +282,16 @@ test('E6: the prompt hook takes its note with an empty input, with an input that
   }
 })
 
-test('E12: a message that arrives after repo <path> in the same turn does not take the builder\'s change into the note', () => {
+test('E12: after repo <path>, a change in the code repository with no run and a message in the same turn: the turn ends (spec 9)', () => {
   const o = outer()
   o.hookStart(); silent('the prompt hook of the turn', o.prompt())
   expect(o.h(o.home, 'repo', 'code').out).toBe(o.code)
   writeFileSync(`${o.code}/src/a.txt`, 'x = 2\n') // the builder's change in the code repository, with no run
   silent('the prompt hook of a message in the same turn', o.prompt())
-  held('the turn that names the code repository and changes it', o.stop(), NO_WORKFLOW)
+  ends('the turn that names the code repository and changes it', o.stop())
 })
 
-test('E7: with a code repository of its own, the prompt hook notes the code repository: the user\'s commit there does not hold a turn, the builder\'s change there does', () => {
+test('E7: with a code repository of its own, the prompt hook notes the code repository: the user\'s commit there does not hold a turn, nor, with no run, the agent\'s change (spec 9)', () => {
   const o = outer()
   o.hookStart(); expect(o.h(o.home, 'repo', 'code').out).toBe(o.code)
   ends('the turn that names the code repository', o.stop())
@@ -300,7 +300,7 @@ test('E7: with a code repository of its own, the prompt hook notes the code repo
   ends('a turn in which nothing changed', o.stop())
   silent('the prompt hook of the next turn', o.prompt())
   writeFileSync(`${o.code}/src/a.txt`, 'x = 2\n') // the builder's change in the code repository
-  held('a turn in which the code repository changed', o.stop(), NO_WORKFLOW)
+  ends('a turn in which the code repository changed', o.stop())
 })
 
 test('E7: with a pointer that names no repository the prompt hook prints nothing and exits 0', () => {
@@ -313,12 +313,11 @@ test('E7: with a pointer that names no repository the prompt hook prints nothing
 
 const DECIDE = 'Decide from the approved spec and the code'
 const REPLY = 'end with exactly the reply the task asked for'
-test('E4: the hold after a finished run keeps the sentence on the approved spec, and the hold of a run with no spec shown does not have it', () => {
+test('E4: a change after a finished run is not held (spec 9), and the hold of a run with no spec shown does not have the sentence on the approved spec', () => {
   const done = scene()
   done.hookStart('startup'); finishedRun(done)
   done.prompt(); done.edit()
-  const after = held('after a finished run', done.stop(), 'the repository changed after the last final check')
-  expect(`after a finished run, the reason holds "${DECIDE}": ${after.includes(DECIDE)}`).toBe(`after a finished run, the reason holds "${DECIDE}": true`)
+  ends('a change after a finished run (spec 9)', done.stop())
   const started = scene()
   started.hookStart('startup'); expect(started.h('start').code).toBe(0)
   const none = held('a run with no spec shown', started.stop(), 'steps not recorded')
@@ -328,13 +327,14 @@ test('E4: the hold after a finished run keeps the sentence on the approved spec,
 
 // ---------- a spec that waits ----------
 
-test('E17: while a spec of an earlier session waits, the user\'s commit in this session still holds the turn, as 0.4.3 does', () => {
+test('E17: while a spec of an earlier session waits, the user\'s commit in this session ends the turn (spec 9), and approve then refuses', () => {
   const s = scene()
   waitingSpec(s, true) // an earlier session showed a spec; it waits
   s.hookStart('startup') // a new session
   s.commit() // the user's own commit: approve would refuse now
   s.prompt()
-  held('the turn after the commit', s.stop(), 'a spec waits for the user\'s approval')
+  ends('the turn after the commit, beside an earlier session\'s spec', s.stop())
+  expect(s.h('approve').code).not.toBe(0) // and approve refuses it
 })
 
 // ---------- the type-check ----------

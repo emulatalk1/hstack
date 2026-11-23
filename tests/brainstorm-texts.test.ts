@@ -153,12 +153,12 @@ test('14: skills/brainstorm holds the three texts and LICENSE-brainstorm, which 
   holder(`${B}/LICENSE-brainstorm`)
 })
 
-test('15: the header of the brainstorm skill: its name, a description that sends every other caller to hstack:build, and the loop can invoke it', () => {
+test('15: the header of the brainstorm skill: its name, a description that says the user starts the loop with /hstack:build (spec 9), and the loop can invoke it', () => {
   const text = raw(`${B}/SKILL.md`), f = front(text)
   expect(f).toMatch(/^name: brainstorm$/m)
   const d = description(text)
   holds('the description', d, ['Invoked by hstack:build at its step 1 and by nothing else'])
-  expect(`the description ends with "invoke hstack:build, not this.": ${d.endsWith('invoke hstack:build, not this.')}`).toBe('the description ends with "invoke hstack:build, not this.": true')
+  expect(`the description ends with "The user starts the loop by typing /hstack:build; nothing else starts it.": ${d.endsWith('The user starts the loop by typing /hstack:build; nothing else starts it.')}`).toBe('the description ends with "The user starts the loop by typing /hstack:build; nothing else starts it.": true')
   expect(f).not.toContain('disable-model-invocation')
 })
 
@@ -169,9 +169,9 @@ test('16: the brainstorm skill holds the sections and the parts of the original'
   holds('SKILL.md', text, ['**Get them describing.**', '**How it gets made.**', '**Ground to cover.**', '**Do recon.**', '**Lay out the approaches.**', '**Show, don\'t tell.**', '**Spike to feel things out.**', '**Builder check**'])
 })
 
-test('17: the brainstorm skill has a section "## In hstack": anyone the loop did not send invokes hstack:build, and the written design is the spec', () => {
+test('17: the brainstorm skill has a section "## In hstack": anyone the loop did not send does nothing there, and the user starts the loop with /hstack:build (spec 9); the written design is the spec', () => {
   const text = raw(`${B}/SKILL.md`)
-  holds('the section In hstack', section(text, '## In hstack'), ['do nothing here and invoke `hstack:build`'])
+  holds('the section In hstack', section(text, '## In hstack'), ['do nothing here: the user starts the loop by typing `/hstack:build`'])
   holds('SKILL.md', text, ['The written design of this skill is the spec of the build loop'])
 })
 
@@ -262,12 +262,12 @@ test('30: skills/grill holds SKILL.md and LICENSE-grill, which names the file an
   for (const f of others) expect(`${f} names the holder: ${flat(raw(`${G}/${f}`)).toLowerCase().includes(h)}`).toBe(`${f} names the holder: false`)
 })
 
-test('31: the header of the grill skill: its name, a description that sends every other caller to hstack:build, and the loop can invoke it', () => {
+test('31: the header of the grill skill: its name, a description that says the user starts the loop with /hstack:build (spec 9), and the loop can invoke it', () => {
   const text = raw(`${G}/SKILL.md`), f = front(text)
   expect(f).toMatch(/^name: grill$/m)
   const d = description(text)
   holds('the description', d, ['Invoked by hstack:build at its step 1 and by nothing else'])
-  expect(`the description ends with "invoke hstack:build, not this.": ${d.endsWith('invoke hstack:build, not this.')}`).toBe('the description ends with "invoke hstack:build, not this.": true')
+  expect(`the description ends with "The user starts the loop by typing /hstack:build; nothing else starts it.": ${d.endsWith('The user starts the loop by typing /hstack:build; nothing else starts it.')}`).toBe('the description ends with "The user starts the loop by typing /hstack:build; nothing else starts it.": true')
   expect(f).not.toContain('disable-model-invocation')
 })
 
@@ -276,9 +276,9 @@ test('32: the grill skill holds the original\'s text: the interview, the design 
   holds('SKILL.md', text, ['Interview the user relentlessly until you reach a shared understanding', 'design tree', 'frontier', 'Word each question so "yes" accepts your recommended answer', '❓', '➡', 'Finding _facts_ is your job, never the user\'s'])
 })
 
-test('33: the grill skill has a section "## In hstack": anyone the loop did not send invokes hstack:build; it runs on the spec that waits', () => {
+test('33: the grill skill has a section "## In hstack": anyone the loop did not send does nothing there, and the user starts the loop with /hstack:build (spec 9); it runs on the spec that waits', () => {
   const text = raw(`${G}/SKILL.md`)
-  holds('the section In hstack', section(text, '## In hstack'), ['do nothing here and invoke `hstack:build`'])
+  holds('the section In hstack', section(text, '## In hstack'), ['do nothing here: the user starts the loop by typing `/hstack:build`'])
   holds('SKILL.md', text, ['It runs on the spec that waits for the user\'s approval'])
 })
 

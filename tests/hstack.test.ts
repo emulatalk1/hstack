@@ -68,18 +68,15 @@ test('stop allows outside a git repo', () => { expect(stop('/')).toBe('') })
 // hook-start prints the nudge and sets the reference only on startup
 test('start prints the nudge', () => { expect(start('startup')).toContain('hstack:build') })
 test('stop allows when nothing changed and no run', () => { expect(stop()).toBe('') })
-test('resume keeps the reference, so a change still blocks', () => {
+test('with no run, a change is let through, after a resume too (spec 9: the loop runs only when the user invokes it)', () => {
   writeFileSync(`${R}/src/a.txt`, 'x = 2\n'); start('resume')
-  expect(stop()).toContain('without the hstack:build workflow')
+  expect(stop()).toBe('')
 })
-test('block reason restates the ending', () => { expect(stop()).toContain('end with exactly the reply the task asked for') })
-test('block output is JSON with decision block', () => { expect(stop()).toStartWith('{"decision":"block","reason":"hstack: ') })
 test('stop allows after 3 blocks in one process', () => {
   start('resume'); stop(); stop(); stop() // the count is per process: reset by start
   expect(stop()).toBe('')
 })
 test('a compaction does not give the blocks back', () => { start('compact'); expect(stop()).toBe('') })
-test('a new process gets its blocks back', () => { start('resume'); expect(stop()).toContain('block') })
 test('a capped stop with no run records no feedback', () => { expect(existsSync(`${S}/feedback`)).toBe(false); git(['checkout', '-q', '--', 'src/a.txt']) })
 
 // a run
@@ -123,7 +120,7 @@ test('done refuses while steps are missing', () => { expect(h(['done']).code).no
 test('done refuses an uncommitted change', () => { noRecords(); for (const p of ['implement', 'gate', 'review', 'mutate', 'final', 'records']) h(['phase', p]); expect(h(['done']).code).not.toBe(0) })
 test('done records HEAD', () => { git(['add', '-A']); git(['commit', '-qm', 'feature']); expect(h(['done']).code).toBe(0); expect(read(`${S}/done`).trim()).toBe(head()) })
 test('stop allows after done on a clean tree', () => { start('resume'); expect(stop()).toBe('') })
-test('stop blocks a change after done', () => { writeFileSync(`${R}/src/a.txt`, 'x = 3\n'); expect(stop()).toContain('changed after the last final check'); git(['checkout', '-q', '--', 'src/a.txt']) })
+test('stop lets a change after done through (spec 9)', () => { writeFileSync(`${R}/src/a.txt`, 'x = 3\n'); expect(stop()).toBe(''); git(['checkout', '-q', '--', 'src/a.txt']) })
 test('elapsed prints minutes', () => { expect(h(['elapsed']).out).toBe('0') })
 
 // a second run keeps the first
@@ -533,7 +530,7 @@ test('a new session allows after the user committed on a finished run', () => {
 })
 test('a new session allows on another branch than the finished run', () => { git(['checkout', '-q', '-b', 'other']); commit('b.txt', 'y = 2\n', 'another branch'); start('startup'); expect(stop()).toBe('') })
 test('a new session allows with a file left untracked before it', () => { writeFileSync(`${R}/untracked.txt`, 'u\n'); start('startup'); expect(stop()).toBe('') })
-test('a change made in the later session still blocks', () => { writeFileSync(`${R}/a.txt`, 'x = 2\n'); expect(stop()).toContain('changed after the last final check') })
+test('a change made in the later session is let through (spec 9)', () => { writeFileSync(`${R}/a.txt`, 'x = 2\n'); expect(stop()).toBe('') })
 test('a capped stop on a run of an earlier session records no feedback', () => {
   stop(); stop(); expect(stop()).toBe(''); expect(existsSync(`${S2}/feedback`)).toBe(false)
   git(['checkout', '-q', '--', 'a.txt']); rmSync(`${R}/untracked.txt`)
@@ -543,9 +540,9 @@ test('start takes the run into this session: it blocks with nothing changed', ()
 test('a resume of an unfinished run still blocks', () => { start('resume'); expect(stop()).toContain('steps not recorded: implement') })
 test('a new session allows on an abandoned run', () => { start('startup'); expect(stop()).toBe('') })
 test('and on another branch than the abandoned run', () => { git(['checkout', '-q', b0]); start('startup'); expect(stop()).toBe('') })
-test('a change in the later session blocks and names both ways on', () => {
+test('a change in the later session beside the abandoned run is let through (spec 9)', () => {
   writeFileSync(`${R}/a.txt`, 'x = 3\n'); const o = stop()
-  expect(o).toContain('steps not recorded: implement'); expect(o).toContain('For new work, run hstack:build from its start')
+  expect(o).toBe('')
   git(['checkout', '-q', '--', 'a.txt'])
 })
 
@@ -577,11 +574,12 @@ test('home prints the records home, repo the code repository', () => { expect(hi
 test('home is still the records home after a verb has run inside the code repository', () => { hin(`${O}/code`, ['dir']); expect(hin(`${O}/code`, ['home']).out).toBe(O); expect(hin(O, ['home']).out).toBe(O) })
 test('a hand-written pointer with a trailing space or newline is read without it', () => { writeFileSync(`${O}/.hstack/repo`, 'code \n\n'); expect(hin(O, ['repo']).out).toBe(`${O}/code`); writeFileSync(`${O}/.hstack/repo`, 'code\n') })
 test('a change in the home alone does not block', () => { writeFileSync(`${O}/log.txt`, 'log\nn\n'); expect(ostop()).toBe('') })
-test('a change in the code repository blocks', () => { writeFileSync(`${O}/code/src`, 's\nx\n'); expect(ostop()).toContain('"decision":"block"'); git(['checkout', '-q', '--', 'src'], `${O}/code`) })
+test('a change in the code repository with no run is let through (spec 9)', () => { writeFileSync(`${O}/code/src`, 's\nx\n'); expect(ostop()).toBe(''); git(['checkout', '-q', '--', 'src'], `${O}/code`) })
 test('repo gives the blocks back: an earlier cap in the code repository does not silence the gate', () => {
   const O2 = `${T}/o2`; outer(O2)
   writeFileSync(`${hin(`${O2}/code`, ['dir']).out}/stop-blocks`, '4\n') // an earlier session inside code/ ended at the cap
   start('startup', O2); expect(hin(O2, ['repo', 'code']).code).toBe(0)
+  expect(hin(O2, ['start']).code).toBe(0) // a run of this session in the code repository: since spec 9 only such a run is held
   writeFileSync(`${O2}/code/src`, 's\nx\n')
   expect(stop(O2)).toContain('"decision":"block"')
 })
@@ -678,9 +676,9 @@ test('a run finished by 0.3.3 lets a stop through', () => {
   old('setup', 'oracle', 'implement', 'gate', 'review', 'explore', 'mutate', 'final'); writeFileSync(`${S3}/done`, head() + '\n')
   expect(stop()).toBe('')
 })
-test('a change after a run finished by 0.3.3 reads as a change, not as missing steps', () => {
+test('a change after a run finished by 0.3.3 is let through, and names no missing steps (spec 9)', () => {
   start('startup'); writeFileSync(`${P}/src/a.txt`, 'x = 1\nz\n'); const o = stop(); git(['checkout', '-q', '--', 'src/a.txt'])
-  expect(o).toContain('changed after the last final check'); expect(o).not.toContain('steps not recorded')
+  expect(o).toBe(''); expect(o).not.toContain('steps not recorded')
 })
 test('an unfinished 0.3.3 run cannot be continued and the block says so', () => {
   old('setup', 'oracle'); start('resume')
@@ -697,7 +695,7 @@ test('ruled moves done when only record files changed', () => {
   writeFileSync(`${S3}/test-paths`, ':(glob)tests/**\n'); writeFileSync(`${S3}/record-paths`, 'progress/features.json\n:(glob)docs/specs/*.decisions.md\n')
   expect(h(['done']).code).toBe(0)
   put('progress/features.json', '[{"note":"Ruling (2026-11-20): pass"}]\n', 'a ruling'); put('docs/specs/x.decisions.md', 'decided\nRuling (2026-11-20): the user makes this theirs\n', 'a ruling on a decision')
-  expect(stop()).toContain('changed after the last final check')
+  expect(stop()).toBe('') // spec 9: a change after a finished run is let through
   expect(h(['ruled']).out).toBe(`ruling recorded at ${head()}`); expect(read(`${S3}/done`).trim()).toBe(head()); expect(stop()).toBe('')
 })
 const refusedRuling = (file: string, content: string, back: string) => {
@@ -715,7 +713,7 @@ test('ruled refuses an uncommitted change', () => {
 })
 test('ruled refuses when a file outside the records changed', () => {
   put('src/a.txt', 'x = 1\nbuilt\n', 'code')
-  const r = h(['ruled']); expect(r.code).not.toBe(0); expect(r.err).toContain('src/a.txt'); expect(stop()).toContain('changed after the last final check')
+  const r = h(['ruled']); expect(r.code).not.toBe(0); expect(r.err).toContain('src/a.txt'); expect(stop()).toBe('') // spec 9: a change after a finished run is let through
 })
 test('the nudge says how a ruling is recorded', () => { expect(start('resume')).toContain('run hstack.ts ruled') })
 

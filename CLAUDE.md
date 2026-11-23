@@ -6,17 +6,18 @@ The hooks of the build loop, and the older scripts that the skills `hstack-init`
 
 ## Hooks of `hstack:build`
 
-- A session-start nudge.
+The loop runs only when you invoke it: `/hstack:build` with a request, or with the name of a spec to take it up again. The agent cannot start it by itself.
+
+- A session-start nudge. It names a spec that waits for your approval, or an approved run of an earlier session that is not finished, with the command that takes it up.
 - A note of the repository's state, taken when a turn starts.
-- A stop gate that refuses to end an unfinished run (at most 3 times per process).
+- A stop gate that refuses to end an unfinished run of this session (at most 3 times per process).
 
-The stop gate lets through:
+The stop gate holds only two things:
 
-- a turn in which nothing changed in the repository, whatever you changed there before it (in a brainstorm, after a finished run, or beside a run that a new session finds, finished or abandoned);
-- a turn that ends with a spec for you to approve;
-- a turn you spend on `/hstack:hstack-feedback`.
+- a run that this session started and has not finished, whatever the turn changed;
+- a spec of this session that waits for your approval, when the repository changed: the approval would refuse it.
 
-While a spec waits for your approval, a change in the repository still holds the turn: the approval would refuse it. One case is left: when you interrupt a turn and then change the repository yourself, the next turn is judged from where the interrupted one started.
+Everything else ends: a turn with no run (a git sync, a small fix, a docs edit), a turn after a finished run, and a turn beside a run or a waiting spec of an earlier session. An unfinished run of an earlier session is taken up with `/hstack:build <its spec's name>`; new work beside it goes into a worktree of its own.
 
 ## Scripts
 

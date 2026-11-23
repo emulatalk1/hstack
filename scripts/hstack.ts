@@ -8,7 +8,7 @@
 // fields; never an entry's detail.
 // Every string in this file is a byte string (one char per byte, latin1): an entry or a description is checked as
 // bytes, so no encoding can drop or change what the checks should refuse. b() and u() convert at the edges.
-// usage: hstack.ts dir|repo [<path>]|home|start|spec <file>|spec --drop|approve|phase <name> [skipped: <why>]|records-check <feature list> <coverage file>|ruled|missing|lock <file>...|gate|elapsed|times [--all]|done|hook-start|hook-prompt|hook-stop
+// usage: hstack.ts dir|repo [<path>]|home|start|spec <file>|spec --drop|approve|takeup [--with-commits]|phase <name> [skipped: <why>]|records-check <feature list> <coverage file>|ruled|missing|lock <file>...|gate|elapsed|times [--all]|done|hook-start|hook-prompt|hook-stop
 //        hstack.ts feedback add <kind> <phase|none> <description on stdin|describe <id> <description on stdin
 //        hstack.ts feedback draft|post <id> <code>|dismiss <id>...|label|collect
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -23,6 +23,9 @@ const MAX_BLOCKS = 3
 
 const b = (s: string) => Buffer.from(s, 'utf8').toString('latin1')
 const u = (s: string) => Buffer.from(s, 'latin1').toString('utf8')
+// the playbook of the plugin this script is part of: an agent whose context no longer holds it reads it there (the
+// agent cannot invoke the skill)
+const PLAYBOOK = (() => { const d = b(import.meta.dir); return `${d.slice(0, d.lastIndexOf('/'))}/skills/build/SKILL.md` })()
 const env = (k: string) => (process.env[k] === undefined ? '' : b(process.env[k] as string))
 const put = (s: string) => { process.stdout.write(Buffer.from(s + '\n', 'latin1')) }
 const err = (s: string) => { process.stderr.write(Buffer.from(s + '\n', 'latin1')) }
@@ -185,7 +188,10 @@ function missing(): string {
 }
 // the time of each step: a mark per line of phases, in a file of its own (the Stop gate compares the lines of phases whole).
 // Silent: a mark that cannot be written never stops the step from being recorded.
-const mark = (line: string) => { try { ap(`${S}/phase-times`, `${now()} ${line}\n`) } catch { /* the time is the lesser file */ } }
+const mark = (line: string) => {
+  try { ap(`${S}/phase-times`, `${now()} ${line}\n`) } catch { /* the time is the lesser file */ }
+  try { wr(`${S}/last-head`, git('rev-parse', '-q', '--verify', 'HEAD').out + '\n') } catch { /* takeup then counts from the base */ } // where the run stood at its last step
+}
 // one run's lines for `times`: a line per mark, then the total; the first mark is measured from `started`
 const timesOf = (dir: string): string[] => {
   let prev: number
@@ -222,6 +228,8 @@ const stashReport = (): { note: string; changes: string[] } => {
 const recorded = (step: string) => lines(rdOr(`${S}/phases`)).some((l) => l === step || l.startsWith(`${step} skipped: `))
 // a spec waits from `spec <file>` until `approve`: state file `spec` holds its path, its hash and the code repository's fingerprint
 const waiting = () => isFile(`${S}/spec`) && !recorded('spec')
+// the time in which no session worked on the run, since the stop hook last ran, comes off the clock (a take-up, a resume)
+const idleOff = () => { try { const idle = now() - int(rd(`${S}/last-stop`)); if (idle > 0) wr(`${S}/started`, `${int(rd(`${S}/started`)) + idle}\n`) } catch { /* no stop recorded: nothing to take off */ } }
 const offClock = () => { try { wr(`${S}/started`, `${int(rd(`${S}/started`)) + now() - int(rd(`${S}/spec-asked`))}\n`) } catch { /* no clock to correct */ } }
 const recordsChanged = () => { const ok = lines(rdOr(`${S}/records-ok`)); return ok[0] === 'checked' && ok.slice(1).some((l) => { const [hash, ...f] = l.split(' '); return git('hash-object', '--', f.join(' ')).out !== hash }) }
 const moveRun = () => { // an earlier run goes to old/<time>/; what belongs to the repository and to the user's reports stays
@@ -233,14 +241,23 @@ const moveRun = () => { // an earlier run goes to old/<time>/; what belongs to t
 }
 const stdin = () => { const chunks: Buffer[] = [], buf = Buffer.alloc(65536); for (;;) { let n = 0; try { n = readSync(0, buf, 0, buf.length, null) } catch (e) { if ((e as { code?: string }).code === 'EAGAIN') continue; break } if (n <= 0) break; chunks.push(Buffer.from(buf.subarray(0, n))) } return Buffer.concat(chunks).toString('latin1') }
 
+// the folder a hook judges: the one the session works in, the cwd of the hook's input (it follows a session moved into
+// a worktree), else the project's folder, else here
+const hookDir = (input: string) => {
+  try { const c = (JSON.parse(u(input)) as { cwd?: unknown }).cwd; if (typeof c === 'string' && c !== '' && existsSync(c)) return b(c) } catch { /* no JSON: the project's folder */ }
+  return env('CLAUDE_PROJECT_DIR') || '.'
+}
+
 const argv = process.argv.slice(2).map(b)
 const cmd = argv.shift() ?? ''
 
 if (cmd === 'hook-start') {
   const input = stdin()
-  if (cd(env('CLAUDE_PROJECT_DIR') || '.') && state()) {
+  if (cd(hookDir(input)) && state()) {
     // a new process gets its blocks back; a compaction inside one does not
     if (input.includes('"source":"startup"') || input.includes('"source":"resume"')) { wr(`${S}/stop-blocks`, '0\n'); rmSync(u(`${S}/pass`), { force: true }) }
+    // a resume of the session whose approved run is not finished: the time in which nobody worked on it comes off its clock
+    if (input.includes('"source":"resume"') && recorded('spec') && !isFile(`${S}/done`) && !isFile(`${S}/stale`)) idleOff()
     // only a new session sets the reference; a resume must keep it
     // a run that a new session finds is an earlier session's (stale): the stop hook judges it only by what this session changes
     if (input.includes('"source":"startup"')) { wr(`${S}/session-head`, fingerprint() + '\n'); if (isFile(`${S}/base`)) wr(`${S}/stale`, '') }
@@ -251,8 +268,11 @@ if (cmd === 'hook-start') {
     // a session that finds no reference at all takes one, whatever started it: with none, every stop would hold
     if (!isFile(`${S}/session-head`)) wr(`${S}/session-head`, fingerprint() + '\n')
   } else if (pointerError) put(`${pointerError}: the stop gate is off until the file is right.`)
-  put('hstack is installed. For any request to build, change or fix code in this repository, invoke the hstack:build skill first. It starts with a brainstorm with the user, then a spec that the user approves: your first message says what you understood and what you found, and the user\'s answer decides what comes next. For a build, the brainstorm is hstack\'s own skill, hstack:brainstorm, not another brainstorming skill. Nothing is built before the approval; after the approval, follow it to its last step, decide from the spec and the code, and write each decision down. A message that only rules on a point the record of the project lists as waiting for a ruling is not a build: write the ruling as the rules of the record say, commit those files by path, and run hstack.ts ruled.')
-  if (S && waiting()) put(`A spec waits for the user's approval: ${first(`${S}/spec`)}. If the user's message approves it, asks for changes to it or asks for a grill of it, invoke hstack:build: its step 1 finds the waiting spec and takes the message from there (its item "The user's next message"); do not approve it yourself outside that step. If the message is a question, answer it. If it is other work to build, delete the spec file unless the user wants it kept, run \`hstack.ts spec --drop\`, then invoke hstack:build.`)
+  put('hstack is installed. Its build loop runs only when the user invokes it, by typing /hstack:build with a request or with the name of a spec: never start it yourself, and do other work as it is asked, without it. It starts with a brainstorm with the user, then a spec that the user approves: your first message says what you understood and what you found, and the user\'s answer decides what comes next. For a build, the brainstorm is hstack\'s own skill, hstack:brainstorm, not another brainstorming skill. Nothing is built before the approval; after the approval, follow it to its last step, decide from the spec and the code, and write each decision down. A message that only rules on a point the record of the project lists as waiting for a ruling is not a build: write the ruling as the rules of the record say, commit those files by path, and run hstack.ts ruled.')
+  // the name a spec is taken up by: its file name, without its folder and without .md
+  const specName = (f: string) => base(f).replace(/\.md$/, '')
+  if (S && waiting()) put(`A spec waits for the user's approval: ${first(`${S}/spec`)}. The user takes it up by typing /hstack:build ${specName(first(`${S}/spec`))}: the playbook's step 1 then finds the waiting spec, and the user's answer, whether it approves it, asks for changes to it or asks for a grill of it, is taken as its item "The user's next message". If the user answers it without that command, tell them to type it; do not approve the spec yourself. If the message is a question, answer it. Other work does not need it: the spec goes on waiting, and approve refuses it if the repository changes in the meantime.`)
+  else if (S && isFile(`${S}/stale`) && recorded('spec') && !isFile(`${S}/done`)) put(`An approved hstack:build run of an earlier session is not finished: spec ${first(`${S}/spec`)}; steps not recorded: ${missing()}. The user goes on with it by typing /hstack:build ${specName(first(`${S}/spec`))}. Other work does not need it.`)
   process.exit(0)
 }
 
@@ -265,15 +285,15 @@ if (cmd === 'hook-start') {
 // of 2 would stop the user's message.
 if (cmd === 'hook-prompt') {
   try {
-    stdin()
-    if (cd(env('CLAUDE_PROJECT_DIR') || '.') && state() && !isFile(`${S}/turn`)) wr(`${S}/turn`, fingerprint() + '\n')
+    const input = stdin()
+    if (cd(hookDir(input)) && state() && !isFile(`${S}/turn`)) wr(`${S}/turn`, fingerprint() + '\n')
   } catch { /* silent: without a note the stop hook compares with the session's reference, as before */ }
   process.exit(0)
 }
 
 if (cmd === 'hook-stop') {
-  stdin()
-  if (!(cd(env('CLAUDE_PROJECT_DIR') || '.') && state())) process.exit(0)
+  if (!(cd(hookDir(stdin())) && state())) process.exit(0)
+  try { wr(`${S}/last-stop`, `${now()}\n`) } catch { /* the clock is the lesser file */ } // a session worked on this folder until now
   // the turn's note, when the prompt hook took one; without it the reference is the session's, as before the prompt hook
   const note = first(`${S}/turn`)
   const ref = note || first(`${S}/session-head`)
@@ -284,7 +304,6 @@ if (cmd === 'hook-stop') {
   // The turn is over for the note only when nothing changed in it: a change made in the turn of a feedback verb is
   // judged at the next stop, as it was when the session had one reference.
   if (isFile(`${S}/pass`)) { rmSync(u(`${S}/pass`), { force: true }); if (fingerprint() === ref) end(); process.exit(0) }
-  const head = git('rev-parse', '-q', '--verify', 'HEAD').out
   const stale = isFile(`${S}/stale`)
   let why = '', m = ''
   // a spec waits for the user: the turn may end, and that end is the proof that the user was shown it. This comes
@@ -293,26 +312,19 @@ if (cmd === 'hook-stop') {
   if (waiting()) {
     const fp = fingerprint()
     if (fp === (lines(rd(`${S}/spec`))[2] ?? '')) { if (!isFile(`${S}/spec-shown`)) wr(`${S}/spec-shown`, `${now()}\n`); end() }
-    // the repository changed while the spec waited, and not in this session: a question is not a build, and approve will refuse
-    // (the session's reference, not the turn's note: while a spec waits, nothing is as the user left it between two turns)
-    if (stale && fp === first(`${S}/session-head`)) end()
+    // a spec of an earlier session is not this session's: the turn ends, and approve refuses a repository that changed
+    if (stale) end()
     why = "a spec waits for the user's approval and nothing is built before it. If the changes made since the spec was shown are yours, undo them and end the turn as the playbook's item 'Show it' says; if the user made them, run spec --drop and start again."
-  } else if (isFile(`${S}/done`) && first(`${S}/done`) === head && git('status', '--porcelain').out === '') end()
-  // an earlier session's run, finished or abandoned, and nothing changed in this turn (without a note: in this session): a question, not a build
-  else if (stale && fingerprint() === ref) end()
-  // a run that this session finished, and nothing changed in this turn: what changed since the final check is the user's
-  else if (isFile(`${S}/done`) && note && fingerprint() === note) end()
-  if (why) { /* the waiting spec's reason stands */ } else if (isFile(`${S}/base`)) {
-    // a run that 0.3.3 or earlier recorded has no spec line and no records line: a finished one is finished, whatever
-    // its steps were then; an unfinished one cannot go on, because phase would refuse
-    m = isFile(`${S}/done`) ? '' : missing()
-    if (m && !recorded('spec') && rdOr(`${S}/phases`) !== '') { m = ''; why = 'an hstack:build run of an earlier version was left unfinished and cannot be continued. Run hstack:build from its start.' } else
-    if (m && stale) why = `an earlier hstack:build run was left unfinished (steps not recorded: ${m}). For new work, run hstack:build from its start; to finish that run, continue from the first of them.`
-    else if (m) why = `the hstack:build run is not finished; steps not recorded: ${m}. Continue hstack:build from the first of them.`
-    else why = 'the repository changed after the last final check. If this is new work, run hstack:build from its start; otherwise run its final step again.'
-  } else {
-    if (fingerprint() === ref) end() // nothing changed in this turn (without a note: in this session): a question, not a build
-    why = 'the repository changed without the hstack:build workflow. Invoke the hstack:build skill and follow it to the end.'
+  }
+  // the loop runs only when the user invokes it: with no run, after a finished run and beside a run of an earlier
+  // session, whatever changed, the turn ends. Only a run of this session that is not finished is held.
+  else if (!isFile(`${S}/base`) || isFile(`${S}/done`) || stale) end()
+  else {
+    // a run that 0.3.3 or earlier recorded has no spec line and no records line: an unfinished one cannot go on,
+    // because phase would refuse
+    m = missing()
+    if (!recorded('spec') && rdOr(`${S}/phases`) !== '') { m = ''; why = 'an hstack:build run of an earlier version was left unfinished and cannot be continued. Run hstack:build from its start.' }
+    else why = `the hstack:build run is not finished; steps not recorded: ${m}. Continue hstack:build from the first of them; if its playbook is not in your context, read ${PLAYBOOK}.`
   }
   let n = 0
   try { n = int(rdOr(`${S}/stop-blocks`, '0')) } catch { n = NaN }
@@ -567,6 +579,22 @@ switch (cmd) {
     break
   }
 
+  case 'takeup': { // an approved run of an earlier session, taken up by this one: the user typed /hstack:build <its spec's name>
+    if (!isFile(`${S}/base`) || !recorded('spec') || isFile(`${S}/done`)) die('hstack: no approved run that is not finished: nothing to take up')
+    if (!isFile(`${S}/stale`)) die('hstack: the run is this session\'s: go on with it from its first unrecorded step')
+    // the run's own commits must still be in the history: after a reset or a rewrite, its work and its tests are gone
+    for (const c of [first(`${S}/base`), first(`${S}/oracle-commit`)].filter((c) => c !== ''))
+      if (git('merge-base', '--is-ancestor', c, 'HEAD').code !== 0) die(`hstack: the run's commit ${c} is no longer in the history of HEAD: the run cannot go on. Start again with /hstack:build`)
+    // the commits made since the run's last step may be another's work: the user decides whether the run takes them in
+    const since = git('log', '--format=%h %s', `${first(`${S}/last-head`) || first(`${S}/base`)}..HEAD`).out
+    if (since !== '' && argv[0] !== '--with-commits') { put(`commits made since the run's last step:\n${since}`); err('hstack: ask the user whether the run goes on with these commits in it; on their yes, run takeup --with-commits'); process.exit(2) }
+    // this session's run from now on: the stop hook holds it, with its holds given back, and this session's reference
+    rmSync(u(`${S}/stale`), { force: true }); wr(`${S}/stop-blocks`, '0\n'); wr(`${S}/session-head`, fingerprint() + '\n')
+    idleOff()
+    put(`taken up: go on from ${missing().split(' ')[0]}`)
+    break
+  }
+
   case 'ruled': { // the user ruled on a point of the record after a run: record files changed, and nothing else
     if (!isFile(`${S}/done`)) die('hstack: no finished run: a ruling is recorded after a run is done')
     if (git('status', '--porcelain').out !== '') die('hstack: commit the ruling first')
@@ -688,5 +716,5 @@ switch (cmd) {
     break
   }
 
-  default: die('usage: hstack.ts dir|repo [<path>]|home|start|spec|approve|phase|records-check|ruled|missing|lock|gate|elapsed|times|done|feedback|hook-start|hook-prompt|hook-stop')
+  default: die('usage: hstack.ts dir|repo [<path>]|home|start|spec|approve|takeup|phase|records-check|ruled|missing|lock|gate|elapsed|times|done|feedback|hook-start|hook-prompt|hook-stop')
 }

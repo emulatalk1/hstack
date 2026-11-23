@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: Step 1 of the hstack build loop - the brainstorm with the user that ends in the spec. Invoked by hstack:build at its step 1 and by nothing else. For any request to build, change or fix code, invoke hstack:build, not this.
+description: Step 1 of the hstack build loop - the brainstorm with the user that ends in the spec. Invoked by hstack:build at its step 1 and by nothing else. The user starts the loop by typing /hstack:build; nothing else starts it.
 ---
 
 # Brainstorming
@@ -16,14 +16,14 @@ hundred decisions they never mention the way they would have made them.
 
 ## In hstack
 
-You are here from step 1 of `hstack:build`, at its item "Brainstorm". If that is not so, do nothing here and invoke `hstack:build`, which sends you back here at the right moment. Invoked by the user themselves, it is the start of a build: `hstack:build` takes their request from its step 1.
+You are here from step 1 of `hstack:build`, at its item "Brainstorm". If that is not so, do nothing here: the user starts the loop by typing `/hstack:build`, which sends you back here at the right moment. Invoked by the user themselves, it is the start of a build: read the playbook beside this skill, `../build/SKILL.md` from this skill's base directory, and run it from its step 1 with their request.
 
 This is the conversation before the spec. The text below is followed as it stands; what hstack adds to it:
 
 - **The written design of this skill is the spec of the build loop.** It is one file, in the form the playbook's step 1 gives, and your human partner approves it there. There is no second document beside it and no plan after it: after the approval the loop runs to its end alone.
 - **Your first message always comes,** in every session, however plain the request looks. Their answer to it decides whether you write the spec at once or the conversation goes on. Do not guess whether a person is there.
 - **Only what was discussed and agreed is written.** A question that comes up later, the second reader's too, goes to your human partner first; its answer is written after it is given.
-- **Nothing in the repository changes before the spec is approved but the spec file itself,** and until the playbook's `start` no command of the loop's script runs but `dir`: before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop's stop hook holds a turn in which the repository changed, and a turn that ends after `start` with no spec shown. From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner). A spike is built outside the repository, and mock-ups live in the loop's state folder.
+- **Nothing in the repository changes before the spec is approved but the spec file itself,** and until the playbook's `start` no command of the loop's script runs but `dir`: before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop's stop hook holds a turn that ends after `start` with no spec shown. From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner). A spike is built outside the repository, and mock-ups live in the loop's state folder.
 - **Looking includes the project's records:** the list of features and their steps, the coverage file, the log, earlier specs and the decisions files beside them. A place where the request goes against one of them is raised in the conversation, not first written into the spec.
 
 ## First: What Do You Actually Know?

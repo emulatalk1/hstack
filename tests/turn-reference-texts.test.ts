@@ -30,15 +30,15 @@ const paragraphs = (file: string) => raw(file).split(/\n\s*\n/).map((p) => flat(
 const BRAINSTORM = 'skills/brainstorm/SKILL.md'
 
 // the words of the spec (section 2, "The words")
-const REASON = 'before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop\'s stop hook holds a turn in which the repository changed, and a turn that ends after `start` with no spec shown'
+const REASON = 'before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop\'s stop hook holds a turn that ends after `start` with no spec shown'
 const OLD_REASON = 'the loop\'s stop hook would hold such a turn'
-const POINT = '- **Nothing in the repository changes before the spec is approved but the spec file itself,** and until the playbook\'s `start` no command of the loop\'s script runs but `dir`: before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop\'s stop hook holds a turn in which the repository changed, and a turn that ends after `start` with no spec shown. From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner). A spike is built outside the repository, and mock-ups live in the loop\'s state folder.'
+const POINT = '- **Nothing in the repository changes before the spec is approved but the spec file itself,** and until the playbook\'s `start` no command of the loop\'s script runs but `dir`: before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop\'s stop hook holds a turn that ends after `start` with no spec shown. From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner). A spike is built outside the repository, and mock-ups live in the loop\'s state folder.'
 const SPIKE_END = 'before the spec is approved, nothing in the repository changes but the spec file itself.'
 const SPIKE_LAST = 'Build a spike in a scratch folder outside the repository: before the spec is approved, nothing in the repository changes but the spec file itself.'
 
 // ---------- the brainstorm skill ----------
 
-test('19: the section "## In hstack" of skills/brainstorm/SKILL.md holds the new reason (the script refuses spec, phase and approve before start, and the stop hook holds a turn in which the repository changed, and a turn that ends after start with no spec shown), and no longer holds "the loop\'s stop hook would hold such a turn"', () => {
+test('19: the section "## In hstack" of skills/brainstorm/SKILL.md holds the new reason (the script refuses spec, phase and approve before start, and the stop hook holds a turn that ends after start with no spec shown; spec 9 took out the turn in which the repository changed), and no longer holds "the loop\'s stop hook would hold such a turn"', () => {
   const s = section(raw(BRAINSTORM), '## In hstack')
   holds('the section In hstack', s, [REASON])
   lacks('the section In hstack', s, [OLD_REASON])

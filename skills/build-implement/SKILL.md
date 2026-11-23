@@ -1,11 +1,11 @@
 ---
 name: build-implement
-description: Step 4 of the hstack build loop - the entry points, the edges and the design, the feature written test-first, the checks. Invoked by hstack:build at its step 4 and by nothing else. For any request to build, change or fix code, invoke hstack:build, not this.
+description: Step 4 of the hstack build loop - the entry points, the edges and the design, the feature written test-first, the checks. Invoked by hstack:build at its step 4 and by nothing else. The user starts the loop by typing /hstack:build; nothing else starts it.
 ---
 
 # hstack build-implement: step 4 of the build loop
 
-You are here from step 4 of `hstack:build`: that loop gave you `H` and `S`, and its steps 1 to 3 ran in this session. If that is not so (you came here straight from a request to build, change or fix something), do nothing here and invoke `hstack:build`, which starts the run. If it is so, run `$H missing`: its first word must be `implement`. If it is another step, go back to that step in the loop; never run `$H start` again in this run. Every command below runs in the code repository, as the loop's rule of the two folders says.
+You are here from step 4 of `hstack:build`: that loop gave you `H` and `S`, and its steps 1 to 3 ran in this session. If that is not so (you came here straight from a request to build, change or fix something), do nothing here: the user starts the loop by typing `/hstack:build`, which starts the run. If it is so, run `$H missing`: its first word must be `implement`. If it is another step, go back to that step in the loop; never run `$H start` again in this run. Every command below runs in the code repository, as the loop's rule of the two folders says.
 
 Do the items below in order, then go back to the loop for the commit and `$H phase implement`.
 

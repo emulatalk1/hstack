@@ -161,11 +161,11 @@ test('38: a turn that ends in a brainstorm (no run started, nothing changed in t
   expect(s.h('start').code).toBe(0)
   expect(s.h('elapsed').out).toBe('0')
   expect(existsSync(`${s.S}/mockups/session-1/content/one.html`)).toBe(true) // the mock-ups stay in the state folder
-  // the gate is not simply off: in a session with no run, a turn that changed the repository is blocked
+  // spec 9: the loop runs only when the user invokes it: in a session with no run, a turn that changed the repository ends too
   const other = scene()
   other.hookStart('startup'); expect(other.stop()).toBe('')
   writeFileSync(`${other.repo}/src/a.txt`, 'x = 2\n')
-  expect(other.stop().startsWith('{"decision":"block"')).toBe(true)
+  expect(other.stop()).toBe('')
 })
 
 test('38: a brainstorm in a new session, after an earlier run that is finished, is not blocked either, and the new run\'s clock starts at its start', () => {

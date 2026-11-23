@@ -114,7 +114,7 @@ test('24: the builder check puts no answer of the builder into the spec: not for
 
 test('49: in the grill skill the sentence on no waiting spec comes before the one that sends other callers to hstack:build', () => {
   const s = flat(section(raw('skills/grill/SKILL.md'), '## In hstack'))
-  const none = s.indexOf("With no spec waiting for the user's approval, say so and do nothing"), other = s.indexOf('do nothing here and invoke `hstack:build`')
+  const none = s.indexOf("With no spec waiting for the user's approval, say so and do nothing"), other = s.indexOf('do nothing here: the user starts the loop by typing `/hstack:build`')
   expect(none).toBeGreaterThanOrEqual(0); expect(other).toBeGreaterThan(none)
 })
 

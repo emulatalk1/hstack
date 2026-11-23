@@ -81,7 +81,7 @@ test("E10: item 2 sends the builder to three files of the skill's base directory
 test('E14: the description of the step 4 skill and its row in the README name the design', () => {
   const front = raw(STEP4).split('\n---')[0]
   holds(`the header of ${STEP4}`, front, ['description: Step 4 of the hstack build loop - the entry points, the edges and the design, the feature written test-first, the checks.'])
-  yes(`the description of ${STEP4} still ends with "invoke hstack:build, not this."`, /^description: .*invoke hstack:build, not this\.$/m.test(front))
+  yes(`the description of ${STEP4} ends with "The user starts the loop by typing /hstack:build; nothing else starts it." (spec 9)`, /^description: .*The user starts the loop by typing \/hstack:build; nothing else starts it\.$/m.test(front))
   const row = raw('README.md').split('\n').find((l) => l.startsWith('| `build-implement` |')) ?? ''
   holds('the row of build-implement in the README', row, ['the entry points, the edges and the design, the feature written test-first, the checks'])
 })

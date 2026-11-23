@@ -61,15 +61,15 @@ test("the builder's test rules: no ask of a human, no upstream name, the licence
   for (const s of ['tdd.md', 'writing-good-tests.md', 'Permission is hereby granted', 'Copyright (c)']) expect(licence).toContain(s);
 });
 
-test('hstack:build-implement is step 4: the loop can invoke it, and it sends anyone else to the loop', async () => {
+test('hstack:build-implement is step 4: the loop can invoke it, and it tells anyone else that the user starts the loop with /hstack:build (spec 9)', async () => {
   const text = await skill('build-implement');
   const front = text.split('\n---')[0];
   expect(front).toMatch(/^name: build-implement$/m);
-  expect(front).toMatch(/^description: .*invoke hstack:build, not this\.$/m);
+  expect(front).toMatch(/^description: .*The user starts the loop by typing \/hstack:build; nothing else starts it\.$/m);
   expect(front).not.toMatch(/disable-model-invocation/); // the playbook must be able to trigger it
   // the cycle is one test at a time, and a change after green starts a new one: the first run did neither
   for (const s of ['one decided edge or rule per cycle', 'Only then write the next test', 'is a new cycle and starts with a test that fails', "the cycle's refactor step changes none of these", 'A next test that passes at once', 'break that code, see the test fail, undo that one edit by hand']) expect(text).toContain(s);
-  for (const s of ['do nothing here and invoke `hstack:build`', 'its first word must be `implement`', 'never run `$H start` again', 'tdd.md', 'writing-good-tests.md', '## Entry points', '## Edges', 'without editing them', 'type-check']) expect(text).toContain(s);
+  for (const s of ['do nothing here: the user starts the loop by typing `/hstack:build`', 'its first word must be `implement`', 'never run `$H start` again', 'tdd.md', 'writing-good-tests.md', '## Entry points', '## Edges', 'without editing them', 'type-check']) expect(text).toContain(s);
 });
 
 test('build is a playbook: step 4 invokes hstack:build-implement', async () => {

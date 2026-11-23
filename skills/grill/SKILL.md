@@ -1,11 +1,11 @@
 ---
 name: grill
-description: Step 1 of the hstack build loop - the grill of the spec that waits for the user's approval, when the user asks for one. Invoked by hstack:build at its step 1 and by nothing else. For any request to build, change or fix code, invoke hstack:build, not this.
+description: Step 1 of the hstack build loop - the grill of the spec that waits for the user's approval, when the user asks for one. Invoked by hstack:build at its step 1 and by nothing else. The user starts the loop by typing /hstack:build; nothing else starts it.
 ---
 
 ## In hstack
 
-A grill is of a spec. With no spec waiting for the user's approval, say so and do nothing (a spec waits when the loop's state folder holds the file `spec` and its file `phases` has no line `spec`). With one waiting: you are here from step 1 of `hstack:build`, at the case "A grill" of its item "The user's next message", because the user asked for a grill. If the loop did not send you, do nothing here and invoke `hstack:build`, which sends you back here.
+A grill is of a spec. With no spec waiting for the user's approval, say so and do nothing (a spec waits when the loop's state folder holds the file `spec` and its file `phases` has no line `spec`). With one waiting: you are here from step 1 of `hstack:build`, at the case "A grill" of its item "The user's next message", because the user asked for a grill. If the loop did not send you, do nothing here: the user starts the loop by typing `/hstack:build`, which sends you back here.
 
 The text below is followed as it stands; what hstack adds to it:
 

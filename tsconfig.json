@@ -36,6 +36,8 @@
     "tests/design-follow-ups-frame.test.ts",
     "tests/design-follow-ups-edges.test.ts",
     "tests/last-reply-step-lines-and-log-texts.test.ts",
-    "tests/last-reply-step-lines-and-log-edges.test.ts"
+    "tests/last-reply-step-lines-and-log-edges.test.ts",
+    "tests/build-on-demand.test.ts",
+    "tests/build-on-demand-edges.test.ts"
   ]
 }

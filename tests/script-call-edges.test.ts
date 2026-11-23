@@ -27,7 +27,7 @@ function points(): string[] {
 }
 
 test('E2: the fourth point of In hstack holds the spec\'s words in the spec\'s order, and keeps its sentence on the spike and the mock-ups', () => {
-  expect(points()[3]).toBe('- **Nothing in the repository changes before the spec is approved but the spec file itself,** and until the playbook\'s `start` no command of the loop\'s script runs but `dir`: before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop\'s stop hook holds a turn in which the repository changed, and a turn that ends after `start` with no spec shown. From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner). A spike is built outside the repository, and mock-ups live in the loop\'s state folder.')
+  expect(points()[3]).toBe('- **Nothing in the repository changes before the spec is approved but the spec file itself,** and until the playbook\'s `start` no command of the loop\'s script runs but `dir`: before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop\'s stop hook holds a turn that ends after `start` with no spec shown. From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner). A spike is built outside the repository, and mock-ups live in the loop\'s state folder.')
 })
 
 test('E3: the section In hstack keeps its five points, in their order', () => {

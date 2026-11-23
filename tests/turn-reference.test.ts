@@ -237,20 +237,20 @@ test('5: the same when the earlier session had a turn that ended, and when the c
 })
 
 for (const source of ['resume', 'clear']) {
-  test(`6: in a repository whose state folder holds no reference yet, after the start hook (${source}) and with no prompt hook, the stop hook lets a turn end in which nothing changed, and holds one in which the repository changed`, () => {
+  test(`6: in a repository whose state folder holds no reference yet, after the start hook (${source}) and with no prompt hook, the stop hook lets a turn end in which nothing changed, and, with no run (spec 9), one in which the repository changed`, () => {
     const s = scene()
     s.hookStart(source)
     ends('a turn in which nothing changed', s.stop())
     ends('a second one', s.stop())
     s.edit()
-    reason(s.stop())
+    ends('a turn with no run in which the repository changed', s.stop())
   })
-  test(`6: the same after the start hook (${source}) when the change is a commit: the turn is held`, () => {
+  test(`6: the same after the start hook (${source}) when the change is a commit: with no run (spec 9), the turn ends`, () => {
     const s = scene()
     s.hookStart(source)
     ends('a turn in which nothing changed', s.stop())
     s.commit()
-    reason(s.stop())
+    ends('a commit with no run', s.stop())
   })
 }
 
@@ -280,29 +280,29 @@ for (const kind of EARLIER) test(`8: the same beside a run (${kind}) of an earli
 // ---------- what is still held ----------
 
 for (const [what, change] of [['a tracked file edited', (s: Scene) => s.edit()], ['a new file', (s: Scene) => s.add()], ['a commit', (s: Scene) => s.commit()]] as [string, (s: Scene) => void][])
-  test(`9: with no run started, a change made in the repository after the prompt hook (${what}) is held, with a reason that holds "${NO_WORKFLOW}"`, () => {
+  test(`9: with no run started, a change made in the repository after the prompt hook (${what}) ends the turn (spec 9: the loop runs only when the user invokes it)`, () => {
     const s = scene()
     s.hookStart('startup')
     s.prompt(); change(s)
-    heldWith(s.stop(), NO_WORKFLOW)
+    ends('a change with no run', s.stop())
   })
 
-test('9: the builder\'s change is held also when the user changed the repository before the turn: a commit, the prompt hook, then a change', () => {
+test('9: with no run, a change ends the turn also when the user changed the repository before it: a commit, the prompt hook, then a change (spec 9)', () => {
   const s = scene()
   s.hookStart('startup')
   s.prompt(); ends('turn 1', s.stop())
   s.commit(); s.edit('src/a.txt') // the user's: a commit, and an edit that is not committed
   s.prompt()
-  s.edit('src/b.txt') // the builder's, in another file
-  heldWith(s.stop(), NO_WORKFLOW)
+  s.edit('src/b.txt') // the agent's, in another file
+  ends('a change with no run', s.stop())
 })
 
 for (const [what, change] of [['a tracked file edited', (s: Scene) => s.edit()], ['a commit', (s: Scene) => s.commit()]] as [string, (s: Scene) => void][])
-  test(`10: after a run that this session finished, a change made in the repository after the prompt hook (${what}) is held, with a reason that holds "${AFTER_FINAL}"`, () => {
+  test(`10: after a run that this session finished, a change made in the repository after the prompt hook (${what}) ends the turn (spec 9)`, () => {
     const s = scene()
     finishedHere(s)
     s.prompt(); change(s)
-    heldWith(s.stop(), AFTER_FINAL)
+    ends('a change after the finished run', s.stop())
   })
 
 test('10: the same when the user committed before that turn: a commit, the prompt hook, then a change', () => {
@@ -310,22 +310,22 @@ test('10: the same when the user committed before that turn: a commit, the promp
   finishedHere(s)
   s.commit(); s.prompt()
   s.edit()
-  heldWith(s.stop(), AFTER_FINAL)
+  ends('a change after the finished run', s.stop())
 })
 
-for (const kind of EARLIER) test(`11: beside a run of an earlier session (${kind}), a change made in the repository after the prompt hook is held`, () => {
+for (const kind of EARLIER) test(`11: beside a run of an earlier session (${kind}), a change made in the repository after the prompt hook ends the turn (spec 9)`, () => {
   const s = scene()
   besideEarlier(s, kind)
-  s.commit(); s.prompt() // the user's commit before the turn does not hide what the turn changes
+  s.commit(); s.prompt()
   s.edit()
-  reason(s.stop())
+  ends('a change beside an earlier session\'s run', s.stop())
 })
 
 test('11: the same when the change is a commit made after the prompt hook, beside a finished run of an earlier session', () => {
   const s = scene()
   besideEarlier(s, 'finished')
   s.prompt(); s.commit()
-  reason(s.stop())
+  ends('a commit beside an earlier session\'s finished run', s.stop())
 })
 
 test('12: an approved run that is not finished, in the session that started it, is held when the prompt hook ran, with a reason that holds "steps not recorded"', () => {
@@ -388,12 +388,12 @@ test('13: while a spec waits and nothing changed, a turn after the prompt hook e
 
 // ---------- the note is taken only when the turn before has ended ----------
 
-test('14: with no run started, a change made in the repository after the prompt hook, and then the prompt hook once more before any stop hook: the stop hook holds the turn', () => {
+test('14: with no run started, a change made in the repository after the prompt hook, and then the prompt hook once more before any stop hook: the turn ends (spec 9)', () => {
   const s = scene()
   s.hookStart('startup')
   s.prompt(); s.edit()
   s.prompt() // a message that arrives in the middle of the turn
-  heldWith(s.stop(), NO_WORKFLOW)
+  ends('a change with no run', s.stop())
 })
 
 test('14: the same when the change is a commit, in a turn after one that ended', () => {
@@ -402,36 +402,38 @@ test('14: the same when the change is a commit, in a turn after one that ended',
   s.prompt(); ends('turn 1', s.stop())
   s.prompt(); s.commit()
   s.prompt(); s.prompt()
-  heldWith(s.stop(), NO_WORKFLOW)
+  ends('a commit with no run', s.stop())
 })
 
-test('15: a turn that the stop hook held stays the same turn: the prompt hook after that hold changes nothing, and the next stop hook holds again (up to the cap of three holds)', () => {
+test('15: a turn that the stop hook held stays the same turn: the prompt hook after that hold changes nothing, and the next stop hook holds again (up to the cap of three holds), inside a run of this session (spec 9)', () => {
   const s = scene()
-  s.hookStart('startup')
-  s.prompt(); s.edit()
-  heldWith(s.stop(), NO_WORKFLOW)
+  s.hookStart('startup'); approved(s, true)
+  s.edit()
+  heldWith(s.stop(), NOT_RECORDED)
   s.prompt()
-  heldWith(s.stop(), NO_WORKFLOW)
+  heldWith(s.stop(), NOT_RECORDED)
   s.prompt()
-  heldWith(s.stop(), NO_WORKFLOW)
+  heldWith(s.stop(), NOT_RECORDED)
+  s.prompt()
+  ends('the stop past the cap', s.stop())
 })
 
-test('16: after a turn that was interrupted (its prompt hook ran, no stop hook did): a commit, then the prompt hook, and the stop hook holds that turn, as 0.4.3 does', () => {
+test('16: after a turn that was interrupted (its prompt hook ran, no stop hook did): a commit, then the prompt hook, and with no run (spec 9) the turn ends', () => {
   const s = scene()
   s.hookStart('startup')
   s.prompt() // the turn the user interrupts: no stop hook runs
   s.commit(); s.prompt()
-  heldWith(s.stop(), NO_WORKFLOW)
+  ends('a commit after an interrupted turn, with no run', s.stop())
 })
 
 // ---------- without the new hook ----------
 
-test('17: in a session in which the prompt hook never runs, after the start hook (startup) and a commit made in the repository, the stop hook holds the turn, with a reason that holds "the repository changed without the hstack:build workflow"', () => {
+test('17: in a session in which the prompt hook never runs, after the start hook (startup) and a commit made in the repository, with no run the stop hook lets the turn end (spec 9)', () => {
   const s = scene()
   s.hookStart('startup')
   ends('a turn before anything changed', s.stop())
   s.commit()
-  heldWith(s.stop(), NO_WORKFLOW)
+  ends('a commit with no run', s.stop())
 })
 
 test('17: the same after a resume, which keeps the reference of the session that was resumed', () => {
@@ -439,18 +441,15 @@ test('17: the same after a resume, which keeps the reference of the session that
   s.hookStart('startup')
   s.commit()
   s.hookStart('resume')
-  heldWith(s.stop(), NO_WORKFLOW)
+  ends('a commit with no run, after a resume', s.stop())
 })
 
 // ---------- the reason of a hold ----------
 
-test('18: the reason of the hold with no run started does not hold "Decide from the approved spec and the code", and holds "end with exactly the reply the task asked for"', () => {
+test('18: with no run started there is no hold, and so no reason (spec 9)', () => {
   const s = scene()
   s.hookStart('startup'); s.edit()
-  const r = reason(s.stop())
-  expect(`the reason holds "${NO_WORKFLOW}": ${r.includes(NO_WORKFLOW)}`).toBe(`the reason holds "${NO_WORKFLOW}": true`)
-  expect(`the reason holds "${DECIDE}": ${r.includes(DECIDE)}`).toBe(`the reason holds "${DECIDE}": false`)
-  expect(`the reason holds "${REPLY}": ${r.includes(REPLY)}`).toBe(`the reason holds "${REPLY}": true`)
+  ends('a change with no run', s.stop())
 })
 
 test('18: the reason of the hold while a spec waits does not hold "Decide from the approved spec and the code", and holds "end with exactly the reply the task asked for"', () => {
@@ -471,16 +470,16 @@ test('18: the reason of the hold of an approved, unfinished run holds "Decide fr
   expect(`the reason holds "${REPLY}": ${r.includes(REPLY)}`).toBe(`the reason holds "${REPLY}": true`)
 })
 
-test('18: the three reasons are the same when the prompt hook ran', () => {
+test('18: the two reasons are the same when the prompt hook ran, and with no run there is still no hold (spec 9)', () => {
   const none = scene()
   none.hookStart('startup'); none.prompt(); none.edit()
-  const a = reason(none.stop())
+  ends('a change with no run', none.stop())
   const waits = scene()
   waiting(waits, true); waits.prompt(); waits.edit()
   const b = reason(waits.stop())
   const run = scene()
   run.hookStart('startup'); approved(run, true)
   const c = reason(run.stop())
-  expect([a.includes(DECIDE), b.includes(DECIDE), c.includes(DECIDE)]).toEqual([false, false, true])
-  expect([a.includes(REPLY), b.includes(REPLY), c.includes(REPLY)]).toEqual([true, true, true])
+  expect([b.includes(DECIDE), c.includes(DECIDE)]).toEqual([false, true])
+  expect([b.includes(REPLY), c.includes(REPLY)]).toEqual([true, true])
 })

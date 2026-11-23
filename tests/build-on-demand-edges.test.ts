@@ -1,0 +1,205 @@
+// The builder's tests of spec 9 (`docs/specs/2026-11-23-build-on-demand.md`): the edges of its decisions file
+// (`docs/specs/2026-11-23-build-on-demand.decisions.md`), each named by its number there. The oracle's tests are in
+// tests/build-on-demand.test.ts. Every test makes a scratch repository and a state folder of its own (HSTACK_STATE,
+// HOME pointed there too), so the machine's ~/.hstack is never touched.
+import { afterAll, expect, setDefaultTimeout, test } from 'bun:test'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+setDefaultTimeout(60000)
+const SCRIPT = join(import.meta.dir, '../scripts/hstack.ts')
+const BUN = process.execPath
+const T = realpathSync(mkdtempSync(join(tmpdir(), 'hstack-on-demand-edges-')))
+const wipe = () => rmSync(T, { recursive: true, force: true })
+afterAll(wipe)
+process.on('exit', wipe)
+
+const CLEAN: Record<string, string> = {}
+for (const [k, v] of Object.entries(process.env)) if (v !== undefined && k !== 'CLAUDE_PROJECT_DIR' && k !== 'HSTACK_STATE' && k !== 'HSTACK_FEEDBACK_REPO') CLEAN[k] = v
+CLEAN.HOME = `${T}/home`
+mkdirSync(CLEAN.HOME, { recursive: true })
+
+type Out = { code: number; out: string; err: string }
+function sh(cmd: string[], cwd: string, env: Record<string, string>, stdin?: string): Out {
+  const r = Bun.spawnSync(cmd, { cwd, env: { ...CLEAN, ...env }, stdin: stdin === undefined ? 'ignore' : Buffer.from(stdin), stdout: 'pipe', stderr: 'pipe' })
+  return { code: r.exitCode, out: r.stdout.toString().replace(/\n+$/, ''), err: r.stderr.toString() }
+}
+
+let n = 0
+const STATE = `${T}/state`
+function scene() {
+  const dir = `${T}/s${++n}`, repo = `${dir}/repo`
+  mkdirSync(`${repo}/src`, { recursive: true })
+  const git = (...args: string[]) => sh(['git', ...args], repo, {})
+  git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't'); git('config', 'commit.gpgsign', 'false')
+  writeFileSync(`${repo}/src/a.txt`, 'x = 1\n'); git('add', '-A'); git('commit', '-qm', 'base')
+  // hooks get the session's folder from CLAUDE_PROJECT_DIR, and the input's cwd when one is given
+  const env = { HSTACK_STATE: STATE, CLAUDE_PROJECT_DIR: repo }
+  const input = (event: string, extra: string, cwd?: string) => `{"session_id":"x","hook_event_name":"${event}"${extra}${cwd ? `,"cwd":${JSON.stringify(cwd)}` : ''}}`
+  const h = (...args: string[]) => sh([BUN, SCRIPT, ...args], repo, { HSTACK_STATE: STATE })
+  const hookStart = (source = 'startup', cwd?: string) => sh([BUN, SCRIPT, 'hook-start'], repo, env, input('SessionStart', `,"source":"${source}"`, cwd)).out
+  const prompt = (cwd?: string) => sh([BUN, SCRIPT, 'hook-prompt'], repo, env, input('UserPromptSubmit', ',"prompt":"a request"', cwd))
+  const stop = (cwd?: string) => sh([BUN, SCRIPT, 'hook-stop'], repo, env, input('Stop', ',"stop_hook_active":false', cwd)).out
+  let c = 0
+  const commit = (msg = '') => { const f = `note-${++c}.txt`; writeFileSync(`${repo}/${f}`, 'a note\n'); git('add', '--', f); expect(git('commit', '-qm', msg || `note ${c}`, '--', f).code).toBe(0) }
+  const S = () => h('dir').out
+  return { dir, repo, git, h, hookStart, prompt, stop, commit, S }
+}
+type Scene = ReturnType<typeof scene>
+const HELD = '{"decision":"block"'
+
+// an approved run, started and approved in the session that the start hook opened
+function approved(s: Scene) {
+  s.prompt()
+  expect(s.h('start').code).toBe(0)
+  const f = `${s.dir}/2026-11-23-feature-y.md`; writeFileSync(f, 'what the feature does\n')
+  expect(s.h('spec', f).code).toBe(0)
+  expect(s.stop()).toBe('')
+  expect(s.h('approve').out).toBe('approved')
+}
+
+test('E1: the hooks judge the folder of the input\'s cwd: a change in a worktree with no run ends, though CLAUDE_PROJECT_DIR holds an unfinished run of this session', () => {
+  const s = scene()
+  s.hookStart('startup'); approved(s); expect(s.h('phase', 'setup').code).toBe(0)
+  const wt = `${s.dir}/wt`
+  expect(s.git('worktree', 'add', '-q', '-b', 'side', wt, 'HEAD').code).toBe(0)
+  expect(s.stop().startsWith(HELD)).toBe(true) // the folder of CLAUDE_PROJECT_DIR: its run is held
+  // the session moved into the worktree (no new start hook: a move inside one session)
+  s.prompt(wt)
+  writeFileSync(`${wt}/src/a.txt`, 'changed in the worktree\n')
+  expect(s.stop(wt)).toBe('')
+  expect(s.stop().startsWith(HELD)).toBe(true) // the run of the main folder is still this session's, untouched
+})
+
+test('E2: a cwd in the input that cannot be entered: the hooks judge the project\'s folder, and its unfinished run is held', () => {
+  const s = scene()
+  s.hookStart('startup'); approved(s)
+  expect(s.stop(`${s.dir}/no-such-folder`).startsWith(HELD)).toBe(true)
+})
+
+// an approved run of an earlier session that is not finished: setup recorded, then a new session
+function earlierRun(s: Scene) {
+  s.hookStart('startup'); approved(s); expect(s.h('phase', 'setup').code).toBe(0)
+  s.hookStart('startup')
+}
+
+test('E4: takeup refuses with no run, and beside a run of this session', () => {
+  const s = scene(); s.hookStart('startup')
+  expect(s.h('takeup').code).toBe(1)
+  approved(s)
+  const r = s.h('takeup')
+  expect(r.code).toBe(1)
+  expect(r.err).toContain('this session')
+})
+
+test('E5: takeup with no commit since the run\'s last step takes the run up: this session\'s run from then on, held by the stop hook', () => {
+  const s = scene(); earlierRun(s)
+  s.prompt()
+  expect(s.stop()).toBe('') // beside an earlier session's run, before the take-up
+  const r = s.h('takeup')
+  expect(r.code).toBe(0)
+  expect(existsSync(`${s.S()}/stale`)).toBe(false)
+  expect(s.stop().startsWith(HELD)).toBe(true)
+})
+
+test('E6: takeup refuses when the run\'s base commit is no longer in the history of HEAD, and takes nothing up', () => {
+  const s = scene(); earlierRun(s)
+  const base = s.git('rev-parse', 'HEAD').out
+  // the history rewritten: HEAD on a new root that does not hold the base
+  expect(s.git('checkout', '-q', '--orphan', 'rewritten').code).toBe(0); s.commit('a new root')
+  const r = s.h('takeup')
+  expect(r.code).toBe(1)
+  expect(r.err).toContain(base)
+  expect(existsSync(`${s.S()}/stale`)).toBe(true)
+})
+
+test('E7: takeup refuses when the oracle\'s commit is no longer in the history of HEAD', () => {
+  const s = scene(); s.hookStart('startup'); approved(s)
+  expect(s.h('phase', 'setup').code).toBe(0)
+  s.commit('the oracle\'s tests'); const oracle = s.git('rev-parse', 'HEAD').out
+  writeFileSync(`${s.S()}/oracle-commit`, oracle + '\n'); expect(s.h('phase', 'oracle').code).toBe(0)
+  s.hookStart('startup')
+  expect(s.git('reset', '-q', '--hard', 'HEAD~1').code).toBe(0)
+  const r = s.h('takeup')
+  expect(r.code).toBe(1)
+  expect(r.err).toContain(oracle)
+  expect(existsSync(`${s.S()}/stale`)).toBe(true)
+})
+
+test('E8: takeup with commits made since the run\'s last recorded step prints them, exits 2 and takes nothing up', () => {
+  const s = scene(); s.hookStart('startup'); approved(s)
+  s.commit('the run\'s own work'); expect(s.h('phase', 'setup').code).toBe(0)
+  s.hookStart('startup')
+  s.commit('a git sync of the user'); s.commit('a docs edit')
+  const r = s.h('takeup')
+  expect(r.code).toBe(2)
+  expect(r.out).toContain('a git sync of the user')
+  expect(r.out).toContain('a docs edit')
+  expect(r.out).not.toContain('the run\'s own work')
+  expect(existsSync(`${s.S()}/stale`)).toBe(true)
+})
+
+test('E9: takeup --with-commits, on the user\'s yes, takes the run up with those commits in it', () => {
+  const s = scene(); earlierRun(s)
+  s.commit('a git sync of the user')
+  expect(s.h('takeup', '--with-commits').code).toBe(0)
+  expect(existsSync(`${s.S()}/stale`)).toBe(false)
+})
+
+const now = () => Math.floor(Date.now() / 1000)
+const minutes = (s: Scene) => Number(s.h('elapsed').out)
+
+test('E10: takeup takes off the clock the time since the stop hook last ran: a run idle for an hour counts no minute of it', () => {
+  const s = scene(); earlierRun(s)
+  writeFileSync(`${s.S()}/started`, `${now() - 2 * 3600}\n`) // two hours since start, of which the last hour nobody worked
+  writeFileSync(`${s.S()}/last-stop`, `${now() - 3600}\n`)
+  expect(s.h('takeup').code).toBe(0)
+  expect(minutes(s)).toBeGreaterThanOrEqual(59)
+  expect(minutes(s)).toBeLessThanOrEqual(61)
+})
+
+test('E11: the stop hook records when it last ran, held or not', () => {
+  const s = scene(); s.hookStart('startup'); approved(s)
+  writeFileSync(`${s.S()}/last-stop`, '1\n')
+  expect(s.stop().startsWith(HELD)).toBe(true)
+  const t = Number(readFileSync(`${s.S()}/last-stop`, 'utf8'))
+  expect(Math.abs(t - now())).toBeLessThanOrEqual(5)
+})
+
+test('E12: a resume of the session that holds an approved run not finished takes off the clock the time since the stop hook last ran', () => {
+  const s = scene(); s.hookStart('startup'); approved(s)
+  writeFileSync(`${s.S()}/started`, `${now() - 2 * 3600}\n`)
+  writeFileSync(`${s.S()}/last-stop`, `${now() - 3600}\n`)
+  s.hookStart('resume')
+  expect(minutes(s)).toBeGreaterThanOrEqual(59)
+  expect(minutes(s)).toBeLessThanOrEqual(61)
+})
+
+test('E13: a resume beside an approved run of an earlier session changes its clock in nothing: only its take-up does', () => {
+  const s = scene(); earlierRun(s)
+  writeFileSync(`${s.S()}/started`, `${now() - 2 * 3600}\n`)
+  writeFileSync(`${s.S()}/last-stop`, `${now() - 3600}\n`)
+  s.hookStart('resume')
+  expect(minutes(s)).toBeGreaterThanOrEqual(119)
+})
+
+// ---------- the playbook's step 1 and last reply: what the agent reads (behaviours 9, 10, 12, 13, 15, 17, 18) ----------
+
+const PLAYBOOK = readFileSync(join(import.meta.dir, '../skills/build/SKILL.md'), 'utf8')
+const part = (from: string, to: string) => { const i = PLAYBOOK.indexOf(from), j = PLAYBOOK.indexOf(to, i + 1); expect(i).toBeGreaterThanOrEqual(0); return PLAYBOOK.slice(i, j < 0 ? undefined : j) }
+
+test('E14: step 1 of the playbook takes up a waiting spec by its name with no brainstorm, and an unfinished run through takeup and the user\'s yes on commits made since', () => {
+  const t = part('**What the user typed.**', '1. **The code repository.**')
+  for (const p of ['with or without `.md`', 'There is no brainstorm', "The user's next message", '`$H takeup`', 'exits 2', '`$H takeup --with-commits`', 'leave the run as it is', '`$H missing`', 'no `start` and no brainstorm']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+})
+
+test('E15: step 1 sends new work beside an earlier session\'s unfinished run into a new worktree the session moves into, refuses it beside this session\'s run, and says what to do with no worktree tool', () => {
+  const t = part('**What the user typed.**', '1. **The code repository.**')
+  for (const p of ['is a new request', 'this session\'s, start nothing', 'never moves it aside', 'new worktree from `HEAD`, on a new branch', '`EnterWorktree`', 'moves the session into it', '`$S/worktree-origin`', 'make no worktree and start nothing']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+})
+
+test('E16: the last reply of a run made in such a worktree asks before a merge, merges only on the user\'s yes, aborts a conflict and keeps the worktree', () => {
+  const t = part('**A run made in a new worktree.**', '## A ruling after the run')
+  for (const p of ['`$S/worktree-origin` exists', 'Only on their yes', 'merge <this branch>', 'merge --abort', 'The worktree is not removed']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+})
