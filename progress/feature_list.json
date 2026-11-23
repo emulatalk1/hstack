@@ -96,7 +96,7 @@
       "What `spec <file>` prints holds `give the user the path of the spec, never its whole text`; neither it, nor the refusals of `approve` and of `phase`, nor the stop hook's reason for a spec that waits, holds `with its text` or `the spec's text`.",
       "A turn that ends in a brainstorm (no run started, nothing changed in the repository) is not blocked by the stop hook, and `$H elapsed`, after the `start` that follows, counts no minute of it. 0.4.1 already does this (tried in a throwaway repository); a test of its own now keeps it.",
       "A turn that ends in a grill (a spec waits; the spec file was changed and `$H spec <file>` run again; nothing else changed) is not blocked by the stop hook, and `$H elapsed` does not count the wait. 0.4.1 already does this (tried the same way); a test of its own now keeps it.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.5\"`, and the README's status paragraph starts with `**Status: v0.4.5.**` and holds the words `brainstorm` and `grilled`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.6\"`, and the README's status paragraph starts with `**Status: v0.4.6.**` and holds the words `brainstorm` and `grilled`.",
       "In the README's skills table the `build` row holds `Asks only before the approval` and no longer `Asks once`, and there is a row for `brainstorm` and one for `grill`; the row of `skills/` in the table of folders names both.",
       "The item `**Brainstorm.**` of the playbook holds `The user's \"that is right\" settles what is asked, not how it is built` and `where there is more than one way that the user would see, lay the ways out and let the user pick before you write the spec`.",
       "The item `**The spec file.**` of the playbook says of the section \"Against the record\": `Raise each of them in the brainstorm; the section records what the user chose`, and no longer holds `and lettered options, the one you recommend first`.",
@@ -119,7 +119,7 @@
       "That paragraph holds ``A shell function (`H() { bun \"<the path>/scripts/hstack.ts\" \"$@\"; }`) also works, but a coding tool may refuse a command that defines one``, holds ``a variable that holds `bun <path>` is not split into two words by every shell``, and no longer holds `call it through a shell function`.",
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds ``until the playbook's `start` no command of the loop's script runs but `dir` `` and no longer holds `during the conversation but`.",
       "That section holds ``From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner)``.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.5\"`, and the README's status paragraph starts with `**Status: v0.4.5.**`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.6\"`, and the README's status paragraph starts with `**Status: v0.4.6.**`.",
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds `Nothing in the repository changes before the spec is approved but the spec file itself`."
     ],
     "passes": true
@@ -148,7 +148,7 @@
       "The reason of a hold holds `Decide from the approved spec and the code` only when the run's spec is approved: the hold with no run started and the hold while a spec waits do not hold it; the hold of an approved, unfinished run does. All three still hold `end with exactly the reply the task asked for`.",
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds ``before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop's stop hook holds a turn in which the repository changed, and a turn that ends after `start` with no spec shown``, and no longer holds `the loop's stop hook would hold such a turn`.",
       "The paragraph of that file that starts with `**Spike to feel things out.**` ends with `before the spec is approved, nothing in the repository changes but the spec file itself.`",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.5\"`, and the README's status paragraph starts with `**Status: v0.4.5.**`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.6\"`, and the README's status paragraph starts with `**Status: v0.4.6.**`.",
       "The README's status paragraph holds `Three hooks`, and no longer holds `Two hooks` or `before anything changed`.",
       "The README's paragraph on a machine where `bun` is not on the `PATH` holds `three hooks`, and no longer holds `Both hooks` or `both hooks`."
     ],
@@ -220,7 +220,7 @@
       "Step 9 still holds `a fix gets a test that fails first, but a lint, format or type fix`.",
       "For each phrase below, the folder of every file of `skills/` and `agents/` that holds it also holds a licence file that holds the file's name, the words `Permission is hereby granted` and the copyright line given: `**The deletion test.**` and `**Middle Man**` with `Copyright (c) 2026 Matt Pocock`; `Files that change together should live together` and `Not everything is Critical` with `Copyright (c) 2025 Jesse Vincent`; `Zero findings is a valid result` with `Copyright (c) 2025 Addy Osmani`; `merge: near-copies that must change together` with `Copyright (c) 2026 DietrichGebert`.",
       "No file of `skills/` and `agents/` other than a licence file holds any of `Pocock`, `Vincent`, `Osmani`, `Gebert`, `superpowers`, `ponytail` and `agent-skills`, in any letter case.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.5\"`, and the README's status paragraph starts with `**Status: v0.4.5.**` and still holds the words `brainstorm` and `grilled`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.6\"`, and the README's status paragraph starts with `**Status: v0.4.6.**` and still holds the words `brainstorm` and `grilled`.",
       "The README's status paragraph holds `## Design` and `design rules`, and the README holds the path of every licence file of `skills/` and `agents/`."
     ],
     "passes": true
@@ -239,7 +239,27 @@
       "`agents/reviewer.md` no longer holds `This grades a design finding only`; before its three sentences on severity it holds `This grades every finding. Where an item above names a severity (a weakened test, a conflict that is none, a point of a behaviour that no assertion checks), that severity stands.`",
       "`agents/reviewer.md` holds the heading `## The severity of a finding`, and no longer `## The severity of a design finding`.",
       "`agents/reviewer.md` still holds `Categorize issues by actual severity. Not everything is Critical.`, `\"Coverage could be broader\" and polish suggestions are Minor.` and `The rules file comes before this passage`.",
-      "`.claude-plugin/plugin.json` still holds `\"version\": \"0.4.5\"`, and the README's status paragraph still starts with `**Status: v0.4.5.**`."
+      "`.claude-plugin/plugin.json` still holds `\"version\": \"0.4.6\"`, and the README's status paragraph still starts with `**Status: v0.4.6.**`."
+    ],
+    "passes": true
+  },
+  {
+    "description": "The last reply, a line before and after each step, and the log entry for a later agent: the last reply of a run is written as `skills/build/last-reply.md` says, for a person who approved the spec and did not see the run; from the approval on the builder says in a line what it is about to do before each step and what the step found after it; the log entry is written first for the agent of a later session, so a decision's number and a test's name come with the path of the file that holds them. The version is 0.4.6.",
+    "spec": "docs/specs/2026-11-23-last-reply-step-lines-and-log.md",
+    "steps": [
+      "The file `skills/build/last-reply.md` exists and holds `Write for an intelligent but low-context reader.` and `The person reading approved the spec and has not seen the run`.",
+      "`skills/build/last-reply.md` holds `Put the key points in the first few sentences.`, `what you found, what you did, and what is next` and `Do not use a term or abbreviation that you made up during the work.`",
+      "`skills/build/last-reply.md` holds `Write mostly in the style of ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice` and `Use a paragraph of flowing prose where ideas connect, and keep bullets for lists of separate items.`",
+      "In the playbook, the paragraph that starts with `**The last reply.**` holds `Before you write it, read `last-reply.md``.",
+      "That paragraph still holds `When the task names its reply, reply exactly that, and nothing else.`, `end with the short form of the log entry` and `` `$H times` ``.",
+      "In the playbook, the section `## Rules for the whole run` holds an item that starts with `**Saying what you do.**` and holds `From the approval on, say in a line what you are about to do before each step, and in a line what it found after it.`",
+      "That item holds `Each is text inside the turn: never a question, never the end of the turn, and no part of the last reply.` and `A task that names its own reply gets none of these lines.`",
+      "In the playbook, step 10, the item that starts with `**The log.**` holds `The entry is written first for the agent of a later session, which saw nothing of this run: a decision's number and a test's name come with the path of the file that holds them.` and `A project's own rule for its log comes first.`",
+      "The playbook no longer holds `the log a person reads`; the item that starts with `**The project's records.**` holds `the log of the runs`.",
+      "The playbook no longer holds `The records are for a person who was not here`; step 10 holds `The records are for whoever was not here, first the agent of a later session and then a person:`.",
+      "In step 10 of the playbook, the line of `progress/progress.md` holds `the log of the runs, written first for the agent of a later session.` and still holds `One entry per run, appended, never edited.`",
+      "The item that starts with `**The log.**` still holds `STASH ADDED`, `design findings outside the change` and `\"Design debt\", with each line that a split left in an old file to export the moved code again`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.6\"`, and the README's status paragraph starts with `**Status: v0.4.6.**` and still holds the words `brainstorm` and `grilled`."
     ],
     "passes": true
   }

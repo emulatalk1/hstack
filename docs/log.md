@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-23
+* **Update**: Built the [last reply, step lines and log spec](/specs/2026-11-23-last-reply-step-lines-and-log.md), hstack 0.4.6: the new file `skills/build/last-reply.md`, the item "Saying what you do." and four changed places of the playbook, the README and the version; 1452 pass in the whole suite on `a461557`; two review rounds, the exploratory test and 20 planted faults; the [decisions of the builder](/specs/2026-11-23-last-reply-step-lines-and-log.decisions.md) lie beside the spec.
 * **Approve**: the [last reply, step lines and log spec](/specs/2026-11-23-last-reply-step-lines-and-log.md) is `stable`: approved by the user ("Duyệt") after a brainstorm, whose answers are in its section "Agreed in the brainstorm".
 * **Creation**: Added the [last reply, step lines and log spec](/specs/2026-11-23-last-reply-step-lines-and-log.md) (draft), spec 8: the last reply of a run is written as a new file `skills/build/last-reply.md` says, the builder says a line before and after each step from the approval on, and the log entry is written first for the agent of a later session; 13 behaviours; the version goes to 0.4.6.
 * **Update**: The user ruled on four decisions of the builder in the [decisions file of the design before the code spec](/specs/2026-11-22-design-before-code.decisions.md) (E28, E31, E32, E33: each stands), and the progress log lists four debts that stood in no file.
