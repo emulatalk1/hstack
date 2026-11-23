@@ -275,3 +275,36 @@ test('R4e: CLAUDE.md says that the stop gate holds a spec of this session that w
   const t = readFileSync(join(import.meta.dir, '../CLAUDE.md'), 'utf8')
   has('CLAUDE.md', t, ['a spec of this session that waits for your approval, when the repository changed'])
 })
+
+// ---------- review round 2 ----------
+
+test('V1: the new worktree is made in a lasting folder beside the repository, not in the system\'s temporary folder', () => {
+  const t = part('**What the user typed.**', '1. **The code repository.**')
+  has('the part What the user typed', t, ['`<this folder>-worktrees/<the new branch>`'])
+  expect(`the part names the temporary folder: ${t.includes("system's temporary folder")}`).toBe('the part names the temporary folder: false')
+})
+
+test('V3: the Git rule\'s exception names the worktree made by git worktree add, as the part "What the user typed" does', () => {
+  const rule = part('- **Git, in the code repository.**', '- **Git, in the records home.**')
+  has('the Git rule', rule, ['the new worktree on a new branch that `git worktree add` makes beside the repository for new work beside an unfinished run'])
+})
+
+test('V2: the brainstorm, typed by the user, tells the agent to run the playbook from its step 1 (behaviour 7)', () => {
+  const t = readFileSync(join(import.meta.dir, '../skills/brainstorm/SKILL.md'), 'utf8')
+  const i = t.indexOf('\n## In hstack\n'), j = t.indexOf('\n## ', i + 1)
+  has('the section In hstack of brainstorm', t.slice(i, j), ['read the playbook beside this skill, `../build/SKILL.md` from this skill\'s base directory, and run it from its step 1'])
+})
+
+// the folder the playbook names for the new worktree: beside the repository
+const worktreeOf = (s: Scene, branch: string) => `${s.repo}-worktrees/${branch}`
+test('V13: the worktree made as the playbook says leaves the unfinished run\'s folder, state, branch and commits as they were (behaviour 13)', () => {
+  const s = scene(); earlierRun(s)
+  const before = { status: s.git('status', '--porcelain', '-uall').out, head: s.git('rev-parse', 'HEAD').out, branch: s.git('branch', '--show-current').out, phases: readFileSync(`${s.S()}/phases`, 'utf8'), missing: s.h('missing').out }
+  expect(s.git('-C', s.repo, 'worktree', 'add', '-q', '-b', 'new-work', worktreeOf(s, 'new-work'), 'HEAD').code).toBe(0)
+  expect(s.git('status', '--porcelain', '-uall').out).toBe(before.status)
+  expect(s.git('rev-parse', 'HEAD').out).toBe(before.head)
+  expect(s.git('branch', '--show-current').out).toBe(before.branch)
+  expect(readFileSync(`${s.S()}/phases`, 'utf8')).toBe(before.phases)
+  expect(existsSync(`${s.S()}/stale`)).toBe(true)
+  expect(s.h('missing').out).toBe(before.missing)
+})
