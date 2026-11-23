@@ -630,8 +630,8 @@ test('34: a server on ::1, one of this machine\'s own addresses, opens the brows
   expect(await until(() => o.calls().length > 0 && o.calls())).toEqual([`http://[::1]:${info!.port}/?key=${KEY}`])
 })
 
-test('43: the README\'s section of mockup names the other two names of the foreground and the background', () => {
-  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8')
+test('43: the section of mockup in CLAUDE.md names the other two names of the foreground and the background (ruling of 2026-11-24)', () => {
+  const readme = readFileSync(join(ROOT, 'CLAUDE.md'), 'utf8')
   const from = readme.indexOf('### `mockup`: the mock-up server of a brainstorm'), section = readme.slice(from, readme.indexOf('\n## ', from))
   expect(from).toBeGreaterThan(0)
   for (const name of ['--no-daemon', '--daemon']) expect(`${name}: ${new RegExp(`\`${name}\``).test(section)}`).toBe(`${name}: true`)

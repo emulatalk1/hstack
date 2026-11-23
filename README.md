@@ -155,3 +155,11 @@ Pull requests are not accepted. Maintainer: [@emulatalk1](https://github.com/emu
 ## License
 
 No licence has been granted yet: all rights reserved.
+
+Some parts are third-party work under their own licences, each kept beside the files it covers:
+
+- `skills/brainstorm/LICENSE-brainstorm` and `skills/grill/LICENSE-grill`: the brainstorm and the grill.
+- `skills/build-implement/LICENSE-tdd`: the test rules of step 4.
+- `skills/build-implement/LICENSE-design-1`, `skills/build-implement/LICENSE-design-2`, `skills/build-implement/LICENSE-design-3` and `skills/build-implement/LICENSE-design-4`: the design texts of step 4.
+- `agents/LICENSE-reviewer-1` and `agents/LICENSE-reviewer-2`: parts of the reviewer.
+- `scripts/LICENSE-mockup`: the mock-up server of the brainstorm.

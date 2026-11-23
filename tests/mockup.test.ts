@@ -823,8 +823,8 @@ const part = (text: string, heading: RegExp, level: string) => { // the lines un
   return rest.slice(0, to < 0 ? rest.length : to).join('\n')
 }
 
-test('43: the README has the section of mockup under "Scripts", with the two verbs and their options', () => {
-  const scriptsPart = part(readme(), /^## Scripts\s*$/, '##')
+test('43: CLAUDE.md has the section of mockup under "Scripts", with the two verbs and their options (the README rewrite moved the scripts\' reference there; ruling of 2026-11-24)', () => {
+  const scriptsPart = part(read(join(ROOT, 'CLAUDE.md')), /^## Scripts\s*$/, '##')
   expect(scriptsPart.split('\n')).toContain('### `mockup`: the mock-up server of a brainstorm')
   const section = part(scriptsPart, /^### `mockup`: the mock-up server of a brainstorm\s*$/, '###')
   expect(section).toContain('bun scripts/mockup.ts start'); expect(section).toContain('bun scripts/mockup.ts stop')
