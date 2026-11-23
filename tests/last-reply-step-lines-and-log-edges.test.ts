@@ -85,3 +85,28 @@ test('E16: last-reply.md and the README\'s status paragraph name no source of th
   for (const [where, text] of [[LAST_REPLY, raw(LAST_REPLY)], ['the status paragraph of README.md', status]] as const)
     for (const w of ['anthropic', 'prompting guide', 'communicating clearly', 'make reports easy to follow', 'signal intent']) yes(`${where} does not hold "${w}" in any letter case`, !text.toLowerCase().includes(w))
 })
+
+// ---------- found by the mutation step: words of the builder's own that no test held ----------
+
+const lastReplyParagraphs = () => raw(LAST_REPLY).split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p !== '')
+
+test('M17: the first paragraph of last-reply.md says that the file is for a reply the task does not name, word for word', () => {
+  expect(lastReplyParagraphs()[1]).toBe("How the builder writes the last reply of a run, when the task names no reply of its own. Read this file to its end before you write that reply. What the reply holds, and in what order, is in the playbook, in its paragraph \"The last reply.\": this file changes none of it. The lines of `$H times` stand at the end of the reply as they are printed: do not rewrite them.")
+})
+
+test('M18: the two paragraphs of last-reply.md on how to write hold every sentence, word for word', () => {
+  const ps = lastReplyParagraphs()
+  expect(ps.length).toBe(4)
+  expect(ps[2]).toBe("Write for an intelligent but low-context reader. The person reading approved the spec and has not seen the run: not your tool calls, not your reasoning, not the files you opened. They may be switching in from other work. The reply is self-contained: the reader should understand what you mean without having to dig for other context, such as the log, the decisions file or an earlier message. It says what you found, what you did, and what is next. Put the key points in the first few sentences. Practice progressive disclosure in your sentence order, and do not use undefined references and ideas in line 1 that won't make sense until the reader reaches line 12.")
+  expect(ps[3]).toBe("Use plain words, and write in clear, understandable full sentences. Do not use a term or abbreviation that you made up during the work. Say what the thing is in a way any reader would understand. A decision's number, a test's name or a step's ID may follow what it names, in brackets; it never stands for it. Write mostly in the style of ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice, and consistently using the same word for the same thing. Use a paragraph of flowing prose where ideas connect, and keep bullets for lists of separate items. Leave out unnecessary details unless the reader asks and practice concision, but do ensure that the reply has the key context. Aim to make the reply as human-readable and clear as possible.")
+})
+
+test('M19: the paragraph "The last reply." ends by saying what last-reply.md is for: a person who did not see the run', () => {
+  yes('that line ends with "): it says how this reply is written for a person who did not see the run."', (lastReplyLines()[0] ?? '').endsWith('): it says how this reply is written for a person who did not see the run.'))
+})
+
+test('M20: the README\'s sentence on the log entry says that a decision\'s number and a test\'s name come with the path of their file', () => {
+  const status = raw('README.md').split(/\n\s*\n/).map((p) => p.trim()).find((p) => p.startsWith('**Status:')) ?? ''
+  const s = "and the log entry first for the agent of a later session: a decision's number and a test's name come with the path of the file that holds them."
+  yes(`the status paragraph holds "${s}"`, flat(status).includes(s))
+})
