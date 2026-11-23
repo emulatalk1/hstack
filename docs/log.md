@@ -1,6 +1,7 @@
 # Update Log
 
 ## 2026-11-23
+* **Update**: The user ruled on four decisions of the builder in the [decisions file of the design before the code spec](/specs/2026-11-22-design-before-code.decisions.md) (E28, E31, E32, E33: each stands), and the progress log lists four debts that stood in no file.
 * **Update**: Built the [design follow-ups spec](/specs/2026-11-22-design-follow-ups.md), still hstack 0.4.5: one declaration in the mock-up frame, sentences in `design-note.md`, `design-review.md`, the reviewer's file and step 10 of the playbook; 1420 pass in the whole suite on `2edf31b`; two review rounds, an exploratory test with the colour read in headless Chrome (11 behaviours and 11 earlier steps, all PASS) and 20 planted faults, 18 killed and the 2 survivors killed afterwards. The builder's own decisions are in the [decisions file](/specs/2026-11-22-design-follow-ups.decisions.md), not approved by the user. Open: the four rules the builder added alone in the run of spec 6 still wait for a ruling, and the installed plugin is still 0.4.4.
 
 ## 2026-11-22
