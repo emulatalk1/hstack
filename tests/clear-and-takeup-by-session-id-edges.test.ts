@@ -43,7 +43,7 @@ function scene() {
     return f
   }
   const approved = (id: string, at: string) => { shown(id, at); prompt(id, at); expect(h(at, 'approve').out).toBe('approved') }
-  return { dir, repo, state, W, startHook, endHook, prompt, stop, h, shown, approved }
+  return { dir, repo, state, W, hook, startHook, endHook, prompt, stop, h, shown, approved }
 }
 
 test('E2: a spec that waits, of the cleared session, goes to its new id: a change after it is held for the new id', () => {
@@ -174,5 +174,56 @@ test('X3: the worktree hook for ExitWorktree with a path is no coming to that wo
   expect(r.out).toBe('')
   const t = sh([BUN, SCRIPT, 'takeup'], s.W, { HSTACK_STATE: s.state, CLAUDE_CODE_SESSION_ID: 'B' })
   expect(t.code).toBe(1)
+  expect(s.stop('A', s.W).startsWith(HELD)).toBe(true)
+})
+
+// ---------- tests added after the mutation step (the survivor each kills is named) ----------
+
+test('M-X9: an end hook and a start hook of a clear, both with no CLAUDE_PID, hand nothing over', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.approved('A', s.W)
+  s.endHook({ session_id: 'A', reason: 'clear', cwd: s.W })
+  s.startHook('N', 'clear', s.W)
+  expect(s.stop('N', s.W)).toBe('')
+  expect(s.stop('A', s.W).startsWith(HELD)).toBe(true)
+})
+
+test('M-X11: a fork in the process of a clear\'s end hook takes no mark: the fork does not get the run', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.approved('A', s.W)
+  const p = pid()
+  s.endHook({ session_id: 'A', reason: 'clear', cwd: s.W }, p)
+  s.startHook('F', 'fork', s.W, p)
+  expect(s.stop('F', s.W)).toBe('')
+  expect(s.stop('A', s.W).startsWith(HELD)).toBe(true)
+})
+
+test('M-X13: the run\'s own session gets no notice of "another session" at a resume or a compact', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.approved('A', s.W)
+  for (const source of ['resume', 'compact']) expect(s.startHook('A', source, s.W)).not.toContain('of another session is not finished')
+})
+
+test('M-X14: a run of an earlier session gets the earlier session\'s line, not also the notice of "another session"', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.approved('A', s.W)
+  s.startHook('C', 'startup', s.W)
+  const t = s.startHook('N', 'resume', s.W)
+  expect(t).toContain('of an earlier session is not finished')
+  expect(t).not.toContain('of another session is not finished')
+})
+
+test('M-X15: a clear\'s start hook with no session_id hands nothing over: the run stays its owner\'s', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.approved('A', s.W)
+  const p = pid()
+  s.endHook({ session_id: 'A', reason: 'clear', cwd: s.W }, p)
+  s.hook('hook-start', { hook_event_name: 'SessionStart', source: 'clear', cwd: s.W }, p)
+  expect(s.stop('B', s.W)).toBe('')
   expect(s.stop('A', s.W).startsWith(HELD)).toBe(true)
 })
