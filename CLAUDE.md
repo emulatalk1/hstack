@@ -11,13 +11,14 @@ The loop runs only when you invoke it: `/hstack:build` with a request, or with t
 - A session-start nudge. It names a spec that waits for your approval, or an approved run of an earlier session that is not finished, with the command that takes it up.
 - A note of the repository's state, taken when a turn starts.
 - A stop gate that refuses to end an unfinished run of this session (at most 3 times per process).
+- A worktree guard: while a run of this session is not finished, the session's worktree tool (`EnterWorktree`, `ExitWorktree`) is refused, so the session neither moves into another worktree nor leaves the one it is in.
 
 The stop gate holds only two things:
 
-- a run that this session started and has not finished, whatever the turn changed;
+- a run of this session that is not finished, whatever the turn changed, in whichever work tree of the repository it is and wherever the session's folder is now; when the run's folder was switched to another branch, it names both branches;
 - a spec of this session that waits for your approval, when the repository changed: the approval would refuse it.
 
-Everything else ends: a turn with no run (a git sync, a small fix, a docs edit), a turn after a finished run, and a turn beside a run or a waiting spec of an earlier session. An unfinished run of an earlier session is taken up with `/hstack:build <its spec's name>`; new work beside it goes into a worktree of its own.
+Everything else ends: a turn with no run (a git sync, a small fix, a docs edit), a turn after a finished run, and a turn beside a run or a waiting spec of an earlier session. An unfinished run of an earlier session is taken up with `/hstack:build <its spec's name>`, from any work tree of the repository; new work beside it goes into a worktree that the session's worktree tool makes under `.claude/worktrees/`.
 
 ## Scripts
 

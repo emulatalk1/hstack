@@ -2,7 +2,7 @@
 
 **A Claude Code plugin: a build loop that does not take the agent's word for "done".**
 
-You ask for a feature. hstack talks it through with you, writes a spec, and waits for your approval. Then it builds the feature on its own, and checks the result with agents that did not write the code: one writes the acceptance tests before any code exists, one reviews, one tries the product from outside, one plants bugs to see whether the tests notice.
+You type `/hstack:build` followed by what you want built, and the loop starts: hstack talks it through with you, writes a spec, and waits for your approval. Then it builds the feature on its own, and checks the result with agents that did not write the code: one writes the acceptance tests before any code exists, one reviews, one tries the product from outside, one plants bugs to see whether the tests notice.
 
 It works on any stack: the loop finds out by itself how your project is tested and run.
 
@@ -40,16 +40,18 @@ You need Claude Code, git and [Bun](https://bun.sh) 1.4.4 or later on macOS or L
 
 You can also add a local clone: `/plugin marketplace add /path/to/hstack`.
 
-Then, in your project, ask for what you want in plain words:
+Then, in your project, type `/hstack:build` followed by what you want built:
 
 ```
-add a CSV export to the invoices page
+/hstack:build add a CSV export to the invoices page
 ```
 
 1. The agent answers with what it understood and what it found in your code. You talk until it is clear.
 2. It writes a spec and gives you its path. You approve it, say what to change, or have it grilled.
 3. After your approval the loop runs to the end without you.
 4. Its last reply says what was built, what the tests show, and what needs your ruling.
+
+A request made without `/hstack:build` is done directly, without the loop: no spec, no independent tests, no review.
 
 ## How it works
 
@@ -93,7 +95,7 @@ The loop's playbook, with every rule of each step, is [`skills/build/SKILL.md`](
 | `build` | The build loop, typed by you: `/hstack:build` with a request, or with a spec's name to take it up again. Asks only before the approval: a brainstorm, the spec, a grill if you want one; then runs to the end. Loop agents: `oracle`, `reviewer`, `explorer`, `mutator`. |
 | `brainstorm` | Step 1 of `build`: the talk before the spec, which ends by writing it. Typed by you with a request, it is the start of a build. |
 | `grill` | Step 1 of `build`: a relentless interview on the spec that waits for your approval, when you ask for one. |
-| `build-implement` | Step 4 of `build`: the entry points, the edges and the design, the feature written test-first, the checks. Invoked by the loop, not by you. |
+| `implement` | Step 4 of `build`: the entry points, the edges and the design, the feature written test-first, the checks. Invoked by the loop, not by you. |
 | `hstack-feedback` | When you find a problem with hstack and want it written up as an issue, or want the open ones listed. User-invoked only; posting needs `gh`. |
 | `hstack-init` | Once per project, and again after the project folder is copied or moved. |
 | `hstack-safety` | Before any Docker command, port stop, database drop or folder wipe. |
@@ -107,11 +109,11 @@ The loop's playbook, with every rule of each step, is [`skills/build/SKILL.md`](
 - [Bun](https://bun.sh) 1.4.4 or later, on the `PATH` of the machine where Claude Code runs, whatever the project's own stack is. The plugin itself has nothing to install.
 - macOS or Linux.
 
-The three hooks of `hstack:build` are `bun` commands. On a machine where `bun` is not on the `PATH` of the Claude Code process, all of them fail (`bun: command not found`) and the stop gate is off: Claude Code shows "stop hook problem" at each stop, and the agent goes on without the gate.
+The four hooks of `hstack:build` are `bun` commands. On a machine where `bun` is not on the `PATH` of the Claude Code process, all of them fail (`bun: command not found`) and the stop gate is off: Claude Code shows "stop hook problem" at each stop, and the agent goes on without the gate.
 
 ## Status
 
-**Status: v0.4.6.** `hstack:build` is a build loop for any stack. It starts with a **brainstorm** that ends in a **spec**, which you approve, change or have **grilled**. Nothing is built before you approve it; after that the loop runs to the end on its own. Before any product code the builder writes a section `## Design` into its decisions, by the design rules of `skills/build-implement/design-rules.md`. Three hooks keep the loop going. From the approval on the builder says in a line what it is about to do before each step, and in a line what the step found after it. The last reply is written for a reader who did not see the run, as `skills/build/last-reply.md` says, and the log entry first for the agent of a later session: a decision's number and a test's name come with the path of the file that holds them.
+**Status: v0.4.7.** `hstack:build` is a build loop for any stack. It starts with a **brainstorm** that ends in a **spec**, which you approve, change or have **grilled**. Nothing is built before you approve it; after that the loop runs to the end on its own. Before any product code the builder writes a section `## Design` into its decisions, by the design rules of `skills/implement/design-rules.md`. Four hooks keep the loop going; while a run goes on, the session's worktree tool is refused. From the approval on the builder says in a line what it is about to do before each step, and in a line what the step found after it. The last reply is written for a reader who did not see the run, as `skills/build/last-reply.md` says, and the log entry first for the agent of a later session: a decision's number and a test's name come with the path of the file that holds them.
 
 ## Development
 
@@ -130,9 +132,9 @@ bun x tsc --noEmit
 |---|---|
 | `.claude-plugin/` | plugin and marketplace manifests |
 | `scripts/` | the command-line scripts; `scripts/lib/` holds one module per job; `mockup-frame.html` is the frame of the mock-up server's pages |
-| `skills/` | `build`, `brainstorm`, `grill`, `build-implement`, `hstack-feedback`, `hstack-init`, `hstack-safety` |
+| `skills/` | `build`, `brainstorm`, `grill`, `implement`, `hstack-feedback`, `hstack-init`, `hstack-safety` |
 | `agents/` | the four agents of the build loop: `oracle`, `reviewer`, `explorer`, `mutator` |
-| `hooks/` | the SessionStart, UserPromptSubmit and Stop hooks of the build loop |
+| `hooks/` | the SessionStart, UserPromptSubmit, PreToolUse and Stop hooks of the build loop |
 | `plugin-dev/` | the designs of the build loop |
 | `tests/` | tests, and their fixtures in `tests/fixtures/` |
 | `bench/` | the closed benchmark's code; its report is `progress/final-report.md` |
@@ -159,7 +161,7 @@ No licence has been granted yet: all rights reserved.
 Some parts are third-party work under their own licences, each kept beside the files it covers:
 
 - `skills/brainstorm/LICENSE-brainstorm` and `skills/grill/LICENSE-grill`: the brainstorm and the grill.
-- `skills/build-implement/LICENSE-tdd`: the test rules of step 4.
-- `skills/build-implement/LICENSE-design-1`, `skills/build-implement/LICENSE-design-2`, `skills/build-implement/LICENSE-design-3` and `skills/build-implement/LICENSE-design-4`: the design texts of step 4.
+- `skills/implement/LICENSE-tdd`: the test rules of step 4.
+- `skills/implement/LICENSE-design-1`, `skills/implement/LICENSE-design-2`, `skills/implement/LICENSE-design-3` and `skills/implement/LICENSE-design-4`: the design texts of step 4.
 - `agents/LICENSE-reviewer-1` and `agents/LICENSE-reviewer-2`: parts of the reviewer.
 - `scripts/LICENSE-mockup`: the mock-up server of the brainstorm.

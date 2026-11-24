@@ -39,7 +39,7 @@ const filesOf = (dir: string): string[] =>
   (readdirSync(join(ROOT, dir), { recursive: true }) as string[]).map((f) => `${dir}/${f.split('\\').join('/')}`).filter((f) => statSync(join(ROOT, f)).isFile()).sort()
 const isLicence = (f: string) => basename(f).startsWith('LICENSE')
 
-const BI = 'skills/build-implement'
+const BI = 'skills/implement'
 const STEP4 = `${BI}/SKILL.md`
 const TDD = `${BI}/tdd.md`
 const REVIEWER = 'agents/reviewer.md'
@@ -50,17 +50,17 @@ const PLUGIN = '.claude-plugin/plugin.json'
 // ---------- the terms of the spec (section 3) ----------
 
 const RULES_TITLE = '# Design Rules (code modules & skills)'
-// the rules file: the one file of skills/build-implement/ whose first line is the title
+// the rules file: the one file of skills/implement/ whose first line is the title
 const rulesFiles = () => filesOf(BI).filter((f) => raw(f).split('\n')[0].trimEnd() === RULES_TITLE)
 const rulesFile = (): string => {
   const fs = rulesFiles()
   expect(`files of ${BI}/ whose first line is "${RULES_TITLE}": ${fs.length}`).toBe(`files of ${BI}/ whose first line is "${RULES_TITLE}": 1`)
   return fs.length === 1 ? fs[0] : ''
 }
-// a design file: a .md file of skills/build-implement/ other than SKILL.md, tdd.md and writing-good-tests.md
+// a design file: a .md file of skills/implement/ other than SKILL.md, tdd.md and writing-good-tests.md
 const designFiles = () => filesOf(BI).filter((f) => f.endsWith('.md') && ![STEP4, TDD, `${BI}/writing-good-tests.md`].includes(f))
 const namedBy = (file: string) => designFiles().filter((f) => raw(file).includes(basename(f)))
-const builderTexts = () => [STEP4, ...namedBy(STEP4)] // skills/build-implement/SKILL.md and every design file whose file name it holds
+const builderTexts = () => [STEP4, ...namedBy(STEP4)] // skills/implement/SKILL.md and every design file whose file name it holds
 const reviewerTexts = () => [REVIEWER, ...namedBy(REVIEWER)] // agents/reviewer.md and every design file whose file name it holds
 const BUILDER = "the builder's design texts"
 const REVIEW = "the reviewer's texts"
@@ -164,7 +164,7 @@ const P = {
   b32: ['design findings outside the change', 'design findings whose fix would have changed an earlier test', 'a split the design named and the builder did not make'],
   b33: ['a fix gets a test that fails first, but a lint, format or type fix'],
   b35: ['Pocock', 'Vincent', 'Osmani', 'Gebert', 'superpowers', 'ponytail', 'agent-skills'],
-  b36: ['"version": "0.4.6"', '**Status: v0.4.6.**'],
+  b36: ['"version": "0.4.7"', '**Status: v0.4.7.**'],
   b37: ['## Design', 'design rules'],
 }
 // behaviour 34: a copied phrase, and the copyright line of the licence file beside every file that holds it
@@ -179,7 +179,7 @@ const SOURCES: [string, string][] = [
 
 // ---------- the rules file ----------
 
-test('1: exactly one file of skills/build-implement/ has "# Design Rules (code modules & skills)" as its first line', () => {
+test('1: exactly one file of skills/implement/ has "# Design Rules (code modules & skills)" as its first line', () => {
   expect(rulesFiles().length).toBe(1)
 })
 
@@ -203,7 +203,7 @@ test('3: each of the nine lines of "The rules" that begin, after their leading s
   for (const other of [...filesOf('skills'), ...filesOf('agents')].filter((o) => o !== f)) lacks(other, raw(other), RULE_LINES.map((l) => l.slice(2)))
 })
 
-test('4: skills/build-implement/SKILL.md and agents/reviewer.md each hold the file name of the rules file', () => {
+test('4: skills/implement/SKILL.md and agents/reviewer.md each hold the file name of the rules file', () => {
   const f = rulesFile()
   if (!f) return
   for (const where of [STEP4, REVIEWER]) yes(`${where} holds the file name "${basename(f)}"`, raw(where).includes(basename(f)))
@@ -211,7 +211,7 @@ test('4: skills/build-implement/SKILL.md and agents/reviewer.md each hold the fi
 
 // ---------- the design, before the code (step 4) ----------
 
-test('5: skills/build-implement/SKILL.md still has its six numbered items; its item 2 still holds "Before any line of product code", "## Entry points" and "## Edges", and now also names a third section of $S/decisions.md, "## Design"', () => {
+test('5: skills/implement/SKILL.md still has its six numbered items; its item 2 still holds "Before any line of product code", "## Entry points" and "## Edges", and now also names a third section of $S/decisions.md, "## Design"', () => {
   const numbers = raw(STEP4).split('\n').map((l) => /^(\d+)\. /.exec(l)).filter((m): m is RegExpExecArray => m !== null).map((m) => m[1])
   expect(numbers).toEqual(['1', '2', '3', '4', '5', '6'])
   holds(`item 2 of ${STEP4}`, item2(), P.b5)
@@ -266,7 +266,7 @@ test('12c: the builder\'s design texts hold "It changes no behaviour: every test
   setHolds(BUILDER, builderTexts(), P.b12c)
 })
 
-test('12d: in skills/build-implement/tdd.md, the part "### REFACTOR - Clean Up" still holds "Only in code this run added: leave code and tests that existed at the base as they are.", and after it "One exception: a split that the section ## Design names (step 4, item 2), made before the first cycle, while every test that passed at the base still passes."; the file still holds "Seven things are not violations"', () => {
+test('12d: in skills/implement/tdd.md, the part "### REFACTOR - Clean Up" still holds "Only in code this run added: leave code and tests that existed at the base as they are.", and after it "One exception: a split that the section ## Design names (step 4, item 2), made before the first cycle, while every test that passed at the base still passes."; the file still holds "Seven things are not violations"', () => {
   // the spec writes the second sentence inside one pair of backticks, with `## Design` in it: the backticks are not compared
   const bare = (s: string) => s.split('`').join('')
   const t = bare(refactor()), where = `the part "### REFACTOR - Clean Up" of ${TDD}`
@@ -411,7 +411,7 @@ test('35 (holds at the base, and must stay): no file of skills/ and agents/ othe
 
 // ---------- the version and the README ----------
 
-test('36: .claude-plugin/plugin.json holds "version": "0.4.6", and the README\'s status paragraph starts with "**Status: v0.4.6.**" and still holds the words "brainstorm" and "grilled"', () => {
+test('36: .claude-plugin/plugin.json holds "version": "0.4.7", and the README\'s status paragraph starts with "**Status: v0.4.7.**" and still holds the words "brainstorm" and "grilled"', () => {
   holds(PLUGIN, raw(PLUGIN), [P.b36[0]])
   const status = statusParagraph()
   yes(`the status paragraph of ${README} starts with "${P.b36[1]}"`, status.startsWith(P.b36[1]))

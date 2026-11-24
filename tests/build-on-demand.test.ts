@@ -52,9 +52,9 @@ test('1: the header of skills/build/SKILL.md holds disable-model-invocation: tru
   lacks('the description of build', description('skills/build/SKILL.md'), 'Use for any request to build, change or fix code')
 })
 
-const STEPS = ['skills/brainstorm/SKILL.md', 'skills/grill/SKILL.md', 'skills/build-implement/SKILL.md']
+const STEPS = ['skills/brainstorm/SKILL.md', 'skills/grill/SKILL.md', 'skills/implement/SKILL.md']
 
-test('5: the descriptions of brainstorm, grill and build-implement no longer send every request to hstack:build, each names /hstack:build, and none is closed to the agent', () => {
+test('5: the descriptions of brainstorm, grill and implement no longer send every request to hstack:build, each names /hstack:build, and none is closed to the agent', () => {
   for (const f of STEPS) {
     const d = description(f)
     lacks(`the description of ${f}`, d, 'For any request to build, change or fix code')
@@ -64,18 +64,18 @@ test('5: the descriptions of brainstorm, grill and build-implement no longer sen
   }
 })
 
-// the first paragraph of build-implement: the one after its title
+// the first paragraph of implement: the one after its title
 function firstParagraph(rel: string): string {
   const body = read(rel).replace(/^---\n[\s\S]*?\n---\n/, '')
   const parts = body.split(/\n\s*\n/).map((p) => p.trim()).filter((p) => p !== '' && !p.startsWith('#'))
   return parts[0] ?? ''
 }
 
-test('6: In hstack of brainstorm and grill, and the first paragraph of build-implement, no longer say invoke `hstack:build`, and name /hstack:build as the user\'s way to start the loop', () => {
+test('6: In hstack of brainstorm and grill, and the first paragraph of implement, no longer say invoke `hstack:build`, and name /hstack:build as the user\'s way to start the loop', () => {
   const texts: [string, string][] = [
     ['the section In hstack of brainstorm', section('skills/brainstorm/SKILL.md', '## In hstack')],
     ['the section In hstack of grill', section('skills/grill/SKILL.md', '## In hstack')],
-    ['the first paragraph of build-implement', firstParagraph('skills/build-implement/SKILL.md')],
+    ['the first paragraph of implement', firstParagraph('skills/implement/SKILL.md')],
   ]
   for (const [what, t] of texts) {
     lacks(what, t, 'invoke `hstack:build`')

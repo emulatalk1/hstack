@@ -38,6 +38,9 @@
     "tests/last-reply-step-lines-and-log-texts.test.ts",
     "tests/last-reply-step-lines-and-log-edges.test.ts",
     "tests/build-on-demand.test.ts",
-    "tests/build-on-demand-edges.test.ts"
+    "tests/build-on-demand-edges.test.ts",
+    "tests/claude-worktree-hook-folder.test.ts",
+    "tests/claude-worktree-hook-folder-texts.test.ts",
+    "tests/claude-worktree-hook-folder-edges.test.ts"
   ]
 }

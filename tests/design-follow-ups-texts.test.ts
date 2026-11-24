@@ -33,7 +33,7 @@ function part(file: string, from: string, until: RegExp, within = raw(file)): st
 const filesOf = (dir: string): string[] =>
   (readdirSync(join(ROOT, dir), { recursive: true }) as string[]).map((f) => `${dir}/${f.split('\\').join('/')}`).filter((f) => statSync(join(ROOT, f)).isFile()).sort()
 
-const BI = 'skills/build-implement'
+const BI = 'skills/implement'
 const STEP4 = `${BI}/SKILL.md`
 const TDD = `${BI}/tdd.md`
 const REVIEWER = 'agents/reviewer.md'
@@ -43,10 +43,10 @@ const PLUGIN = '.claude-plugin/plugin.json'
 
 // ---------- the terms of spec 6, section 3, which spec 7 uses ----------
 
-// a design file: a .md file of skills/build-implement/ other than SKILL.md, tdd.md and writing-good-tests.md
+// a design file: a .md file of skills/implement/ other than SKILL.md, tdd.md and writing-good-tests.md
 const designFiles = () => filesOf(BI).filter((f) => f.endsWith('.md') && ![STEP4, TDD, `${BI}/writing-good-tests.md`].includes(f))
 const namedBy = (file: string) => designFiles().filter((f) => raw(file).includes(basename(f)))
-const builderTexts = () => [STEP4, ...namedBy(STEP4)] // skills/build-implement/SKILL.md and every design file whose file name it holds
+const builderTexts = () => [STEP4, ...namedBy(STEP4)] // skills/implement/SKILL.md and every design file whose file name it holds
 const reviewerTexts = () => [REVIEWER, ...namedBy(REVIEWER)] // agents/reviewer.md and every design file whose file name it holds
 const BUILDER = "the builder's design texts"
 const REVIEW = "the reviewer's texts"
@@ -78,7 +78,7 @@ const P = {
   b9: '## The severity of a finding',
   b9not: ['## The severity of a design finding'],
   b10: ['Categorize issues by actual severity. Not everything is Critical.', '"Coverage could be broader" and polish suggestions are Minor.', 'The rules file comes before this passage'],
-  b11: ['"version": "0.4.6"', '**Status: v0.4.6.**'],
+  b11: ['"version": "0.4.7"', '**Status: v0.4.7.**'],
 }
 
 // ---------- a split that keeps the old way to reach the moved code ----------
@@ -123,7 +123,7 @@ test('10 (holds at the base, and must stay): agents/reviewer.md still holds "Cat
 
 // ---------- the version ----------
 
-test('11 (holds at the base, and must stay): .claude-plugin/plugin.json still holds "version": "0.4.6", and the README\'s status paragraph still starts with "**Status: v0.4.6.**"', () => {
+test('11 (holds at the base, and must stay): .claude-plugin/plugin.json still holds "version": "0.4.7", and the README\'s status paragraph still starts with "**Status: v0.4.7.**"', () => {
   holds(PLUGIN, raw(PLUGIN), [P.b11[0]])
   yes(`the status paragraph of ${README} starts with "${P.b11[1]}"`, statusParagraph().startsWith(P.b11[1]))
 })

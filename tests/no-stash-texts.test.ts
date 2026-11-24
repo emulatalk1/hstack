@@ -28,8 +28,8 @@ function part(file: string, from: string, until: RegExp, within = raw(file)): st
   return [ls[starts[0]], ...(end < 0 ? rest : rest.slice(0, end))].join('\n')
 }
 
-const STEP4 = 'skills/build-implement/SKILL.md'
-const TDD = 'skills/build-implement/tdd.md'
+const STEP4 = 'skills/implement/SKILL.md'
+const TDD = 'skills/implement/tdd.md'
 const PLAYBOOK = 'skills/build/SKILL.md'
 
 // the texts the spec changes
@@ -49,9 +49,9 @@ const WHAT_THE_SCRIPT_DOES = '`$H start` records what the stash holds, and `$H g
 const NO_COMMAND = 'Run no stash command to put it right: no pop, no apply, no drop.'
 const STEP10_LISTS = 'Step 10 lists each such line under "Needs your ruling", with what you know of it: whether this run made the change.'
 
-// ---------- skills/build-implement/SKILL.md, item 4 ----------
+// ---------- skills/implement/SKILL.md, item 4 ----------
 
-test('1: item 4 of skills/build-implement/SKILL.md holds "Undo a small break by the opposite edit; before a break that takes a whole file\'s change away, copy the file to a temporary folder outside the repository, and copy it back afterwards.", after the words "undo that one edit by hand", which it still holds', () => {
+test('1: item 4 of skills/implement/SKILL.md holds "Undo a small break by the opposite edit; before a break that takes a whole file\'s change away, copy the file to a temporary folder outside the repository, and copy it back afterwards.", after the words "undo that one edit by hand", which it still holds', () => {
   const t = item4(), where = `item 4 of ${STEP4}`
   holds(where, t, ['undo that one edit by hand', WAY])
   after(where, t, 'undo that one edit by hand', WAY)
@@ -61,9 +61,9 @@ test('2: that item holds "Never git stash for this, in any form: the stash is on
   holds(`item 4 of ${STEP4}`, item4(), [NEVER_FOR_THIS])
 })
 
-// ---------- skills/build-implement/tdd.md, the item "A test that passes at once on this run's own code" ----------
+// ---------- skills/implement/tdd.md, the item "A test that passes at once on this run's own code" ----------
 
-test('3: in skills/build-implement/tdd.md, the item that starts with "**A test that passes at once on this run\'s own code.**" holds "Never git stash either, in any form: the stash is one stack shared by every worktree of the repository.", after the words "never restore the file with git checkout", which it still holds', () => {
+test('3: in skills/implement/tdd.md, the item that starts with "**A test that passes at once on this run\'s own code.**" holds "Never git stash either, in any form: the stash is one stack shared by every worktree of the repository.", after the words "never restore the file with git checkout", which it still holds', () => {
   const t = tddItem(), where = `the item "A test that passes at once on this run's own code" of ${TDD}`
   holds(where, t, ['never restore the file with `git checkout`', NEVER_EITHER])
   after(where, t, 'never restore the file with `git checkout`', NEVER_EITHER)

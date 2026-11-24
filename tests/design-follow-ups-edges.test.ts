@@ -10,7 +10,7 @@ const raw = (file: string) => readFileSync(join(ROOT, file), 'utf8')
 const flat = (s: string) => s.replace(/\s+/g, ' ')
 const yes = (what: string, ok: boolean) => expect(`${what}: ${ok}`).toBe(`${what}: true`) // a failure names what was looked for
 
-const NOTE = 'skills/build-implement/design-note.md'
+const NOTE = 'skills/implement/design-note.md'
 
 test('F2: the three conditions of a line that exports again stand in one sentence, after the condition on tests', () => {
   const t = flat(raw(NOTE))
@@ -30,7 +30,7 @@ test('F3: in the log item, "Design debt" stands after "Design not fixed" and bef
 })
 
 const REVIEWER = 'agents/reviewer.md'
-const DESIGN_FILES = ['design-rules.md', 'design-note.md', 'deep-modules.md', 'design-review.md'].map((f) => `skills/build-implement/${f}`)
+const DESIGN_FILES = ['design-rules.md', 'design-note.md', 'deep-modules.md', 'design-review.md'].map((f) => `skills/implement/${f}`)
 
 test('F1: the sentence that says what the passage grades stands directly under the heading, before the passage', () => {
   const ls = raw(REVIEWER).split('\n'), h = ls.indexOf('## The severity of a finding')
@@ -57,7 +57,7 @@ test('F9: each of the sixteen classes of step S1-F1-S38 is a selector in the sty
   for (const c of SIXTEEN) yes(`a rule of the style sheets of ${FRAME} selects .${c}`, new RegExp(`(^|[\\s,}])\\.${c}(?![\\w-])[^{}]*\\{`, 'm').test(css))
 })
 
-const REVIEW = 'skills/build-implement/design-review.md'
+const REVIEW = 'skills/implement/design-review.md'
 
 test('F10: a line that exports everything at once from the old file is a finding, named as a debt or not', () => {
   yes(`${REVIEW} holds the sentence`, flat(raw(REVIEW)).includes('A line that exports everything at once from the old file is a finding, whether the section names it or not.'))

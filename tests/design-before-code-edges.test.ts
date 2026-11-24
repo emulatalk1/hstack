@@ -23,7 +23,7 @@ function part(where: string, text: string, from: string, until: RegExp): string 
   return [ls[starts[0]], ...(end < 0 ? rest : rest.slice(0, end))].join('\n')
 }
 
-const BI = 'skills/build-implement'
+const BI = 'skills/implement'
 const RULES = `${BI}/design-rules.md`
 const NOTE = `${BI}/design-note.md`
 const MODULES = `${BI}/deep-modules.md`
@@ -82,8 +82,8 @@ test('E14: the description of the step 4 skill and its row in the README name th
   const front = raw(STEP4).split('\n---')[0]
   holds(`the header of ${STEP4}`, front, ['description: Step 4 of the hstack build loop - the entry points, the edges and the design, the feature written test-first, the checks.'])
   yes(`the description of ${STEP4} ends with "The user starts the loop by typing /hstack:build; nothing else starts it." (spec 9)`, /^description: .*The user starts the loop by typing \/hstack:build; nothing else starts it\.$/m.test(front))
-  const row = raw('README.md').split('\n').find((l) => l.startsWith('| `build-implement` |')) ?? ''
-  holds('the row of build-implement in the README', row, ['the entry points, the edges and the design, the feature written test-first, the checks'])
+  const row = raw('README.md').split('\n').find((l) => l.startsWith('| `implement` |')) ?? ''
+  holds('the row of implement in the README', row, ['the entry points, the edges and the design, the feature written test-first, the checks'])
 })
 
 test('E7: the reworded words of the copied lines', () => {
@@ -124,11 +124,11 @@ test("E8: the reviewer's file and step 6 name the four design files, and step 6 
   yes(`step 6 of ${PLAYBOOK} holds "Start \`hstack:reviewer\` with" and, after it, "Store its reply"`, a >= 0 && z > a)
   const started = s.slice(a, z)
   for (const f of DESIGN_FILES) yes(`what step 6 of ${PLAYBOOK} starts the reviewer with names ${basename(f)}`, started.includes(`\`${basename(f)}\``))
-  holds(`what step 6 of ${PLAYBOOK} starts the reviewer with`, started, ['`${CLAUDE_PLUGIN_ROOT}/skills/build-implement/`', "`../build-implement/` from this skill's base directory"])
+  holds(`what step 6 of ${PLAYBOOK} starts the reviewer with`, started, ['`${CLAUDE_PLUGIN_ROOT}/skills/implement/`', "`../implement/` from this skill's base directory"])
 })
 
 test('E15: step 6 still runs round 2 after any fix, and the review file says where the question on a fix is asked', () => {
-  holds(`step 6 of ${PLAYBOOK}`, step6(), ['If you fixed any, run round 2 into `review-2.md` (not past 180 minutes).'])
+  holds(`step 6 of ${PLAYBOOK}`, step6(), ['If you fixed any, run round 2 into `review-2.md`.'])
   holds(REVIEW, raw(REVIEW), ['Ask it in round 2, of each design finding the builder fixed:'])
 })
 

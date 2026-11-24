@@ -206,9 +206,9 @@ const PLAYBOOK = 'skills/build/SKILL.md'
 const WAY = "Undo a small break by the opposite edit; before a break that takes a whole file's change away, copy the file to a temporary folder outside the repository, and copy it back afterwards."
 
 test('E18: the added sentences stand directly after the sentence the spec names, in item 4 and in the item of tdd.md', () => {
-  const item4 = flat(part(raw('skills/build-implement/SKILL.md'), '4. ', /^5\. /))
+  const item4 = flat(part(raw('skills/implement/SKILL.md'), '4. ', /^5\. /))
   expect(item4).toContain(`undo that one edit by hand (your code is not committed yet). ${WAY} Never \`git stash\` for this, in any form: the stash is one stack shared by every worktree of the repository, and a stash or a pop made by a run can take or drop an entry of the user or of another session. A change to what the product does after its test passes`)
-  const tdd = flat(part(raw('skills/build-implement/tdd.md'), "- **A test that passes at once on this run's own code.**", /^(- \*\*|#)/))
+  const tdd = flat(part(raw('skills/implement/tdd.md'), "- **A test that passes at once on this run's own code.**", /^(- \*\*|#)/))
   expect(tdd).toContain(`that would throw the step's work away. Never \`git stash\` either, in any form: the stash is one stack shared by every worktree of the repository. ${WAY} If no break of this run's code makes it fail`)
 })
 

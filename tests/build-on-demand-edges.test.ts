@@ -59,7 +59,7 @@ function approved(s: Scene) {
   expect(s.h('approve').out).toBe('approved')
 }
 
-test('E1: the hooks judge the folder of the input\'s cwd: a change in a worktree with no run ends, though CLAUDE_PROJECT_DIR holds an unfinished run of this session', () => {
+test('E1: the hooks judge the folder of the input\'s cwd: a change in a worktree with no run is held, because CLAUDE_PROJECT_DIR holds an unfinished run of this session (spec 10, behaviour 17)', () => {
   const s = scene()
   s.hookStart('startup'); approved(s); expect(s.h('phase', 'setup').code).toBe(0)
   const wt = `${s.dir}/wt`
@@ -68,7 +68,7 @@ test('E1: the hooks judge the folder of the input\'s cwd: a change in a worktree
   // the session moved into the worktree (no new start hook: a move inside one session)
   s.prompt(wt)
   writeFileSync(`${wt}/src/a.txt`, 'changed in the worktree\n')
-  expect(s.stop(wt)).toBe('')
+  expect(s.stop(wt).startsWith(HELD)).toBe(true) // spec 10: the run of this session holds wherever the session's folder is
   expect(s.stop().startsWith(HELD)).toBe(true) // the run of the main folder is still this session's, untouched
 })
 
@@ -196,12 +196,12 @@ test('E14: step 1 of the playbook takes up a waiting spec by its name with no br
 
 test('E15: step 1 sends new work beside an earlier session\'s unfinished run into a new worktree the session moves into, refuses it beside this session\'s run, and says what to do with no worktree tool', () => {
   const t = part('**What the user typed.**', '1. **The code repository.**')
-  for (const p of ['is a new request', 'this session\'s, start nothing', 'never moves it aside', 'new worktree from `HEAD`, on a new branch', '`EnterWorktree`', 'move the session into it', '`$S/worktree-origin`', 'so that no worktree is left, and start nothing']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+  for (const p of ['is a new request', 'this session\'s, start nothing', 'never moves it aside', 'by a new name (in Claude Code, `EnterWorktree` with a name)', '`EnterWorktree`', 'move the session into it', '`$S/worktree-origin`', 'so that no worktree is left, and start nothing']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
 })
 
 test('E16: the last reply of a run made in such a worktree asks before a merge, merges only on the user\'s yes, aborts a conflict and keeps the worktree', () => {
   const t = part('**A run made in a new worktree.**', '## A ruling after the run')
-  for (const p of ['`$S/worktree-origin` exists', 'Only on their yes', 'merge <this branch>', 'merge --abort', 'The worktree is not removed']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+  for (const p of ['`$S/worktree-origin` exists', 'only on the user\'s answer', 'merge <the run\'s branch>', 'merge --abort', 'The worktree is not removed']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
 })
 
 // ---------- review round 1 ----------
@@ -236,9 +236,9 @@ test('R5: takeup refuses when HEAD was reset back past the run\'s last recorded 
   expect(existsSync(`${s.S()}/stale`)).toBe(true)
 })
 
-test('R3: the new worktree for new work is made in a folder outside the repository, with git, and the session is then moved into it', () => {
+test('R3: the new worktree for new work is made under .claude/worktrees/ of the main folder (spec 10), and the session is moved into it', () => {
   const t = part('**What the user typed.**', '1. **The code repository.**')
-  for (const p of ['in a folder outside the repository', '`git -C <this folder> worktree add -b <a new branch> <that folder> HEAD`', 'move the session into it with its own worktree tool']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
+  for (const p of ['under `.claude/worktrees/` of the repository\'s main folder', '`git -C <the main folder> worktree add -b <a new branch> <the main folder>/.claude/worktrees/<a new name> <the base>`', 'move the session into it by its path']) expect(`${p}: ${t.includes(p)}`).toBe(`${p}: true`)
 })
 
 const has = (what: string, t: string, ps: string[]) => { for (const p of ps) expect(`${what} holds "${p}": ${t.includes(p)}`).toBe(`${what} holds "${p}": true`) }
@@ -278,15 +278,15 @@ test('R4e: CLAUDE.md says that the stop gate holds a spec of this session that w
 
 // ---------- review round 2 ----------
 
-test('V1: the new worktree is made in a lasting folder beside the repository, not in the system\'s temporary folder', () => {
+test('V1: the new worktree is made in a lasting folder under .claude/worktrees/ of the repository (spec 10), not in the system\'s temporary folder', () => {
   const t = part('**What the user typed.**', '1. **The code repository.**')
-  has('the part What the user typed', t, ['`<this folder>-worktrees/<the new branch>`'])
+  has('the part What the user typed', t, ['under `.claude/worktrees/` of the repository\'s main folder'])
   expect(`the part names the temporary folder: ${t.includes("system's temporary folder")}`).toBe('the part names the temporary folder: false')
 })
 
-test('V3: the Git rule\'s exception names the worktree made by git worktree add, as the part "What the user typed" does', () => {
+test('V3: the Git rule\'s exception names the worktree the tool makes under .claude/worktrees/ and the one git worktree add makes there (spec 10)', () => {
   const rule = part('- **Git, in the code repository.**', '- **Git, in the records home.**')
-  has('the Git rule', rule, ['the new worktree on a new branch that `git worktree add` makes beside the repository for new work beside an unfinished run'])
+  has('the Git rule', rule, ['the worktree that the session\'s worktree tool makes under `.claude/worktrees/` for new work beside an unfinished run', 'the one that `git worktree add` makes there from a base the user named'])
 })
 
 test('V2: the brainstorm, typed by the user, tells the agent to run the playbook from its step 1 (behaviour 7)', () => {
@@ -313,7 +313,7 @@ test('V13: the worktree made as the playbook says leaves the unfinished run\'s f
 
 test('X2: when the session cannot be moved into the new worktree, the playbook removes the worktree and its branch it made (behaviour 15)', () => {
   const t = part('**What the user typed.**', '1. **The code repository.**')
-  has('the part What the user typed', t, ['`git -C <this folder> worktree remove <that folder>`', '`git -C <this folder> branch -D <the new branch>`'])
+  has('the part What the user typed', t, ['`git -C <the main folder> worktree remove <its folder>`', '`git -C <the main folder> branch -D <its branch>`'])
 })
 
 test('X4: a name that matches no spec is a new request: the brainstorm starts with it, with no question whether it is a typo (behaviour 12)', () => {

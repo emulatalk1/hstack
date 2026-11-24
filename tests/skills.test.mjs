@@ -42,7 +42,7 @@ test('skills have frontmatter and name their scripts', async () => {
   }
 });
 
-const rule = (name) => Bun.file(new URL(`../skills/build-implement/${name}`, import.meta.url)).text();
+const rule = (name) => Bun.file(new URL(`../skills/implement/${name}`, import.meta.url)).text();
 
 test("the builder's test rules: no ask of a human, no upstream name, the licence beside them", async () => {
   const [tdd, good, licence] = await Promise.all([rule('tdd.md'), rule('writing-good-tests.md'), rule('LICENSE-tdd')]);
@@ -61,10 +61,10 @@ test("the builder's test rules: no ask of a human, no upstream name, the licence
   for (const s of ['tdd.md', 'writing-good-tests.md', 'Permission is hereby granted', 'Copyright (c)']) expect(licence).toContain(s);
 });
 
-test('hstack:build-implement is step 4: the loop can invoke it, and it tells anyone else that the user starts the loop with /hstack:build (spec 9)', async () => {
-  const text = await skill('build-implement');
+test('hstack:implement is step 4: the loop can invoke it, and it tells anyone else that the user starts the loop with /hstack:build (spec 9)', async () => {
+  const text = await skill('implement');
   const front = text.split('\n---')[0];
-  expect(front).toMatch(/^name: build-implement$/m);
+  expect(front).toMatch(/^name: implement$/m);
   expect(front).toMatch(/^description: .*The user starts the loop by typing \/hstack:build; nothing else starts it\.$/m);
   expect(front).not.toMatch(/disable-model-invocation/); // the playbook must be able to trigger it
   // the cycle is one test at a time, and a change after green starts a new one: the first run did neither
@@ -72,19 +72,19 @@ test('hstack:build-implement is step 4: the loop can invoke it, and it tells any
   for (const s of ['do nothing here: the user starts the loop by typing `/hstack:build`', 'its first word must be `implement`', 'never run `$H start` again', 'tdd.md', 'writing-good-tests.md', '## Entry points', '## Edges', 'without editing them', 'type-check']) expect(text).toContain(s);
 });
 
-test('build is a playbook: step 4 invokes hstack:build-implement', async () => {
+test('build is a playbook: step 4 invokes hstack:implement', async () => {
   const loop = await skill('build');
   for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 9]) expect(loop).toMatch(new RegExp(`^## ${n}\\. `, 'm'));
   expect(loop.split('\n---')[0]).toContain('written before the code, the implementation, a gate');
   expect(loop).toMatch(/^## 4\. Implement$/m);
-  expect(loop).toContain('Invoke the `hstack:build-implement` skill');
+  expect(loop).toContain('Invoke the `hstack:implement` skill');
   expect(loop).toContain('$H phase implement');
   expect(loop).not.toContain('$H phase build');
   expect(await skill('hstack-feedback')).toContain('`setup`, `oracle`, `implement`, `gate`');
   expect(loop).toContain('(or dispute it, step 4)');
   expect(loop).toContain('**Dispute** (at most 2 rounds)');
   expect(loop).toContain('a fix gets a test that fails first, but a lint, format or type fix'); // step 9 agrees with the test rules
-  expect(loop).not.toContain('numbered behaviours'); // the how of step 4 lives in hstack:build-implement
+  expect(loop).not.toContain('numbered behaviours'); // the how of step 4 lives in hstack:implement
 });
 
 // 0.4.1: the canary of each test command, the whole run at the base, the red test the base did not measure, the times
@@ -111,7 +111,7 @@ test('the times go to the last reply, not to a record', async () => {
 });
 
 test('step 4 and the oracle know the rule', async () => {
-  expect(await skill('build-implement')).toContain('Whose red test');
+  expect(await skill('implement')).toContain('Whose red test');
   const oracle = await agent('oracle');
   for (const s of ['canary: pass', 'canary: fail']) expect(oracle).toContain(s);
 });
@@ -149,5 +149,5 @@ test('the base check and the canary cannot excuse what they exist to catch', asy
 test('a suite with no whole run at the base is run whole by nobody before step 9', async () => {
   const loop = await skill('build');
   for (const s of ['whole run: step 9 only', 'Nobody runs that command before step 9', 'tell each agent you start']) expect(loop).toContain(s);
-  expect(await skill('build-implement')).toContain('whole run: step 9 only');
+  expect(await skill('implement')).toContain('whole run: step 9 only');
 });

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// hstack run state and the three hooks. TypeScript, run with Bun; git is the only other program it needs (gh for three
+// hstack run state and the four hooks. TypeScript, run with Bun; git is the only other program it needs (gh for three
 // feedback verbs). State lives outside the work tree and outside .git (Claude Code guards writes into .git), in
 // ${HSTACK_STATE:-$HOME/.hstack} (or /tmp/.hstack without HOME)/<checksum of the git dir>, so it is never committed
 // and never part of the product.
@@ -8,7 +8,7 @@
 // fields; never an entry's detail.
 // Every string in this file is a byte string (one char per byte, latin1): an entry or a description is checked as
 // bytes, so no encoding can drop or change what the checks should refuse. b() and u() convert at the edges.
-// usage: hstack.ts dir|repo [<path>]|home|start|spec <file>|spec --drop|approve|takeup [--with-commits]|phase <name> [skipped: <why>]|records-check <feature list> <coverage file>|ruled|missing|lock <file>...|gate|elapsed|times [--all]|done|hook-start|hook-prompt|hook-stop
+// usage: hstack.ts dir|repo [<path>]|home|start|spec <file>|spec --drop|approve|takeup [--with-commits]|phase <name> [skipped: <why>]|records-check <feature list> <coverage file>|ruled|missing|runs|lock <file>...|gate|elapsed|times [--all]|done|hook-worktree|hook-start|hook-prompt|hook-stop
 //        hstack.ts feedback add <kind> <phase|none> <description on stdin|describe <id> <description on stdin
 //        hstack.ts feedback draft|post <id> <code>|dismiss <id>...|label|collect
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -181,8 +181,8 @@ function draft(f: string): Draft {
 const entries = () => git('status', '--porcelain', '-uall', '-z').out.split('\0').filter((e) => e !== '') // -z: a name with a space or a letter outside ASCII comes as it is
 const porcelain = () => { const o = git('status', '--porcelain').out; return o === '' ? '' : o + '\n' }
 const fingerprint = () => `${git('rev-parse', '-q', '--verify', 'HEAD').out} ${run('git', ['hash-object', '--stdin'], porcelain()).out}`
-function missing(): string {
-  const have = lines(rdOr(`${S}/phases`))
+function missing(dir = S): string {
+  const have = lines(rdOr(`${dir}/phases`))
   // a phase line is "<name>" or "<name> skipped: <why>"; a run recorded by 0.3.1 or earlier named implement "build"
   return PHASES.filter((p) => !have.some((l) => new RegExp(`^${p === 'implement' ? '(implement|build)' : p}( skipped: .+)?$`).test(l))).join(' ')
 }
@@ -225,13 +225,54 @@ const stashReport = (): { note: string; changes: string[] } => {
   const line = (what: string) => (e: string) => `STASH ${what}: ${messageOf(e)} (${commitOf(e)})`
   return { note: '', changes: [...is.filter(not(was)).map(line('ADDED')), ...was.filter(not(is)).map(line('GONE'))] }
 }
-const recorded = (step: string) => lines(rdOr(`${S}/phases`)).some((l) => l === step || l.startsWith(`${step} skipped: `))
+const recorded = (step: string, dir = S) => lines(rdOr(`${dir}/phases`)).some((l) => l === step || l.startsWith(`${step} skipped: `))
 // a spec waits from `spec <file>` until `approve`: state file `spec` holds its path, its hash and the code repository's fingerprint
-const waiting = () => isFile(`${S}/spec`) && !recorded('spec')
+const waiting = (dir = S) => isFile(`${dir}/spec`) && !recorded('spec', dir)
 // an approved run that is not finished: of this session, or of an earlier one when the folder holds `stale`
-const unfinished = () => recorded('spec') && !isFile(`${S}/done`)
+const unfinished = (dir = S) => recorded('spec', dir) && !isFile(`${dir}/done`)
+
+// Whose run it is. A run belongs to the session of the first hook with a session_id that judges its work tree after
+// start (state file `owner`); a hook of another session there writes its id to `came`, which lets takeup give the run
+// to it. A run of an earlier session (`stale`) is no session's. A hook with no session_id claims nothing, and judges
+// its folder's run as before: its own unless `stale`.
+const sessionOf = (input: string) => { try { const i = (JSON.parse(u(input)) as { session_id?: unknown }).session_id; return typeof i === 'string' ? b(i) : '' } catch { return '' } }
+const meet = (dir: string, id: string, judged: boolean) => {
+  if (id === '' || !isFile(`${dir}/base`) || isFile(`${dir}/done`)) return
+  const owner = first(`${dir}/owner`)
+  try {
+    if (owner === '' && judged && !isFile(`${dir}/stale`)) wr(`${dir}/owner`, id + '\n')
+    else if (owner !== id) wr(`${dir}/came`, id + '\n')
+  } catch { /* a hook never fails for its state */ }
+}
+const mineAt = (dir: string, id: string) => !isFile(`${dir}/stale`) && (id === '' || first(`${dir}/owner`) === id)
+
+// The work trees of the repository the command stands in (its main folder and each worktree), each with its folder and
+// its state folder. Read from git only: no state(), no cd, no write. A worktree whose folder is gone is found through
+// the gitdir files under the common dir.
+type Tree = { top: string; dir: string; gone: boolean }
+const stateOf = (gitdir: string) => `${ROOT}/${cksum(gitdir)}`
+function worktrees(): Tree[] {
+  const l = git('worktree', 'list', '--porcelain')
+  if (l.code !== 0) return []
+  const common = git('rev-parse', '--path-format=absolute', '--git-common-dir').out
+  const out: Tree[] = []
+  for (const block of l.out.split('\n\n')) {
+    const top = (/^worktree (.+)$/m.exec(block) ?? [])[1]
+    if (top === undefined || /^bare$/m.test(block)) continue
+    if (existsSync(u(top))) {
+      const g = run('git', ['-C', top, 'rev-parse', '--absolute-git-dir'])
+      if (g.code === 0) out.push({ top, dir: stateOf(g.out), gone: false })
+      continue
+    }
+    const name = ls(`${common}/worktrees`).find((n) => first(`${common}/worktrees/${n}/gitdir`) === `${top}/.git`)
+    if (name !== undefined) out.push({ top, dir: stateOf(`${common}/worktrees/${name}`), gone: true })
+  }
+  return out
+}
+// an unfinished run of this session in another work tree of the repository than the state folder `here`
+const elsewhere = (id: string, here: string) => id === '' ? undefined : worktrees().find((t) => t.dir !== here && unfinished(t.dir) && first(`${t.dir}/owner`) === id && !isFile(`${t.dir}/stale`))
 // the time in which no session worked on the run, since the stop hook last ran, comes off the clock (a take-up, a resume)
-const idleOff = () => { try { const t = now(), idle = t - int(rd(`${S}/last-stop`)); if (idle > 0) { wr(`${S}/started`, `${int(rd(`${S}/started`)) + idle}\n`); wr(`${S}/last-stop`, `${t}\n`) } } catch { /* no stop recorded: nothing to take off */ } } // once: the time taken off is not taken off again
+const idleOff = (dir = S) => { try { const t = now(), idle = t - int(rd(`${dir}/last-stop`)); if (idle > 0) { wr(`${dir}/started`, `${int(rd(`${dir}/started`)) + idle}\n`); wr(`${dir}/last-stop`, `${t}\n`) } } catch { /* no stop recorded: nothing to take off */ } } // once: the time taken off is not taken off again
 const offClock = () => { try { wr(`${S}/started`, `${int(rd(`${S}/started`)) + now() - int(rd(`${S}/spec-asked`))}\n`) } catch { /* no clock to correct */ } }
 const recordsChanged = () => { const ok = lines(rdOr(`${S}/records-ok`)); return ok[0] === 'checked' && ok.slice(1).some((l) => { const [hash, ...f] = l.split(' '); return git('hash-object', '--', f.join(' ')).out !== hash }) }
 const moveRun = () => { // an earlier run goes to old/<time>/; what belongs to the repository and to the user's reports stays
@@ -243,23 +284,41 @@ const moveRun = () => { // an earlier run goes to old/<time>/; what belongs to t
 }
 const stdin = () => { const chunks: Buffer[] = [], buf = Buffer.alloc(65536); for (;;) { let n = 0; try { n = readSync(0, buf, 0, buf.length, null) } catch (e) { if ((e as { code?: string }).code === 'EAGAIN') continue; break } if (n <= 0) break; chunks.push(Buffer.from(buf.subarray(0, n))) } return Buffer.concat(chunks).toString('latin1') }
 
-// the folder a hook judges: the one the session works in, the cwd of the hook's input (it follows a session moved into
-// a worktree), else the project's folder, else here
+// the common git dir of a folder, as git prints it: two work trees of one repository print the same
+const commonOf = (dir: string) => { const r = run('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir']); return r.code === 0 ? r.out : '' }
+// the repositories of the project: the one its folder is in, and the code repository its top's .hstack/repo names
+const projectCommons = (project: string) => {
+  const all = [commonOf(project)], top = run('git', ['-C', project, 'rev-parse', '--show-toplevel'])
+  if (top.code === 0 && isFile(`${top.out}/.hstack/repo`)) all.push(commonOf(`${top.out}/${first(`${top.out}/.hstack/repo`).trim()}`))
+  return all.filter((c) => c !== '')
+}
+// the folder a hook judges: the cwd of the hook's input when it is in a work tree of the project's repository (it
+// follows a session moved into a worktree), else the project's folder: a cwd in no repository, in another repository,
+// or one that does not exist. With no project's folder, the cwd is followed as it is, else here.
 const hookDir = (input: string) => {
-  try { const c = (JSON.parse(u(input)) as { cwd?: unknown }).cwd; if (typeof c === 'string' && c !== '' && existsSync(c)) return b(c) } catch { /* no JSON: the project's folder */ }
-  return env('CLAUDE_PROJECT_DIR') || '.'
+  const project = env('CLAUDE_PROJECT_DIR')
+  try {
+    const c = (JSON.parse(u(input)) as { cwd?: unknown }).cwd
+    if (typeof c === 'string' && c !== '' && existsSync(c)) {
+      if (!project) return b(c)
+      const own = commonOf(b(c))
+      if (own !== '' && projectCommons(project).includes(own)) return b(c)
+    }
+  } catch { /* no JSON: the project's folder */ }
+  return project || '.'
 }
 
 const argv = process.argv.slice(2).map(b)
 const cmd = argv.shift() ?? ''
 
 if (cmd === 'hook-start') {
-  const input = stdin()
+  const input = stdin(), id = sessionOf(input)
+  let trees: Tree[] = []
   if (cd(hookDir(input)) && state()) {
     // a new process gets its blocks back; a compaction inside one does not
     if (input.includes('"source":"startup"') || input.includes('"source":"resume"')) { wr(`${S}/stop-blocks`, '0\n'); rmSync(u(`${S}/pass`), { force: true }) }
     // a resume of the session whose approved run is not finished: the time in which nobody worked on it comes off its clock
-    if (input.includes('"source":"resume"') && unfinished() && !isFile(`${S}/stale`)) idleOff()
+    if (input.includes('"source":"resume"') && unfinished() && mineAt(S, id)) idleOff()
     // only a new session sets the reference; a resume must keep it
     // a run that a new session finds is an earlier session's (stale): the stop hook judges it only by what this session changes
     if (input.includes('"source":"startup"')) { wr(`${S}/session-head`, fingerprint() + '\n'); if (isFile(`${S}/base`)) wr(`${S}/stale`, '') }
@@ -269,12 +328,29 @@ if (cmd === 'hook-start') {
     if (input.includes('"source":"startup"')) rmSync(u(`${S}/turn`), { force: true })
     // a session that finds no reference at all takes one, whatever started it: with none, every stop would hold
     if (!isFile(`${S}/session-head`)) wr(`${S}/session-head`, fingerprint() + '\n')
+    meet(S, id, true)
+    trees = worktrees().filter((w) => w.dir !== S)
+    // a resume of a session whose approved run is not finished in another work tree (the session had moved into it,
+    // and the resume starts in the folder the session started in): that run gets its holds back and the time in which
+    // nobody worked on it comes off its clock, as a run here does
+    if (input.includes('"source":"resume"')) for (const w of trees) if (id !== '' && unfinished(w.dir) && !isFile(`${w.dir}/stale`) && first(`${w.dir}/owner`) === id) { wr(`${w.dir}/stop-blocks`, '0\n'); rmSync(u(`${w.dir}/pass`), { force: true }); idleOff(w.dir) }
   } else if (pointerError) put(`${pointerError}: the stop gate is off until the file is right.`)
   put('hstack is installed. Its build loop runs only when the user invokes it, by typing /hstack:build with a request or with the name of a spec: never start it yourself, and do other work as it is asked, without it. It starts with a brainstorm with the user, then a spec that the user approves: your first message says what you understood and what you found, and the user\'s answer decides what comes next. For a build, the brainstorm is hstack\'s own skill, hstack:brainstorm, not another brainstorming skill. Nothing is built before the approval; after the approval, follow it to its last step, decide from the spec and the code, and write each decision down. A message that only rules on a point the record of the project lists as waiting for a ruling is not a build: write the ruling as the rules of the record say, commit those files by path, and run hstack.ts ruled.')
   // the name a spec is taken up by: its file name, without its folder and without .md
   const specName = (f: string) => base(f).replace(/\.md$/, '')
   if (S && waiting()) put(`A spec waits for the user's approval: ${first(`${S}/spec`)}. The user takes it up by typing /hstack:build ${specName(first(`${S}/spec`))}: the playbook's step 1 then finds the waiting spec, and the user's answer, whether it approves it, asks for changes to it or asks for a grill of it, is taken as its item "The user's next message". If the user answers it without that command, tell them to type it; do not approve the spec yourself. If the message is a question, answer it. Other work does not need it: the spec goes on waiting, and approve refuses it if the repository changes in the meantime.`)
   else if (S && isFile(`${S}/stale`) && unfinished()) put(`An approved hstack:build run of an earlier session is not finished: spec ${first(`${S}/spec`)}; steps not recorded: ${missing()}. The user goes on with it by typing /hstack:build ${specName(first(`${S}/spec`))}. Other work does not need it. Do not bring it up unless the user asks about it.`)
+  // the specs and runs of the other work trees of the repository: another session's are the user's to take up by name;
+  // this session's own (after a resume in another folder) is named with no command
+  for (const w of trees) {
+    const own = id !== '' && !isFile(`${w.dir}/stale`) && first(`${w.dir}/owner`) === id, spec = first(`${w.dir}/spec`)
+    if (waiting(w.dir)) put(own
+      ? `This session's spec waits for the user's approval in the work tree ${w.top}: ${spec}.`
+      : `In the work tree ${w.top}, a spec waits for the user's approval: ${spec}. The user goes on with it by typing /hstack:build ${specName(spec)}. Other work does not need it.`)
+    else if (unfinished(w.dir)) put(own
+      ? `This session's own approved hstack:build run in the work tree ${w.top} is not finished: spec ${spec}; steps not recorded: ${missing(w.dir)}. Go on with it there, from the first of them.`
+      : `In the work tree ${w.top}, an approved hstack:build run is not finished: spec ${spec}; steps not recorded: ${missing(w.dir)}. The user goes on with it by typing /hstack:build ${specName(spec)}. Other work does not need it.`)
+  }
   process.exit(0)
 }
 
@@ -288,58 +364,124 @@ if (cmd === 'hook-start') {
 if (cmd === 'hook-prompt') {
   try {
     const input = stdin()
-    if (cd(hookDir(input)) && state() && !isFile(`${S}/turn`)) wr(`${S}/turn`, fingerprint() + '\n')
+    if (cd(hookDir(input)) && state()) {
+      meet(S, sessionOf(input), true)
+      if (!isFile(`${S}/turn`)) wr(`${S}/turn`, fingerprint() + '\n')
+    }
   } catch { /* silent: without a note the stop hook compares with the session's reference, as before */ }
   process.exit(0)
 }
 
+// The worktree hook (PreToolUse, for the session's worktree tool): while a run of this session is not finished, the
+// session neither moves into another worktree nor leaves the one it is in. It refuses the tool then, and prints nothing
+// otherwise. A session that comes into a work tree with the tool is recorded there as come (takeup may give it the run).
+// It never fails: exit 0, whatever happens.
+if (cmd === 'hook-worktree') {
+  try {
+    const input = stdin(), id = sessionOf(input)
+    let path = ''
+    try { const p = (JSON.parse(u(input)) as { tool_input?: { path?: unknown } }).tool_input?.path; if (typeof p === 'string') path = b(p) } catch { /* no path */ }
+    // the work tree the tool would enter: the session comes to the run there
+    if (path !== '' && existsSync(u(path))) {
+      const g = run('git', ['-C', path, 'rev-parse', '--absolute-git-dir'])
+      if (g.code === 0) meet(stateOf(g.out), id, false)
+    }
+    if (cd(hookDir(input)) && state()) {
+      meet(S, id, true)
+      const t = unfinished() && mineAt(S, id) ? { top: first(`${S}/top`), dir: S } : elsewhere(id, S)
+      if (t) {
+        const why = `hstack: the approved hstack:build run of this session in ${t.top} is not finished; steps not recorded: ${missing(t.dir)}. The session does not move into another worktree, and does not leave the one it is in, until the run is done: the run goes on to its end first.`
+        put(b(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: u(why) } })))
+      }
+    }
+  } catch { /* silent: the tool runs */ }
+  process.exit(0)
+}
+
 if (cmd === 'hook-stop') {
-  if (!(cd(hookDir(stdin())) && state())) process.exit(0)
+  const input = stdin(), id = sessionOf(input)
+  if (!(cd(hookDir(input)) && state())) process.exit(0)
+  meet(S, id, true)
+  const here = S
   // the turn's note, when the prompt hook took one; without it the reference is the session's, as before the prompt hook
   const note = first(`${S}/turn`)
   const ref = note || first(`${S}/session-head`)
   // the turn ends: the next message of the user takes a new note. A stop that holds leaves the note, the turn goes on.
-  const end = (): never => { rmSync(u(`${S}/turn`), { force: true }); process.exit(0) }
+  const end = (): never => { rmSync(u(`${here}/turn`), { force: true }); process.exit(0) }
+  // hold the turn for the run of the state folder dir: the count of holds is that run's
+  const hold = (dir: string, why: string, m: string): never => {
+    S = dir
+    let n = 0
+    try { n = int(rdOr(`${dir}/stop-blocks`, '0')) } catch { n = NaN }
+    if (n >= MAX_BLOCKS) { // never loop: a capped gate costs less than a run that never ends
+      // the gate giving up on a started run leaves it to a human: one entry per cap (the bump past the cap marks it)
+      if (n === MAX_BLOCKS && isFile(`${dir}/base`) && !isFile(`${dir}/stale`)) { wr(`${dir}/stop-blocks`, `${n + 1}\n`); record('intervention', m.split(' ')[0] || 'final', '') }
+      process.exit(0) // the gate gives up, the turn is not over for the note: what it held is held again when a new process gets its holds back
+    }
+    wr(`${dir}/stop-blocks`, `${(Number.isNaN(n) ? 0 : n) + 1}\n`)
+    // an approved spec is named only where there is one: not with no run, not while a spec waits for the approval
+    put(`{"decision":"block","reason":"hstack: ${why}${recorded('spec', dir) ? ' Decide from the approved spec and the code.' : ''} When finished, end with exactly the reply the task asked for."}`)
+    process.exit(0)
+  }
+  // the words of a hold for this session's run that is not finished, in the state folder dir; its folder is named
+  // when it is not the folder this hook judges
+  const runWhy = (dir: string, top: string) => {
+    const m = missing(dir)
+    // a run that 0.3.3 or earlier recorded has no spec line and no records line: an unfinished one cannot go on,
+    // because phase would refuse
+    if (!recorded('spec', dir) && rdOr(`${dir}/phases`) !== '') return { m: '', why: 'an hstack:build run of an earlier version was left unfinished and cannot be continued. Run hstack:build from its start.' }
+    const where = dir === here ? '' : ` in ${top}`
+    // the run's folder on another branch than the run's: the session goes back to it. A run with no branch recorded
+    // (one that 0.4.6 started) gets no word on a branch
+    let moved = ''
+    if (isFile(`${dir}/branch`)) {
+      const was = first(`${dir}/branch`), is = run('git', ['-C', top, 'branch', '--show-current']).out
+      if (is !== was) moved = was === ''
+        ? ` The run started with no branch checked out, and its folder is now on the branch ${is}: go back to the run's commit (git switch --detach ${first(`${dir}/last-head`) || first(`${dir}/base`)}) before you go on.`
+        : ` The run started on the branch ${was}, and its folder is now on ${is === '' ? 'no branch' : `the branch ${is}`}: go back to the run's branch (git switch ${was}) before you go on.`
+    }
+    return { m, why: `the hstack:build run${where ? ` of this session${where}` : ''} is not finished; steps not recorded: ${m}. Continue hstack:build from the first of them${where ? ', in that folder' : ''}; if its playbook is not in your context, read ${PLAYBOOK}.${moved}` }
+  }
+  // nothing in this folder holds the turn: a run of this session that is not finished in another work tree of the
+  // repository does, wherever the session's folder is now; else the turn ends
+  const endOrElsewhere = (): never => {
+    const t = elsewhere(id, here)
+    if (!t) return end()
+    try { wr(`${t.dir}/last-stop`, `${now()}\n`) } catch { /* the clock is the lesser file */ }
+    const r = runWhy(t.dir, t.top)
+    return hold(t.dir, r.why, r.m)
+  }
   // a turn the user spent on a feedback verb is not a build turn: it ends once, unblocked. Consumed on every stop,
   // so a pass never waits for a later one.
   // The turn is over for the note only when nothing changed in it: a change made in the turn of a feedback verb is
   // judged at the next stop, as it was when the session had one reference.
-  if (isFile(`${S}/pass`)) { rmSync(u(`${S}/pass`), { force: true }); if (fingerprint() === ref) end(); process.exit(0) }
-  const stale = isFile(`${S}/stale`)
+  if (isFile(`${S}/pass`)) {
+    rmSync(u(`${S}/pass`), { force: true })
+    // the verb wrote it in the project's folder too: one turn ends, once, wherever the session stands
+    const project = env('CLAUDE_PROJECT_DIR'), keep = [G, S], back = b(process.cwd())
+    if (project && cd(project) && state()) rmSync(u(`${S}/pass`), { force: true })
+    cd(back); [G, S] = keep
+    if (fingerprint() === ref) end(); process.exit(0)
+  }
+  const others = !mineAt(S, id) // stale, or a run of another session
   // this session worked on its run until now: the time after it, until a take-up or a resume, is nobody's work on the run
-  if (isFile(`${S}/base`) && !isFile(`${S}/done`) && !stale) try { wr(`${S}/last-stop`, `${now()}\n`) } catch { /* the clock is the lesser file */ }
-  let why = '', m = ''
+  if (isFile(`${S}/base`) && !isFile(`${S}/done`) && !others) try { wr(`${S}/last-stop`, `${now()}\n`) } catch { /* the clock is the lesser file */ }
   // a spec waits for the user: the turn may end, and that end is the proof that the user was shown it. This comes
   // before every other way out, the one for an earlier session's run too: a spec shown again in a new session must
   // get its stamp, or approve refuses for ever. Nothing is built while it waits.
   if (waiting()) {
     const fp = fingerprint()
-    if (fp === (lines(rd(`${S}/spec`))[2] ?? '')) { if (!isFile(`${S}/spec-shown`)) wr(`${S}/spec-shown`, `${now()}\n`); end() }
+    if (fp === (lines(rd(`${S}/spec`))[2] ?? '')) { if (!isFile(`${S}/spec-shown`)) wr(`${S}/spec-shown`, `${now()}\n`); endOrElsewhere() }
     // a spec of an earlier session is not this session's: the turn ends, and approve refuses a repository that changed
-    if (stale) end()
-    why = "a spec waits for the user's approval and nothing is built before it. If the changes made since the spec was shown are yours, undo them and end the turn as the playbook's item 'Show it' says; if the user made them, run spec --drop and start again."
+    if (others) endOrElsewhere()
+    hold(S, "a spec waits for the user's approval and nothing is built before it. If the changes made since the spec was shown are yours, undo them and end the turn as the playbook's item 'Show it' says; if the user made them, run spec --drop and start again.", '')
   }
   // the loop runs only when the user invokes it: with no run, after a finished run and beside a run of an earlier
-  // session, whatever changed, the turn ends. Only a run of this session that is not finished is held.
-  else if (!isFile(`${S}/base`) || isFile(`${S}/done`) || stale) end()
-  else {
-    // a run that 0.3.3 or earlier recorded has no spec line and no records line: an unfinished one cannot go on,
-    // because phase would refuse
-    m = missing()
-    if (!recorded('spec') && rdOr(`${S}/phases`) !== '') { m = ''; why = 'an hstack:build run of an earlier version was left unfinished and cannot be continued. Run hstack:build from its start.' }
-    else why = `the hstack:build run is not finished; steps not recorded: ${m}. Continue hstack:build from the first of them; if its playbook is not in your context, read ${PLAYBOOK}.`
-  }
-  let n = 0
-  try { n = int(rdOr(`${S}/stop-blocks`, '0')) } catch { n = NaN }
-  if (n >= MAX_BLOCKS) { // never loop: a capped gate costs less than a run that never ends
-    // the gate giving up on a started run leaves it to a human: one entry per cap (the bump past the cap marks it)
-    if (n === MAX_BLOCKS && isFile(`${S}/base`) && !stale) { wr(`${S}/stop-blocks`, `${n + 1}\n`); record('intervention', m.split(' ')[0] || 'final', '') }
-    process.exit(0) // the gate gives up, the turn is not over for the note: what it held is held again when a new process gets its holds back
-  }
-  wr(`${S}/stop-blocks`, `${(Number.isNaN(n) ? 0 : n) + 1}\n`)
-  // an approved spec is named only where there is one: not with no run, not while a spec waits for the approval
-  put(`{"decision":"block","reason":"hstack: ${why}${recorded('spec') ? ' Decide from the approved spec and the code.' : ''} When finished, end with exactly the reply the task asked for."}`)
-  process.exit(0)
+  // session or of another session, whatever changed, the turn ends. Only a run of this session that is not finished
+  // is held, here or in another work tree of the repository.
+  if (!isFile(`${S}/base`) || isFile(`${S}/done`) || others) endOrElsewhere()
+  const r = runWhy(S, first(`${S}/top`))
+  hold(S, r.why, r.m)
 }
 
 if (cmd === 'feedback') {
@@ -350,6 +492,8 @@ if (cmd === 'feedback') {
   // the user is in this turn: the stop hook of the session's repository lets it end once
   if (['add', 'describe', 'draft', 'post', 'dismiss', 'label', 'collect'].includes(verb)) {
     const here = b(process.cwd()), keep = [G, S]
+    // and the folder the command is typed in, which is where the session works when it moved into a worktree
+    if (S) wr(`${S}/pass`, '')
     if (cd(env('CLAUDE_PROJECT_DIR') || '.') && state()) wr(`${S}/pass`, '')
     cd(here); [G, S] = keep
   }
@@ -509,6 +653,7 @@ switch (cmd) {
     if (head.code !== 0) die('hstack: the repository has no commit')
     wr(`${S}/started`, `${now()}\n`)
     wr(`${S}/phases`, '')
+    wr(`${S}/branch`, git('branch', '--show-current').out + '\n') // the run's branch: the stop hook names a switch away from it
     wr(`${S}/base-status`, entries().join('\0')) // what the tree held before the run: spec compares with it
     const held = stashNow() // what the stash held before the run: gate and done compare with it. Not read, not recorded
     if (held) wr(`${S}/stash-base`, held.map((e) => e + '\n').join(''))
@@ -585,7 +730,10 @@ switch (cmd) {
   case 'takeup': { // an approved run of an earlier session, taken up by this one: the user typed /hstack:build <its spec's name>
     if (argv.length > 1 || (argv.length === 1 && argv[0] !== '--with-commits')) die('usage: hstack.ts takeup [--with-commits]')
     if (!isFile(`${S}/base`) || !unfinished()) die('hstack: no approved run that is not finished: nothing to take up')
-    if (!isFile(`${S}/stale`)) die('hstack: the run is this session\'s: go on with it from its first unrecorded step')
+    // a run of an earlier session (stale), or one that another session than its own came to: a run of the session that
+    // is here and no other's is that session's, and goes on without a take-up
+    const came = first(`${S}/came`)
+    if (!isFile(`${S}/stale`) && (came === '' || came === first(`${S}/owner`))) die('hstack: the run is this session\'s: go on with it from its first unrecorded step')
     // the run's own commits (its base, its oracle's tests, where it stood at its last step) must still be in the history:
     // after a reset or a rewrite, its work and its tests are gone
     for (const c of [first(`${S}/base`), first(`${S}/oracle-commit`), first(`${S}/last-head`)].filter((c) => c !== ''))
@@ -601,6 +749,10 @@ switch (cmd) {
     }
     // this session's run from now on: the stop hook holds it, with its holds given back, and this session's reference
     rmSync(u(`${S}/stale`), { force: true }); wr(`${S}/stop-blocks`, '0\n'); wr(`${S}/session-head`, fingerprint() + '\n')
+    // the run is the session's that came; when none did (hooks with no session id), the next hook with one claims it
+    if (came !== '') wr(`${S}/owner`, came + '\n'); else rmSync(u(`${S}/owner`), { force: true })
+    wr(`${S}/branch`, git('branch', '--show-current').out + '\n') // the run goes on from the branch of its take-up
+    rmSync(u(`${S}/came`), { force: true })
     idleOff()
     put(`taken up: go on from ${missing().split(' ')[0]}`)
     break
@@ -666,6 +818,14 @@ switch (cmd) {
 
   case 'missing': put(missing()); break
 
+  case 'runs': // each spec that waits and each approved run that is not finished, in every work tree of the repository
+    for (const w of worktrees()) {
+      const folder = w.gone ? `${w.top} (folder gone)` : w.top
+      if (waiting(w.dir)) put(`waiting ${folder} ${first(`${w.dir}/spec`)}`)
+      else if (unfinished(w.dir)) put(`unfinished ${folder} ${first(`${w.dir}/spec`)} steps not recorded: ${missing(w.dir)}`)
+    }
+    break
+
   case 'lock': {
     if (argv.length === 0) die('usage: hstack.ts lock <test file>...')
     let lock = ''
@@ -727,5 +887,5 @@ switch (cmd) {
     break
   }
 
-  default: die('usage: hstack.ts dir|repo [<path>]|home|start|spec|approve|takeup|phase|records-check|ruled|missing|lock|gate|elapsed|times|done|feedback|hook-start|hook-prompt|hook-stop')
+  default: die('usage: hstack.ts dir|repo [<path>]|home|start|spec|approve|takeup|phase|records-check|ruled|missing|runs|lock|gate|elapsed|times|done|feedback|hook-worktree|hook-start|hook-prompt|hook-stop')
 }
