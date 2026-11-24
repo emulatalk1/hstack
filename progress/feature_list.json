@@ -298,7 +298,7 @@
       "`CLAUDE.md`'s part on the hooks says that the loop runs when the user invokes `/hstack:build`, and that the stop gate holds only a run of this session that is not finished and a spec of this session that waits; it no longer says that the stop gate holds a change with no run.",
       "In the README's skills table, the `build` row no longer holds `Any request to build, change or fix code` and holds `/hstack:build`; the `brainstorm` row still says that typed by the user with a request it is the start of a build."
     ],
-    "passes": false
+    "passes": true
   },
   {
     "description": "New work beside an unfinished run of an earlier session goes into a worktree that the session's own worktree tool makes under `.claude/worktrees/`, from a base the user is told of and may change; the hooks follow the `cwd` of their input only into a work tree of the project's repository; a run belongs to one session and is held wherever that session's folder is; a fourth hook refuses the worktree tool while a run of this session is not finished, and the stop hook names a switched branch; `runs` lists the waiting specs and unfinished runs of every work tree, the start text names them, and a run left in another work tree is taken up from there by its spec's name; the README names `/hstack:build`; no step of the loop is skipped or cut short for the time; the step 4 skill is named `implement`. hstack 0.4.7.",
@@ -359,6 +359,6 @@
       "The playbook's step 4 invokes `hstack:implement`, and its step 6 gives the reviewer the four design files of `skills/implement/`; no file under `skills/`, `agents/`, `scripts/` or `hooks/`, nor `README.md`, nor `CLAUDE.md`, holds `build-implement`.",
       "In the README, the skills table has a row `implement` and none `build-implement`, the row of `skills/` in the table of paths names `implement`, the status paragraph names `skills/implement/design-rules.md`, and the section \"License\" names the five licence files of that folder by `skills/implement/…`."
     ],
-    "passes": true
+    "passes": false
   }
 ]
