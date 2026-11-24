@@ -235,6 +235,8 @@ const unfinished = (dir = S) => recorded('spec', dir) && !isFile(`${dir}/done`)
 // start (state file `owner`); a hook of another session there is written in the list of sessions that came, which
 // lets takeup give the run to it. A run of an earlier session (`stale`) is no session's. A hook with no session_id claims nothing, and judges
 // its folder's run as before: its own unless `stale`.
+// one field of a hook's input JSON, or undefined when the input is no JSON object
+const inputField = (input: string, k: string): unknown => { try { const o = JSON.parse(u(input)) as Record<string, unknown> | null; return o && typeof o === 'object' ? o[k] : undefined } catch { return undefined } }
 const sessionOf = (input: string) => { try { const i = (JSON.parse(u(input)) as { session_id?: unknown }).session_id; return typeof i === 'string' ? b(i) : '' } catch { return '' } }
 // The sessions that came to a run's work tree: the state file `seen`, one id per line, in the order of their last
 // coming (a run of spec 10's 0.4.7 has a file `came` instead: its one id). The session that came last, when it is not
@@ -351,9 +353,7 @@ const cmd = argv.shift() ?? ''
 if (cmd === 'hook-end') {
   try {
     const input = stdin()
-    let reason: unknown
-    try { reason = (JSON.parse(u(input)) as { reason?: unknown }).reason } catch { /* no JSON: no mark */ }
-    if (reason === 'clear') markClear(sessionOf(input))
+    if (inputField(input, 'reason') === 'clear') markClear(sessionOf(input))
   } catch { /* silent */ }
   process.exit(0)
 }
@@ -451,9 +451,7 @@ if (cmd === 'hook-worktree') {
       }
     }
     // the work tree the tool enters: the session comes to the run there. A call that is refused enters nothing
-    let tool: unknown
-    try { tool = (JSON.parse(u(input)) as { tool_name?: unknown }).tool_name } catch { /* no JSON */ }
-    if (!refused && tool === 'EnterWorktree' && path !== '' && existsSync(u(path))) {
+    if (!refused && inputField(input, 'tool_name') === 'EnterWorktree' && path !== '' && existsSync(u(path))) {
       const g = run('git', ['-C', path, 'rev-parse', '--absolute-git-dir'])
       if (g.code === 0) meet(stateOf(g.out), id, false)
     }
