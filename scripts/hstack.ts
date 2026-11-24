@@ -361,6 +361,9 @@ if (cmd === 'hook-end') {
 if (cmd === 'hook-start') {
   const input = stdin(), id = sessionOf(input)
   let trees: Tree[] = []
+  // the mark of this process, which needs no repository: a new process (a startup, a resume) drops it, a clear takes it
+  if (input.includes('"source":"startup"') || input.includes('"source":"resume"')) dropMark()
+  const cleared = input.includes('"source":"clear"') ? takeClear() : ''
   if (cd(hookDir(input)) && state()) {
     // a new process gets its blocks back; a compaction inside one does not
     if (input.includes('"source":"startup"') || input.includes('"source":"resume"')) { wr(`${S}/stop-blocks`, '0\n'); rmSync(u(`${S}/pass`), { force: true }) }
@@ -377,14 +380,9 @@ if (cmd === 'hook-start') {
     if (input.includes('"source":"startup"')) rmSync(u(`${S}/turn`), { force: true })
     // a session that finds no reference at all takes one, whatever started it: with none, every stop would hold
     if (!isFile(`${S}/session-head`)) wr(`${S}/session-head`, fingerprint() + '\n')
-    // a new process: a mark of its number is an earlier process's
-    if (input.includes('"source":"startup"') || input.includes('"source":"resume"')) dropMark()
     // a /clear gives the session a new id: by the mark its end hook left, the old id's runs go with it, in every work
     // tree of the repository; never a run of an earlier session. With no mark, nothing passes (a fork is another session)
-    if (input.includes('"source":"clear"')) {
-      const old = takeClear()
-      if (old !== '' && id !== '') clearHandOver(old, id, [S, ...worktrees().map((w) => w.dir)])
-    }
+    if (cleared !== '' && id !== '') clearHandOver(cleared, id, [S, ...worktrees().map((w) => w.dir)])
     meet(S, id, true)
     trees = worktrees().filter((w) => w.dir !== S)
     // a resume of a session whose approved run is not finished in another work tree (the session had moved into it,
@@ -453,7 +451,9 @@ if (cmd === 'hook-worktree') {
       }
     }
     // the work tree the tool enters: the session comes to the run there. A call that is refused enters nothing
-    if (!refused && path !== '' && existsSync(u(path))) {
+    let tool: unknown
+    try { tool = (JSON.parse(u(input)) as { tool_name?: unknown }).tool_name } catch { /* no JSON */ }
+    if (!refused && tool === 'EnterWorktree' && path !== '' && existsSync(u(path))) {
       const g = run('git', ['-C', path, 'rev-parse', '--absolute-git-dir'])
       if (g.code === 0) meet(stateOf(g.out), id, false)
     }

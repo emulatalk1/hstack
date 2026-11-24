@@ -151,3 +151,28 @@ test('R1-4: the usage names hook-end before the three hooks it ends with, and th
   expect(head).toContain('the five hooks')
   expect(head).toMatch(/\|hook-end\|[a-z|-]*\|hook-start\|hook-prompt\|hook-stop/)
 })
+
+test('X1: a startup, and a clear, whose project is no git repository still remove the mark of their process', () => {
+  const s = scene()
+  const none = `${s.dir}/none`; mkdirSync(none, { recursive: true })
+  const start = (id: string, source: string, p: string) => sh([BUN, SCRIPT, 'hook-start'], none, { HSTACK_STATE: s.state, CLAUDE_PROJECT_DIR: none, CLAUDE_PID: p }, JSON.stringify({ session_id: id, hook_event_name: 'SessionStart', source, cwd: none }))
+  const p1 = pid()
+  s.endHook({ session_id: 'A', reason: 'clear', cwd: none }, p1)
+  expect(start('M', 'startup', p1).code).toBe(0)
+  expect(existsSync(`${s.state}/clear/${p1}`)).toBe(false)
+  const p2 = pid()
+  s.endHook({ session_id: 'A', reason: 'clear', cwd: none }, p2)
+  expect(start('N', 'clear', p2).code).toBe(0)
+  expect(existsSync(`${s.state}/clear/${p2}`)).toBe(false)
+})
+
+test('X3: the worktree hook for ExitWorktree with a path is no coming to that work tree', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.approved('A', s.W)
+  const r = sh([BUN, SCRIPT, 'hook-worktree'], s.repo, { HSTACK_STATE: s.state, CLAUDE_PROJECT_DIR: s.repo }, JSON.stringify({ session_id: 'B', hook_event_name: 'PreToolUse', tool_name: 'ExitWorktree', tool_input: { path: s.W }, cwd: s.repo }))
+  expect(r.out).toBe('')
+  const t = sh([BUN, SCRIPT, 'takeup'], s.W, { HSTACK_STATE: s.state, CLAUDE_CODE_SESSION_ID: 'B' })
+  expect(t.code).toBe(1)
+  expect(s.stop('A', s.W).startsWith(HELD)).toBe(true)
+})
