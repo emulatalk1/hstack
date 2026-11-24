@@ -55,3 +55,9 @@ After the focused reading of eac8fd1: `inputField(input, k)` reads one field of 
 - `tests/claude-worktree-hook-folder-texts.test.ts` "32: …" (the status paragraph and the paragraph on `bun`): `Four hooks` and `four hooks` became `Five hooks` and `five hooks`. Item: S10-F1-S32 (behaviour 22).
 - `tests/claude-worktree-hook-folder-texts.test.ts` "51: …": the hashes of `SKILL.md` and `tdd.md` are those of the new texts. Item: S10-F1-S51 (behaviours 19 and 20).
 - `tests/turn-reference-texts.test.ts` "22: …" and "23: …": `Four hooks` and `four hooks` became `Five hooks` and `five hooks`. Item: S4-F1-S22 and S4-F1-S23 (behaviour 22).
+
+## Rulings after the run
+
+- 2026-11-25, on the user's word ("Theo suggestion", to the advisor's suggestion for each):
+  - The test "R1-3 (behaviour 34): …" of `tests/claude-worktree-hook-folder-edges.test.ts`, which reads `CLAUDE_CODE_SESSION_ID` from the shell: left as it is. A real Claude Code id is never "A", and outside Claude Code the variable is not set. A later change that touches that file removes the session variables from its commands, as spec 11's tests do.
+  - The planted fault M14 (the owner file of an earlier session's run can name another session): accepted as equivalent in what a user sees; every reader checks `stale` first. Nothing is built for it.

@@ -3681,3 +3681,9 @@ Plan `docs/plans/2026-11-11-bench-scored-runs.md`, approved 2026-11-11 with (a) 
   - The planted fault M14 (the owner file of an earlier session's run can name another session) was left alive: no command shows it, since every reader checks `stale` first; judged equivalent in what a user sees.
   - Still the user's to do: the push of `main`, the closing of issues 10 and 11, and the update of the installed plugin to 0.4.7.
 - No stash was made, popped, applied or dropped by this run; the gate printed no `STASH` line.
+- 2026-11-25, after the run of spec 11, on the user's word ("Theo suggestion", to the advisor's suggestion for each of the points under "Needs your ruling"):
+  - The test "R1-3 (behaviour 34): …" of `tests/claude-worktree-hook-folder-edges.test.ts`: left as it is; the ruling stands in the section "Rulings after the run" of `docs/specs/2026-11-24-clear-and-takeup-by-session-id.decisions.md`.
+  - The planted fault M14: accepted as equivalent in what a user sees; the ruling stands in the same section.
+  - Decision E20 of spec 10's builder is marked as replaced by spec 11, beside it in `docs/specs/2026-11-24-claude-worktree-hook-folder-readme.decisions.md`.
+  - Nothing of spec 10 or spec 11 waits for a ruling now. Still the user's to do: the push of `main`, the closing of issues 10 and 11, and the update of the installed plugin to 0.4.7; before the push, the whole suite is run once with every `CLAUDE*` variable removed from the environment.
+
