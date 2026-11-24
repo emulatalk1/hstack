@@ -238,3 +238,16 @@ test('R1-3 (behaviour 36): after a resume, the start text names this session\'s 
   const t = s.startHook('x', 'resume', s.repo)
   expect(t).toContain(`This session's own approved hstack:build run in the work tree ${s.W} is not finished`)
 })
+
+test('R2-1: a session that only opened the project beside a waiting spec does not get the run when the spec\'s own session approves it', () => {
+  const s = scene()
+  s.startHook('w', 'startup', s.repo)
+  s.run('w', s.repo, false)
+  s.startHook('x', 'startup', s.repo)
+  s.prompt('w', s.repo)
+  expect(s.h(s.repo, 'approve').out).toBe('approved')
+  expect(s.h(s.repo, 'phase', 'setup').code).toBe(0)
+  writeFileSync(`${s.repo}/src/a.txt`, 'changed after the approval\n')
+  expect(s.stop('w', s.repo).startsWith(HELD)).toBe(true)
+  expect(s.stop('x', s.W)).toBe('')
+})

@@ -242,8 +242,8 @@ const meet = (dir: string, id: string, judged: boolean) => {
   try {
     if (owner === '' && judged && !isFile(`${dir}/stale`)) wr(`${dir}/owner`, id + '\n')
     else if (owner !== id) wr(`${dir}/came`, id + '\n')
-    // the owner is back: a session that only passed through is no longer the last to come
-    else if (judged && !isFile(`${dir}/stale`)) rmSync(u(`${dir}/came`), { force: true })
+    // the owner is back: a session that only passed through, or only opened the project, is no longer the last to come
+    else if (judged) rmSync(u(`${dir}/came`), { force: true })
   } catch { /* a hook never fails for its state */ }
 }
 // the run passes to the session that came to it (an approval or a take-up in a session that did not write the spec
