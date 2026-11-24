@@ -82,17 +82,17 @@ test('21: the status paragraph of the README still holds the words "brainstorm" 
   for (const w of ['brainstorm', 'grilled']) expect(`the status paragraph holds the word "${w}": ${new RegExp(`\\b${w}\\b`).test(s)}`).toBe(`the status paragraph holds the word "${w}": true`)
 })
 
-test('22: the README\'s status paragraph holds "Four hooks" (spec 10), and no longer holds "Two hooks" or "before anything changed"', () => {
+test('22: the README\'s status paragraph holds "Five hooks" (spec 11), and no longer holds "Two hooks" or "before anything changed"', () => {
   const s = status()
-  holds('the status paragraph', s, ['Four hooks'])
+  holds('the status paragraph', s, ['Five hooks'])
   lacks('the status paragraph', s, ['Two hooks', 'before anything changed'])
 })
 
-test('23: the README\'s paragraph on a machine where bun is not on the PATH holds "four hooks" (spec 10), and no longer holds "Both hooks" or "both hooks"', () => {
+test('23: the README\'s paragraph on a machine where bun is not on the PATH holds "five hooks" (spec 11), and no longer holds "Both hooks" or "both hooks"', () => {
   // the paragraph that says what happens there: it names `bun`, the `PATH` and the hooks
   const found = paragraphs('README.md').filter((p) => p.includes('`bun` is not on the `PATH`'))
   expect(`README.md: paragraphs that hold "\`bun\` is not on the \`PATH\`": ${found.length}`).toBe('README.md: paragraphs that hold "`bun` is not on the `PATH`": 1')
   const p = found[0] ?? ''
-  holds('the paragraph on bun and the PATH', p, ['four hooks'])
+  holds('the paragraph on bun and the PATH', p, ['five hooks'])
   lacks('the paragraph on bun and the PATH', p, ['Both hooks', 'both hooks'])
 })

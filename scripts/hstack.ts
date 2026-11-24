@@ -232,31 +232,46 @@ const waiting = (dir = S) => isFile(`${dir}/spec`) && !recorded('spec', dir)
 const unfinished = (dir = S) => recorded('spec', dir) && !isFile(`${dir}/done`)
 
 // Whose run it is. A run belongs to the session of the first hook with a session_id that judges its work tree after
-// start (state file `owner`); a hook of another session there writes its id to `came`, which lets takeup give the run
-// to it. A run of an earlier session (`stale`) is no session's. A hook with no session_id claims nothing, and judges
+// start (state file `owner`); a hook of another session there is written in the list of sessions that came, which
+// lets takeup give the run to it. A run of an earlier session (`stale`) is no session's. A hook with no session_id claims nothing, and judges
 // its folder's run as before: its own unless `stale`.
 const sessionOf = (input: string) => { try { const i = (JSON.parse(u(input)) as { session_id?: unknown }).session_id; return typeof i === 'string' ? b(i) : '' } catch { return '' } }
+// The sessions that came to a run's work tree: the state file `seen`, one id per line, in the order of their last
+// coming (a run of spec 10's 0.4.7 has a file `came` instead: its one id). The session that came last, when it is not
+// the owner, is the one a take-up or an approval gives the run to when the calling session is not known.
+const seenOf = (dir: string) => { const l = lines(rdOr(`${dir}/seen`)).filter((x) => x !== ''); const c = first(`${dir}/came`); return l.length || c === '' ? l : [c] }
+const come = (dir: string, id: string) => { wr(`${dir}/seen`, [...seenOf(dir).filter((x) => x !== id), id].join('\n') + '\n'); rmSync(u(`${dir}/came`), { force: true }) }
+const cameOf = (dir: string) => { const l = seenOf(dir), last = l[l.length - 1] ?? ''; return last === first(`${dir}/owner`) ? '' : last }
+// the session that runs a verb (approve, takeup): the id Claude Code gives the agent's shell, trusted only when that
+// session came to the run's work tree, so that an id of another process (a test runner's) changes nothing
+const callerAt = (dir: string) => { const i = env('CLAUDE_CODE_SESSION_ID'); return i !== '' && seenOf(dir).includes(i) ? i : '' }
 const meet = (dir: string, id: string, judged: boolean) => {
   if (id === '' || !isFile(`${dir}/base`) || isFile(`${dir}/done`)) return
-  const owner = first(`${dir}/owner`)
   try {
-    if (owner === '' && judged && !isFile(`${dir}/stale`)) wr(`${dir}/owner`, id + '\n')
-    else if (owner !== id) wr(`${dir}/came`, id + '\n')
-    // the owner is back: a session that only passed through, or only opened the project, is no longer the last to come
-    else if (judged) rmSync(u(`${dir}/came`), { force: true })
+    if (first(`${dir}/owner`) === '' && judged && !isFile(`${dir}/stale`)) wr(`${dir}/owner`, id + '\n')
+    come(dir, id)
   } catch { /* a hook never fails for its state */ }
 }
-// the run passes to the session that came to it (an approval or a take-up in a session that did not write the spec
-// or start the run); when none came and the run is an earlier session's, the next hook with an id claims it
+// the run passes to the session that calls the verb, when it is known; else to the session that came last (an approval
+// or a take-up in a session that did not write the spec or start the run); when none came and the run is an earlier
+// session's, the next hook with an id claims it. The new owner is the last to have come.
 const handOver = () => {
-  const came = first(`${S}/came`)
-  if (came !== '') wr(`${S}/owner`, came + '\n'); else if (isFile(`${S}/stale`)) rmSync(u(`${S}/owner`), { force: true })
-  rmSync(u(`${S}/came`), { force: true })
+  const to = callerAt(S) || cameOf(S)
+  if (to !== '') { wr(`${S}/owner`, to + '\n'); come(S, to) } else if (isFile(`${S}/stale`)) rmSync(u(`${S}/owner`), { force: true })
 }
 // the one rule of whose run it is: a run belongs to the session whose id its owner file holds, unless it is an earlier
 // session's (stale). A hook with no id judges its own folder's run as before: its own unless stale
 const ownedBy = (dir: string, id: string) => id !== '' && !isFile(`${dir}/stale`) && first(`${dir}/owner`) === id
 const mineAt = (dir: string, id: string) => (id === '' ? !isFile(`${dir}/stale`) : ownedBy(dir, id))
+
+// A /clear gives the session a new id. The end hook of the clear leaves a mark, the old id, in a file named by the
+// process (CLAUDE_PID); the start hook of the clear, in the same process, takes it (reads and removes it) and gives the
+// old id's runs to the new id. No process number, no mark.
+const pidOf = () => { const p = env('CLAUDE_PID'); return /^[0-9]+$/.test(p) ? p : '' }
+const markFile = (pid: string) => `${ROOT}/clear/${pid}`
+const markClear = (id: string) => { const pid = pidOf(); if (pid && id) { mkdirp(`${ROOT}/clear`); wr(markFile(pid), id + '\n') } }
+const dropMark = () => { const pid = pidOf(); if (pid) rmSync(u(markFile(pid)), { force: true }) }
+const takeClear = () => { const pid = pidOf(); if (!pid) return ''; const id = first(markFile(pid)); rmSync(u(markFile(pid)), { force: true }); return id }
 
 // The work trees of the repository the command stands in (its main folder and each worktree), each with its folder and
 // its state folder. Read from git only: no state(), no cd, no write. A worktree whose folder is gone is found through
@@ -324,6 +339,18 @@ const hookDir = (input: string) => {
 const argv = process.argv.slice(2).map(b)
 const cmd = argv.shift() ?? ''
 
+// The end hook (SessionEnd): at a /clear it leaves the mark of the old id, and does nothing else (no git, no state
+// folder), because Claude Code stops a SessionEnd hook that takes time. It prints nothing and never fails.
+if (cmd === 'hook-end') {
+  try {
+    const input = stdin()
+    let reason: unknown
+    try { reason = (JSON.parse(u(input)) as { reason?: unknown }).reason } catch { /* no JSON: no mark */ }
+    if (reason === 'clear') markClear(sessionOf(input))
+  } catch { /* silent */ }
+  process.exit(0)
+}
+
 if (cmd === 'hook-start') {
   const input = stdin(), id = sessionOf(input)
   let trees: Tree[] = []
@@ -343,9 +370,15 @@ if (cmd === 'hook-start') {
     if (input.includes('"source":"startup"')) rmSync(u(`${S}/turn`), { force: true })
     // a session that finds no reference at all takes one, whatever started it: with none, every stop would hold
     if (!isFile(`${S}/session-head`)) wr(`${S}/session-head`, fingerprint() + '\n')
-    // a /clear gives the session a new id: the run of the work tree it judges goes with it, unless another session came
-    // to the run since its owner last judged it, or the run is an earlier session's. A fork is another session.
-    if (input.includes('"source":"clear"') && id !== '' && isFile(`${S}/base`) && !isFile(`${S}/done`) && !isFile(`${S}/stale`) && first(`${S}/owner`) !== '' && first(`${S}/came`) === '') wr(`${S}/owner`, id + '\n')
+    // a new process: a mark of its number is an earlier process's
+    if (input.includes('"source":"startup"') || input.includes('"source":"resume"')) dropMark()
+    // a /clear gives the session a new id: by the mark its end hook left, the old id's runs go with it, in every work
+    // tree of the repository; never a run of an earlier session. With no mark, nothing passes (a fork is another session)
+    if (input.includes('"source":"clear"')) {
+      const old = takeClear()
+      if (old !== '' && id !== '') for (const dir of [S, ...worktrees().map((w) => w.dir)])
+        if (isFile(`${dir}/base`) && !isFile(`${dir}/done`) && !isFile(`${dir}/stale`) && first(`${dir}/owner`) === old) wr(`${dir}/owner`, id + '\n')
+    }
     meet(S, id, true)
     trees = worktrees().filter((w) => w.dir !== S)
     // a resume of a session whose approved run is not finished in another work tree (the session had moved into it,
@@ -356,8 +389,12 @@ if (cmd === 'hook-start') {
   put('hstack is installed. Its build loop runs only when the user invokes it, by typing /hstack:build with a request or with the name of a spec: never start it yourself, and do other work as it is asked, without it. It starts with a brainstorm with the user, then a spec that the user approves: your first message says what you understood and what you found, and the user\'s answer decides what comes next. For a build, the brainstorm is hstack\'s own skill, hstack:brainstorm, not another brainstorming skill. Nothing is built before the approval; after the approval, follow it to its last step, decide from the spec and the code, and write each decision down. A message that only rules on a point the record of the project lists as waiting for a ruling is not a build: write the ruling as the rules of the record say, commit those files by path, and run hstack.ts ruled.')
   // the name a spec is taken up by: its file name, without its folder and without .md
   const specName = (f: string) => base(f).replace(/\.md$/, '')
-  if (S && waiting()) put(`A spec waits for the user's approval: ${first(`${S}/spec`)}. The user takes it up by typing /hstack:build ${specName(first(`${S}/spec`))}: the playbook's step 1 then finds the waiting spec, and the user's answer, whether it approves it, asks for changes to it or asks for a grill of it, is taken as its item "The user's next message". If the user answers it without that command, tell them to type it; do not approve the spec yourself. If the message is a question, answer it. Other work does not need it: the spec goes on waiting, and approve refuses it if the repository changes in the meantime.`)
+  if (S && waiting()) put(`A spec waits for the user's approval: ${first(`${S}/spec`)}. The user takes it up by typing /hstack:build ${specName(first(`${S}/spec`))}: the playbook's step 1 then finds the waiting spec, and the user's answer, whether it approves it, asks for changes to it or asks for a grill of it, is taken as its item "The user's next message". Until the user has typed /hstack:build in this session, tell them to type it to answer; once they have typed it, their next message is the answer, with no command. Do not approve the spec yourself. If the message is a question, answer it. Other work does not need it: the spec goes on waiting, and approve refuses it if the repository changes in the meantime.`)
   else if (S && isFile(`${S}/stale`) && unfinished()) put(`An approved hstack:build run of an earlier session is not finished: spec ${first(`${S}/spec`)}; steps not recorded: ${missing()}. The user goes on with it by typing /hstack:build ${specName(first(`${S}/spec`))}. Other work does not need it. Do not bring it up unless the user asks about it.`)
+  // a session that is not this run's own, in its work tree, after anything but a startup (a clear whose mark was not
+  // left, a fork, a resume of an older conversation): it is told of the run, and of the command that takes it up
+  if (S && !input.includes('"source":"startup"') && id !== '' && unfinished() && !isFile(`${S}/stale`) && first(`${S}/owner`) !== '' && first(`${S}/owner`) !== id)
+    put(`An approved hstack:build run of another session is not finished in this work tree: spec ${first(`${S}/spec`)}; steps not recorded: ${missing()}. If it is the user's run of this conversation (after a /clear, for example), the user takes it up by typing /hstack:build ${specName(first(`${S}/spec`))}. Other work does not need it.`)
   // the specs and runs of the other work trees of the repository: another session's are the user's to take up by name;
   // this session's own (after a resume in another folder) is named with no command
   for (const w of trees) {
@@ -753,8 +790,8 @@ switch (cmd) {
     if (!isFile(`${S}/base`) || !unfinished()) die('hstack: no approved run that is not finished: nothing to take up')
     // a run of an earlier session (stale), or one that another session than its own came to: a run of the session that
     // is here and no other's is that session's, and goes on without a take-up
-    const came = first(`${S}/came`)
-    if (!isFile(`${S}/stale`) && (came === '' || came === first(`${S}/owner`))) die('hstack: the run is this session\'s: go on with it from its first unrecorded step')
+    const caller = callerAt(S)
+    if (!isFile(`${S}/stale`) && (caller !== '' ? caller === first(`${S}/owner`) : cameOf(S) === '')) die('hstack: the run is this session\'s: go on with it from its first unrecorded step')
     // the run's own commits (its base, its oracle's tests, where it stood at its last step) must still be in the history:
     // after a reset or a rewrite, its work and its tests are gone
     for (const c of [first(`${S}/base`), first(`${S}/oracle-commit`), first(`${S}/last-head`)].filter((c) => c !== ''))

@@ -3,6 +3,7 @@
     "SessionStart": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-start" }] }],
     "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-prompt" }] }],
     "PreToolUse": [{ "matcher": "EnterWorktree|ExitWorktree", "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-worktree" }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-stop" }] }]
+    "Stop": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-stop" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "bun \"${CLAUDE_PLUGIN_ROOT}/scripts/hstack.ts\" hook-end" }] }]
   }
 }

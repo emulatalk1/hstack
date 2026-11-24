@@ -109,11 +109,11 @@ The loop's playbook, with every rule of each step, is [`skills/build/SKILL.md`](
 - [Bun](https://bun.sh) 1.4.4 or later, on the `PATH` of the machine where Claude Code runs, whatever the project's own stack is. The plugin itself has nothing to install.
 - macOS or Linux.
 
-The four hooks of `hstack:build` are `bun` commands. On a machine where `bun` is not on the `PATH` of the Claude Code process, all of them fail (`bun: command not found`) and the stop gate is off: Claude Code shows "stop hook problem" at each stop, and the agent goes on without the gate.
+The five hooks of `hstack:build` are `bun` commands. On a machine where `bun` is not on the `PATH` of the Claude Code process, all of them fail (`bun: command not found`) and the stop gate is off: Claude Code shows "stop hook problem" at each stop, and the agent goes on without the gate.
 
 ## Status
 
-**Status: v0.4.7.** `hstack:build` is a build loop for any stack. It starts with a **brainstorm** that ends in a **spec**, which you approve, change or have **grilled**. Nothing is built before you approve it; after that the loop runs to the end on its own. Before any product code the builder writes a section `## Design` into its decisions, by the design rules of `skills/implement/design-rules.md`. Four hooks keep the loop going; while a run goes on, the session's worktree tool is refused. From the approval on the builder says in a line what it is about to do before each step, and in a line what the step found after it. The last reply is written for a reader who did not see the run, as `skills/build/last-reply.md` says, and the log entry first for the agent of a later session: a decision's number and a test's name come with the path of the file that holds them.
+**Status: v0.4.7.** `hstack:build` is a build loop for any stack. It starts with a **brainstorm** that ends in a **spec**, which you approve, change or have **grilled**. Nothing is built before you approve it; after that the loop runs to the end on its own. Before any product code the builder writes a section `## Design` into its decisions, by the design rules of `skills/implement/design-rules.md`. Five hooks keep the loop going; while a run goes on, the session's worktree tool is refused, and a session cleared with `/clear` keeps its run. From the approval on the builder says in a line what it is about to do before each step, and in a line what the step found after it. The last reply is written for a reader who did not see the run, as `skills/build/last-reply.md` says, and the log entry first for the agent of a later session: a decision's number and a test's name come with the path of the file that holds them.
 
 ## Development
 
@@ -134,7 +134,7 @@ bun x tsc --noEmit
 | `scripts/` | the command-line scripts; `scripts/lib/` holds one module per job; `mockup-frame.html` is the frame of the mock-up server's pages |
 | `skills/` | `build`, `brainstorm`, `grill`, `implement`, `hstack-feedback`, `hstack-init`, `hstack-safety` |
 | `agents/` | the four agents of the build loop: `oracle`, `reviewer`, `explorer`, `mutator` |
-| `hooks/` | the SessionStart, UserPromptSubmit, PreToolUse and Stop hooks of the build loop |
+| `hooks/` | the SessionStart, UserPromptSubmit, PreToolUse, Stop and SessionEnd hooks of the build loop |
 | `plugin-dev/` | the designs of the build loop |
 | `tests/` | tests, and their fixtures in `tests/fixtures/` |
 | `bench/` | the closed benchmark's code; its report is `progress/final-report.md` |

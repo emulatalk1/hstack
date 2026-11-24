@@ -42,6 +42,9 @@
     "tests/claude-worktree-hook-folder.test.ts",
     "tests/claude-worktree-hook-folder-texts.test.ts",
     "tests/claude-worktree-hook-folder-edges.test.ts",
-    "tests/claude-worktree-hook-folder-review.test.ts"
+    "tests/claude-worktree-hook-folder-review.test.ts",
+    "tests/clear-and-takeup-by-session-id.test.ts",
+    "tests/clear-and-takeup-by-session-id-texts.test.ts",
+    "tests/clear-and-takeup-by-session-id-edges.test.ts"
   ]
 }

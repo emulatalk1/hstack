@@ -144,13 +144,13 @@ function status(): string {
   return found[0] ?? ''
 }
 
-test('32: the README\'s status paragraph holds "Four hooks" and not "Three hooks"; the paragraph on bun not on the PATH holds "four hooks" and not "three hooks"', () => {
+test('32: the README\'s status paragraph holds "Five hooks" (spec 11) and not "Three hooks"; the paragraph on bun not on the PATH holds "five hooks" (spec 11) and not "three hooks"', () => {
   const s = status()
-  holds('the status paragraph', s, ['Four hooks'])
+  holds('the status paragraph', s, ['Five hooks'])
   lacks('the status paragraph', s, ['Three hooks'])
   const found = paragraphs('README.md').filter((p) => p.includes('`bun` is not on the `PATH`'))
   expect(found.length).toBe(1)
-  holds('the paragraph on bun and the PATH', found[0] ?? '', ['four hooks'])
+  holds('the paragraph on bun and the PATH', found[0] ?? '', ['five hooks'])
   lacks('the paragraph on bun and the PATH', found[0] ?? '', ['three hooks'])
 })
 
@@ -305,12 +305,12 @@ const BASE: Record<string, string> = {
   'LICENSE-design-3': '69ef8c984f70a8a65e7f4ad280e6a30408491e121aa9f85788d419fbb8c71d76',
   'LICENSE-design-4': '716e1af48aa0a342c6b56a909dcd01b73226cd690c586b71dec8bfe526707640',
   'LICENSE-tdd': '5e1f81835e0c7b50613a45e705c39136c61197d3d1083da50000c27608d8d526',
-  'SKILL.md': '771edd2445a2d0787a5778b3ca970320a286cb707a33906a8f30f88eb57505bb',
+  'SKILL.md': 'd8b0594c465fe8a3c974e0a07abfae2b9fa73fb752947ee6d37af1b5bf41ec50', // spec 11 changed item 6's sentence on the time
   'deep-modules.md': '6aaf58cf1325f533016dcc2719781205161c5eec5b8d3ebbfec127a1e5f7994f',
   'design-note.md': '3aab388fbd464a7622dfeb0b82038fcfc6fcda23836bd1e8763502ff8935d7a6',
   'design-review.md': '392ad4c12b498bbdbd704e122dedce80a663468e8bf106166de7b6229b3375ec',
   'design-rules.md': 'f3c5f3c02b2cb37332cf865a9213510117347aedaf2ce2651b636b4b965b131f',
-  'tdd.md': '7e384aa7ba870d74aaa28416f7749c60551081b140f32de7bf35a66c26ed092c',
+  'tdd.md': '1b664050034afc39e7fe6d4cd88162c78d8fa49d8da2aba6ca48fdfeee812b53', // spec 11 changed its sentence on the time
   'writing-good-tests.md': 'f99bbfc43ea86bff776256f03e27316c7034119e03f981e5c7f220f022cb0b13',
 }
 const skillBody = (t: string) => { const ls = t.split('\n'); const i = ls.findIndex((l) => l.startsWith('# ')); return ls.filter((l, j) => !/^name: /.test(l) && j !== i).join('\n') }

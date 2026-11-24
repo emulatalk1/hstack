@@ -22,7 +22,7 @@ These rules govern every test and every line of product code the builder writes 
 - **What the base already had.** A failing test, an error or a warning that Setup recorded at the base is not yours to fix. "All tests pass" and "Other tests fail? Fix now" mean the tests that passed at the base.
 - **A fix no test can show.** A lint, format or type error in code this run wrote is fixed without a new test: the failing check is its red run.
 
-Inside the cycle run the tests near the change. The project's suite runs once, as wide as the time allows, at the end of step 4. Where this file says "your report", write `$S/summary.md`.
+Inside the cycle run the tests near the change. The project's suite runs once, as wide as the capabilities allow, at the end of step 4. Where this file says "your report", write `$S/summary.md`.
 
 The examples below are TypeScript, and their commands are those of an example project. Every command you run comes from `$S/capabilities.md`.
 

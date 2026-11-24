@@ -255,7 +255,7 @@ test('R2-1: a session that only opened the project beside a waiting spec does no
 // E20: a /clear gives the session a new session_id (source "clear"); the run of the work tree it judges goes with it,
 // unless another session came to the run or the run is an earlier session's. A fork is another session.
 const CLEAR_CASES: { name: string; source: string; before?: (s: ReturnType<typeof scene>) => void; handed: boolean }[] = [
-  { name: 'a clear of the run\'s own session', source: 'clear', handed: true },
+  { name: 'a clear of the run\'s own session with no mark of its end hook (spec 11)', source: 'clear', handed: false },
   { name: 'a fork (another session)', source: 'fork', handed: false },
   { name: 'a clear after another session came to the run', source: 'clear', before: (s) => { s.startHook('y', 'startup', s.repo); s.prompt('y', s.W); s.prompt('A', s.W); s.stop('y', s.W) }, handed: false },
   { name: 'a clear beside an earlier session\'s run (stale)', source: 'clear', before: (s) => { s.startHook('z', 'startup', s.W) }, handed: false },
