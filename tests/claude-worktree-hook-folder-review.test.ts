@@ -76,3 +76,28 @@ test('49: round 2 runs after any fix of round 1, and a step is skipped only for 
   holds('step 6', part('## 6. Review', '## 7. Explore'), ['If you fixed any, run round 2 into `review-2.md`.'])
   holds('the rule Time', rule('Time'), ['A step is recorded as skipped only for a reason that is not the time.'])
 })
+
+// ---------- tests added after the mutation step (the survivor each kills is named) ----------
+
+test('1 (B1): the tool makes the worktree on a new branch, from the base it chooses', () => {
+  holds('the item', item(typed(), 'The worktree.'), ['on a new branch, from the base it chooses, and moves the session into it'])
+})
+
+test('2 (B2): the line is added when check-ignore does not report the folder as ignored', () => {
+  holds('the item', item(typed(), 'Before the worktree is made.'), ['When it does not report that folder as ignored, add the line `.claude/worktrees/`'])
+})
+
+test('8 (B8): when the worktree cannot be made, every worktree and branch the loop made is removed', () => {
+  holds('the item', item(typed(), 'When it cannot be made.'), ['remove every worktree and branch you made'])
+})
+
+test('32 (B32): CLAUDE.md names the worktree guard among the hooks', () => {
+  const t = raw('CLAUDE.md'), i = t.indexOf('\n## Hooks of `hstack:build`\n'), j = t.indexOf('\n## ', i + 1)
+  holds("CLAUDE.md's part on the hooks", t.slice(i, j), ["- A worktree guard: while a run of this session is not finished, the session's worktree tool (`EnterWorktree`, `ExitWorktree`) is refused"])
+})
+
+test('44 (B44): the rule Time says that no step is skipped, cut short or made narrower because of the time, and names no mark in minutes', () => {
+  const r = rule('Time')
+  holds('the rule Time', r, ['No step is skipped, cut short or made narrower because of the time'])
+  expect(`the rule Time names a number of minutes: ${/\b\d+ minutes\b|\b(150|180|210)\b/.test(r)}`).toBe('the rule Time names a number of minutes: false')
+})

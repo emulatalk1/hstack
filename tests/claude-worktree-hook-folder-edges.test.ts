@@ -274,3 +274,72 @@ for (const c of CLEAR_CASES) {
     expect({ held, refused }).toEqual({ held: c.handed, refused: c.handed })
   })
 }
+
+// ---------- tests added after the mutation step (the survivor each kills is named) ----------
+
+test('M-B23: a stop hook with no session_id in a folder with no run lets the turn end', () => {
+  const s = scene()
+  writeFileSync(`${s.repo}/src/a.txt`, 'changed with no run\n')
+  expect(s.stop(undefined, s.repo)).toBe('')
+})
+
+test('M-B24: with .hstack/repo, a cwd in a worktree of the code repository is judged there: its run is held for a hook with no session_id', () => {
+  const dir = `${T}/o${++n}`, home = `${dir}/home`, code = `${home}/code`, cw = `${dir}/cw`, state = `${dir}/state`
+  const gitHome = gitRepo(home)
+  writeFileSync(`${home}/.gitignore`, 'code/\n.hstack/\n'); gitHome('add', '-A'); expect(gitHome('commit', '-qm', 'home').code).toBe(0)
+  const gitCode = gitRepo(code)
+  mkdirSync(`${home}/.hstack`); writeFileSync(`${home}/.hstack/repo`, 'code\n')
+  expect(gitCode('worktree', 'add', '-q', '-b', 'side', cw, 'HEAD').code).toBe(0)
+  const h = (...args: string[]) => sh([BUN, SCRIPT, ...args], cw, { HSTACK_STATE: state })
+  const stop = () => sh([BUN, SCRIPT, 'hook-stop'], home, { HSTACK_STATE: state, CLAUDE_PROJECT_DIR: home }, JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false, cwd: cw })).out
+  expect(h('start').code).toBe(0)
+  const f = `${dir}/2026-11-24-feature-cw.md`; writeFileSync(f, 'what the feature does\n')
+  expect(h('spec', f).code).toBe(0)
+  expect(stop()).toBe('')
+  expect(h('approve').out).toBe('approved')
+  expect(stop().startsWith(HELD)).toBe(true)
+})
+
+test('M-X3: a take-up of an earlier session\'s run that no hook with an id came to leaves it to the next hook with an id', () => {
+  const s = scene()
+  s.startHook('w', 'startup', s.repo)
+  s.run('w', s.repo)
+  s.hook('hook-start', { hook_event_name: 'SessionStart', source: 'startup', cwd: s.repo }) // a new session whose hooks carry no id
+  expect(s.h(s.repo, 'takeup').code).toBe(0)
+  s.prompt('x', s.repo)
+  writeFileSync(`${s.repo}/src/a.txt`, 'changed after the take-up\n')
+  expect(s.stop('x', s.repo).startsWith(HELD)).toBe(true)
+})
+
+test('M-X18: a hold from another work tree counts as work on the run: a resume after it takes no worked time off', () => {
+  const s = scene()
+  s.startHook('x', 'startup', s.repo)
+  s.run('x', s.W)
+  const S = s.h(s.W, 'dir').out
+  const t = Math.floor(Date.now() / 1000)
+  writeFileSync(`${S}/started`, `${t - 2 * 3600}\n`)
+  writeFileSync(`${S}/last-stop`, `${t - 2 * 3600}\n`)
+  expect(s.stop('x', s.repo).startsWith(HELD)).toBe(true) // the session worked on the run until now
+  s.startHook('x', 'resume', s.repo)
+  expect(Number(s.h(s.W, 'elapsed').out)).toBeGreaterThanOrEqual(110)
+})
+
+test('M-X19: a spec of this session shown in one work tree does not let the turn end while its approved run in another is not finished', () => {
+  const s = scene()
+  s.startHook('x', 'startup', s.repo)
+  s.run('x', s.W)
+  s.prompt('x', s.repo)
+  expect(s.h(s.repo, 'start').code).toBe(0)
+  const f = `${s.dir}/2026-11-24-feature-second.md`; writeFileSync(f, 'what the second feature does\n')
+  expect(s.h(s.repo, 'spec', f).code).toBe(0)
+  const out = s.stop('x', s.repo)
+  expect(out.startsWith(HELD)).toBe(true)
+  expect(out).toContain(s.W)
+})
+
+test('M-X20: with no CLAUDE_PROJECT_DIR, a hook run from another folder follows its cwd: the run there is held for a hook with no session_id', () => {
+  const s = scene()
+  s.run(undefined, s.W)
+  const out = s.hook('hook-stop', { hook_event_name: 'Stop', stop_hook_active: false, cwd: s.W }, { HSTACK_STATE: s.state }).out
+  expect(out.startsWith(HELD)).toBe(true)
+})
