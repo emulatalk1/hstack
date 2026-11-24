@@ -343,6 +343,9 @@ if (cmd === 'hook-start') {
     if (input.includes('"source":"startup"')) rmSync(u(`${S}/turn`), { force: true })
     // a session that finds no reference at all takes one, whatever started it: with none, every stop would hold
     if (!isFile(`${S}/session-head`)) wr(`${S}/session-head`, fingerprint() + '\n')
+    // a /clear gives the session a new id: the run of the work tree it judges goes with it, unless another session came
+    // to the run since its owner last judged it, or the run is an earlier session's. A fork is another session.
+    if (input.includes('"source":"clear"') && id !== '' && isFile(`${S}/base`) && !isFile(`${S}/done`) && !isFile(`${S}/stale`) && first(`${S}/owner`) !== '' && first(`${S}/came`) === '') wr(`${S}/owner`, id + '\n')
     meet(S, id, true)
     trees = worktrees().filter((w) => w.dir !== S)
     // a resume of a session whose approved run is not finished in another work tree (the session had moved into it,

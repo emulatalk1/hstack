@@ -251,3 +251,26 @@ test('R2-1: a session that only opened the project beside a waiting spec does no
   expect(s.stop('w', s.repo).startsWith(HELD)).toBe(true)
   expect(s.stop('x', s.W)).toBe('')
 })
+
+// E20: a /clear gives the session a new session_id (source "clear"); the run of the work tree it judges goes with it,
+// unless another session came to the run or the run is an earlier session's. A fork is another session.
+const CLEAR_CASES: { name: string; source: string; before?: (s: ReturnType<typeof scene>) => void; handed: boolean }[] = [
+  { name: 'a clear of the run\'s own session', source: 'clear', handed: true },
+  { name: 'a fork (another session)', source: 'fork', handed: false },
+  { name: 'a clear after another session came to the run', source: 'clear', before: (s) => { s.startHook('y', 'startup', s.repo); s.prompt('y', s.W); s.prompt('A', s.W); s.stop('y', s.W) }, handed: false },
+  { name: 'a clear beside an earlier session\'s run (stale)', source: 'clear', before: (s) => { s.startHook('z', 'startup', s.W) }, handed: false },
+]
+for (const c of CLEAR_CASES) {
+  test(`E20: ${c.name}: the new id ${c.handed ? 'gets' : 'does not get'} the run`, () => {
+    const s = scene()
+    s.startHook('A', 'startup', s.repo)
+    s.run('A', s.W)
+    c.before?.(s)
+    s.startHook('N', c.source, s.W)
+    s.prompt('N', s.W)
+    writeFileSync(`${s.W}/src/a.txt`, 'changed after the clear\n')
+    const held = s.stop('N', s.W).startsWith(HELD)
+    const refused = s.wt('N', s.W, { action: 'keep' }).out.includes('"permissionDecision":"deny"')
+    expect({ held, refused }).toEqual({ held: c.handed, refused: c.handed })
+  })
+}
