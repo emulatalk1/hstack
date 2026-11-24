@@ -3,7 +3,7 @@
 // Run: bun test tests/clear-and-takeup-by-session-id-edges.test.ts
 // Every CLAUDE* variable of the shell is removed; CLAUDE_PID and CLAUDE_CODE_SESSION_ID are set only where named.
 import { afterAll, expect, setDefaultTimeout, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -101,4 +101,53 @@ test('E2: two clears in a row in one process: the run goes on to the newest id',
   s.endHook({ session_id: 'N', reason: 'clear', cwd: s.W }, p); s.startHook('M', 'clear', s.W, p)
   expect(s.stop('N', s.W)).toBe('')
   expect(s.stop('M', s.W).startsWith(HELD)).toBe(true)
+})
+
+test('R1-1: after a clear hands the run over from the project\'s folder, a takeup of the new id in W, before any hook of it there, refuses: the run is its own', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.approved('A', s.W)
+  const p = pid()
+  s.endHook({ session_id: 'A', reason: 'clear', cwd: s.repo }, p)
+  s.startHook('N', 'clear', s.repo, p)
+  const r = sh([BUN, SCRIPT, 'takeup'], s.W, { HSTACK_STATE: s.state, CLAUDE_CODE_SESSION_ID: 'N' })
+  expect(r.code).toBe(1)
+  expect(r.err).toContain('the run is this session\'s')
+  expect(s.stop('N', s.W).startsWith(HELD)).toBe(true)
+})
+
+test('R1-1: a spec that waits, handed to the new id by a clear from the project\'s folder, approved by the new id in W, is the new id\'s run', () => {
+  const s = scene()
+  s.startHook('w', 'startup', s.repo)
+  s.shown('w', s.W)
+  const p = pid()
+  s.endHook({ session_id: 'w', reason: 'clear', cwd: s.repo }, p)
+  s.startHook('N', 'clear', s.repo, p)
+  expect(sh([BUN, SCRIPT, 'approve'], s.W, { HSTACK_STATE: s.state, CLAUDE_CODE_SESSION_ID: 'N' }).out).toBe('approved')
+  expect(s.h(s.W, 'phase', 'setup').code).toBe(0)
+  writeFileSync(`${s.W}/src/a.txt`, 'changed after the approval\n')
+  expect(s.stop('w', s.W)).toBe('')
+  expect(s.stop('N', s.W).startsWith(HELD)).toBe(true)
+})
+
+test('R1-3: with no known caller, the owner coming by its worktree hook with a path does not cancel the coming of the session that made its run an earlier one', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.approved('A', s.W)
+  s.startHook('x', 'startup', s.W)
+  const r = sh([BUN, SCRIPT, 'hook-worktree'], s.repo, { HSTACK_STATE: s.state, CLAUDE_PROJECT_DIR: s.repo }, JSON.stringify({ session_id: 'A', hook_event_name: 'PreToolUse', tool_name: 'EnterWorktree', tool_input: { path: s.W }, cwd: s.repo }))
+  expect(r.out).toBe('')
+  expect(s.h(s.W, 'takeup').code).toBe(0)
+  s.prompt('A', s.W)
+  expect(s.stop('A', s.W)).toBe('')
+  expect(s.stop('x', s.W).startsWith(HELD)).toBe(true)
+})
+
+test('R1-4: the usage names hook-end before the three hooks it ends with, and the script\'s head speaks of five hooks', () => {
+  const s = scene()
+  const r = sh([BUN, SCRIPT, 'no-such-verb'], s.repo, { HSTACK_STATE: s.state })
+  expect(r.err).toMatch(/\|hook-end\|[a-z|-]*\|hook-start\|hook-prompt\|hook-stop\s*$/)
+  const head = readFileSync(SCRIPT, 'utf8').split('\n').slice(0, 12).join('\n')
+  expect(head).toContain('the five hooks')
+  expect(head).toMatch(/\|hook-end\|[a-z|-]*\|hook-start\|hook-prompt\|hook-stop/)
 })

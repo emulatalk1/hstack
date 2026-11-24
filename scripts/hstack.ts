@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// hstack run state and the four hooks. TypeScript, run with Bun; git is the only other program it needs (gh for three
+// hstack run state and the five hooks. TypeScript, run with Bun; git is the only other program it needs (gh for three
 // feedback verbs). State lives outside the work tree and outside .git (Claude Code guards writes into .git), in
 // ${HSTACK_STATE:-$HOME/.hstack} (or /tmp/.hstack without HOME)/<checksum of the git dir>, so it is never committed
 // and never part of the product.
@@ -8,7 +8,7 @@
 // fields; never an entry's detail.
 // Every string in this file is a byte string (one char per byte, latin1): an entry or a description is checked as
 // bytes, so no encoding can drop or change what the checks should refuse. b() and u() convert at the edges.
-// usage: hstack.ts dir|repo [<path>]|home|start|spec <file>|spec --drop|approve|takeup [--with-commits]|phase <name> [skipped: <why>]|records-check <feature list> <coverage file>|ruled|missing|runs|lock <file>...|gate|elapsed|times [--all]|done|hook-worktree|hook-start|hook-prompt|hook-stop
+// usage: hstack.ts dir|repo [<path>]|home|start|spec <file>|spec --drop|approve|takeup [--with-commits]|phase <name> [skipped: <why>]|records-check <feature list> <coverage file>|ruled|missing|runs|lock <file>...|gate|elapsed|times [--all]|done|hook-end|hook-worktree|hook-start|hook-prompt|hook-stop
 //        hstack.ts feedback add <kind> <phase|none> <description on stdin|describe <id> <description on stdin
 //        hstack.ts feedback draft|post <id> <code>|dismiss <id>...|label|collect
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -245,11 +245,14 @@ const cameOf = (dir: string) => { const l = seenOf(dir), last = l[l.length - 1] 
 // the session that runs a verb (approve, takeup): the id Claude Code gives the agent's shell, trusted only when that
 // session came to the run's work tree, so that an id of another process (a test runner's) changes nothing
 const callerAt = (dir: string) => { const i = env('CLAUDE_CODE_SESSION_ID'); return i !== '' && seenOf(dir).includes(i) ? i : '' }
+// a run that is started and not done (a spec that waits counts): the runs whose sessions are followed
+const startedAt = (dir: string) => isFile(`${dir}/base`) && !isFile(`${dir}/done`)
 const meet = (dir: string, id: string, judged: boolean) => {
-  if (id === '' || !isFile(`${dir}/base`) || isFile(`${dir}/done`)) return
+  if (id === '' || !startedAt(dir)) return
   try {
     if (first(`${dir}/owner`) === '' && judged && !isFile(`${dir}/stale`)) wr(`${dir}/owner`, id + '\n')
-    come(dir, id)
+    // the owner comes back only by a hook that judges its work tree; its worktree hook aimed at the path is no coming
+    if (judged || first(`${dir}/owner`) !== id) come(dir, id)
   } catch { /* a hook never fails for its state */ }
 }
 // the run passes to the session that calls the verb, when it is known; else to the session that came last (an approval
@@ -257,8 +260,12 @@ const meet = (dir: string, id: string, judged: boolean) => {
 // session's, the next hook with an id claims it. The new owner is the last to have come.
 const handOver = () => {
   const to = callerAt(S) || cameOf(S)
-  if (to !== '') { wr(`${S}/owner`, to + '\n'); come(S, to) } else if (isFile(`${S}/stale`)) rmSync(u(`${S}/owner`), { force: true })
+  if (to !== '') giveRun(S, to); else if (isFile(`${S}/stale`)) rmSync(u(`${S}/owner`), { force: true })
 }
+// the one way a run passes to a session: its owner, and the last to have come (no session came after it)
+function giveRun(dir: string, to: string) { wr(`${dir}/owner`, to + '\n'); come(dir, to) }
+// a /clear: the old id's runs, in the given state folders, pass to the new id; never a run of an earlier session
+const clearHandOver = (old: string, to: string, dirs: string[]) => { for (const dir of dirs) if (startedAt(dir) && ownedBy(dir, old)) giveRun(dir, to) }
 // the one rule of whose run it is: a run belongs to the session whose id its owner file holds, unless it is an earlier
 // session's (stale). A hook with no id judges its own folder's run as before: its own unless stale
 const ownedBy = (dir: string, id: string) => id !== '' && !isFile(`${dir}/stale`) && first(`${dir}/owner`) === id
@@ -376,8 +383,7 @@ if (cmd === 'hook-start') {
     // tree of the repository; never a run of an earlier session. With no mark, nothing passes (a fork is another session)
     if (input.includes('"source":"clear"')) {
       const old = takeClear()
-      if (old !== '' && id !== '') for (const dir of [S, ...worktrees().map((w) => w.dir)])
-        if (isFile(`${dir}/base`) && !isFile(`${dir}/done`) && !isFile(`${dir}/stale`) && first(`${dir}/owner`) === old) wr(`${dir}/owner`, id + '\n')
+      if (old !== '' && id !== '') clearHandOver(old, id, [S, ...worktrees().map((w) => w.dir)])
     }
     meet(S, id, true)
     trees = worktrees().filter((w) => w.dir !== S)
@@ -943,5 +949,5 @@ switch (cmd) {
     break
   }
 
-  default: die('usage: hstack.ts dir|repo [<path>]|home|start|spec|approve|takeup|phase|records-check|ruled|missing|runs|lock|gate|elapsed|times|done|feedback|hook-worktree|hook-start|hook-prompt|hook-stop')
+  default: die('usage: hstack.ts dir|repo [<path>]|home|start|spec|approve|takeup|phase|records-check|ruled|missing|runs|lock|gate|elapsed|times|done|feedback|hook-end|hook-worktree|hook-start|hook-prompt|hook-stop')
 }
