@@ -242,9 +242,21 @@ const meet = (dir: string, id: string, judged: boolean) => {
   try {
     if (owner === '' && judged && !isFile(`${dir}/stale`)) wr(`${dir}/owner`, id + '\n')
     else if (owner !== id) wr(`${dir}/came`, id + '\n')
+    // the owner is back: a session that only passed through is no longer the last to come
+    else if (judged && !isFile(`${dir}/stale`)) rmSync(u(`${dir}/came`), { force: true })
   } catch { /* a hook never fails for its state */ }
 }
-const mineAt = (dir: string, id: string) => !isFile(`${dir}/stale`) && (id === '' || first(`${dir}/owner`) === id)
+// the run passes to the session that came to it (an approval or a take-up in a session that did not write the spec
+// or start the run); when none came and the run is an earlier session's, the next hook with an id claims it
+const handOver = () => {
+  const came = first(`${S}/came`)
+  if (came !== '') wr(`${S}/owner`, came + '\n'); else if (isFile(`${S}/stale`)) rmSync(u(`${S}/owner`), { force: true })
+  rmSync(u(`${S}/came`), { force: true })
+}
+// the one rule of whose run it is: a run belongs to the session whose id its owner file holds, unless it is an earlier
+// session's (stale). A hook with no id judges its own folder's run as before: its own unless stale
+const ownedBy = (dir: string, id: string) => id !== '' && !isFile(`${dir}/stale`) && first(`${dir}/owner`) === id
+const mineAt = (dir: string, id: string) => (id === '' ? !isFile(`${dir}/stale`) : ownedBy(dir, id))
 
 // The work trees of the repository the command stands in (its main folder and each worktree), each with its folder and
 // its state folder. Read from git only: no state(), no cd, no write. A worktree whose folder is gone is found through
@@ -269,8 +281,9 @@ function worktrees(): Tree[] {
   }
   return out
 }
-// an unfinished run of this session in another work tree of the repository than the state folder `here`
-const elsewhere = (id: string, here: string) => id === '' ? undefined : worktrees().find((t) => t.dir !== here && unfinished(t.dir) && first(`${t.dir}/owner`) === id && !isFile(`${t.dir}/stale`))
+// the unfinished runs of this session in the other work trees of the repository than the state folder `here`
+const ownElsewhere = (id: string, here: string, trees: Tree[] = worktrees()) => trees.filter((t) => t.dir !== here && unfinished(t.dir) && ownedBy(t.dir, id))
+const elsewhere = (id: string, here: string) => ownElsewhere(id, here)[0]
 // the time in which no session worked on the run, since the stop hook last ran, comes off the clock (a take-up, a resume)
 const idleOff = (dir = S) => { try { const t = now(), idle = t - int(rd(`${dir}/last-stop`)); if (idle > 0) { wr(`${dir}/started`, `${int(rd(`${dir}/started`)) + idle}\n`); wr(`${dir}/last-stop`, `${t}\n`) } } catch { /* no stop recorded: nothing to take off */ } } // once: the time taken off is not taken off again
 const offClock = () => { try { wr(`${S}/started`, `${int(rd(`${S}/started`)) + now() - int(rd(`${S}/spec-asked`))}\n`) } catch { /* no clock to correct */ } }
@@ -318,6 +331,8 @@ if (cmd === 'hook-start') {
     // a new process gets its blocks back; a compaction inside one does not
     if (input.includes('"source":"startup"') || input.includes('"source":"resume"')) { wr(`${S}/stop-blocks`, '0\n'); rmSync(u(`${S}/pass`), { force: true }) }
     // a resume of the session whose approved run is not finished: the time in which nobody worked on it comes off its clock
+    // (a run with no owner yet, one that 0.4.6 started, is claimed first: a startup marks it an earlier session's below)
+    if (input.includes('"source":"resume"')) meet(S, id, true)
     if (input.includes('"source":"resume"') && unfinished() && mineAt(S, id)) idleOff()
     // only a new session sets the reference; a resume must keep it
     // a run that a new session finds is an earlier session's (stale): the stop hook judges it only by what this session changes
@@ -333,7 +348,7 @@ if (cmd === 'hook-start') {
     // a resume of a session whose approved run is not finished in another work tree (the session had moved into it,
     // and the resume starts in the folder the session started in): that run gets its holds back and the time in which
     // nobody worked on it comes off its clock, as a run here does
-    if (input.includes('"source":"resume"')) for (const w of trees) if (id !== '' && unfinished(w.dir) && !isFile(`${w.dir}/stale`) && first(`${w.dir}/owner`) === id) { wr(`${w.dir}/stop-blocks`, '0\n'); rmSync(u(`${w.dir}/pass`), { force: true }); idleOff(w.dir) }
+    if (input.includes('"source":"resume"')) for (const w of ownElsewhere(id, S, trees)) { wr(`${w.dir}/stop-blocks`, '0\n'); rmSync(u(`${w.dir}/pass`), { force: true }); idleOff(w.dir) }
   } else if (pointerError) put(`${pointerError}: the stop gate is off until the file is right.`)
   put('hstack is installed. Its build loop runs only when the user invokes it, by typing /hstack:build with a request or with the name of a spec: never start it yourself, and do other work as it is asked, without it. It starts with a brainstorm with the user, then a spec that the user approves: your first message says what you understood and what you found, and the user\'s answer decides what comes next. For a build, the brainstorm is hstack\'s own skill, hstack:brainstorm, not another brainstorming skill. Nothing is built before the approval; after the approval, follow it to its last step, decide from the spec and the code, and write each decision down. A message that only rules on a point the record of the project lists as waiting for a ruling is not a build: write the ruling as the rules of the record say, commit those files by path, and run hstack.ts ruled.')
   // the name a spec is taken up by: its file name, without its folder and without .md
@@ -343,7 +358,7 @@ if (cmd === 'hook-start') {
   // the specs and runs of the other work trees of the repository: another session's are the user's to take up by name;
   // this session's own (after a resume in another folder) is named with no command
   for (const w of trees) {
-    const own = id !== '' && !isFile(`${w.dir}/stale`) && first(`${w.dir}/owner`) === id, spec = first(`${w.dir}/spec`)
+    const own = ownedBy(w.dir, id), spec = first(`${w.dir}/spec`)
     if (waiting(w.dir)) put(own
       ? `This session's spec waits for the user's approval in the work tree ${w.top}: ${spec}.`
       : `In the work tree ${w.top}, a spec waits for the user's approval: ${spec}. The user goes on with it by typing /hstack:build ${specName(spec)}. Other work does not need it.`)
@@ -381,18 +396,20 @@ if (cmd === 'hook-worktree') {
     const input = stdin(), id = sessionOf(input)
     let path = ''
     try { const p = (JSON.parse(u(input)) as { tool_input?: { path?: unknown } }).tool_input?.path; if (typeof p === 'string') path = b(p) } catch { /* no path */ }
-    // the work tree the tool would enter: the session comes to the run there
-    if (path !== '' && existsSync(u(path))) {
-      const g = run('git', ['-C', path, 'rev-parse', '--absolute-git-dir'])
-      if (g.code === 0) meet(stateOf(g.out), id, false)
-    }
+    let refused = false
     if (cd(hookDir(input)) && state()) {
       meet(S, id, true)
       const t = unfinished() && mineAt(S, id) ? { top: first(`${S}/top`), dir: S } : elsewhere(id, S)
       if (t) {
+        refused = true
         const why = `hstack: the approved hstack:build run of this session in ${t.top} is not finished; steps not recorded: ${missing(t.dir)}. The session does not move into another worktree, and does not leave the one it is in, until the run is done: the run goes on to its end first.`
         put(b(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: u(why) } })))
       }
+    }
+    // the work tree the tool enters: the session comes to the run there. A call that is refused enters nothing
+    if (!refused && path !== '' && existsSync(u(path))) {
+      const g = run('git', ['-C', path, 'rev-parse', '--absolute-git-dir'])
+      if (g.code === 0) meet(stateOf(g.out), id, false)
     }
   } catch { /* silent: the tool runs */ }
   process.exit(0)
@@ -721,6 +738,7 @@ switch (cmd) {
     // the run's base is the commit at start: what changed since is not this run's, and must not be judged as its work
     if (fingerprint() !== (lines(rd(`${S}/spec`))[2] ?? '')) die('hstack: the code repository changed while the spec waited. If the changes are yours, undo them; if the user made them, delete the spec file unless they want it kept, run spec --drop, and start again')
     offClock()
+    handOver()
     ap(`${S}/phases`, 'spec\n'); mark('spec')
     for (const f of ['stale', 'spec-asked', 'spec-shown']) rmSync(u(`${S}/${f}`), { force: true })
     put('approved')
@@ -748,11 +766,9 @@ switch (cmd) {
       err('hstack: ask the user whether the run goes on with these in it; on their yes, run takeup --with-commits'); process.exit(2)
     }
     // this session's run from now on: the stop hook holds it, with its holds given back, and this session's reference
+    handOver()
     rmSync(u(`${S}/stale`), { force: true }); wr(`${S}/stop-blocks`, '0\n'); wr(`${S}/session-head`, fingerprint() + '\n')
-    // the run is the session's that came; when none did (hooks with no session id), the next hook with one claims it
-    if (came !== '') wr(`${S}/owner`, came + '\n'); else rmSync(u(`${S}/owner`), { force: true })
     wr(`${S}/branch`, git('branch', '--show-current').out + '\n') // the run goes on from the branch of its take-up
-    rmSync(u(`${S}/came`), { force: true })
     idleOff()
     put(`taken up: go on from ${missing().split(' ')[0]}`)
     break

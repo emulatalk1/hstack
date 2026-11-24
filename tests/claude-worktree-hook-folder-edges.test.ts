@@ -160,3 +160,81 @@ test('E9: takeup refuses a run of this session that no other session came to', (
   expect(r.code).toBe(1)
   expect(r.err).toContain('the run is this session\'s')
 })
+
+test('R1-1: a spec shown by one session and approved in a new session is the new session\'s run: its stop hook holds and its worktree hook refuses', () => {
+  const s = scene()
+  s.startHook('w', 'startup', s.repo)
+  s.run('w', s.repo, false)
+  s.startHook('x', 'startup', s.repo)
+  s.prompt('x', s.repo)
+  expect(s.h(s.repo, 'approve').out).toBe('approved')
+  expect(s.h(s.repo, 'phase', 'setup').code).toBe(0)
+  writeFileSync(`${s.repo}/src/a.txt`, 'changed after the approval\n')
+  expect(s.stop('x', s.repo).startsWith(HELD)).toBe(true)
+  expect(s.wt('x', s.repo).out).toContain('"permissionDecision":"deny"')
+  expect(s.stop('w', s.repo)).toBe('')
+})
+
+test('R1-2: a session that only passed through the work tree of another session\'s run, before that session judged it again, does not get the run at a take-up', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.run('A', s.W)
+  s.startHook('B', 'startup', s.repo)
+  expect(s.stop('B', s.W)).toBe('') // B passes through W
+  s.prompt('A', s.W) // A judges W again
+  const r = s.h(s.W, 'takeup')
+  expect(r.code).toBe(1)
+  expect(r.err).toContain('the run is this session\'s')
+  expect(s.stop('A', s.W).startsWith(HELD)).toBe(true)
+})
+
+test('R1-2: a worktree call that is refused records no coming', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.run('A', s.W)
+  s.startHook('B', 'startup', s.repo)
+  s.run('B', s.repo) // B has a run of its own, so its worktree calls are refused
+  expect(s.wt('B', s.repo, { path: s.W }).out).toContain('"permissionDecision":"deny"')
+  const r = s.h(s.W, 'takeup')
+  expect(r.code).toBe(1)
+  expect(r.err).toContain('the run is this session\'s')
+})
+
+test('R1-5: a resume takes the idle time off a run that has no owner yet (one that 0.4.6 started)', () => {
+  const s = scene()
+  s.startHook('x', 'startup', s.repo)
+  s.run('x', s.repo)
+  const S = s.h(s.repo, 'dir').out
+  rmSync(`${S}/owner`, { force: true })
+  const t = Math.floor(Date.now() / 1000)
+  writeFileSync(`${S}/started`, `${t - 2 * 3600}\n`)
+  writeFileSync(`${S}/last-stop`, `${t - 2 * 3600 + 60}\n`)
+  s.startHook('x', 'resume', s.repo)
+  expect(Number(s.h(s.repo, 'elapsed').out)).toBeLessThanOrEqual(5)
+})
+
+test('R1-3 (behaviour 34): a take-up after another session came keeps spec 9\'s refusals: a run whose last step is no longer in the history of HEAD is refused', () => {
+  const s = scene()
+  s.startHook('A', 'startup', s.repo)
+  s.run('A', s.W)
+  const base = sh(['git', 'rev-parse', 'HEAD'], s.W, {}).out
+  writeFileSync(`${s.W}/src/b.txt`, 'work of the run\n')
+  expect(sh(['git', 'add', '--', 'src/b.txt'], s.W, {}).code).toBe(0)
+  expect(sh(['git', 'commit', '-qm', 'work of the run', '--', 'src/b.txt'], s.W, {}).code).toBe(0)
+  const last = sh(['git', 'rev-parse', 'HEAD'], s.W, {}).out
+  expect(s.h(s.W, 'phase', 'setup').code).toBe(0)
+  s.startHook('B', 'startup', s.repo)
+  s.prompt('B', s.W)
+  expect(sh(['git', 'reset', '-q', '--hard', base], s.W, {}).code).toBe(0)
+  const r = s.h(s.W, 'takeup')
+  expect(r.code).toBe(1)
+  expect(r.err).toContain(`${last} is no longer in the history of HEAD`)
+})
+
+test('R1-3 (behaviour 36): after a resume, the start text names this session\'s own run in another work tree as this session\'s', () => {
+  const s = scene()
+  s.startHook('x', 'startup', s.repo)
+  s.run('x', s.W)
+  const t = s.startHook('x', 'resume', s.repo)
+  expect(t).toContain(`This session's own approved hstack:build run in the work tree ${s.W} is not finished`)
+})

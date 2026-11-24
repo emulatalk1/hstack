@@ -41,6 +41,7 @@
     "tests/build-on-demand-edges.test.ts",
     "tests/claude-worktree-hook-folder.test.ts",
     "tests/claude-worktree-hook-folder-texts.test.ts",
-    "tests/claude-worktree-hook-folder-edges.test.ts"
+    "tests/claude-worktree-hook-folder-edges.test.ts",
+    "tests/claude-worktree-hook-folder-review.test.ts"
   ]
 }
