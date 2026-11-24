@@ -1,5 +1,9 @@
 # Update Log
 
+## 2026-11-24
+* **Approve**: the [Claude worktree, hook folder and README spec](/specs/2026-11-24-claude-worktree-hook-folder-readme.md) is `stable`: approved by the user ("Duyệt và dừng ở đây", given again in the session that runs it) after a brainstorm, a check by a second reader and the advisor, and ten probes with real sessions, whose answers are in its section "Agreed in the brainstorm".
+* **Creation**: Added the [Claude worktree, hook folder and README spec](/specs/2026-11-24-claude-worktree-hook-folder-readme.md) (draft), spec 10: new work beside an unfinished run goes into Claude Code's own worktree, feedback issues 10 and 11, no step cut by the clock, the step 4 skill named `implement`; 54 behaviours; hstack 0.4.7.
+
 ## 2026-11-23
 * **Update**: Built the [build on demand spec](/specs/2026-11-23-build-on-demand.md), still hstack 0.4.6: `disable-model-invocation` on the skill `build`, the start text, the stop hook, the verb `takeup`, the hooks' folder from the input's `cwd`, the descriptions and redirects of the three step skills, the playbook's part "What the user typed", CLAUDE.md and the README; the whole suite on `aa46f00`: 1510 pass, 66 skip, 3 fail, the three failing at the base already (the README rewritten in `d4e0cca`); two review rounds, an exploratory test with real sessions and a second walk, 31 planted faults, the 4 survivors killed afterwards. The builder's own decisions are in the [decisions file](/specs/2026-11-23-build-on-demand.decisions.md), not approved by the user. Open: the move of a session into a worktree outside `.claude/worktrees/` asks a person each time; three README tests red since the README rewrite.
 * **Approve**: the [build on demand spec](/specs/2026-11-23-build-on-demand.md) is `stable`: approved by the user ("Duyệt") after a brainstorm and a grill of three rounds, whose answers are in its section "Agreed in the brainstorm".
