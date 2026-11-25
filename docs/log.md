@@ -1,6 +1,8 @@
 # Update Log
 
 ## 2026-11-25
+* **Approve**: the [clear gives holds back spec](/specs/2026-11-25-clear-gives-holds-back.md) is `stable`: approved by the user ("Advisor không có ý kiến gì thêm thi tôi duyệt") after the advisor's check.
+* **Creation**: Added the [clear gives holds back spec](/specs/2026-11-25-clear-gives-holds-back.md) (draft), spec 12: a `/clear` gives the run it hands over its three holds back; 7 behaviours; hstack 0.4.8.
 * **Update**: Built the [clear and take-up by session id spec](/specs/2026-11-24-clear-and-takeup-by-session-id.md), still the unreleased hstack 0.4.7: a fifth hook, `SessionEnd`, leaves a mark at a `/clear` and the start hook hands the old id's runs over by it; `approve` and `takeup` read the calling session from `CLAUDE_CODE_SESSION_ID`, trusted for a session that came; a notice beside another session's run; two texts on the time and the waiting spec's line; the whole suite on `d496997`: 1698 pass, 66 skip, 0 fail; two review rounds and a focused reading, an exploratory test with real interactive sessions (23 behaviours and 19 earlier steps, all PASS, spec 10's S10-F1-S33 and S10-F1-S34 among them, so spec 10's feature passes) and 47 planted faults. The builder's own decisions are in the [decisions file](/specs/2026-11-24-clear-and-takeup-by-session-id.decisions.md), not approved by the user.
 * **Approve**: the [clear and take-up by session id spec](/specs/2026-11-24-clear-and-takeup-by-session-id.md) is `stable`: approved by the user ("Duyệt") after a brainstorm with probes of real sessions, a check by a second reader and the advisor.
 
