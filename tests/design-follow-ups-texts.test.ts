@@ -78,7 +78,7 @@ const P = {
   b9: '## The severity of a finding',
   b9not: ['## The severity of a design finding'],
   b10: ['Categorize issues by actual severity. Not everything is Critical.', '"Coverage could be broader" and polish suggestions are Minor.', 'The rules file comes before this passage'],
-  b11: ['"version": "0.4.7"', '**Status: v0.4.7.**'],
+  b11: ['"version": "0.4.8"', '**Status: v0.4.8.**'],
 }
 
 // ---------- a split that keeps the old way to reach the moved code ----------
@@ -123,7 +123,7 @@ test('10 (holds at the base, and must stay): agents/reviewer.md still holds "Cat
 
 // ---------- the version ----------
 
-test('11 (holds at the base, and must stay): .claude-plugin/plugin.json still holds "version": "0.4.7", and the README\'s status paragraph still starts with "**Status: v0.4.7.**"', () => {
+test('11 (holds at the base, and must stay): .claude-plugin/plugin.json still holds "version": "0.4.8", and the README\'s status paragraph still starts with "**Status: v0.4.8.**"', () => {
   holds(PLUGIN, raw(PLUGIN), [P.b11[0]])
   yes(`the status paragraph of ${README} starts with "${P.b11[1]}"`, statusParagraph().startsWith(P.b11[1]))
 })

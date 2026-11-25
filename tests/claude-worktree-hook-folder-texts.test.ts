@@ -234,11 +234,11 @@ test('42 (holds at the base, and must stay): the four numbered steps of the READ
 
 // ---------- behaviour 43: the version ----------
 
-test('43: .claude-plugin/plugin.json holds "version": "0.4.7", and the README\'s status paragraph starts with "**Status: v0.4.7.**" and still holds the words brainstorm and grilled', () => {
-  expect(raw('.claude-plugin/plugin.json')).toContain('"version": "0.4.7"')
-  expect((JSON.parse(raw('.claude-plugin/plugin.json')) as { version?: string }).version).toBe('0.4.7')
+test('43: .claude-plugin/plugin.json holds "version": "0.4.8", and the README\'s status paragraph starts with "**Status: v0.4.8.**" and still holds the words brainstorm and grilled', () => {
+  expect(raw('.claude-plugin/plugin.json')).toContain('"version": "0.4.8"')
+  expect((JSON.parse(raw('.claude-plugin/plugin.json')) as { version?: string }).version).toBe('0.4.8')
   const s = status()
-  expect(`the status paragraph starts with "**Status: v0.4.7.**": ${s.startsWith('**Status: v0.4.7.**')}`).toBe('the status paragraph starts with "**Status: v0.4.7.**": true')
+  expect(`the status paragraph starts with "**Status: v0.4.8.**": ${s.startsWith('**Status: v0.4.8.**')}`).toBe('the status paragraph starts with "**Status: v0.4.8.**": true')
   for (const w of ['brainstorm', 'grilled']) expect(`the status paragraph holds the word "${w}": ${new RegExp(`\\b${w}\\b`).test(s)}`).toBe(`the status paragraph holds the word "${w}": true`)
 })
 

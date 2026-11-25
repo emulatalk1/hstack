@@ -266,8 +266,11 @@ const handOver = () => {
 }
 // the one way a run passes to a session: its owner, and the last to have come (no session came after it)
 function giveRun(dir: string, to: string) { wr(`${dir}/owner`, to + '\n'); come(dir, to) }
-// a /clear: the old id's runs, in the given state folders, pass to the new id; never a run of an earlier session
-const clearHandOver = (old: string, to: string, dirs: string[]) => { for (const dir of dirs) if (startedAt(dir) && ownedBy(dir, old)) giveRun(dir, to) }
+// a /clear: the old id's runs, in the given state folders, pass to the new id, each with its holds given back (the user
+// typed the clear, as a take-up); never a run of an earlier session
+const clearHandOver = (old: string, to: string, dirs: string[]) => {
+  for (const dir of dirs) if (startedAt(dir) && ownedBy(dir, old)) { giveRun(dir, to); wr(`${dir}/stop-blocks`, '0\n') }
+}
 // the one rule of whose run it is: a run belongs to the session whose id its owner file holds, unless it is an earlier
 // session's (stale). A hook with no id judges its own folder's run as before: its own unless stale
 const ownedBy = (dir: string, id: string) => id !== '' && !isFile(`${dir}/stale`) && first(`${dir}/owner`) === id
@@ -365,7 +368,7 @@ if (cmd === 'hook-start') {
   if (input.includes('"source":"startup"') || input.includes('"source":"resume"')) dropMark()
   const cleared = input.includes('"source":"clear"') ? takeClear() : ''
   if (cd(hookDir(input)) && state()) {
-    // a new process gets its blocks back; a compaction inside one does not
+    // a new process gets its blocks back; a compaction inside one does not (a clear gives them back to the runs it hands over)
     if (input.includes('"source":"startup"') || input.includes('"source":"resume"')) { wr(`${S}/stop-blocks`, '0\n'); rmSync(u(`${S}/pass`), { force: true }) }
     // a resume of the session whose approved run is not finished: the time in which nobody worked on it comes off its clock
     // (a run with no owner yet, one that 0.4.6 started, is claimed first: a startup marks it an earlier session's below)

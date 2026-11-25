@@ -47,6 +47,6 @@
     "tests/clear-and-takeup-by-session-id-texts.test.ts",
     "tests/clear-and-takeup-by-session-id-edges.test.ts",
     "tests/clear-gives-holds-back.test.ts",
-    "tests/clear-gives-holds-back-texts.test.ts"
+    "tests/clear-gives-holds-back-texts.test.ts", "tests/clear-gives-holds-back-edges.test.ts"
   ]
 }

@@ -164,7 +164,7 @@ const P = {
   b32: ['design findings outside the change', 'design findings whose fix would have changed an earlier test', 'a split the design named and the builder did not make'],
   b33: ['a fix gets a test that fails first, but a lint, format or type fix'],
   b35: ['Pocock', 'Vincent', 'Osmani', 'Gebert', 'superpowers', 'ponytail', 'agent-skills'],
-  b36: ['"version": "0.4.7"', '**Status: v0.4.7.**'],
+  b36: ['"version": "0.4.8"', '**Status: v0.4.8.**'],
   b37: ['## Design', 'design rules'],
 }
 // behaviour 34: a copied phrase, and the copyright line of the licence file beside every file that holds it
@@ -411,7 +411,7 @@ test('35 (holds at the base, and must stay): no file of skills/ and agents/ othe
 
 // ---------- the version and the README ----------
 
-test('36: .claude-plugin/plugin.json holds "version": "0.4.7", and the README\'s status paragraph starts with "**Status: v0.4.7.**" and still holds the words "brainstorm" and "grilled"', () => {
+test('36: .claude-plugin/plugin.json holds "version": "0.4.8", and the README\'s status paragraph starts with "**Status: v0.4.8.**" and still holds the words "brainstorm" and "grilled"', () => {
   holds(PLUGIN, raw(PLUGIN), [P.b36[0]])
   const status = statusParagraph()
   yes(`the status paragraph of ${README} starts with "${P.b36[1]}"`, status.startsWith(P.b36[1]))

@@ -79,9 +79,9 @@ test('22: CLAUDE.md\'s part on the hooks names the end hook and says that a clea
   expect(`CLAUDE.md's part on the hooks says that a cleared session keeps its run: ${keeps}`).toBe("CLAUDE.md's part on the hooks says that a cleared session keeps its run: true")
 })
 
-// ---------- behaviour 23: the version stays 0.4.7 ----------
+// ---------- behaviour 23: the version stays 0.4.8 ----------
 
-test('23 (guard: the base already has it): .claude-plugin/plugin.json still holds "version": "0.4.7", and the README\'s status paragraph still starts with **Status: v0.4.7.**', () => {
-  holds('.claude-plugin/plugin.json', raw('.claude-plugin/plugin.json'), ['"version": "0.4.7"'])
-  expect(`the status paragraph starts with "**Status: v0.4.7.**": ${status().startsWith('**Status: v0.4.7.**')}`).toBe('the status paragraph starts with "**Status: v0.4.7.**": true')
+test('23 (guard: the base already has it): .claude-plugin/plugin.json still holds "version": "0.4.8", and the README\'s status paragraph still starts with **Status: v0.4.8.**', () => {
+  holds('.claude-plugin/plugin.json', raw('.claude-plugin/plugin.json'), ['"version": "0.4.8"'])
+  expect(`the status paragraph starts with "**Status: v0.4.8.**": ${status().startsWith('**Status: v0.4.8.**')}`).toBe('the status paragraph starts with "**Status: v0.4.8.**": true')
 })

@@ -10,7 +10,7 @@ The loop runs only when you invoke it: `/hstack:build` with a request, or with t
 
 - A session-start nudge. It names a spec that waits for your approval, or an approved run of an earlier session that is not finished, with the command that takes it up.
 - A note of the repository's state, taken when a turn starts.
-- A stop gate that refuses to end an unfinished run of this session (at most 3 times per process).
+- A stop gate that refuses to end an unfinished run of this session (at most 3 times per process; a /clear gives them back).
 - A worktree guard: while a run of this session is not finished, the session's worktree tool (`EnterWorktree`, `ExitWorktree`) is refused, so the session neither moves into another worktree nor leaves the one it is in.
 - An end hook (`SessionEnd`): when a session is cleared with `/clear`, it leaves a mark, and the cleared session keeps its run under its new id. With no mark, the session is told of the run and of the command that takes it up.
 

@@ -79,8 +79,8 @@ const P = {
   b11: ['the log of the runs, written first for the agent of a later session.'],
   b11stay: ['One entry per run, appended, never edited.'],
   b12: ['STASH ADDED', 'design findings outside the change', '"Design debt", with each line that a split left in an old file to export the moved code again'],
-  b13version: '"version": "0.4.7"',
-  b13status: '**Status: v0.4.7.**',
+  b13version: '"version": "0.4.8"',
+  b13status: '**Status: v0.4.8.**',
   b13stay: ['brainstorm', 'grilled'],
 }
 
@@ -146,10 +146,10 @@ test('12 (holds at the base, and must stay): the item that starts with "**The lo
 
 // ---------- the version ----------
 
-test('13: .claude-plugin/plugin.json holds "version": "0.4.7", and the README\'s status paragraph starts with "**Status: v0.4.7.**"', () => {
+test('13: .claude-plugin/plugin.json holds "version": "0.4.8", and the README\'s status paragraph starts with "**Status: v0.4.8.**"', () => {
   holds(PLUGIN, raw(PLUGIN), [P.b13version])
   // the words stand where the plugin's version is read from: the field `version` of the file
-  expect(`the field "version" of ${PLUGIN}: ${(JSON.parse(raw(PLUGIN)) as { version?: unknown }).version}`).toBe(`the field "version" of ${PLUGIN}: 0.4.7`)
+  expect(`the field "version" of ${PLUGIN}: ${(JSON.parse(raw(PLUGIN)) as { version?: unknown }).version}`).toBe(`the field "version" of ${PLUGIN}: 0.4.8`)
   yes(`the status paragraph of ${README} starts with "${P.b13status}"`, statusParagraph().startsWith(P.b13status))
 })
 

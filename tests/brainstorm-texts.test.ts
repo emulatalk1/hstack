@@ -288,10 +288,10 @@ test('34: in a grill each answer that changes the spec goes into the spec file, 
 
 // ---------- the version and the README ----------
 
-test('40: the plugin is 0.4.7, and the README\'s status paragraph starts with it and names the brainstorm and the grill', () => {
-  expect(raw('.claude-plugin/plugin.json')).toContain('"version": "0.4.7"')
+test('40: the plugin is 0.4.8, and the README\'s status paragraph starts with it and names the brainstorm and the grill', () => {
+  expect(raw('.claude-plugin/plugin.json')).toContain('"version": "0.4.8"')
   const status = raw('README.md').split(/\n\s*\n/).map((p) => p.trim()).find((p) => p.startsWith('**Status:')) ?? ''
-  expect(status.startsWith('**Status: v0.4.7.**')).toBe(true)
+  expect(status.startsWith('**Status: v0.4.8.**')).toBe(true)
   for (const w of ['brainstorm', 'grilled']) expect(`the status paragraph holds the word "${w}": ${new RegExp(`\\b${w}\\b`).test(status)}`).toBe(`the status paragraph holds the word "${w}": true`)
 })
 
