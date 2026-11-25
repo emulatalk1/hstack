@@ -96,7 +96,7 @@
       "What `spec <file>` prints holds `give the user the path of the spec, never its whole text`; neither it, nor the refusals of `approve` and of `phase`, nor the stop hook's reason for a spec that waits, holds `with its text` or `the spec's text`.",
       "A turn that ends in a brainstorm (no run started, nothing changed in the repository) is not blocked by the stop hook, and `$H elapsed`, after the `start` that follows, counts no minute of it. 0.4.1 already does this (tried in a throwaway repository); a test of its own now keeps it.",
       "A turn that ends in a grill (a spec waits; the spec file was changed and `$H spec <file>` run again; nothing else changed) is not blocked by the stop hook, and `$H elapsed` does not count the wait. 0.4.1 already does this (tried the same way); a test of its own now keeps it.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.7\"`, and the README's status paragraph starts with `**Status: v0.4.7.**` and holds the words `brainstorm` and `grilled`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.8\"`, and the README's status paragraph starts with `**Status: v0.4.8.**` and holds the words `brainstorm` and `grilled`.",
       "In the README's skills table the `build` row holds `Asks only before the approval` and no longer `Asks once`, and there is a row for `brainstorm` and one for `grill`; the row of `skills/` in the table of folders names both.",
       "The item `**Brainstorm.**` of the playbook holds `The user's \"that is right\" settles what is asked, not how it is built` and `where there is more than one way that the user would see, lay the ways out and let the user pick before you write the spec`.",
       "The item `**The spec file.**` of the playbook says of the section \"Against the record\": `Raise each of them in the brainstorm; the section records what the user chose`, and no longer holds `and lettered options, the one you recommend first`.",
@@ -119,7 +119,7 @@
       "That paragraph holds ``A shell function (`H() { bun \"<the path>/scripts/hstack.ts\" \"$@\"; }`) also works, but a coding tool may refuse a command that defines one``, holds ``a variable that holds `bun <path>` is not split into two words by every shell``, and no longer holds `call it through a shell function`.",
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds ``until the playbook's `start` no command of the loop's script runs but `dir` `` and no longer holds `during the conversation but`.",
       "That section holds ``From `start` on, the playbook says which command runs (`spec <file>` before a question to your human partner)``.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.7\"`, and the README's status paragraph starts with `**Status: v0.4.7.**`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.8\"`, and the README's status paragraph starts with `**Status: v0.4.8.**`.",
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds `Nothing in the repository changes before the spec is approved but the spec file itself`."
     ],
     "passes": true
@@ -148,7 +148,7 @@
       "The reason of a hold holds `Decide from the approved spec and the code` only when the run's spec is approved: the hold while a spec waits does not hold it; the hold of an approved, unfinished run does. Both still hold `end with exactly the reply the task asked for`. With no run started there is no hold.",
       "The section `## In hstack` of `skills/brainstorm/SKILL.md` holds ``before `start` the script itself refuses `spec`, `phase` and `approve`, and the loop's stop hook holds a turn that ends after `start` with no spec shown``, and no longer holds `the loop's stop hook would hold such a turn`.",
       "The paragraph of that file that starts with `**Spike to feel things out.**` ends with `before the spec is approved, nothing in the repository changes but the spec file itself.`",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.7\"`, and the README's status paragraph starts with `**Status: v0.4.7.**`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.8\"`, and the README's status paragraph starts with `**Status: v0.4.8.**`.",
       "The README's status paragraph holds `Five hooks`, and no longer holds `Two hooks` or `before anything changed`.",
       "The README's paragraph on a machine where `bun` is not on the `PATH` holds `five hooks`, and no longer holds `Both hooks` or `both hooks`."
     ],
@@ -220,7 +220,7 @@
       "Step 9 still holds `a fix gets a test that fails first, but a lint, format or type fix`.",
       "For each phrase below, the folder of every file of `skills/` and `agents/` that holds it also holds a licence file that holds the file's name, the words `Permission is hereby granted` and the copyright line given: `**The deletion test.**` and `**Middle Man**` with `Copyright (c) 2026 Matt Pocock`; `Files that change together should live together` and `Not everything is Critical` with `Copyright (c) 2025 Jesse Vincent`; `Zero findings is a valid result` with `Copyright (c) 2025 Addy Osmani`; `merge: near-copies that must change together` with `Copyright (c) 2026 DietrichGebert`.",
       "No file of `skills/` and `agents/` other than a licence file holds any of `Pocock`, `Vincent`, `Osmani`, `Gebert`, `superpowers`, `ponytail` and `agent-skills`, in any letter case.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.7\"`, and the README's status paragraph starts with `**Status: v0.4.7.**` and still holds the words `brainstorm` and `grilled`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.8\"`, and the README's status paragraph starts with `**Status: v0.4.8.**` and still holds the words `brainstorm` and `grilled`.",
       "The README's status paragraph holds `## Design` and `design rules`, and the README holds the path of every licence file of `skills/` and `agents/`."
     ],
     "passes": true
@@ -239,7 +239,7 @@
       "`agents/reviewer.md` no longer holds `This grades a design finding only`; before its three sentences on severity it holds `This grades every finding. Where an item above names a severity (a weakened test, a conflict that is none, a point of a behaviour that no assertion checks), that severity stands.`",
       "`agents/reviewer.md` holds the heading `## The severity of a finding`, and no longer `## The severity of a design finding`.",
       "`agents/reviewer.md` still holds `Categorize issues by actual severity. Not everything is Critical.`, `\"Coverage could be broader\" and polish suggestions are Minor.` and `The rules file comes before this passage`.",
-      "`.claude-plugin/plugin.json` still holds `\"version\": \"0.4.7\"`, and the README's status paragraph still starts with `**Status: v0.4.7.**`."
+      "`.claude-plugin/plugin.json` still holds `\"version\": \"0.4.8\"`, and the README's status paragraph still starts with `**Status: v0.4.8.**`."
     ],
     "passes": true
   },
@@ -259,7 +259,7 @@
       "The playbook no longer holds `The records are for a person who was not here`; step 10 holds `The records are for whoever was not here, first the agent of a later session and then a person:`.",
       "In step 10 of the playbook, the line of `progress/progress.md` holds `the log of the runs, written first for the agent of a later session.` and still holds `One entry per run, appended, never edited.`",
       "The item that starts with `**The log.**` still holds `STASH ADDED`, `design findings outside the change` and `\"Design debt\", with each line that a split left in an old file to export the moved code again`.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.7\"`, and the README's status paragraph starts with `**Status: v0.4.7.**` and still holds the words `brainstorm` and `grilled`."
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.8\"`, and the README's status paragraph starts with `**Status: v0.4.8.**` and still holds the words `brainstorm` and `grilled`."
     ],
     "passes": true
   },
@@ -346,7 +346,7 @@
       "The README's quick start no longer holds `ask for what you want in plain words`, and the code block after its install commands holds the line `/hstack:build add a CSV export to the invoices page`.",
       "The README's quick start says that a request made without `/hstack:build` is done directly, and holds `without the loop`.",
       "The four numbered steps of the README's quick start are as they were.",
-      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.7\"`, and the README's status paragraph starts with `**Status: v0.4.7.**` and still holds the words `brainstorm` and `grilled`.",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.8\"`, and the README's status paragraph starts with `**Status: v0.4.8.**` and still holds the words `brainstorm` and `grilled`.",
       "The playbook's rule \"Time.\" no longer holds `Start-time rules`, `elapsed < 150`, `elapsed < 180` or `210`; it says that `$H elapsed` and `$H times` measure the run for the last reply, and that no step is skipped, cut short or made narrower because of the time.",
       "The headings of the playbook's steps 2, 3, 7 and 8 are `## 2. Setup: capabilities`, `## 3. Oracle`, `## 7. Explore` and `## 8. Mutate`, with no limit in minutes; the item \"What goes against the record\" no longer holds `at most 15 minutes`.",
       "The playbook gives no agent a deadline: neither its rule \"Agents.\" nor its steps 3, 6, 7 and 8 hold `deadline`; and none of `agents/oracle.md`, `agents/reviewer.md`, `agents/explorer.md` and `agents/mutator.md` holds `deadline` or `date +%s`.",
@@ -387,7 +387,21 @@
       "`skills/implement/tdd.md` holds `as wide as the capabilities allow`, and no longer holds `as wide as the time allows`.",
       "The text that the start hook prints while a spec waits no longer holds `If the user answers it without that command, tell them to type it`; it says that once the user has typed `/hstack:build` in the session, their next message is the answer, with no command.",
       "The README's status paragraph holds `Five hooks` and no longer `Four hooks`; its paragraph on a machine where `bun` is not on the `PATH` holds `five hooks` and no longer `four hooks`; the row of `hooks/` in its table of paths names `SessionEnd`; and `CLAUDE.md`'s part on the hooks names the end hook and says that a cleared session keeps its run.",
-      "`.claude-plugin/plugin.json` still holds `\"version\": \"0.4.7\"`, and the README's status paragraph still starts with `**Status: v0.4.7.**`."
+      "`.claude-plugin/plugin.json` still holds `\"version\": \"0.4.8\"`, and the README's status paragraph still starts with `**Status: v0.4.8.**`."
+    ],
+    "passes": true
+  },
+  {
+    "description": "A session cleared with `/clear` gets its three holds back: each run or waiting spec that the clear hands to the new id (by the mark of spec 11, in any work tree of the repository) is held three times again; a clear with no mark and a compaction give none back. hstack 0.4.8.",
+    "spec": "docs/specs/2026-11-25-clear-gives-holds-back.md",
+    "steps": [
+      "With an approved, unfinished run of A in a work tree W and its three holds used up: after the clear, N's stop in W is held, three times, and the fourth stop is not held.",
+      "With an approved, unfinished run of A in another work tree W2 of the same repository and its three holds used up, while the end hook, the start hook and N's stops have their `cwd` in W: after the clear, N's stop is held by the run in W2, three times.",
+      "With a spec of A that waits for approval in W, a change of the repository made after the spec was shown, and A's stop held three times for it: after the clear, N's stop in W is held.",
+      "A clear with no mark (the start hook with `\"source\":\"clear\"` and no end hook before it), beside A's run in W with its three holds used up: the count is not given back; A's next stop in W is not held.",
+      "A start hook with `\"source\":\"compact\"` of A, with its three holds used up, gives none back: A's next stop in W is not held.",
+      "`CLAUDE.md` holds `A stop gate that refuses to end an unfinished run of this session (at most 3 times per process; a /clear gives them back).`, and no longer holds `(at most 3 times per process).`",
+      "`.claude-plugin/plugin.json` holds `\"version\": \"0.4.8\"`, and the README's status paragraph starts with `**Status: v0.4.8.**`."
     ],
     "passes": true
   }
