@@ -45,6 +45,8 @@
     "tests/claude-worktree-hook-folder-review.test.ts",
     "tests/clear-and-takeup-by-session-id.test.ts",
     "tests/clear-and-takeup-by-session-id-texts.test.ts",
-    "tests/clear-and-takeup-by-session-id-edges.test.ts"
+    "tests/clear-and-takeup-by-session-id-edges.test.ts",
+    "tests/clear-gives-holds-back.test.ts",
+    "tests/clear-gives-holds-back-texts.test.ts"
   ]
 }
